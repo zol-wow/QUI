@@ -220,6 +220,18 @@ local function WizardCanAdvance()
     return false
 end
 
+-- "Specific player..." needs a character name before the display can be
+-- created; every other unit choice is complete on its own.
+local function WizardCanCreate()
+    local w = state.wizard
+    local T = Templates()
+    local goal = T and T.GoalByID(w.goalID)
+    local choice = w.unitChoice or (goal and goal.unitChoice)
+    if choice ~= "__name" then return true end
+    local name = w.unitName
+    return type(name) == "string" and name:match("%S") ~= nil
+end
+
 local function WizardHeader(content, question)
     local step = GUI:CreateLabel(content,
         string.format(ns.L["Step %1$d of %2$d"], state.wizardStep, 4), 10, C.textMuted)
@@ -448,11 +460,30 @@ local function BuildWizardStep4(content)
     local unitDrop = GUI:CreateFormDropdown(content, nil, UNIT_OPTIONS, "unitChoice",
         unitProxy, function()
             w.unitChoice = unitProxy.unitChoice
+            Rebuild()
         end, {
             description = ns.L["Which unit this display watches. Co-Tank follows the first other tank in your group."],
         })
     unitDrop:SetPoint("TOPLEFT", 280, -y - 14)
     y = y + 58
+    dialog._wizardUnitNameEdit = nil
+    if (w.unitChoice or goal.unitChoice) == "__name" then
+        -- "Specific player..." is unusable without a name: the display would
+        -- resolve no unit and sit inactive until edited.
+        local unitNameLabel = GUI:CreateLabel(content, ns.L["Player Name"], 10, C.textMuted)
+        unitNameLabel:SetPoint("TOPLEFT", 280, -y)
+        local unitNameBox, unitNameEdit = GUI:CreateInlineEditBox(content, { width = 250 })
+        unitNameBox:SetPoint("TOPLEFT", 280, -y - 14)
+        unitNameEdit:SetText(w.unitName or "")
+        unitNameEdit:SetScript("OnTextChanged", function(self)
+            w.unitName = self:GetText()
+            if dialog.createBtn and type(dialog.createBtn.SetEnabled) == "function" then
+                dialog.createBtn:SetEnabled(WizardCanCreate())
+            end
+        end)
+        dialog._wizardUnitNameEdit = unitNameEdit
+        y = y + 44
+    end
 
     local posLabel = GUI:CreateLabel(content, ns.L["Screen position"], 10, C.textMuted)
     posLabel:SetPoint("TOPLEFT", 2, -y)
@@ -561,22 +592,40 @@ local function BuildCustomTab(content)
     local unitLabel = GUI:CreateLabel(content, ns.L["Unit"], 10, C.textMuted)
     unitLabel:SetPoint("TOPLEFT", 2, -138)
     local unitDrop = GUI:CreateFormDropdown(content, nil, UNIT_OPTIONS, "unitChoice",
-        cs, function() end, {
+        cs, function() Rebuild() end, {
             description = ns.L["Which unit this display watches. Co-Tank follows the first other tank in your group."],
         })
     unitDrop:SetPoint("TOPLEFT", 2, -152)
 
+    local unitNameEdit
+    local createY = 196
+    if cs.unitChoice == "__name" then
+        local unitNameLabel = GUI:CreateLabel(content, ns.L["Player Name"], 10, C.textMuted)
+        unitNameLabel:SetPoint("TOPLEFT", 2, -184)
+        local unitNameBox
+        unitNameBox, unitNameEdit = GUI:CreateInlineEditBox(content, { width = 270 })
+        unitNameBox:SetPoint("TOPLEFT", 2, -198)
+        unitNameEdit:SetText(cs.unitName or "")
+        createY = 240
+    end
+
     local createBtn = GUI:CreateButton(content, ns.L["Create"], 100, 24, function()
         local Page = ns.QUI_AuraDisplaysOptions
         if not (Page and type(Page._QuickCreate) == "function") then return end
+        if unitNameEdit then cs.unitName = unitNameEdit:GetText() end
+        if cs.unitChoice == "__name"
+            and not (type(cs.unitName) == "string" and cs.unitName:match("%S")) then
+            return
+        end
         Finish(Page._QuickCreate({
             kind = cs.kind,
             name = nameEdit:GetText(),
             unitChoice = cs.unitChoice,
+            unitName = cs.unitName,
             spellID = cs.spellID,
         }))
     end, "primary")
-    createBtn:SetPoint("TOPLEFT", 2, -196)
+    createBtn:SetPoint("TOPLEFT", 2, -createY)
     PaintKind()
 end
 
@@ -705,6 +754,10 @@ local function EnsureDialog()
         if dialog._wizardNameEdit then
             w.name = dialog._wizardNameEdit:GetText()
         end
+        if dialog._wizardUnitNameEdit then
+            w.unitName = dialog._wizardUnitNameEdit:GetText()
+        end
+        if not WizardCanCreate() then return end
         Finish(T.BuildWizardDisplay(w))
     end, "primary")
     dialog.createBtn:SetPoint("LEFT", dialog.backBtn, "RIGHT", 8, 0)
@@ -749,6 +802,9 @@ Rebuild = function()
         dialog.nextBtn:SetEnabled(WizardCanAdvance())
     end
     dialog.createBtn:SetShown(isWizard and state.wizardStep == 4)
+    if type(dialog.createBtn.SetEnabled) == "function" then
+        dialog.createBtn:SetEnabled(WizardCanCreate())
+    end
 
     if state.tab == "templates" then
         BuildTemplatesTab(content)

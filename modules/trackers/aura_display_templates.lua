@@ -121,13 +121,13 @@ end
 
 -- Unit choice ----------------------------------------------------------------
 
-function T.ApplyUnitChoice(display, choice)
+function T.ApplyUnitChoice(display, choice, unitName)
     if choice == "__cotank" then
         display.unitMode = "cotank"
         display.unit = nil
     elseif choice == "__name" then
         display.unitMode = "name"
-        display.unit = ""
+        display.unit = type(unitName) == "string" and unitName:match("^%s*(.-)%s*$") or ""
     else
         display.unitMode = "token"
         display.unit = choice or "player"
@@ -410,7 +410,7 @@ function T.BuildWizardDisplay(state)
     local display = ad.NewDisplay(name)
     if not display then return nil end
 
-    T.ApplyUnitChoice(display, state.unitChoice or goal.unitChoice)
+    T.ApplyUnitChoice(display, state.unitChoice or goal.unitChoice, state.unitName)
 
     if state.loadChoice == "class" then
         local class = PlayerClassToken()

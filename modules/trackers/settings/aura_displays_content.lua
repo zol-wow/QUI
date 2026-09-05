@@ -323,7 +323,7 @@ function ns.QUI_AuraDisplaysOptions._QuickCreate(spec)
         display.unit = nil
     elseif choice == "__name" then
         display.unitMode = "name"
-        display.unit = ""
+        display.unit = type(spec.unitName) == "string" and spec.unitName:match("^%s*(.-)%s*$") or ""
     else
         display.unitMode = "token"
         display.unit = choice
@@ -1591,7 +1591,13 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
             onCopied = function()
                 if UI.lastPreviewID then AD.HidePreviewFor(UI.lastPreviewID) end
                 UI.lastPreviewID = nil
+                if UI.lastPreviewGroup and type(AD.HidePreviewForGroup) == "function" then
+                    AD.HidePreviewForGroup(UI.lastPreviewGroup)
+                end
+                UI.lastPreviewGroup = nil
+                if type(AD.DisablePreviewDrag) == "function" then AD.DisablePreviewDrag() end
                 selectedID = nil
+                selectedGroup = nil
                 if UI.RebuildList then UI.RebuildList() end
                 if UI.RebuildDetail then UI.RebuildDetail() end
             end,

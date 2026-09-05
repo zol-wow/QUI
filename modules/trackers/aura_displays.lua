@@ -1847,13 +1847,16 @@ function AD.ReflowGroups(displays)
         seenGroupIDs[group.id] = true
 
         local memberSpecs = {}
+        -- Children reflow first so their scaled extents are known, but they
+        -- flow AFTER the group's own displays, matching the list order.
+        local childSpecs = {}
         local children = AD.GroupChildren(groupName)
         for j = 1, #children do
             local childName = children[j]
             if groupsWithContent[childName] then
                 local childHost, childW, childH, childShown = ReflowGroup(childName)
                 if childHost and childShown then
-                    memberSpecs[#memberSpecs + 1] = {
+                    childSpecs[#childSpecs + 1] = {
                         groupName = childName,
                         host = childHost,
                         isGroup = true,
@@ -1900,6 +1903,8 @@ function AD.ReflowGroups(displays)
                 end
             end
         end
+
+        for j = 1, #childSpecs do memberSpecs[#memberSpecs + 1] = childSpecs[j] end
 
         local width, height, placements = AD.ComputeGroupLayout(group, memberSpecs)
         local scale = PositiveNumber(group.scale, GROUP_DEFAULTS.scale)
