@@ -441,7 +441,6 @@ local function BuildAutomation(L, generalDB)
     local audioW = GUI:CreateFormDropdown(s.frame, nil, audioOptions, "audioOutputDevice", generalDB, function()
         if ns.ApplyPreferredAudioDevice then ns.ApplyPreferredAudioDevice() end
     end, { description = ns.L["Lock the game's audio output to a specific device. When your system switches devices (e.g. plugging in headphones), QUI forces it back. Off leaves Blizzard's default behavior."] })
-    s.AddRow(row(s.frame, ns.L["Lock Audio Output Device"], audioW))
 
     local ahW = GUI:CreateFormCheckbox(s.frame, nil, "auctionHouseExpansionFilter", generalDB, nil,
         { description = ns.L["Automatically toggle the current expansion filter when you open the Auction House so you only see modern items."] })
@@ -510,7 +509,7 @@ local function BuildAutomation(L, generalDB)
 
     local delW = GUI:CreateFormCheckbox(s.frame, nil, "autoDeleteConfirm", generalDB, nil,
         { description = ns.L["Pre-fill the word DELETE into the confirmation box when destroying a rare or higher item."] })
-    s.AddRow(row(s.frame, ns.L["Auto-Fill DELETE Confirmation Text"], delW), CreateFrame("Frame", nil, s.frame))
+    s.AddRow(row(s.frame, ns.L["Lock Audio Output Device"], audioW), row(s.frame, ns.L["Auto-Fill DELETE Confirmation Text"], delW))
     L.closeSection(s)
 end
 
