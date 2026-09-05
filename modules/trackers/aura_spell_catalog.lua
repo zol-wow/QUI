@@ -258,8 +258,12 @@ local function BuildTalentSection()
         if okNodes and type(nodes) == "table" then
             for _, nodeID in ipairs(nodes) do
                 local okNode, node = ns.SafeCall("best-effort-style", C_Traits.GetNodeInfo, configID, nodeID)
-                local entry = okNode and type(node) == "table"
-                    and (node.ranksPurchased or 0) > 0
+                -- activeRank covers granted talents too (ranksPurchased stays
+                -- 0 for those); ranksPurchased remains the fallback for
+                -- node shapes that lack it.
+                local rank = okNode and type(node) == "table"
+                    and (tonumber(node.activeRank) or tonumber(node.ranksPurchased) or 0) or 0
+                local entry = rank > 0
                     and type(node.activeEntry) == "table" and node.activeEntry or nil
                 local entryID = entry and entry.entryID
                 if entryID then

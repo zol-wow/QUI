@@ -1023,13 +1023,24 @@ function AD.GetVisibilityFrames()
     return frames
 end
 
+local function FrameIsMouseOver(frame)
+    local mouseOver = frame:IsMouseOver()
+    return not (IsSecretValue and IsSecretValue(mouseOver)) and mouseOver == true
+end
+
 function AD.IsVisibilityFrameMouseOver()
     for _, host in pairs(hosts) do
-        if host._quiAuraDisplayActive then
-            local mouseOver = host:IsMouseOver()
-            if not (IsSecretValue and IsSecretValue(mouseOver)) and mouseOver then
-                return true
-            end
+        if host._quiAuraDisplayActive and FrameIsMouseOver(host) then
+            return true
+        end
+    end
+    -- Packed groups render through the group's shared container while the
+    -- member hosts stay hidden, so hovering those icons must count too.
+    for _, groupHost in pairs(groupHosts) do
+        local container = groupHost._quiPackContainer
+        if container and not container._quiPackParked and type(container.IsMouseOver) == "function"
+            and FrameIsMouseOver(container) then
+            return true
         end
     end
     return false
