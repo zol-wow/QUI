@@ -206,6 +206,20 @@ end
 
 -- Guided tab -----------------------------------------------------------------
 
+-- The tracked-spell step needs at least one spell before Next: a tracked
+-- element with no spells is invalid and would render a blank display.
+local function WizardCanAdvance()
+    if state.wizardStep ~= 2 then return true end
+    local T = Templates()
+    local w = state.wizard
+    local goal = T and T.GoalByID(w.goalID)
+    if not goal or goal.kind ~= "tracked" then return true end
+    for i = 1, #(w.spells or {}) do
+        if type(w.spells[i]) == "number" then return true end
+    end
+    return false
+end
+
 local function WizardHeader(content, question)
     local step = GUI:CreateLabel(content,
         string.format(ns.L["Step %1$d of %2$d"], state.wizardStep, 4), 10, C.textMuted)
@@ -676,7 +690,7 @@ local function EnsureDialog()
     dialog.backBtn:SetPoint("BOTTOMLEFT", 15, 10)
 
     dialog.nextBtn = GUI:CreateButton(dialog, ns.L["Next"], 80, 24, function()
-        if state.wizardStep < 4 then
+        if state.wizardStep < 4 and WizardCanAdvance() then
             state.wizardStep = state.wizardStep + 1
             CloseBrowse()
             Rebuild()
@@ -731,6 +745,9 @@ Rebuild = function()
     local isWizard = state.tab == "guided"
     dialog.backBtn:SetShown(isWizard and state.wizardStep > 1)
     dialog.nextBtn:SetShown(isWizard and state.wizardStep > 1 and state.wizardStep < 4)
+    if type(dialog.nextBtn.SetEnabled) == "function" then
+        dialog.nextBtn:SetEnabled(WizardCanAdvance())
+    end
     dialog.createBtn:SetShown(isWizard and state.wizardStep == 4)
 
     if state.tab == "templates" then

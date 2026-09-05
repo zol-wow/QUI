@@ -269,6 +269,7 @@ end
 -- tree. Every walk carries a visited set — SetGroupParent refuses cycles, but
 -- imported or hand-edited saved variables must never hang the client.
 local MAX_GROUP_DEPTH = 6
+AD.MAX_GROUP_DEPTH = MAX_GROUP_DEPTH
 
 local function ParentKeyOf(store, key)
     local group = store and store.groups[key]

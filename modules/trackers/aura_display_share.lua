@@ -201,6 +201,71 @@ local function FieldsWellTyped(entry, types)
     return true
 end
 
+-- Nested records Import copies into the profile. Their scalar fields are
+-- type-checked here so a hand-edited string cannot persist, say, a string
+-- iconSize that later trips the element profile math on every refresh.
+local ANCHOR_FIELD_TYPES = {
+    point = "string", relative = "string", relativePoint = "string", parent = "string",
+    offsetX = "number", offsetY = "number",
+}
+local LAYOUT_FIELD_TYPES = { direction = "string", alignment = "string", spacing = "number" }
+local LOAD_FIELD_TYPES = { classes = "table", specs = "table", roles = "table", encounters = "table" }
+local ELEMENT_FIELD_TYPES = {
+    mode = "string", auraType = "string", displayType = "string", growDirection = "string",
+    anchor = "string", swipeStyle = "string", applyToRoles = "string",
+    iconSize = "number", spacing = "number", rowSpacing = "number", iconsPerRow = "number",
+    maxIcons = "number", offsetX = "number", offsetY = "number", borderSize = "number",
+    enabled = "boolean", onlyMine = "boolean", hideSwipe = "boolean", reverseSwipe = "boolean",
+    dynamicLayout = "boolean", hideBorder = "boolean",
+    spells = "table", onlyMineSpells = "table", duration = "table", stack = "table",
+    bar = "table", border = "table", color = "table", auraSounds = "table",
+}
+local ELEMENT_MODES = { filterStrip = true, tracked = true, missingRaidBuff = true }
+
+local function ValidElement(element)
+    if type(element) ~= "table" or not ELEMENT_MODES[element.mode] then return false end
+    if not FieldsWellTyped(element, ELEMENT_FIELD_TYPES) then return false end
+    if type(element.spells) == "table" then
+        for i = 1, #element.spells do
+            if type(element.spells[i]) ~= "number" then return false end
+        end
+    end
+    -- The element model's own validator has the final say (e.g. a tracked
+    -- element needs at least one spell), run on a copy so a rejected payload
+    -- leaves nothing behind.
+    local E = ns.AuraElements
+    if E and type(E.NormalizeElement) == "function" and type(E.Validate) == "function" then
+        local probe = E.NormalizeElement(CopyData(element))
+        if not E.Validate(probe) then return false end
+    end
+    return true
+end
+
+local function ValidAuras(auras)
+    if auras == nil then return true end
+    if type(auras) ~= "table" then return false end
+    if auras.enabled ~= nil and type(auras.enabled) ~= "boolean" then return false end
+    if auras.elements == nil then return true end
+    if type(auras.elements) ~= "table" then return false end
+    for bucketKey, bucket in pairs(auras.elements) do
+        if type(bucketKey) ~= "string" and type(bucketKey) ~= "number" then return false end
+        if type(bucket) ~= "table" then return false end
+        for i = 1, #bucket do
+            if not ValidElement(bucket[i]) then return false end
+        end
+    end
+    return true
+end
+
+local function ValidRecord(record, types)
+    return record == nil or (type(record) == "table" and FieldsWellTyped(record, types))
+end
+
+local function MaxGroupDepth()
+    local ad = AD()
+    return (ad and tonumber(ad.MAX_GROUP_DEPTH)) or 6
+end
+
 local function OptionalTable(value)
     return value == nil or type(value) == "table"
 end
@@ -232,20 +297,24 @@ function Share.ValidatePayload(payload)
         if type(entry) ~= "table" or not ValidName(entry.name) then return false end
         if groupByName[entry.name] then return false end
         groupByName[entry.name] = entry
-        if not OptionalString(entry.parent) or not OptionalTable(entry.anchor) then
+        if not OptionalString(entry.parent) or not ValidRecord(entry.anchor, ANCHOR_FIELD_TYPES) then
             return false
         end
         if not FieldsWellTyped(entry, GROUP_FIELD_TYPES) then return false end
     end
-    -- Every parent must be a declared group, never the group itself, and the
-    -- parent chain must terminate (no cycles).
+    -- Every parent must be a declared group, never the group itself, the
+    -- chain must terminate (no cycles), and it must fit the runtime's nesting
+    -- limit so every SetGroupParent during Import is guaranteed to succeed.
+    local maxAncestors = MaxGroupDepth() - 1
     for i = 1, #payload.groups do
         local entry = payload.groups[i]
-        local seen, current = {}, entry
+        local seen, current, ancestors = {}, entry, 0
         while current.parent ~= nil do
             local parent = groupByName[current.parent]
             if not parent or parent == current or seen[parent] then return false end
             seen[parent] = true
+            ancestors = ancestors + 1
+            if ancestors > maxAncestors then return false end
             current = parent
         end
     end
@@ -254,9 +323,10 @@ function Share.ValidatePayload(payload)
         local entry = payload.displays[i]
         if type(entry) ~= "table" or not ValidName(entry.name) then return false end
         displayNames[entry.name] = true
-        if not OptionalString(entry.group) or not OptionalTable(entry.anchor)
-            or not OptionalTable(entry.layout) or not OptionalTable(entry.load)
-            or not OptionalTable(entry.auras) then
+        if not OptionalString(entry.group) or not ValidRecord(entry.anchor, ANCHOR_FIELD_TYPES)
+            or not ValidRecord(entry.layout, LAYOUT_FIELD_TYPES)
+            or not ValidRecord(entry.load, LOAD_FIELD_TYPES)
+            or not ValidAuras(entry.auras) then
             return false
         end
         if entry.group ~= nil and not groupByName[entry.group] then return false end
@@ -342,6 +412,23 @@ end
 
 -- Recreates the payload's groups and displays. Duplicate group or display
 -- names get " 2"-style suffixes, WeakAuras-style. Returns a summary table.
+-- Import mutates the live store and anchor table in place; a snapshot lets a
+-- failure midway restore both so nothing half-imported is left behind.
+local function SnapshotState(store)
+    local profile = Profile()
+    return {
+        displays = CopyData(store.displays), order = CopyData(store.order),
+        groups = CopyData(store.groups),
+        anchors = profile and CopyData(profile.frameAnchoring) or nil,
+    }
+end
+
+local function RestoreState(store, snapshot)
+    store.displays, store.order, store.groups = snapshot.displays, snapshot.order, snapshot.groups
+    local profile = Profile()
+    if profile then profile.frameAnchoring = snapshot.anchors end
+end
+
 function Share.Import(payload)
     if not Share.ValidatePayload(payload) then
         return nil, "Malformed aura display string."
@@ -349,6 +436,7 @@ function Share.Import(payload)
     local ad = AD()
     local store = ad and ad.Store and ad.Store()
     if not store then return nil, "Aura displays are not available." end
+    local snapshot = SnapshotState(store)
 
     local summary = { groups = 0, displays = 0, renamed = 0 }
 
@@ -374,8 +462,9 @@ function Share.Import(payload)
     for i = 1, #payload.groups do
         local entry = payload.groups[i]
         local parent = entry.parent and nameMap[entry.parent] or nil
-        if parent then
-            ad.SetGroupParent(nameMap[entry.name], parent)
+        if parent and not ad.SetGroupParent(nameMap[entry.name], parent) then
+            RestoreState(store, snapshot)
+            return nil, "Malformed aura display string."
         end
     end
 

@@ -394,6 +394,14 @@ function T.BuildWizardDisplay(state)
     local ad = AD()
     if not (goal and ad and E()) then return nil end
 
+    if goal.kind == "tracked" then
+        local hasSpell = false
+        for i = 1, #(state.spells or {}) do
+            if type(state.spells[i]) == "number" then hasSpell = true break end
+        end
+        if not hasSpell then return nil end
+    end
+
     local name = state.name
     if type(name) ~= "string" or name == "" then
         name = (state.spells and state.spells[1] and GetSpellName(state.spells[1]))
