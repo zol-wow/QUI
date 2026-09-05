@@ -1875,7 +1875,11 @@ do
                 if IsScreenAnchorEntry(settings) then
                     local point = settings.point or "CENTER"
                     local relative = settings.relative or "CENTER"
-                    if want ~= "CENTER" and (point ~= want or relative ~= want) then
+                    -- The growth anchor is authoritative for free placement,
+                    -- CENTER included: an entry left edge-pinned by an older
+                    -- profile would otherwise grow differently from what the
+                    -- (default) setting says. Conversion keeps the same rect.
+                    if point ~= want or relative ~= want then
                         if ConvertScreenAnchorEntry(container, settings, want) then
                             point, relative = want, want
                         elseif vs then
