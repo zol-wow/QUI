@@ -167,7 +167,12 @@ function Catalog.Init()
     eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
     eventFrame:SetScript("OnEvent", function(_, event, arg1)
         if event == "UNIT_AURA" then
-            if not IsSecret(arg1) and SCAN_UNIT_SET[arg1] then
+            -- A secret unit token can neither index the scan set nor be
+            -- scanned; there is nothing to defer to, so the event is dropped.
+            if WoW_IsSecretValue and WoW_IsSecretValue(arg1) then
+                return -- @secret-policy: reject-secret-value — secret unit token, nothing to scan
+            end
+            if SCAN_UNIT_SET[arg1] then
                 RecordUnit(arg1)
             end
         elseif event == "PLAYER_TARGET_CHANGED" then

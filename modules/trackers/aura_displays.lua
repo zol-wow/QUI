@@ -1167,7 +1167,9 @@ local function ResolveDragTarget(kind, value)
 end
 
 local function SafeCoord(value)
-    if IsSecretValue and IsSecretValue(value) then return nil end
+    if IsSecretValue and IsSecretValue(value) then
+        return nil -- @secret-policy: reject-to-nil — a secret coordinate is never committed; nil skips the drag write
+    end
     return tonumber(value)
 end
 
