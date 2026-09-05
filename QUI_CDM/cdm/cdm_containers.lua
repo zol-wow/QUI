@@ -1746,6 +1746,16 @@ do
         return nil, nil
     end
 
+    -- Older profiles may still carry the legacy settings.anchorTo frame
+    -- anchor (applied by cdm_buff_layout's ApplyBuffIconAnchor, which yields
+    -- to any frameAnchoring entry). Seeding a screen entry for such a
+    -- container would silently detach it, so the growth anchor defers to it.
+    local function HasLegacyFrameAnchor(trackerKey)
+        local db = GetTrackerSettings(trackerKey)
+        local anchorTo = db and db.anchorTo
+        return type(anchorTo) == "string" and anchorTo ~= "" and anchorTo ~= "disabled"
+    end
+
     local function IsScreenAnchorEntry(entry)
         if type(entry) ~= "table" or entry.enabled == false then return false end
         local parent = entry.parent or "screen"
@@ -1868,7 +1878,7 @@ do
             local profile = QUICore and QUICore.db and QUICore.db.profile
             local anchoringDB = profile and profile.frameAnchoring
             local settings = anchoringDB and anchoringDB[anchorKey]
-            if settings == nil and want ~= "CENTER" then
+            if settings == nil and want ~= "CENTER" and not HasLegacyFrameAnchor(trackerKey) then
                 settings = SeedScreenAnchorEntry(container, trackerKey)
             end
             if settings and settings.enabled ~= false then
@@ -1937,6 +1947,8 @@ do
             return true
         end
         if entry == nil then
+            -- Legacy anchorTo frame anchor: leave positioning to it.
+            if HasLegacyFrameAnchor(trackerKey) then return true end
             entry = SeedScreenAnchorEntry(container, trackerKey)
             if not entry then return true end
         end
