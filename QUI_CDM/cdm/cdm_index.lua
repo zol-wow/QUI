@@ -274,16 +274,18 @@ local function BuildOrderedMaps()
         return
     end
 
-    if CooldownViewerSettings and CooldownViewerSettings.GetDataProvider then
-        local provider = CooldownViewerSettings:GetDataProvider()
-        if provider and (provider.displayDataDirty or provider.displayData == nil) then
-            if not _orderedSpellMap then
-                _orderedSpellMap, _orderedEquipSlotMap, _orderedCategoryMap = {}, {}, {}
-                _orderedSpellMapByCategory, _orderedEquipSlotMapByCategory, _orderedCategoryMapByCategory =
-                    {}, {}, {}
-            end
-            return
+    local provider = CooldownViewerSettings and CooldownViewerSettings.GetDataProvider
+        and CooldownViewerSettings:GetDataProvider()
+    local displayData = provider and not provider.displayDataDirty and provider.displayData
+    local ordered = type(displayData) == "table" and displayData.orderedCooldownIDs
+    local infoByID = type(displayData) == "table" and displayData.cooldownInfoByID
+    if provider and (type(ordered) ~= "table" or type(infoByID) ~= "table") then
+        if not _orderedSpellMap then
+            _orderedSpellMap, _orderedEquipSlotMap, _orderedCategoryMap = {}, {}, {}
+            _orderedSpellMapByCategory, _orderedEquipSlotMapByCategory, _orderedCategoryMapByCategory =
+                {}, {}, {}
         end
+        return
     end
 
     local spellMap, equipSlotMap, categoryMap = {}, {}, {}
@@ -303,8 +305,7 @@ local function BuildOrderedMaps()
     if not (api and api.GetCooldownViewerCooldownInfo) then
         return
     end
-    local provider = CooldownViewerSettings:GetDataProvider()
-    if not (provider and provider.GetOrderedCooldownIDsForCategory) then
+    if not provider then
         return
     end
     if not (Enum and Enum.CooldownViewerCategory) then return end
@@ -323,9 +324,10 @@ local function BuildOrderedMaps()
             spellMapByCategory[cat] = catSpellMap
             equipSlotMapByCategory[cat] = catEquipSlotMap
             categoryMapByCategory[cat] = catCategoryMap
-            local ids = provider.GetOrderedCooldownIDsForCategory(provider, cat, true)
-            if ids then
-                for _, cdID in ipairs(ids) do
+            for _, cdID in ipairs(ordered) do
+                local snapshotInfo = infoByID[cdID]
+                if snapshotInfo and snapshotInfo.category == cat
+                    and not (_G.CDM_HIDE_INVISIBLE_ITEMS and snapshotInfo.isInvisible) then
                     local info = api.GetCooldownViewerCooldownInfo(cdID)
                     if info then
                         local entry = { cooldownID = cdID, category = cat }

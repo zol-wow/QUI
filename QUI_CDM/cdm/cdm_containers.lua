@@ -3230,7 +3230,14 @@ function ownedEngine:BootstrapReanchorRuntime()
                 EventRegistry:RegisterCallback("CooldownViewerSettings.OnShow",
                     reanchorAfterSettings, ns._cdmReanchorSettingsCallbackOwner)
                 EventRegistry:RegisterCallback("CooldownViewerSettings.OnHide",
-                    reanchorAfterSettings, ns._cdmReanchorSettingsCallbackOwner)
+                    function()
+                        C_Timer.After(0.1, reanchorAfterSettings)
+                        C_Timer.After(0.3, function()
+                            if ns._cdmTrackedBarLifecycleHooks then
+                                ns._cdmTrackedBarLifecycleHooks:MarkAllDirty()
+                            end
+                        end)
+                    end, ns._cdmReanchorSettingsCallbackOwner)
             end
         end
         self:InstallReanchorProcGlowHooks(boot)

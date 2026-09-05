@@ -380,8 +380,11 @@ local function SetCastbarFrameVisible(frame, shouldShow)
 
     if shouldShow then
         frame:SetAlpha(1)
-        if not frame:IsShown() and not inCombat then
-            frame:Show()
+        if not frame:IsShown() then
+            local check = _G.C_RestrictedActions and _G.C_RestrictedActions.CheckAllowProtectedFunctions
+            if (check and check(frame, true)) or (not check and not inCombat) then
+                frame:Show()
+            end
         end
         return
     end
