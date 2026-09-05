@@ -17,6 +17,11 @@ local MAX_ENTITIES = 400
 local MAX_NAME_LENGTH = 120
 local MAX_TREE_DEPTH = 12
 local MAX_TREE_NODES = 60000
+-- Byte caps applied before decompression and before deserialization. A real
+-- export is a few KB per display; the caps leave two orders of magnitude of
+-- headroom while bounding what a hostile paste can make the client chew on.
+local MAX_ENCODED_BYTES = 256 * 1024
+local MAX_DECOMPRESSED_BYTES = 2 * 1024 * 1024
 
 local GROUP_FIELDS = {
     "enabled", "growDirection", "alignment", "spacing", "scale",
@@ -251,6 +256,38 @@ local function FieldsInEnums(entry, enums)
     return true
 end
 
+-- Numeric fields must be finite and inside a sane range (the editor's slider
+-- range widened, so older or hand-tuned values still import) — infinities,
+-- NaN or absurd magnitudes would otherwise reach SetSize/SetScale on every
+-- refresh of the imported display.
+local GROUP_FIELD_RANGES = {
+    spacing = { -100, 1000 }, scale = { 0.05, 10 }, itemWidth = { 0, 4000 }, itemHeight = { 0, 4000 },
+}
+local ANCHOR_FIELD_RANGES = { offsetX = { -10000, 10000 }, offsetY = { -10000, 10000 } }
+local LAYOUT_FIELD_RANGES = { spacing = { -100, 1000 } }
+local ELEMENT_FIELD_RANGES = {
+    iconSize = { 1, 512 }, spacing = { -50, 200 }, rowSpacing = { -50, 200 }, iconsPerRow = { 0, 100 },
+    maxIcons = { 0, 200 }, offsetX = { -2000, 2000 }, offsetY = { -2000, 2000 }, borderSize = { 0, 64 },
+    maxDurationSec = { 0, 86400 }, tooltipAnchorX = { -2000, 2000 }, tooltipAnchorY = { -2000, 2000 },
+}
+local TEXT_FIELD_RANGES = { fontSize = { 1, 128 }, offsetX = { -2000, 2000 }, offsetY = { -2000, 2000 } }
+local BAR_FIELD_RANGES = { thickness = { 1, 2000 }, length = { 1, 2000 }, borderSize = { 0, 64 } }
+local BORDER_FIELD_RANGES = { thickness = { 0, 64 } }
+
+local function FiniteNumber(value)
+    return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+end
+
+local function FieldsInRanges(entry, ranges)
+    for field, range in pairs(ranges) do
+        local value = entry[field]
+        if value ~= nil and (not FiniteNumber(value) or value < range[1] or value > range[2]) then
+            return false
+        end
+    end
+    return true
+end
+
 -- Nested records Import copies into the profile. Their scalar fields are
 -- type-checked here so a hand-edited string cannot persist, say, a string
 -- iconSize that later trips the element profile math on every refresh.
@@ -290,10 +327,11 @@ local BAR_FIELD_TYPES = {
 local BORDER_FIELD_TYPES = { thickness = "number" }
 local ELEMENT_MODES = { filterStrip = true, tracked = true, missingRaidBuff = true }
 
-local function ValidRecord(record, types, enums)
+local function ValidRecord(record, types, enums, ranges)
     if record == nil then return true end
     if type(record) ~= "table" or not FieldsWellTyped(record, types) then return false end
-    return enums == nil or FieldsInEnums(record, enums)
+    if enums ~= nil and not FieldsInEnums(record, enums) then return false end
+    return ranges == nil or FieldsInRanges(record, ranges)
 end
 
 
@@ -301,7 +339,10 @@ local function ValidColor(color)
     if color == nil then return true end
     if type(color) ~= "table" then return false end
     for i = 1, 4 do
-        if color[i] ~= nil and type(color[i]) ~= "number" then return false end
+        local channel = color[i]
+        if channel ~= nil and (not FiniteNumber(channel) or channel < 0 or channel > 1) then
+            return false
+        end
     end
     return true
 end
@@ -310,15 +351,16 @@ local function ValidElement(element)
     if type(element) ~= "table" or not ELEMENT_MODES[element.mode] then return false end
     if not FieldsWellTyped(element, ELEMENT_FIELD_TYPES) then return false end
     if not FieldsInEnums(element, ELEMENT_FIELD_ENUMS) then return false end
+    if not FieldsInRanges(element, ELEMENT_FIELD_RANGES) then return false end
     if type(element.spells) == "table" then
         for i = 1, #element.spells do
             if type(element.spells[i]) ~= "number" then return false end
         end
     end
-    if not ValidRecord(element.duration, TEXT_FIELD_TYPES, TEXT_FIELD_ENUMS)
-        or not ValidRecord(element.stack, TEXT_FIELD_TYPES, TEXT_FIELD_ENUMS)
-        or not ValidRecord(element.bar, BAR_FIELD_TYPES, BAR_FIELD_ENUMS)
-        or not ValidRecord(element.border, BORDER_FIELD_TYPES)
+    if not ValidRecord(element.duration, TEXT_FIELD_TYPES, TEXT_FIELD_ENUMS, TEXT_FIELD_RANGES)
+        or not ValidRecord(element.stack, TEXT_FIELD_TYPES, TEXT_FIELD_ENUMS, TEXT_FIELD_RANGES)
+        or not ValidRecord(element.bar, BAR_FIELD_TYPES, BAR_FIELD_ENUMS, BAR_FIELD_RANGES)
+        or not ValidRecord(element.border, BORDER_FIELD_TYPES, nil, BORDER_FIELD_RANGES)
         or not ValidColor(element.color) or not ValidColor(element.borderColor)
         or not ValidColor(element.duration and element.duration.color)
         or not ValidColor(element.stack and element.stack.color) then
@@ -397,10 +439,11 @@ function Share.ValidatePayload(payload)
         if groupByName[entry.name] then return false end
         groupByName[entry.name] = entry
         if not OptionalString(entry.parent)
-            or not ValidRecord(entry.anchor, ANCHOR_FIELD_TYPES, ANCHOR_FIELD_ENUMS) then
+            or not ValidRecord(entry.anchor, ANCHOR_FIELD_TYPES, ANCHOR_FIELD_ENUMS, ANCHOR_FIELD_RANGES) then
             return false
         end
-        if not FieldsWellTyped(entry, GROUP_FIELD_TYPES) or not FieldsInEnums(entry, GROUP_FIELD_ENUMS) then
+        if not FieldsWellTyped(entry, GROUP_FIELD_TYPES) or not FieldsInEnums(entry, GROUP_FIELD_ENUMS)
+            or not FieldsInRanges(entry, GROUP_FIELD_RANGES) then
             return false
         end
     end
@@ -426,8 +469,8 @@ function Share.ValidatePayload(payload)
         if type(entry) ~= "table" or not ValidName(entry.name) then return false end
         displayNames[entry.name] = true
         if not OptionalString(entry.group)
-            or not ValidRecord(entry.anchor, ANCHOR_FIELD_TYPES, ANCHOR_FIELD_ENUMS)
-            or not ValidRecord(entry.layout, LAYOUT_FIELD_TYPES, LAYOUT_FIELD_ENUMS)
+            or not ValidRecord(entry.anchor, ANCHOR_FIELD_TYPES, ANCHOR_FIELD_ENUMS, ANCHOR_FIELD_RANGES)
+            or not ValidRecord(entry.layout, LAYOUT_FIELD_TYPES, LAYOUT_FIELD_ENUMS, LAYOUT_FIELD_RANGES)
             or not ValidRecord(entry.load, LOAD_FIELD_TYPES)
             or not ValidAuras(entry.auras) then
             return false
@@ -478,10 +521,16 @@ function Share.Decode(str)
         return false, nil,
             ("This is a %s string, not an aura display export."):format(prefix)
     end
+    if #str > MAX_ENCODED_BYTES then
+        return false, nil, "This aura display string is too large to import."
+    end
     local decoded = LibDeflate:DecodeForPrint(body or str)
     if not decoded then return false, nil, "Could not decode string (maybe corrupted)." end
     local decompressed = LibDeflate:DecompressDeflate(decoded)
     if not decompressed then return false, nil, "Could not decompress data." end
+    if #decompressed > MAX_DECOMPRESSED_BYTES then
+        return false, nil, "This aura display string is too large to import."
+    end
     local ok, payload = AceSerializer:Deserialize(decompressed)
     if not ok or type(payload) ~= "table" then
         return false, nil, "Could not read data (maybe corrupted)."
@@ -521,7 +570,10 @@ local function UniqueName(base, taken)
     if not taken(base) then return base, false end
     local n = 2
     while true do
-        local candidate = base .. " " .. n
+        -- Reserve room for the suffix so a maximum-length name that collides
+        -- still fits MAX_NAME_LENGTH (and re-exports/imports cleanly).
+        local suffix = " " .. n
+        local candidate = base:sub(1, MAX_NAME_LENGTH - #suffix) .. suffix
         if not taken(candidate) then return candidate, true end
         n = n + 1
     end
