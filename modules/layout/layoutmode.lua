@@ -1152,9 +1152,12 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
                 -- (def.getGrowAnchor, e.g. CDM aura containers) or the
                 -- Blizzard aura frames (fa.growAnchor corner) are pinned by
                 -- that edge/corner so content growth leaves it in place.
+                -- A CENTER/CENTER entry that still names a real parent lands
+                -- here too; its offsets are relative to that parent, so the
+                -- growth anchor must not rewrite it against UIParent.
                 local isGrowAnchorKey = key == "buffFrame" or key == "debuffFrame"
                 local growCorner
-                if def and def.getGrowAnchor then
+                if def and def.getGrowAnchor and not hasRealParent then
                     growCorner = def.getGrowAnchor()
                     if not GROW_ANCHOR_FRAC_X[growCorner] or growCorner == "CENTER" then
                         growCorner = nil
