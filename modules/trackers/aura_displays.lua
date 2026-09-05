@@ -1970,7 +1970,10 @@ function AD.ReflowGroups(displays)
     end
 
     for groupID, host in pairs(groupHosts) do
-        if not seenGroupIDs[groupID] then host:Hide() end
+        if not seenGroupIDs[groupID] then
+            if host._quiPackContainer then ParkPackContainer(host._quiPackContainer) end
+            host:Hide()
+        end
     end
     return true
 end
@@ -2114,7 +2117,12 @@ function AD.Refresh()
             local ok = ns.SafeCall("best-effort-style", ApplyDisplay, display, true)
             if not ok then RequeueDisplay(display) end
         end
-        AD.ReflowGroups(displays)
+    end
+    -- Always reflow, even with the store disabled: an empty display list
+    -- hides every group host, which also retires any packed container that
+    -- would otherwise keep rendering on it.
+    AD.ReflowGroups(displays)
+    if store and store.enabled ~= false then
 
         for i = 1, #displays do
             local display = displays[i]

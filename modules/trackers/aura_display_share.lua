@@ -376,10 +376,30 @@ function Share.ValidatePayload(payload)
         if entry.group ~= nil and not groupByName[entry.group] then return false end
         if not FieldsWellTyped(entry, DISPLAY_FIELD_TYPES) then return false end
     end
+    -- A declared root must own everything in the payload: a group root means
+    -- every group descends from it and every display sits in that subtree; a
+    -- display root means exactly that one display and no groups.
     if payload.root ~= nil then
         local root = payload.root
-        if root.kind == "group" and not groupByName[root.name] then return false end
-        if root.kind == "display" and not displayNames[root.name] then return false end
+        if root.kind == "group" then
+            local rootGroup = groupByName[root.name]
+            if not rootGroup then return false end
+            for i = 1, #payload.groups do
+                local current = payload.groups[i]
+                while current ~= rootGroup and current.parent ~= nil do
+                    current = groupByName[current.parent]
+                end
+                if current ~= rootGroup then return false end
+            end
+            for i = 1, #payload.displays do
+                if payload.displays[i].group == nil then return false end
+            end
+        elseif root.kind == "display" then
+            if #payload.groups ~= 0 or #payload.displays ~= 1
+                or payload.displays[1].name ~= root.name or payload.displays[1].group ~= nil then
+                return false
+            end
+        end
     end
     return true
 end
