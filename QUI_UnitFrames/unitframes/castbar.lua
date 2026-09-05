@@ -410,19 +410,6 @@ local function CastOnTargetChange(castbar)
     end
 end
 
-local function CastOnSpellcastEvent(castbar, spellID, isEmpowerEvent)
-    local check = _G.C_RestrictedActions and _G.C_RestrictedActions.CheckAllowProtectedFunctions
-    if check and not check(castbar, true) then
-        C_Timer.After(0, function()
-            if not castbar._quiDestroyed then
-                castbar:Cast(spellID, isEmpowerEvent, true)
-            end
-        end)
-        return
-    end
-    castbar:Cast(spellID, isEmpowerEvent, true)
-end
-
 local function CreateStatusBar(anchorFrame)
     local statusBar = CreateFrame("StatusBar", nil, anchorFrame)
     statusBar:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 0, 0)
@@ -2221,7 +2208,16 @@ local function HandleNoCast(castbar, castSettings, isPlayer, onUpdateHandler)
     end)
 end
 
+local function CancelPendingCastRetry(castbar)
+    local pending = castbar._quiPendingCastRetry
+    if pending then
+        pending.ticker:Cancel()
+        castbar._quiPendingCastRetry = nil
+    end
+end
+
 local function CastbarTeardown(self, isPlayer)
+    CancelPendingCastRetry(self)
     if isPlayer then ClearEmpoweredState(self) end
     ClearChannelTickState(self)
     self.timerDriven = false
@@ -2577,6 +2573,34 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
     castbar.castbarOnUpdate = CastBar_OnUpdate
 
     function castbar:Cast(spellID, isEmpowerEvent, fromCastStart)
+        local check = _G.C_RestrictedActions and _G.C_RestrictedActions.CheckAllowProtectedFunctions
+        if check and not check(self, true) then
+            local pending = self._quiPendingCastRetry
+            if pending then
+                pending.spellID = spellID
+                pending.isEmpowerEvent = isEmpowerEvent
+                pending.fromCastStart = fromCastStart
+                return
+            end
+            pending = {spellID = spellID, isEmpowerEvent = isEmpowerEvent, fromCastStart = fromCastStart}
+            self._quiPendingCastRetry = pending
+            pending.ticker = C_Timer.NewTicker(0.05, function(ticker)
+                if self._quiPendingCastRetry ~= pending then
+                    ticker:Cancel()
+                    return
+                end
+                if self._quiDestroyed then
+                    CancelPendingCastRetry(self)
+                    return
+                end
+                if not check(self, true) then return end
+                CancelPendingCastRetry(self)
+                self:Cast(pending.spellID, pending.isEmpowerEvent, pending.fromCastStart)
+            end)
+            return
+        end
+        CancelPendingCastRetry(self)
+
         local spellName, text, texture, startTimeMS, endTimeMS, notInterruptible, unitSpellID, isChanneled, channelStages, durationObj, hasSecretTiming, castKnown = GetCastInfo(self, self.unit, fromCastStart)
         local resolvedSpellID = unitSpellID
         if not IsSecretValue(spellID) and spellID ~= nil then
@@ -2691,8 +2715,8 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         PLAYER_FOCUS_CHANGED = function(self) CastOnTargetChange(self) end,
         UNIT_TARGET = function(self) CastOnTargetChange(self) end,
 
-        UNIT_SPELLCAST_START = function(self, spellID) CastOnSpellcastEvent(self, spellID, false) end,
-        UNIT_SPELLCAST_CHANNEL_START = function(self, spellID) CastOnSpellcastEvent(self, spellID, false) end,
+        UNIT_SPELLCAST_START = function(self, spellID) self:Cast(spellID, false, true) end,
+        UNIT_SPELLCAST_CHANNEL_START = function(self, spellID) self:Cast(spellID, false, true) end,
 
         UNIT_SPELLCAST_STOP = function(self, spellID)
             local active, readable = ReadCastActivity(self.unit)
@@ -2785,10 +2809,10 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             end
         end
         eventHandlers.UNIT_SPELLCAST_EMPOWER_START = function(self, spellID)
-            CastOnSpellcastEvent(self, spellID, true)
+            self:Cast(spellID, true, true)
         end
         eventHandlers.UNIT_SPELLCAST_EMPOWER_UPDATE = function(self, spellID)
-            CastOnSpellcastEvent(self, spellID, true)
+            self:Cast(spellID, true, true)
         end
         eventHandlers.UNIT_SPELLCAST_EMPOWER_STOP = function(self, spellID)
             local active, readable = ReadCastActivity(self.unit)
@@ -2796,6 +2820,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 ClearEmpoweredState(self)
                 self:Cast(spellID, false, true)
             else
+                CancelPendingCastRetry(self)
                 ClearEmpoweredState(self)
                 ClearChannelTickState(self)
                 self:SetScript("OnUpdate", nil)
@@ -3198,6 +3223,7 @@ local function DestroyCastbar(castbar)
     if not castbar then return end
 
     castbar._quiDestroyed = true
+    CancelPendingCastRetry(castbar)
 
     ClearChannelTickState(castbar)
     castbar:UnregisterAllEvents()
