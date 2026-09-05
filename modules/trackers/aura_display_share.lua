@@ -271,13 +271,19 @@ local function ValidElement(element)
     end
     -- The element model's own validator has the final say (e.g. a tracked
     -- element needs at least one spell). It runs on a copy so a rejected
-    -- payload leaves nothing behind, and under pcall so a shape the type map
-    -- above does not know about is rejected rather than raised.
+    -- payload leaves nothing behind, and behind SafeCall so a shape the type
+    -- map above does not know about is rejected rather than raised.
     local E = ns.AuraElements
     if E and type(E.NormalizeElement) == "function" and type(E.Validate) == "function" then
-        local ok, valid = pcall(function()
+        local function Probe()
             return E.Validate(E.NormalizeElement(CopyData(element)))
-        end)
+        end
+        local ok, valid
+        if type(ns.SafeCall) == "function" then
+            ok, valid = ns.SafeCall("best-effort-style", Probe)
+        else
+            ok, valid = true, Probe()
+        end
         if not ok or not valid then return false end
     end
     return true
