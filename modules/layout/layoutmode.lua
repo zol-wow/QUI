@@ -1042,6 +1042,18 @@ local function ReapplyAnchoredDescendants(rootKey)
     end
 end
 
+-- Fraction of the frame/screen extent at which each anchor point sits.
+local GROW_ANCHOR_FRAC_X = {
+    TOPLEFT = 0, TOP = 0.5, TOPRIGHT = 1,
+    LEFT = 0, CENTER = 0.5, RIGHT = 1,
+    BOTTOMLEFT = 0, BOTTOM = 0.5, BOTTOMRIGHT = 1,
+}
+local GROW_ANCHOR_FRAC_Y = {
+    TOPLEFT = 1, TOP = 1, TOPRIGHT = 1,
+    LEFT = 0.5, CENTER = 0.5, RIGHT = 0.5,
+    BOTTOMLEFT = 0, BOTTOM = 0, BOTTOMRIGHT = 0,
+}
+
 local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, anchorTarget, anchorPointSelf, anchorPointTarget)
     local def = QUI_LayoutMode._elements[key]
     if def and def.usesCustomPositionPersistence then
@@ -1136,14 +1148,22 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
                     fa[key].offsetY = offsetY
                 end
             else
+                -- Free placement. Elements that expose a growth anchor
+                -- (def.getGrowAnchor, e.g. CDM aura containers) or the
+                -- Blizzard aura frames (fa.growAnchor corner) are pinned by
+                -- that edge/corner so content growth leaves it in place.
                 local isGrowAnchorKey = key == "buffFrame" or key == "debuffFrame"
                 local growCorner
-                if isGrowAnchorKey then
+                if def and def.getGrowAnchor then
+                    growCorner = def.getGrowAnchor()
+                    if not GROW_ANCHOR_FRAC_X[growCorner] or growCorner == "CENTER" then
+                        growCorner = nil
+                    end
+                elseif isGrowAnchorKey then
                     growCorner = (fa[key] and fa[key].growAnchor) or "TOPRIGHT"
                 end
 
                 if growCorner then
-                    local def = QUI_LayoutMode._elements[key]
                     local frame = def and def.getFrame and def.getFrame()
                     local fw = frame and (frame._naturalW or (frame.GetWidth and frame:GetWidth())) or 0
                     local fh = frame and (frame._naturalH or (frame.GetHeight and frame:GetHeight())) or 0
@@ -1151,15 +1171,15 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
                     if fh < 4 then fh = 32 end
                     local pw = UIParent:GetWidth()
                     local ph = UIParent:GetHeight()
-                    local FRAC_X = { TOPLEFT = 0, TOPRIGHT = 1, BOTTOMLEFT = 0, BOTTOMRIGHT = 1 }
-                    local FRAC_Y = { TOPLEFT = 1, TOPRIGHT = 1, BOTTOMLEFT = 0, BOTTOMRIGHT = 0 }
-                    local cornerX = (offsetX or 0) + (FRAC_X[growCorner] - 0.5) * (fw - pw)
-                    local cornerY = (offsetY or 0) + (FRAC_Y[growCorner] - 0.5) * (fh - ph)
+                    local cornerX = (offsetX or 0) + (GROW_ANCHOR_FRAC_X[growCorner] - 0.5) * (fw - pw)
+                    local cornerY = (offsetY or 0) + (GROW_ANCHOR_FRAC_Y[growCorner] - 0.5) * (fh - ph)
                     fa[key].point = growCorner
                     fa[key].relative = growCorner
                     fa[key].offsetX = math.floor(cornerX + 0.5)
                     fa[key].offsetY = math.floor(cornerY + 0.5)
-                    fa[key].growAnchor = growCorner
+                    if isGrowAnchorKey then
+                        fa[key].growAnchor = growCorner
+                    end
                 else
                     fa[key].point = "CENTER"
                     fa[key].relative = "CENTER"

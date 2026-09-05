@@ -235,8 +235,18 @@ local TEXT_ANCHOR_OPTIONS = ns.QUI_SettingsLayoutShared.BuildNinePointAnchorOpti
 
 local AURA_GROWTH_DIRECTION_OPTIONS = {
     { value = "CENTERED_HORIZONTAL", text = ns.L["Centered"] },
+    { value = "RIGHT", text = ns.L["Grow Right"] },
+    { value = "LEFT", text = ns.L["Grow Left"] },
     { value = "UP", text = ns.L["Grow Up"] },
     { value = "DOWN", text = ns.L["Grow Down"] },
+}
+
+local AURA_GROWTH_ANCHOR_OPTIONS = {
+    { value = "CENTER", text = ns.L["Center"] },
+    { value = "LEFT", text = ns.L["Left"] },
+    { value = "RIGHT", text = ns.L["Right"] },
+    { value = "TOP", text = ns.L["Top"] },
+    { value = "BOTTOM", text = ns.L["Bottom"] },
 }
 
 local INACTIVE_MODE_OPTIONS = {
@@ -1218,6 +1228,7 @@ local function RenderLayoutSection(sectionHost, ctx)
             enableDescription = ns.L["Enable this buff icon container. Disabling hides the entire container and all its icons."]
             tracker.iconDisplayMode = tracker.iconDisplayMode or "active"
             tracker.growthDirection = tracker.growthDirection or "CENTERED_HORIZONTAL"
+            tracker.growthAnchor = tracker.growthAnchor or "CENTER"
         else
             enableDescription = ns.L["Enable this tracked bar container. Disabling hides every bar it would otherwise render."]
             tracker.iconDisplayMode = tracker.iconDisplayMode or "active"
@@ -1292,53 +1303,64 @@ local function RenderLayoutSection(sectionHost, ctx)
             builder.Header(ns.L["Growth & Text"])
             local textCard = builder.Card()
             local growthDropdown = gui:CreateFormDropdown(textCard.frame, nil, AURA_GROWTH_DIRECTION_OPTIONS, "growthDirection", tracker, refresh, {
-                description = ns.L["How the icon block grows from its anchor: centered horizontal, stacked up, or stacked down."],
+                description = ns.L["Order icons are added in: centered horizontal, left to right, right to left, bottom to top, or top to bottom."],
             })
-            local durationSizeSlider = gui:CreateFormSlider(textCard.frame, nil, 8, 50, 1, "durationSize", tracker, refresh, nil, {
-                description = ns.L["Font size for the duration countdown text on buff icons."],
+            local growthAnchorDropdown = gui:CreateFormDropdown(textCard.frame, nil, AURA_GROWTH_ANCHOR_OPTIONS, "growthAnchor", tracker, function()
+                if ns.CDMContainers and ns.CDMContainers.SetGrowthAnchor then
+                    ns.CDMContainers.SetGrowthAnchor(containerKey, tracker.growthAnchor)
+                end
+                refresh()
+            end, {
+                description = ns.L["Edge of the container that stays put as icons appear and disappear. Applies to free placement; a container anchored to another frame keeps that anchor's point."],
             })
             textCard.AddRow(
                 optionsAPI.BuildSettingRow(textCard.frame, ns.L["Growth Direction"], growthDropdown),
-                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration Size"], durationSizeSlider)
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Growth Anchor"], growthAnchorDropdown)
             )
 
+            local durationSizeSlider = gui:CreateFormSlider(textCard.frame, nil, 8, 50, 1, "durationSize", tracker, refresh, nil, {
+                description = ns.L["Font size for the duration countdown text on buff icons."],
+            })
             local durationAnchorDropdown = gui:CreateFormDropdown(textCard.frame, nil, TEXT_ANCHOR_OPTIONS, "durationAnchor", tracker, refresh, {
                 description = ns.L["Which corner of the icon the duration text is anchored to."],
             })
+            textCard.AddRow(
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration Size"], durationSizeSlider),
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration Anchor"], durationAnchorDropdown)
+            )
+
             local durationXSlider = gui:CreateFormSlider(textCard.frame, nil, -20, 20, 1, "durationOffsetX", tracker, refresh, nil, {
                 description = ns.L["Horizontal pixel offset for the duration text from its anchor."],
             })
-            textCard.AddRow(
-                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration Anchor"], durationAnchorDropdown),
-                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration X Offset"], durationXSlider)
-            )
-
             local durationYSlider = gui:CreateFormSlider(textCard.frame, nil, -20, 20, 1, "durationOffsetY", tracker, refresh, nil, {
                 description = ns.L["Vertical pixel offset for the duration text from its anchor."],
             })
+            textCard.AddRow(
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration X Offset"], durationXSlider),
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration Y Offset"], durationYSlider)
+            )
+
             local stackSizeSlider = gui:CreateFormSlider(textCard.frame, nil, 8, 50, 1, "stackSize", tracker, refresh, nil, {
                 description = ns.L["Font size for the stack count text on buff icons."],
             })
-            textCard.AddRow(
-                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Duration Y Offset"], durationYSlider),
-                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack Size"], stackSizeSlider)
-            )
-
             local stackAnchorDropdown = gui:CreateFormDropdown(textCard.frame, nil, TEXT_ANCHOR_OPTIONS, "stackAnchor", tracker, refresh, {
                 description = ns.L["Which corner of the icon the stack count is anchored to."],
             })
+            textCard.AddRow(
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack Size"], stackSizeSlider),
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack Anchor"], stackAnchorDropdown)
+            )
+
             local stackXSlider = gui:CreateFormSlider(textCard.frame, nil, -20, 20, 1, "stackOffsetX", tracker, refresh, nil, {
                 description = ns.L["Horizontal pixel offset for the stack count from its anchor."],
             })
-            textCard.AddRow(
-                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack Anchor"], stackAnchorDropdown),
-                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack X Offset"], stackXSlider)
-            )
-
             local stackYSlider = gui:CreateFormSlider(textCard.frame, nil, -20, 20, 1, "stackOffsetY", tracker, refresh, nil, {
                 description = ns.L["Vertical pixel offset for the stack count from its anchor."],
             })
-            textCard.AddRow(optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack Y Offset"], stackYSlider))
+            textCard.AddRow(
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack X Offset"], stackXSlider),
+                optionsAPI.BuildSettingRow(textCard.frame, ns.L["Stack Y Offset"], stackYSlider)
+            )
 
             local showAbsorbCheckbox = gui:CreateFormCheckbox(textCard.frame, nil, "showAbsorbAmount", tracker, refresh, {
                 description = ns.L["Show the remaining shield/absorb amount (e.g. 84k) at the bottom edge of buff icons that track an absorb. The duration text at the top is unchanged."],

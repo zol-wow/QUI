@@ -815,6 +815,7 @@ LayoutBuffIcons = function()
     local targetCount = currentCount
 
     local isVertical = (growthDirection == "UP" or growthDirection == "DOWN")
+    local growLeft = (growthDirection == "LEFT")
 
     local px = QUICore:GetPixelSize()
 
@@ -839,10 +840,15 @@ LayoutBuffIcons = function()
         end
         startY = snapPx(startY, px)
     else
-        startX = -totalWidth / 2 + iconWidth / 2
+        if growLeft then
+            startX = totalWidth / 2 - iconWidth / 2
+        else
+            startX = -totalWidth / 2 + iconWidth / 2
+        end
         startX = snapPx(startX, px)
         startY = 0
     end
+    local stepX = growLeft and -(iconWidth + padding) or (iconWidth + padding)
 
     local needsReposition = false
     for i, icon in ipairs(icons) do
@@ -859,7 +865,7 @@ LayoutBuffIcons = function()
                 break
             end
         else
-            local expectedX = snapCenter(startX + (i - 1) * (iconWidth + padding), iconWidth, viewer)
+            local expectedX = snapCenter(startX + (i - 1) * stepX, iconWidth, viewer)
             if not PositionMatchesTolerance(icon, expectedX, 2) then
                 needsReposition = true
                 break
@@ -884,7 +890,7 @@ LayoutBuffIcons = function()
                 icon:SetPoint("CENTER", viewer, "CENTER",
                     snapCenter(0, iconWidth, viewer), snapCenter(y, iconHeight, viewer))
             else
-                local x = startX + (i - 1) * (iconWidth + padding)
+                local x = startX + (i - 1) * stepX
                 icon:SetPoint("CENTER", viewer, "CENTER",
                     snapCenter(x, iconWidth, viewer), snapCenter(startY, iconHeight, viewer))
             end
