@@ -212,15 +212,47 @@ local LAYOUT_FIELD_TYPES = { direction = "string", alignment = "string", spacing
 local LOAD_FIELD_TYPES = { classes = "table", specs = "table", roles = "table", encounters = "table" }
 local ELEMENT_FIELD_TYPES = {
     mode = "string", auraType = "string", displayType = "string", growDirection = "string",
-    anchor = "string", swipeStyle = "string", applyToRoles = "string",
+    anchor = "string", swipeStyle = "string", applyToRoles = "string", filterMode = "string",
+    sortRule = "string", dispelFilterMode = "string", dispelBorderMode = "string",
+    tooltipAnchor = "string",
     iconSize = "number", spacing = "number", rowSpacing = "number", iconsPerRow = "number",
     maxIcons = "number", offsetX = "number", offsetY = "number", borderSize = "number",
+    maxDurationSec = "number", tooltipAnchorX = "number", tooltipAnchorY = "number",
     enabled = "boolean", onlyMine = "boolean", hideSwipe = "boolean", reverseSwipe = "boolean",
-    dynamicLayout = "boolean", hideBorder = "boolean",
+    dynamicLayout = "boolean", hideBorder = "boolean", sortReverse = "boolean",
+    rightClickCancel = "boolean", hidePermanent = "boolean", nameplateOnly = "boolean",
+    classDetection = "boolean", tooltipHideInCombat = "boolean",
     spells = "table", onlyMineSpells = "table", duration = "table", stack = "table",
     bar = "table", border = "table", color = "table", auraSounds = "table",
+    filterFlags = "table", classifications = "table", whitelist = "table", blacklist = "table",
+    healthTint = "table", dispelColors = "table", dispelAssets = "table", pandemicGlow = "table",
+    buffChecks = "table", borderColor = "table",
 }
+local TEXT_FIELD_TYPES = {
+    show = "boolean", fontSize = "number", anchor = "string",
+    offsetX = "number", offsetY = "number", color = "table",
+}
+local BAR_FIELD_TYPES = {
+    thickness = "number", length = "number", orientation = "string",
+    matchFrameSize = "boolean", hideBorder = "boolean", borderSize = "number",
+    backgroundColor = "table", borderColor = "table", lowTimeColor = "table",
+}
+local BORDER_FIELD_TYPES = { thickness = "number" }
 local ELEMENT_MODES = { filterStrip = true, tracked = true, missingRaidBuff = true }
+
+local function ValidRecord(record, types)
+    return record == nil or (type(record) == "table" and FieldsWellTyped(record, types))
+end
+
+
+local function ValidColor(color)
+    if color == nil then return true end
+    if type(color) ~= "table" then return false end
+    for i = 1, 4 do
+        if color[i] ~= nil and type(color[i]) ~= "number" then return false end
+    end
+    return true
+end
 
 local function ValidElement(element)
     if type(element) ~= "table" or not ELEMENT_MODES[element.mode] then return false end
@@ -230,13 +262,23 @@ local function ValidElement(element)
             if type(element.spells[i]) ~= "number" then return false end
         end
     end
+    if not ValidRecord(element.duration, TEXT_FIELD_TYPES) or not ValidRecord(element.stack, TEXT_FIELD_TYPES)
+        or not ValidRecord(element.bar, BAR_FIELD_TYPES) or not ValidRecord(element.border, BORDER_FIELD_TYPES)
+        or not ValidColor(element.color) or not ValidColor(element.borderColor)
+        or not ValidColor(element.duration and element.duration.color)
+        or not ValidColor(element.stack and element.stack.color) then
+        return false
+    end
     -- The element model's own validator has the final say (e.g. a tracked
-    -- element needs at least one spell), run on a copy so a rejected payload
-    -- leaves nothing behind.
+    -- element needs at least one spell). It runs on a copy so a rejected
+    -- payload leaves nothing behind, and under pcall so a shape the type map
+    -- above does not know about is rejected rather than raised.
     local E = ns.AuraElements
     if E and type(E.NormalizeElement) == "function" and type(E.Validate) == "function" then
-        local probe = E.NormalizeElement(CopyData(element))
-        if not E.Validate(probe) then return false end
+        local ok, valid = pcall(function()
+            return E.Validate(E.NormalizeElement(CopyData(element)))
+        end)
+        if not ok or not valid then return false end
     end
     return true
 end
@@ -255,10 +297,6 @@ local function ValidAuras(auras)
         end
     end
     return true
-end
-
-local function ValidRecord(record, types)
-    return record == nil or (type(record) == "table" and FieldsWellTyped(record, types))
 end
 
 local function MaxGroupDepth()

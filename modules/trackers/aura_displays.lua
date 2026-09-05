@@ -284,6 +284,20 @@ function AD.GroupParent(groupName)
     return ParentKeyOf(store, key)
 end
 
+-- Height of the subtree rooted at `key` (1 for a group with no children).
+local function GroupSubtreeHeight(store, key, seen)
+    seen = seen or {}
+    if seen[key] then return 0 end
+    seen[key] = true
+    local height = 1
+    for name, group in pairs(store.groups) do
+        if type(group) == "table" and name ~= key and GroupKey(group.parent) == key then
+            height = math.max(height, 1 + GroupSubtreeHeight(store, name, seen))
+        end
+    end
+    return height
+end
+
 local function GroupDepth(store, key)
     local depth, seen, current = 0, {}, key
     while current and not seen[current] do
@@ -335,7 +349,9 @@ function AD.SetGroupParent(groupName, parentName)
         return false, "cycle"
     end
     EnsureGroup(store, parent)
-    if GroupDepth(store, parent) >= MAX_GROUP_DEPTH then
+    -- The moved group brings its whole subtree along, so the deepest path
+    -- after the move is the parent's depth plus that subtree's height.
+    if GroupDepth(store, parent) + GroupSubtreeHeight(store, key) > MAX_GROUP_DEPTH then
         return false, "depth"
     end
     group.parent = parent
