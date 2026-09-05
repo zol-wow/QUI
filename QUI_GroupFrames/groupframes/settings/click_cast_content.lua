@@ -1,5 +1,5 @@
 local ADDON_NAME, ns = ...
-local FoldUTF8 = ns.Helpers.FoldUTF8
+local FoldSearchUTF8 = ns.Helpers.FoldSearchUTF8
 local function CJKFont(fs, p, s, f)
     if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
         ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
@@ -785,14 +785,14 @@ local function EnsureBrowsePopup()
         browseRowIndex = 0
 
         local spells = EnsureSpellCache()
-        local lower = filter and filter ~= "" and FoldUTF8(filter) or nil
+        local lower = filter and filter ~= "" and FoldSearchUTF8(filter) or nil
         local by = 0
         local currentTab = nil
 
         local ignoreCollapse = lower ~= nil
 
         for _, entry in ipairs(spells) do
-            if not lower or FoldUTF8(entry.name):find(lower, 1, true) or (entry.baseName and FoldUTF8(entry.baseName):find(lower, 1, true)) then
+            if not lower or FoldSearchUTF8(entry.name):find(lower, 1, true) or (entry.baseName and FoldSearchUTF8(entry.baseName):find(lower, 1, true)) then
                 if entry.tab ~= currentTab then
                     currentTab = entry.tab
                     local isCollapsed = not ignoreCollapse and not expandedTabs[currentTab]
@@ -1419,10 +1419,10 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     local function ShowAutocomplete(searchText)
         if not searchText or #searchText < 2 then acMenu:Hide() return end
         local spells = EnsureSpellCache()
-        local lower = FoldUTF8(searchText)
+        local lower = FoldSearchUTF8(searchText)
         local matches = {}
         for _, entry in ipairs(spells) do
-            if FoldUTF8(entry.name):find(lower, 1, true) or (entry.baseName and FoldUTF8(entry.baseName):find(lower, 1, true)) then
+            if FoldSearchUTF8(entry.name):find(lower, 1, true) or (entry.baseName and FoldSearchUTF8(entry.baseName):find(lower, 1, true)) then
                 matches[#matches + 1] = entry
                 if #matches >= MAX_AC_ROWS then break end
             end

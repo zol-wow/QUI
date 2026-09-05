@@ -70,7 +70,7 @@ ns.QUI_AuraDisplaysOptions = {}
 local function Fold(text)
     if type(text) ~= "string" then return "" end
     local H = ns.Helpers
-    if H and type(H.FoldUTF8) == "function" then return H.FoldUTF8(text) end
+    if H and type(H.FoldSearchUTF8) == "function" then return H.FoldSearchUTF8(text) end
     return string.lower(text)
 end
 

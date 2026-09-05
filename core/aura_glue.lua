@@ -74,6 +74,7 @@ function G.ElementProfile(element, overrides)
         swipeStyle   = element.swipeStyle or "radial",
         duration     = element.duration,
         stack        = element.stack,
+        casterName   = element.casterName,
         borderColor  = element.borderColor,
         dispelColors = element.dispelColors,
         dispelAssets = element.dispelAssets,

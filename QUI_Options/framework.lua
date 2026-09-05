@@ -3952,7 +3952,7 @@ local SEARCH_MIN_CHARS = 2
 local SEARCH_MAX_RESULTS = 30
 
 local function NormalizeSearchText(text)
-    text = ns.Helpers.FoldUTF8(text)
+    text = ns.Helpers.FoldSearchUTF8(text)
     text = text:gsub("[%z\1-\31]", " ")
     text = text:gsub("[_%-%./\\&]+", " ")
     text = text:gsub("%s+", " ")
@@ -4041,18 +4041,18 @@ function GUI:PrepareSearchEntry(entry, localize)
         end
     end
 
-    entry._rawLabel = ns.Helpers.FoldUTF8(entry.label)
+    entry._rawLabel = ns.Helpers.FoldSearchUTF8(entry.label)
     entry._normLabel = NormalizeSearchText(entry.label)
 
     if type(entry.sourceLabel) == "string" then
-        entry._rawSourceLabel = ns.Helpers.FoldUTF8(entry.sourceLabel)
+        entry._rawSourceLabel = ns.Helpers.FoldSearchUTF8(entry.sourceLabel)
         entry._normSourceLabel = NormalizeSearchText(entry.sourceLabel)
     end
 
     if type(entry.keywords) == "table" then
         local raw, normalized = {}, {}
         for index, keyword in ipairs(entry.keywords) do
-            raw[index] = ns.Helpers.FoldUTF8(keyword)
+            raw[index] = ns.Helpers.FoldSearchUTF8(keyword)
             normalized[index] = NormalizeSearchText(keyword)
         end
         entry._rawKeywords = raw
@@ -4068,7 +4068,7 @@ function GUI:PrepareSearchEntry(entry, localize)
             entry.subTabName or "",
             entry.sectionName or "",
         }, " ")
-        entry._rawContext = ns.Helpers.FoldUTF8(context)
+        entry._rawContext = ns.Helpers.FoldSearchUTF8(context)
         entry._normContext = NormalizeSearchText(context)
     else
         entry._rawContext = nil
@@ -4132,13 +4132,13 @@ end
 
 local function BuildSearchTerms(searchTerm)
     local synExpand = ns.QUI_SearchSynonyms and ns.QUI_SearchSynonyms.Expand
-    local raw = ns.Helpers.FoldUTF8(searchTerm)
+    local raw = ns.Helpers.FoldSearchUTF8(searchTerm)
     local normalized = NormalizeSearchText(searchTerm)
     local seen = {}
     local out = {}
 
     local function AddTerm(term, penalty)
-        local rawTerm = ns.Helpers.FoldUTF8(term)
+        local rawTerm = ns.Helpers.FoldSearchUTF8(term)
         local normalizedTerm = NormalizeSearchText(term)
         if rawTerm == "" and normalizedTerm == "" then return end
 
