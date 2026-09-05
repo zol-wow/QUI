@@ -1253,6 +1253,7 @@ local function GetDefaultsByContainerType(containerType)
             shape = "square",
             aspectRatioCrop = 1.0,
             growthDirection = "CENTERED_HORIZONTAL",
+            growthAnchor = "CENTER",
             zoom = 0, padding = 4,
             hideDurationText = false, durationSize = 14,
             durationOffsetX = 0, durationOffsetY = 8,
@@ -1538,6 +1539,9 @@ function CDMContainers_API:RegisterDynamicLayoutElement(containerKey, settings)
         getFrame = function()
             return containers[containerKey]
         end,
+        getGrowAnchor = function()
+            return CDMContainers_API:GetGrowthAnchor(containerKey)
+        end,
     })
 
 end
@@ -1701,89 +1705,268 @@ function SyncSettingsFeatureLookups(featureId)
     return true
 end
 
-local function SaveContainerPosition(trackerKey)
-    local container = containers[trackerKey]
-    if not container then return end
-    local db = GetTrackerSettings(trackerKey)
-    if not db then return end
-    local rawCx, rawCy = container:GetCenter()
-    local rawSx, rawSy = UIParent:GetCenter()
-    local cx = rawCx
-    local cy = rawCy
-    local sx = rawSx
-    local sy = rawSy
-    if cx and cx ~= 0 and cy and cy ~= 0 and sx and sy then
-        local ox = cx - sx
-        local oy = cy - sy
-        db.pos = { ox = ox, oy = oy }
+-- Position persistence + growth anchor. Scoped in a do-block so the helper
+-- cluster does not eat into the main chunk's 200-local ceiling.
+local SaveContainerPosition, RestoreContainerPosition
+do
+    -- Growth anchor ----------------------------------------------------------
+    -- A free-placed container is normally pinned by its CENTER, so it grows in
+    -- both directions as icons come and go. settings.growthAnchor picks an edge
+    -- (LEFT/RIGHT/TOP/BOTTOM) that should stay put instead. It is realised as the
+    -- container's screen frameAnchoring entry using that edge as both point and
+    -- relative, which every positioning layer (restore, layout mode, anchoring)
+    -- already understands. Containers anchored to another frame keep the point
+    -- chosen in the anchoring UI; the growth anchor only governs free placement.
 
-        local anchorKey = ANCHOR_KEY_MAP[trackerKey] or ("cdmCustom_" .. trackerKey)
-        if anchorKey then
-            local profile = QUICore and QUICore.db and QUICore.db.profile
-            local anchoringDB = profile and profile.frameAnchoring
-            local settings = anchoringDB and anchoringDB[anchorKey]
-            if settings and settings.enabled ~= false then
-                local parent = settings.parent or "screen"
-                if parent == "screen" or parent == "disabled" then
-                    local vs = viewerState[container]
-                    local frameW = (vs and (vs.cdmIconWidth or vs.row1Width)) or (container:GetWidth() or 1) or 1
-                    local frameH = (vs and vs.cdmTotalHeight) or (container:GetHeight() or 1)
-                    local parentW = (UIParent:GetWidth() or 1)
-                    local parentH = (UIParent:GetHeight() or 1)
-                    settings.offsetX, settings.offsetY = CDMLayout.ComputeAnchorOffsets(
-                        ox, oy,
-                        settings.point or "CENTER",
-                        settings.relative or "CENTER",
-                        frameW, frameH, parentW, parentH)
-                end
-            end
-        end
+    local function GetContainerAnchorKey(trackerKey)
+        return ANCHOR_KEY_MAP[trackerKey] or ("cdmCustom_" .. trackerKey)
     end
-end
 
-local function RestoreContainerPosition(container, trackerKey)
-    if not container then return false end
+    local function GetGrowthAnchor(trackerKey)
+        local db = GetTrackerSettings(trackerKey)
+        return CDMLayout.NormalizeGrowthAnchor(db and db.growthAnchor)
+    end
 
-    local anchorKey = ANCHOR_KEY_MAP[trackerKey] or ("cdmCustom_" .. trackerKey)
-    if anchorKey and _G.QUI_IsLayoutModeManaged and _G.QUI_IsLayoutModeManaged(anchorKey) then
+    local ANCHOR_SIZE_MIN = 4
+
+    -- Logical size used to convert between anchor points. nil until the
+    -- container has been laid out at a real size (bootstrap frames are 1x1).
+    local function GetContainerAnchorSize(container)
+        local vs = viewerState[container]
+        local w = vs and (vs.cdmIconWidth or vs.row1Width)
+        local h = vs and vs.cdmTotalHeight
+        if not (w and h and w > 1 and h > 1) then
+            -- Own frame: geometry reads are never secret.
+            w = container:GetWidth() or 0
+            h = container:GetHeight() or 0
+        end
+        if w >= ANCHOR_SIZE_MIN and h >= ANCHOR_SIZE_MIN then
+            return w, h
+        end
+        return nil, nil
+    end
+
+    -- Older profiles may still carry the legacy settings.anchorTo frame
+    -- anchor (applied by cdm_buff_layout's ApplyBuffIconAnchor, which yields
+    -- to any frameAnchoring entry). Seeding a screen entry for such a
+    -- container would silently detach it, so the growth anchor defers to it.
+    local function HasLegacyFrameAnchor(trackerKey)
+        local db = GetTrackerSettings(trackerKey)
+        local anchorTo = db and db.anchorTo
+        return type(anchorTo) == "string" and anchorTo ~= "" and anchorTo ~= "disabled"
+    end
+
+    local function IsScreenAnchorEntry(entry)
+        if type(entry) ~= "table" or entry.enabled == false then return false end
+        local parent = entry.parent or "screen"
+        return parent == "screen" or parent == "disabled"
+    end
+
+    -- Rewrite a screen entry so the same on-screen rect is described from
+    -- `point`. Returns true when the entry was converted, false when the
+    -- container has no real size yet (caller defers until it does).
+    local function ConvertScreenAnchorEntry(container, entry, point)
+        local fw, fh = GetContainerAnchorSize(container)
+        if not fw then return false end
+        local pw = UIParent:GetWidth() or 0
+        local ph = UIParent:GetHeight() or 0
+        local nx, ny = CDMLayout.ConvertScreenAnchorOffsets(
+            entry.point or "CENTER", entry.relative or "CENTER",
+            entry.offsetX or 0, entry.offsetY or 0,
+            point, point, fw, fh, pw, ph)
+        entry.point = point
+        entry.relative = point
+        entry.offsetX = math.floor(nx + 0.5)
+        entry.offsetY = math.floor(ny + 0.5)
         return true
     end
 
-    if anchorKey then
+    -- Seed a screen entry from the saved centre offset when a non-CENTER growth
+    -- anchor needs one and the container was only ever positioned via db.pos.
+    local function SeedScreenAnchorEntry(container, trackerKey)
         local profile = QUICore and QUICore.db and QUICore.db.profile
-        local anchoringDB = profile and profile.frameAnchoring
-        local settings = anchoringDB and anchoringDB[anchorKey]
-        if settings and settings.enabled ~= false then
-            local parent = settings.parent or "screen"
-            if parent == "screen" or parent == "disabled" then
-                local ox = settings.offsetX or 0
-                local oy = settings.offsetY or 0
-                if QUICore and QUICore.PixelRound then
-                    ox = QUICore:PixelRound(ox, container)
-                    oy = QUICore:PixelRound(oy, container)
-                end
-                container:ClearAllPoints()
-                container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
-                return true
+        if not profile then return nil end
+        local db = GetTrackerSettings(trackerKey)
+        local cx, cy
+        if db and db.pos and db.pos.ox and db.pos.oy then
+            cx, cy = db.pos.ox, db.pos.oy
+        else
+            local rcx, rcy = container:GetCenter()
+            local sx, sy = UIParent:GetCenter()
+            if rcx and rcy and sx and sy then
+                cx, cy = rcx - sx, rcy - sy
             end
-            return true
         end
+        if not cx then return nil end
+        profile.frameAnchoring = profile.frameAnchoring or {}
+        local entry = {
+            parent = "screen",
+            point = "CENTER",
+            relative = "CENTER",
+            offsetX = math.floor(cx + 0.5),
+            offsetY = math.floor(cy + 0.5),
+        }
+        profile.frameAnchoring[GetContainerAnchorKey(trackerKey)] = entry
+        return entry
     end
 
-    local db = GetTrackerSettings(trackerKey)
-    if not db or not db.pos then return false end
-    local ox = db.pos.ox
-    local oy = db.pos.oy
-    if ox and oy then
+    local function ApplyScreenAnchor(container, point, relative, ox, oy)
         if QUICore and QUICore.PixelRound then
             ox = QUICore:PixelRound(ox, container)
             oy = QUICore:PixelRound(oy, container)
         end
         container:ClearAllPoints()
-        container:SetPoint("CENTER", UIParent, "CENTER", ox, oy)
+        container:SetPoint(point, UIParent, relative, ox, oy)
+    end
+
+    SaveContainerPosition = function(trackerKey)
+        local container = containers[trackerKey]
+        if not container then return end
+        local db = GetTrackerSettings(trackerKey)
+        if not db then return end
+        local rawCx, rawCy = container:GetCenter()
+        local rawSx, rawSy = UIParent:GetCenter()
+        local cx = rawCx
+        local cy = rawCy
+        local sx = rawSx
+        local sy = rawSy
+        if cx and cx ~= 0 and cy and cy ~= 0 and sx and sy then
+            local ox = cx - sx
+            local oy = cy - sy
+            db.pos = { ox = ox, oy = oy }
+
+            local anchorKey = ANCHOR_KEY_MAP[trackerKey] or ("cdmCustom_" .. trackerKey)
+            if anchorKey then
+                local profile = QUICore and QUICore.db and QUICore.db.profile
+                local anchoringDB = profile and profile.frameAnchoring
+                local settings = anchoringDB and anchoringDB[anchorKey]
+                if settings and settings.enabled ~= false then
+                    local parent = settings.parent or "screen"
+                    if parent == "screen" or parent == "disabled" then
+                        local vs = viewerState[container]
+                        local frameW, frameH = GetContainerAnchorSize(container)
+                        if not frameW then
+                            frameW = (vs and (vs.cdmIconWidth or vs.row1Width)) or (container:GetWidth() or 1) or 1
+                            frameH = (vs and vs.cdmTotalHeight) or (container:GetHeight() or 1)
+                        end
+                        local parentW = (UIParent:GetWidth() or 1)
+                        local parentH = (UIParent:GetHeight() or 1)
+                        settings.offsetX, settings.offsetY = CDMLayout.ComputeAnchorOffsets(
+                            ox, oy,
+                            settings.point or "CENTER",
+                            settings.relative or "CENTER",
+                            frameW, frameH, parentW, parentH)
+                    end
+                end
+            end
+        end
+    end
+
+    RestoreContainerPosition = function(container, trackerKey)
+        if not container then return false end
+
+        local anchorKey = GetContainerAnchorKey(trackerKey)
+        if anchorKey and _G.QUI_IsLayoutModeManaged and _G.QUI_IsLayoutModeManaged(anchorKey) then
+            return true
+        end
+
+        local vs = viewerState[container]
+        if vs then vs.growthAnchorHealPending = nil end
+        local want = GetGrowthAnchor(trackerKey)
+
+        if anchorKey then
+            local profile = QUICore and QUICore.db and QUICore.db.profile
+            local anchoringDB = profile and profile.frameAnchoring
+            local settings = anchoringDB and anchoringDB[anchorKey]
+            if settings == nil and want ~= "CENTER" and not HasLegacyFrameAnchor(trackerKey) then
+                settings = SeedScreenAnchorEntry(container, trackerKey)
+            end
+            if settings and settings.enabled ~= false then
+                if IsScreenAnchorEntry(settings) then
+                    local point = settings.point or "CENTER"
+                    local relative = settings.relative or "CENTER"
+                    -- The growth anchor is authoritative for free placement,
+                    -- CENTER included: an entry left edge-pinned by an older
+                    -- profile would otherwise grow differently from what the
+                    -- (default) setting says. Conversion keeps the same rect.
+                    if point ~= want or relative ~= want then
+                        if ConvertScreenAnchorEntry(container, settings, want) then
+                            point, relative = want, want
+                        elseif vs then
+                            vs.growthAnchorHealPending = true
+                        end
+                    end
+                    ApplyScreenAnchor(container, point, relative,
+                        settings.offsetX or 0, settings.offsetY or 0)
+                    return true
+                end
+                return true
+            end
+        end
+
+        local db = GetTrackerSettings(trackerKey)
+        if not db or not db.pos then return false end
+        local ox = db.pos.ox
+        local oy = db.pos.oy
+        if ox and oy then
+            ApplyScreenAnchor(container, "CENTER", "CENTER", ox, oy)
+            return true
+        end
+        return false
+    end
+
+    -- Called once a container has real bounds: finish a deferred growth-anchor
+    -- conversion so the configured edge is pinned before the next resize.
+    function CDMContainers_API:HealGrowthAnchorIfPending(container)
+        local vs = container and viewerState[container]
+        if not (vs and vs.growthAnchorHealPending) then return end
+        local trackerKey = container._quiCdmKey
+        if not trackerKey then return end
+        if not GetContainerAnchorSize(container) then return end
+        RestoreContainerPosition(container, trackerKey)
+    end
+
+    function CDMContainers_API:GetGrowthAnchor(trackerKey)
+        return GetGrowthAnchor(trackerKey)
+    end
+
+    function CDMContainers_API:SetGrowthAnchor(trackerKey, point)
+        local settings = GetTrackerSettings(trackerKey)
+        if not settings then return false end
+        point = CDMLayout.NormalizeGrowthAnchor(point)
+        settings.growthAnchor = point
+
+        local container = containers[trackerKey]
+        local profile = QUICore and QUICore.db and QUICore.db.profile
+        if not container or not profile then return true end
+
+        local anchorKey = GetContainerAnchorKey(trackerKey)
+        local entry = profile.frameAnchoring and profile.frameAnchoring[anchorKey]
+        if entry ~= nil and not IsScreenAnchorEntry(entry) then
+            -- Anchored to another frame: that anchor's own point governs.
+            return true
+        end
+        if entry == nil then
+            -- Legacy anchorTo frame anchor: leave positioning to it.
+            if HasLegacyFrameAnchor(trackerKey) then return true end
+            entry = SeedScreenAnchorEntry(container, trackerKey)
+            if not entry then return true end
+        end
+
+        local vs = viewerState[container]
+        if (entry.point or "CENTER") ~= point or (entry.relative or "CENTER") ~= point then
+            if not ConvertScreenAnchorEntry(container, entry, point) and vs then
+                vs.growthAnchorHealPending = true
+            end
+        end
+
+        if anchorKey and _G.QUI_IsLayoutModeManaged and _G.QUI_IsLayoutModeManaged(anchorKey) then
+            if _G.QUI_LayoutModeSyncHandle then _G.QUI_LayoutModeSyncHandle(anchorKey) end
+            return true
+        end
+        RestoreContainerPosition(container, trackerKey)
         return true
     end
-    return false
 end
 
 local function InitContainerPosition(container, trackerKey)
@@ -2755,6 +2938,7 @@ local function SetViewerBounds(viewer, boundsW, boundsH)
     vs.cdmPotentialRow1Width = boundsW
     vs.cdmPotentialBottomRowWidth = boundsW
     vs.cdmTotalHeight = boundsH
+    CDMContainers_API:HealGrowthAnchorIfPending(viewer)
 end
 
 local function RefreshViewerFromBounds(viewer, trackerKey)
@@ -3151,6 +3335,7 @@ function ownedEngine:BootstrapReanchorRuntime()
                 local vs = viewerState[container]
                 if not vs then return end
                 ApplyViewerMetrics(vs, metrics, container._quiCdmKey)
+                CDMContainers_API:HealGrowthAnchorIfPending(container)
             end,
         })
         return ns.CDMReanchorBoot.BuildRuntime(env)
@@ -4132,6 +4317,8 @@ ns.CDMContainers = {
     GetContainersByType = function(containerType) return CDMContainers_API:GetContainersByType(containerType) end,
     GetAllContainerKeys = function() return CDMContainers_API:GetAllContainerKeys() end,
     RegisterDynamicLayoutElement = function(key, settings) return CDMContainers_API:RegisterDynamicLayoutElement(key, settings) end,
+    GetGrowthAnchor = function(key) return CDMContainers_API:GetGrowthAnchor(key) end,
+    SetGrowthAnchor = function(key, point) return CDMContainers_API:SetGrowthAnchor(key, point) end,
     SyncSettingsFeatureLookups = SyncSettingsFeatureLookups,
     SaveActiveSpecProfile = function()
         if not specTrackingReady then return end

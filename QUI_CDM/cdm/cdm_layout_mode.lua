@@ -139,6 +139,14 @@ local function RegisterBuiltInElement(um, info)
         getFrame = function()
             return GetViewerFrame(info.key)
         end,
+        getGrowAnchor = function()
+            local db = GetCDMDB(info.key)
+            local Layout = ns.CDMLayout
+            if Layout and Layout.NormalizeGrowthAnchor then
+                return Layout.NormalizeGrowthAnchor(db and db.growthAnchor)
+            end
+            return "CENTER"
+        end,
         getSize = function()
             local f = GetViewerFrame(info.key)
             if f and f.GetSize then
