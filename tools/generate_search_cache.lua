@@ -2112,6 +2112,9 @@ local function capture_group_frames_auras_elements()
     local function strip(filterMode, auraType)
         local element = Model.NewFilterStripElement(auraType or "HARMFUL")
         element.filterMode = filterMode
+        element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
+            anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
+        element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
         return element
     end
     local function tracked(displayType)
@@ -2369,6 +2372,9 @@ local function capture_nameplates_auras_elements()
         local function strip(filterMode, auraType)
             local element = E.NewFilterStripElement(auraType or "HARMFUL")
             element.filterMode = filterMode
+            element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
+                anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
+            element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
             return element
         end
         local function tracked(displayType)
@@ -2523,6 +2529,9 @@ local function capture_aura_displays_elements()
         local function strip(filterMode, auraType)
             local element = E.NewFilterStripElement(auraType or "HARMFUL")
             element.filterMode = filterMode
+            element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
+                anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
+            element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
             return element
         end
         local function tracked(displayType)

@@ -1359,6 +1359,15 @@ function Helpers.FoldUTF8(text)
     return text
 end
 
+function Helpers.FoldSearchUTF8(text)
+    if Helpers.IsSecretValue(text) then return text end
+    if C_Intl and C_Intl.FoldCase and type(text) == "string" then
+        local folded = C_Intl.FoldCase(text)
+        if folded ~= nil then return folded end
+    end
+    return Helpers.FoldUTF8(text)
+end
+
 function Helpers.UpperUTF8(text)
     if Helpers.IsSecretValue(text) then return text end
     if text == nil then return "" end

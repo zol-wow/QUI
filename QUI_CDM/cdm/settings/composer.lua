@@ -2440,7 +2440,7 @@ RefreshEntryList = function()
     if type(entries) ~= "table" then entries = {} end
 
     local filterText = searchBox and searchBox:GetText() or ""
-    local lowerFilter = Helpers.FoldUTF8(filterText)
+    local lowerFilter = Helpers.FoldSearchUTF8(filterText)
     local hasFilter = (filterText ~= "")
 
     local spellData = GetCDMSpellData()
@@ -2509,7 +2509,7 @@ RefreshEntryList = function()
 
     local function RenderEntryCell(entry, idx, rowNum)
         local entryName = GetEntryName(entry)
-        if hasFilter and not string_find(Helpers.FoldUTF8(entryName), lowerFilter, 1, true) then
+        if hasFilter and not string_find(Helpers.FoldSearchUTF8(entryName), lowerFilter, 1, true) then
             return
         end
 
@@ -2945,7 +2945,7 @@ RefreshAddList = function()
     end
 
     local filterText = addSearchBox and addSearchBox:GetText() or ""
-    local lowerFilter = Helpers.FoldUTF8(filterText)
+    local lowerFilter = Helpers.FoldSearchUTF8(filterText)
     local hasFilter = (filterText ~= "")
 
     local sourceEntries = {}
@@ -3151,7 +3151,7 @@ RefreshAddList = function()
     for _, entry in ipairs(sourceEntries) do
         local entryName = entry.name or ""
         local show = true
-        if hasFilter and not string_find(Helpers.FoldUTF8(entryName), lowerFilter, 1, true) then
+        if hasFilter and not string_find(Helpers.FoldSearchUTF8(entryName), lowerFilter, 1, true) then
             local sidStr = tostring(entry.spellID or "")
             if not string_find(sidStr, filterText, 1, true) then
                 show = false

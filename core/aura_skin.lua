@@ -292,6 +292,68 @@ function AuraSkin.ResolveDurationTextOptions(_button, profile)
 end
 
 local Helpers = ns.Helpers
+local function StylePandemic(button, glow)
+    local texture = button._quiPandemic
+    if not texture then return end
+    local color = type(glow) == "table" and type(glow.color) == "table" and glow.color
+    local style = color and glow.style or "steady"
+    local add = style == "pulse" and button.AddPandemicActiveAnimation
+        or style == "flash" and button.AddPandemicEnterAnimation
+    local remove = style == "pulse" and button.RemovePandemicActiveAnimation
+        or style == "flash" and button.RemovePandemicEnterAnimation
+    if not texture.CreateAnimationGroup or not ((add and remove) or button._quiPreview) then
+        style = "steady"
+    end
+    if style ~= "pulse" and style ~= "flash" then style = "steady" end
+
+    local previous = button._quiPandemicStyle
+    if previous ~= style then
+        local old = button._quiPandemicAnimations and button._quiPandemicAnimations[previous]
+        if old then
+            old:Stop()
+            if not button._quiPreview then
+                local unregister = previous == "pulse" and button.RemovePandemicActiveAnimation
+                    or button.RemovePandemicEnterAnimation
+                unregister(button, old)
+            end
+        end
+        button._quiPandemicStyle = style
+    end
+
+    if texture.SetVertexColor and color then
+        texture:SetVertexColor(color[1] or 1, color[2] or 0.85, color[3] or 0.2,
+            style == "steady" and 1 or (color[4] or 1))
+    end
+    if texture.SetAlpha then
+        texture:SetAlpha(not color and 0 or style == "flash" and 0
+            or style == "pulse" and 1 or (color[4] or 1))
+    end
+    if style == "steady" or previous == style then return end
+
+    local animations = button._quiPandemicAnimations or {}
+    button._quiPandemicAnimations = animations
+    local group = animations[style]
+    if not group then
+        group = texture:CreateAnimationGroup()
+        group:SetLooping(style == "pulse" and "REPEAT" or "NONE")
+        local fade = group:CreateAnimation("Alpha")
+        fade:SetOrder(1)
+        fade:SetFromAlpha(style == "pulse" and 0.25 or 1)
+        fade:SetToAlpha(style == "pulse" and 1 or 0)
+        fade:SetDuration(style == "pulse" and 0.45 or 0.6)
+        if style == "pulse" then
+            local down = group:CreateAnimation("Alpha")
+            down:SetOrder(2)
+            down:SetFromAlpha(1)
+            down:SetToAlpha(0.25)
+            down:SetDuration(0.45)
+        end
+        animations[style] = group
+    end
+    if not button._quiPreview then add(button, group) end
+    group:Play()
+end
+
 local function styleButton(button, profile)
     local size = profile.iconSize or 22
     if size <= 0 then size = 22 end
@@ -370,17 +432,7 @@ local function styleButton(button, profile)
         end
     end
 
-    local pandemic = button._quiPandemic
-    if pandemic then
-        local glow = profile.pandemicGlow
-        if type(glow) == "table" and type(glow.color) == "table" then
-            local c = glow.color
-            if pandemic.SetVertexColor then pandemic:SetVertexColor(c[1] or 1, c[2] or 0.85, c[3] or 0.2, 1) end
-            if pandemic.SetAlpha then pandemic:SetAlpha(c[4] or 1) end
-        elseif pandemic.SetAlpha then
-            pandemic:SetAlpha(0)
-        end
-    end
+    StylePandemic(button, profile.pandemicGlow)
 
     local fontPath = (Helpers and Helpers.GetGeneralFont and Helpers.GetGeneralFont())
     local fontFlags = (Helpers and Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or "OUTLINE"
@@ -403,6 +455,30 @@ local function styleButton(button, profile)
             AuraSkin.ResolveDurationTextOptions(button, profile))
     end
     styleText(button._quiCount, profile.stack, profile.fontSize, "BOTTOMRIGHT", -1, 1)
+    local caster = type(profile.casterName) == "table" and profile.casterName
+    if caster and (button.SetCasterName or button._quiPreview) then
+        local text = button._quiCaster
+        if not text then
+            text = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            text:SetWordWrap(false)
+            text:SetJustifyH("CENTER")
+            button._quiCaster = text
+        end
+        styleText(text, caster, 10, "BOTTOM", 0, 1)
+        text:SetWidth(width)
+        if button._quiPreview then
+            text:SetText(caster.showRealmName and "Caster-Realm" or "Caster")
+            if caster.useClassColors then text:SetTextColor(1, 0.49, 0.04) end
+        else
+            button:SetCasterName(text, {
+                showRealmName = caster.showRealmName == true,
+                useClassColors = caster.useClassColors == true,
+            })
+        end
+    elseif button._quiCaster then
+        if button.ClearCasterName then button:ClearCasterName() end
+        button._quiCaster:SetAlpha(0)
+    end
     if fontPath and button._quiSymbol then button._quiSymbol:SetFont(fontPath, (profile.fontSize and profile.fontSize > 0) and profile.fontSize or 11, fontFlags) end
 
     local cd = button._quiCooldown
@@ -698,6 +774,7 @@ function AuraSkin.WireButton(button, profile)
 end
 
 function AuraSkin.WirePreviewButton(button, profile)
+    button._quiPreview = true
     if not button.SetDurationBar then
         button.SetDurationBar = function(self, bar, options)
             self._quiPreviewDurationBar = bar
@@ -716,6 +793,11 @@ function AuraSkin.ReleasePreviewButton(button)
     local Bridge = ns.ExternalSkinBridge
     if key and Bridge then Bridge.RemoveButton(key, button) end
     if button then
+        if button._quiCaster then button._quiCaster:SetAlpha(0) end
+        if button._quiPandemicAnimations then
+            for _, animation in pairs(button._quiPandemicAnimations) do animation:Stop() end
+        end
+        button._quiPandemicStyle = nil
         button._quiBridgedKey = nil
         button._quiBridged = nil
     end

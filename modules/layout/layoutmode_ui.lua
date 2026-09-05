@@ -1497,7 +1497,7 @@ CreateFramesDrawer = function(ui)
             searchBox = GUI:CreateSearchBox(searchContainer, ns.L["Search frames…"])
             searchBox:SetAllPoints(searchContainer)
             searchBox.onSearch = function(text)
-                drawer._searchFilter = Helpers.FoldUTF8(text)
+                drawer._searchFilter = Helpers.FoldSearchUTF8(text)
                 if ui._RebuildDrawer then ui:_RebuildDrawer() end
             end
             searchBox.onClear = function()
@@ -1683,8 +1683,8 @@ function QUI_LayoutMode_UI:_RebuildDrawer()
 
             local include = true
             if searchFilter ~= "" then
-                local label = Helpers.FoldUTF8(def.label or key)
-                local groupLower = Helpers.FoldUTF8(group)
+                local label = Helpers.FoldSearchUTF8(def.label or key)
+                local groupLower = Helpers.FoldSearchUTF8(group)
                 include = (label:find(searchFilter, 1, true) ~= nil)
                     or (groupLower:find(searchFilter, 1, true) ~= nil)
             end

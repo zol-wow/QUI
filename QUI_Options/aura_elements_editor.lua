@@ -624,6 +624,19 @@ local function AddDispelTooltipWidgets(ctx, element)
         description = ns.L["Show a glow on each icon while the aura is inside its pandemic refresh window. The game decides when the window is active."],
     }))
     if type(element.pandemicGlow) == "table" then
+        row(ns.L["Pandemic Glow Style"], GUI:CreateFormDropdown(ctx.detailArea, nil, {
+            { value = "steady", text = ns.L["Steady"] },
+            { value = "pulse", text = ns.L["Pulse"] },
+            { value = "flash", text = ns.L["Entry Flash"] },
+        }, "style", {
+            style = element.pandemicGlow.style or "steady",
+            _quiTransientOptionsProxy = true,
+        }, function(value)
+            element.pandemicGlow.style = value
+            onChange()
+        end, {
+            description = ns.L["Steady glow, repeating pulse, or a flash when the refresh window begins. Unsupported clients use a steady glow."],
+        }))
         row(ns.L["Pandemic Glow Color"], GUI:CreateFormColorPicker(ctx.detailArea, nil, "color", element.pandemicGlow, onChange, nil, {
             description = ns.L["Tint and opacity of the pandemic glow."],
         }))
@@ -671,6 +684,27 @@ local function AddTextRegionWidgets(ctx, element, key, label)
     local onChange = ctx.onChange
     local rebuild = ctx.rebuild
 
+    if key == "casterName" then
+        row(ns.L["Show Caster Name"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "_casterName", {
+            _casterName = type(element.casterName) == "table",
+            _quiTransientOptionsProxy = true,
+        }, function(checked)
+            if checked and type(element.casterName) ~= "table" then
+                element.casterName = {
+                    showRealmName = false, useClassColors = true, fontSize = 10,
+                    anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 },
+                }
+            elseif not checked then
+                element.casterName = nil
+            end
+            ctx.NotifyChanged()
+            rebuild()
+        end, {
+            description = ns.L["Show who applied each aura. Older game versions keep this setting without displaying names."],
+        }))
+        if type(element.casterName) ~= "table" then return end
+    end
+
     if type(element[key]) ~= "table" then element[key] = {} end
     local region = element[key]
 
@@ -690,9 +724,14 @@ local function AddTextRegionWidgets(ctx, element, key, label)
         add(header, 18, true)
     end
 
-    row(ns.L["Show"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "show", region, onChange, {
-        description = string.format(ns.L["Show the %s on each icon."], label),
-    }))
+    if key == "casterName" then
+        row(ns.L["Show Realm Name"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "showRealmName", region, onChange))
+        row(ns.L["Use Class Colors"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "useClassColors", region, onChange))
+    else
+        row(ns.L["Show"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "show", region, onChange, {
+            description = string.format(ns.L["Show the %s on each icon."], label),
+        }))
+    end
     row(ns.L["Font Size"], GUI:CreateFormSlider(ctx.detailArea, nil, 6, 24, 1, "fontSize", region, onChange, { deferOnDrag = true }, {
         description = string.format(ns.L["Font size used for the %s."], label),
     }))
@@ -1022,6 +1061,7 @@ local function AddFilterStripConfig(ctx, element)
         AddSwipeWidgets(ctx, element)
         AddTextRegionWidgets(ctx, element, "duration", ns.L["Duration Text"])
         AddTextRegionWidgets(ctx, element, "stack", ns.L["Stack Text"])
+        AddTextRegionWidgets(ctx, element, "casterName", ns.L["Caster Name"])
 
         row(ns.L["Sort Order"], GUI:CreateFormDropdown(ctx.detailArea, nil, SORT_OPTIONS, "sortRule", element, onChange, {
             description = ns.L["Order icons in this strip are displayed in."],
@@ -1341,6 +1381,7 @@ local function AddTrackedConfig(ctx, element)
         AddSwipeWidgets(ctx, element)
         AddTextRegionWidgets(ctx, element, "duration", ns.L["Duration Text"])
         AddTextRegionWidgets(ctx, element, "stack", ns.L["Stack Text"])
+        AddTextRegionWidgets(ctx, element, "casterName", ns.L["Caster Name"])
         AddDispelTooltipWidgets(ctx, element)
     end
 
