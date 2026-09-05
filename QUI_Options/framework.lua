@@ -108,6 +108,8 @@ local TIP_GAP        = 4
 local TIP_TITLE_SIZE = 12
 local TIP_BODY_SIZE  = 11
 local TIP_MIN_INNER  = 24
+local TIP_BASE_LEVEL = 200
+local TIP_LEVEL_LIFT = 20
 
 -- point on tooltip, point on anchor, x, y. (Flat assignments: the
 -- options_lod_theme_core palette scan treats any indented `KEY = {` between
@@ -135,6 +137,15 @@ local function TipNumber(value, fallback)
     if TipIsSecret(value) then return fallback end
     if type(value) ~= "number" then return fallback end
     return value
+end
+
+-- Frame level that keeps the tip above `anchor`, never below the base level.
+local function TipLevelFor(anchor)
+    local level = 0
+    if anchor and type(anchor.GetFrameLevel) == "function" then
+        level = TipNumber(anchor:GetFrameLevel(), 0)
+    end
+    return math.max(TIP_BASE_LEVEL, level + TIP_LEVEL_LIFT)
 end
 
 local function TipResolvePreset(name)
@@ -221,7 +232,7 @@ local function TipEnsureFrame()
     if tip then return tip end
     tip = CreateFrame("Frame", "QUI_OptionsTooltip", UIParent)
     tip:SetFrameStrata("TOOLTIP")
-    tip:SetFrameLevel(200)
+    tip:SetFrameLevel(TIP_BASE_LEVEL)
     tip:EnableMouse(false)
     tip:SetSize(TIP_MAX_WIDTH, 24)
     tip:SetAlpha(0)
@@ -409,6 +420,10 @@ function Tooltip:Show(anchor, content, opts)
     end
 
     self._owner = anchor
+    -- Popups that also sit on TOOLTIP strata (CDM override panel at level
+    -- 500, context menus at 300) would otherwise draw over the tip; track
+    -- the anchor's level so the tip always lands above its own owner.
+    tip:SetFrameLevel(TipLevelFor(anchor))
     tip:SetScale(opts.scale or TipPanelScale(anchor))
     TipAnchor(tip, anchor, TipResolvePreset(opts.anchor))
     tip:SetAlpha(0)
