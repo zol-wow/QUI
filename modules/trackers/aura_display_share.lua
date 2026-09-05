@@ -201,6 +201,56 @@ local function FieldsWellTyped(entry, types)
     return true
 end
 
+-- Enum-like strings are checked against the values the editor can produce:
+-- a mistyped anchor or aura type would otherwise persist and only fail
+-- later, inside SetPoint or the aura-container filter APIs.
+local function Set(list)
+    local out = {}
+    for i = 1, #list do out[list[i]] = true end
+    return out
+end
+local ANCHOR_POINTS = Set({ "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT",
+    "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" })
+local GROUP_FIELD_ENUMS = {
+    growDirection = Set({ "RIGHT", "LEFT", "CENTER_H", "DOWN", "UP", "CENTER_V" }),
+    alignment = Set({ "START", "CENTER", "END" }),
+}
+local DISPLAY_FIELD_ENUMS = {
+    unitMode = Set({ "token", "cotank", "name" }),
+    visibility = Set({ "active", "instance", "always" }),
+}
+local LAYOUT_FIELD_ENUMS = {
+    direction = Set({ "LEFT", "RIGHT", "UP", "DOWN" }),
+    alignment = Set({ "START", "CENTER", "END" }),
+}
+local ANCHOR_FIELD_ENUMS = { point = ANCHOR_POINTS, relative = ANCHOR_POINTS, relativePoint = ANCHOR_POINTS }
+local ELEMENT_FIELD_ENUMS = {
+    mode = Set({ "filterStrip", "tracked", "missingRaidBuff" }),
+    auraType = Set({ "HELPFUL", "HARMFUL" }),
+    displayType = Set({ "icon", "square", "bar", "healthTint", "border" }),
+    growDirection = Set({ "LEFT", "RIGHT", "CENTER", "UP", "DOWN" }),
+    anchor = ANCHOR_POINTS,
+    swipeStyle = Set({ "radial", "horizontal", "vertical" }),
+    applyToRoles = Set({ "all", "tank", "healer", "dps", "me" }),
+    filterMode = Set({ "off", "flags", "classify", "classification", "whitelist" }),
+    sortRule = Set({ "INDEX", "EXPIRY", "EXPIRY_ONLY", "NAME", "NAME_ONLY",
+        "BIG_DEFENSIVE", "IMPORTANT_ONLY", "UF_DEBUFF" }),
+    dispelFilterMode = Set({ "off", "include", "exclude" }),
+    dispelBorderMode = Set({ "debuffs", "stealable", "all" }),
+    tooltipAnchor = Set({ "ANCHOR_TOPRIGHT", "ANCHOR_TOP", "ANCHOR_TOPLEFT", "ANCHOR_RIGHT",
+        "ANCHOR_LEFT", "ANCHOR_BOTTOMRIGHT", "ANCHOR_BOTTOM", "ANCHOR_BOTTOMLEFT", "ANCHOR_CURSOR" }),
+}
+local TEXT_FIELD_ENUMS = { anchor = ANCHOR_POINTS }
+local BAR_FIELD_ENUMS = { orientation = Set({ "HORIZONTAL", "VERTICAL" }) }
+
+local function FieldsInEnums(entry, enums)
+    for field, allowed in pairs(enums) do
+        local value = entry[field]
+        if value ~= nil and not allowed[value] then return false end
+    end
+    return true
+end
+
 -- Nested records Import copies into the profile. Their scalar fields are
 -- type-checked here so a hand-edited string cannot persist, say, a string
 -- iconSize that later trips the element profile math on every refresh.
@@ -240,8 +290,10 @@ local BAR_FIELD_TYPES = {
 local BORDER_FIELD_TYPES = { thickness = "number" }
 local ELEMENT_MODES = { filterStrip = true, tracked = true, missingRaidBuff = true }
 
-local function ValidRecord(record, types)
-    return record == nil or (type(record) == "table" and FieldsWellTyped(record, types))
+local function ValidRecord(record, types, enums)
+    if record == nil then return true end
+    if type(record) ~= "table" or not FieldsWellTyped(record, types) then return false end
+    return enums == nil or FieldsInEnums(record, enums)
 end
 
 
@@ -257,13 +309,16 @@ end
 local function ValidElement(element)
     if type(element) ~= "table" or not ELEMENT_MODES[element.mode] then return false end
     if not FieldsWellTyped(element, ELEMENT_FIELD_TYPES) then return false end
+    if not FieldsInEnums(element, ELEMENT_FIELD_ENUMS) then return false end
     if type(element.spells) == "table" then
         for i = 1, #element.spells do
             if type(element.spells[i]) ~= "number" then return false end
         end
     end
-    if not ValidRecord(element.duration, TEXT_FIELD_TYPES) or not ValidRecord(element.stack, TEXT_FIELD_TYPES)
-        or not ValidRecord(element.bar, BAR_FIELD_TYPES) or not ValidRecord(element.border, BORDER_FIELD_TYPES)
+    if not ValidRecord(element.duration, TEXT_FIELD_TYPES, TEXT_FIELD_ENUMS)
+        or not ValidRecord(element.stack, TEXT_FIELD_TYPES, TEXT_FIELD_ENUMS)
+        or not ValidRecord(element.bar, BAR_FIELD_TYPES, BAR_FIELD_ENUMS)
+        or not ValidRecord(element.border, BORDER_FIELD_TYPES)
         or not ValidColor(element.color) or not ValidColor(element.borderColor)
         or not ValidColor(element.duration and element.duration.color)
         or not ValidColor(element.stack and element.stack.color) then
@@ -341,10 +396,13 @@ function Share.ValidatePayload(payload)
         if type(entry) ~= "table" or not ValidName(entry.name) then return false end
         if groupByName[entry.name] then return false end
         groupByName[entry.name] = entry
-        if not OptionalString(entry.parent) or not ValidRecord(entry.anchor, ANCHOR_FIELD_TYPES) then
+        if not OptionalString(entry.parent)
+            or not ValidRecord(entry.anchor, ANCHOR_FIELD_TYPES, ANCHOR_FIELD_ENUMS) then
             return false
         end
-        if not FieldsWellTyped(entry, GROUP_FIELD_TYPES) then return false end
+        if not FieldsWellTyped(entry, GROUP_FIELD_TYPES) or not FieldsInEnums(entry, GROUP_FIELD_ENUMS) then
+            return false
+        end
     end
     -- Every parent must be a declared group, never the group itself, the
     -- chain must terminate (no cycles), and it must fit the runtime's nesting
@@ -367,14 +425,17 @@ function Share.ValidatePayload(payload)
         local entry = payload.displays[i]
         if type(entry) ~= "table" or not ValidName(entry.name) then return false end
         displayNames[entry.name] = true
-        if not OptionalString(entry.group) or not ValidRecord(entry.anchor, ANCHOR_FIELD_TYPES)
-            or not ValidRecord(entry.layout, LAYOUT_FIELD_TYPES)
+        if not OptionalString(entry.group)
+            or not ValidRecord(entry.anchor, ANCHOR_FIELD_TYPES, ANCHOR_FIELD_ENUMS)
+            or not ValidRecord(entry.layout, LAYOUT_FIELD_TYPES, LAYOUT_FIELD_ENUMS)
             or not ValidRecord(entry.load, LOAD_FIELD_TYPES)
             or not ValidAuras(entry.auras) then
             return false
         end
         if entry.group ~= nil and not groupByName[entry.group] then return false end
-        if not FieldsWellTyped(entry, DISPLAY_FIELD_TYPES) then return false end
+        if not FieldsWellTyped(entry, DISPLAY_FIELD_TYPES) or not FieldsInEnums(entry, DISPLAY_FIELD_ENUMS) then
+            return false
+        end
     end
     -- A declared root must own everything in the payload: a group root means
     -- every group descends from it and every display sits in that subtree; a

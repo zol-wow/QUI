@@ -451,6 +451,11 @@ local function BuildWizardStep4(content)
         and C_Spell and C_Spell.GetSpellName and C_Spell.GetSpellName(w.spells[1])
         or goal.name
     nameEdit:SetText(w.name or defaultName or "")
+    -- Typed names live in the wizard state so unit changes, Back and Next
+    -- (all of which rebuild this pane) do not reset them to the default.
+    nameEdit:SetScript("OnTextChanged", function(self, userInput)
+        if userInput then w.name = self:GetText() end
+    end)
     dialog._wizardNameEdit = nameEdit
 
     local unitLabel = GUI:CreateLabel(content, ns.L["Unit"], 10, C.textMuted)
@@ -460,6 +465,7 @@ local function BuildWizardStep4(content)
     local unitDrop = GUI:CreateFormDropdown(content, nil, UNIT_OPTIONS, "unitChoice",
         unitProxy, function()
             w.unitChoice = unitProxy.unitChoice
+            if dialog._wizardNameEdit then w.name = dialog._wizardNameEdit:GetText() end
             Rebuild()
         end, {
             description = ns.L["Which unit this display watches. Co-Tank follows the first other tank in your group."],
@@ -566,6 +572,7 @@ local function BuildCustomTab(content)
         cs.spellName = spellName
         if spellName and dialog._customNameEdit and dialog._customNameEdit:GetText() == "" then
             dialog._customNameEdit:SetText(spellName)
+            cs.name = spellName
         end
     end)
     spellInput:SetPoint("TOPLEFT", 2, -30)
@@ -587,12 +594,19 @@ local function BuildCustomTab(content)
     nameLabel:SetPoint("TOPLEFT", 2, -92)
     local nameBox, nameEdit = GUI:CreateInlineEditBox(content, { width = 270 })
     nameBox:SetPoint("TOPLEFT", 2, -106)
+    nameEdit:SetText(cs.name or "")
+    nameEdit:SetScript("OnTextChanged", function(self, userInput)
+        if userInput then cs.name = self:GetText() end
+    end)
     dialog._customNameEdit = nameEdit
 
     local unitLabel = GUI:CreateLabel(content, ns.L["Unit"], 10, C.textMuted)
     unitLabel:SetPoint("TOPLEFT", 2, -138)
     local unitDrop = GUI:CreateFormDropdown(content, nil, UNIT_OPTIONS, "unitChoice",
-        cs, function() Rebuild() end, {
+        cs, function()
+            cs.name = nameEdit:GetText()
+            Rebuild()
+        end, {
             description = ns.L["Which unit this display watches. Co-Tank follows the first other tank in your group."],
         })
     unitDrop:SetPoint("TOPLEFT", 2, -152)
