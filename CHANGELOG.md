@@ -4,6 +4,16 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3-beta7 - 2026-09-06
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Auto-accepted summons now close Blizzard's confirmation popup**, including
+  summons accepted after combat or a teleport finishes.
+
 ## v5.3-beta6 - 2026-09-06
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
