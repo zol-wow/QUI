@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<!-- PROTOTYPE — throwaway UX exploration for the Aura Displays options panel. Not shipped code. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QUI · Aura Displays UX — 5 Approaches</title>
+<style>
+  :root {
+    --bg: #0a0c10; --surface: #12151c; --panel: #1a1e28; --inset: #141822;
+    --border: #2a3040; --text: #e6e9f0; --muted: #8b93a7; --gold: #e8c15a;
+    --success: #7ac37a; --danger: #e06c6c; --info: #6cb2e0; --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    padding: 48px 24px 64px;
+  }
+  .kicker { color: var(--muted); font-size: 13px; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 10px; }
+  h1 { font-size: 34px; font-weight: 700; margin-bottom: 14px; text-align: center; }
+  h1 .accent { color: var(--gold); }
+  .lede { color: var(--muted); max-width: 640px; text-align: center; line-height: 1.55; font-size: 15px; margin-bottom: 8px; }
+  .stats { display: flex; gap: 14px; margin: 26px 0 38px; flex-wrap: wrap; justify-content: center; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 20px; text-align: center; min-width: 150px;
+  }
+  .stat b { display: block; font-size: 24px; color: var(--gold); margin-bottom: 3px; }
+  .stat span { font-size: 12px; color: var(--muted); line-height: 1.4; display: block; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; max-width: 1060px; width: 100%; }
+  a.card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 22px; text-decoration: none; color: var(--text); display: flex; flex-direction: column; gap: 10px;
+    transition: border-color .15s, transform .15s;
+  }
+  a.card:hover { border-color: var(--gold); transform: translateY(-2px); }
+  .num { font-size: 12px; color: var(--muted); letter-spacing: .1em; }
+  a.card h2 { font-size: 19px; }
+  a.card p { color: var(--muted); font-size: 13.5px; line-height: 1.5; flex: 1; }
+  .tag { align-self: flex-start; font-size: 11px; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--border); color: var(--gold); }
+  .go { color: var(--gold); font-size: 13px; font-weight: 600; }
+  .footer { margin-top: 40px; color: var(--muted); font-size: 12.5px; max-width: 640px; text-align: center; line-height: 1.6; }
+  .footer code { font-family: ui-monospace, monospace; background: var(--inset); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 11.5px; }
+  kbd { background: var(--inset); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 11.5px; font-family: inherit; }
+</style>
+</head>
+<body>
+  <div class="kicker">QUI prototype · UX exploration</div>
+  <h1>Aura Displays: <span class="accent">5 ways in</span></h1>
+  <p class="lede">The feature is powerful, the entry barrier is brutal. Five structurally different approaches to guiding players through it — click through each deck, keep what works, mix freely.</p>
+
+  <div class="stats">
+    <div class="stat"><b>35–40</b><span>controls facing a<br>minimal new display</span></div>
+    <div class="stat"><b>80–120</b><span>widgets on a realistic<br>two-element display</span></div>
+    <div class="stat"><b>16 px</b><span>default icon size — the good<br>defaults bucket goes unused</span></div>
+    <div class="stat"><b>0</b><span>templates, wizards, or<br>per-display share strings</span></div>
+  </div>
+
+  <div class="grid">
+    <a class="card" href="01-wizard.html">
+      <span class="num">APPROACH 1</span>
+      <h2>Guided Creation Wizard</h2>
+      <p>Replace the quick-create popup with a 4-step, goal-first stepper with strong defaults. From blank form to working display in four questions.</p>
+      <span class="tag">first-run success</span>
+      <span class="go">Open deck →</span>
+    </a>
+    <a class="card" href="02-templates.html">
+      <span class="num">APPROACH 2</span>
+      <h2>Template Gallery</h2>
+      <p>Nobody starts from blank. "New Display" opens spec-aware starter packs installed in one click — and the same plumbing yields per-display share strings.</p>
+      <span class="tag">ship content</span>
+      <span class="go">Open deck →</span>
+    </a>
+    <a class="card" href="03-simple-mode.html">
+      <span class="num">APPROACH 3</span>
+      <h2>Simple Mode</h2>
+      <p>Rebuild the editor's hierarchy: each element reads as an editable plain-language sentence, ~6 essentials below, the other 40 behind counted "Advanced" folds.</p>
+      <span class="tag">tame the editor</span>
+      <span class="go">Open deck →</span>
+    </a>
+    <a class="card" href="04-canvas.html">
+      <span class="num">APPROACH 4</span>
+      <h2>Canvas-First Editing</h2>
+      <p>The game screen is the editor. Place, size, and grow displays by direct manipulation in Layout Mode; a compact inspector handles the rest.</p>
+      <span class="tag">kill the geometry gap</span>
+      <span class="go">Open deck →</span>
+    </a>
+    <a class="card" href="05-recipes.html">
+      <span class="num">APPROACH 5</span>
+      <h2>Intent Interview + Recipes</h2>
+      <p>A branching one-question-at-a-time flow that builds real settings and shows its work — plus one-click intent-level "recipes" for existing displays.</p>
+      <span class="tag">teach the machine</span>
+      <span class="go">Open deck →</span>
+    </a>
+    <a class="card" href="06-unified.html" style="border-color:#e8c15a">
+      <span class="num" style="color:#e8c15a">IMPLEMENTED</span>
+      <h2>Unified Design</h2>
+      <p>Approaches 1+2+3 combined and shipped: a three-tab New Display dialog (Templates · Guided · Custom) feeding a Simple Mode editor, with fixed defaults everywhere.</p>
+      <span class="tag">three doors, one editor</span>
+      <span class="go">Open deck →</span>
+    </a>
+  </div>
+
+  <p class="footer">
+    Inside a deck: <kbd>←</kbd> <kbd>→</kbd> to move between slides, click the dots to jump, and use the bottom pill to hop between approaches.
+    Throwaway prototype under <code>prototypes/aura-displays-ux/</code> — all mockups use the feature's real terminology (Display, element, STRIP/TRACKED, What to Show, Load Conditions) so decisions transfer directly.
+  </p>
+</body>
+</html>

@@ -2462,6 +2462,7 @@ local function capture_aura_displays_elements()
         return {
             elementTypes        = { filterStrip = true, tracked = true },
             trackedDisplayTypes = { icon = true, square = true, bar = true },
+            dynamicTrackedLayout = true,
             allowSpecOverride   = true,
             roleGate            = false,
             cancelEligible      = false,
@@ -2523,6 +2524,14 @@ local function capture_aura_displays_elements()
                 description = alertDescription,
             })
         end
+    end
+    if type(Page) == "table" and type(Page._BuildGroupTab) == "function"
+        and type(AD.GetGroup) == "function" then
+        local searchGroup = AD.GetGroup("Search Group", true)
+        if searchGroup then searchGroup._quiTransientOptionsProxy = true end
+        render("group", function(host)
+            Page._BuildGroupTab(host, nil, "Search Group")
+        end)
     end
 
     local function buildVariants()

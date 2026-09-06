@@ -35,6 +35,39 @@ function CDMLayout.ComputeAnchorOffsets(centerOffsetX, centerOffsetY, point, rel
     return centerOffsetX - tgtX + srcX, centerOffsetY - tgtY + srcY
 end
 
+-- Growth anchor: which edge of a free-placed (screen-anchored) container
+-- stays put when its content resizes. Stored on the container settings as
+-- growthAnchor; realised as the frameAnchoring entry's point/relative pair.
+local GROWTH_ANCHOR_POINTS = {
+    CENTER = true, LEFT = true, RIGHT = true, TOP = true, BOTTOM = true,
+}
+
+function CDMLayout.NormalizeGrowthAnchor(point)
+    if type(point) == "string" and GROWTH_ANCHOR_POINTS[point] then
+        return point
+    end
+    return "CENTER"
+end
+
+-- Inverse of ComputeAnchorOffsets: recover the frame's centre offset from
+-- UIParent's centre given a (point, relative, offsetX, offsetY) anchor.
+function CDMLayout.AnchorOffsetsToCenter(point, relative, offsetX, offsetY, frameW, frameH, parentW, parentH)
+    local srcX, srcY = CDMLayout.PointOffset(point or "CENTER", frameW, frameH)
+    local tgtX, tgtY = CDMLayout.PointOffset(relative or "CENTER", parentW, parentH)
+    return (offsetX or 0) - srcX + tgtX, (offsetY or 0) - srcY + tgtY
+end
+
+-- Re-express a screen anchor so the same on-screen rect is described by a
+-- different (point, relative) pair. Used when the growth anchor changes or a
+-- legacy CENTER entry is healed to the configured edge.
+function CDMLayout.ConvertScreenAnchorOffsets(point, relative, offsetX, offsetY,
+        newPoint, newRelative, frameW, frameH, parentW, parentH)
+    local cx, cy = CDMLayout.AnchorOffsetsToCenter(point, relative, offsetX, offsetY,
+        frameW, frameH, parentW, parentH)
+    return CDMLayout.ComputeAnchorOffsets(cx, cy, newPoint, newRelative,
+        frameW, frameH, parentW, parentH)
+end
+
 function CDMLayout.GetBootstrapSize(trackerKey, currentW, currentH, state, db)
     if currentW and currentW > 1 and currentH and currentH > 1 then
         return nil, nil
@@ -555,9 +588,14 @@ function CDMLayout.BuildBuffGridLayout(settings, icons, _opts)
     else
         totalWidth = (n * iconWidth) + ((n - 1) * padding)
         totalHeight = iconHeight
-        local startX = -totalWidth / 2 + iconWidth / 2
+        local growLeft = (growthDirection == "LEFT")
+        local startX = growLeft
+            and (totalWidth / 2 - iconWidth / 2)
+            or (-totalWidth / 2 + iconWidth / 2)
         for i = 1, n do
-            local x = startX + (i - 1) * (iconWidth + padding)
+            local x = growLeft
+                and (startX - (i - 1) * (iconWidth + padding))
+                or (startX + (i - 1) * (iconWidth + padding))
             placements[i] = { icon = icons[i], rowConfig = rowConfig, x = x, y = 0 }
         end
     end

@@ -286,6 +286,10 @@ local function ShowMoneyPopup(kind, bankType)
     end)
 end
 
+local function HideMoneyPopup()
+    StaticPopup_Hide("QUI_BANK_MONEY")
+end
+
 local function ApplyTabHover(bagID)
     hoverTabBagID = bagID
     local function sweep(pool)
@@ -414,6 +418,7 @@ local function EnsureWindow()
         onClose = function(w)
             w:SetScript("OnUpdate", nil)
             w._updateScheduled = false
+            HideMoneyPopup()
             if Bags.BankTakeover and Bags.BankTakeover.IsLive() then
                 Bags.BankTakeover.UserClosedWindow()
             end
@@ -642,6 +647,7 @@ local FOOTER_ROW_H = 18
 
 local function RenderFooter()
     if not liveMode then
+        HideMoneyPopup()
         win._bankMoney:Hide()
         win._depositBtn:Hide()
         win._withdrawBtn:Hide()

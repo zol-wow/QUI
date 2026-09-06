@@ -983,6 +983,48 @@ local function SortPreviewEntries(entries, rows, isCooldown, isCustomBar, db)
     return entries
 end
 
+-- Aura containers are a single run of icons whose growth direction picks
+-- the axis and the end the first icon sits at, mirroring
+-- CDMLayout.BuildBuffGridLayout.
+local function LayoutAuraPreviewIcons(icons, entries, rowInfo, growthDirection, gridArea, centerX, centerY)
+    growthDirection = growthDirection or "CENTERED_HORIZONTAL"
+    local n = math.min(rowInfo._actualCount or rowInfo.count, #entries)
+    if n <= 0 then return end
+    local size, height, padding = rowInfo.size, rowInfo.height, rowInfo.padding
+    local isVertical = (growthDirection == "UP" or growthDirection == "DOWN")
+    local stepX, stepY, startX, startY = 0, 0, centerX, centerY
+    if isVertical then
+        local total = (n * height) + ((n - 1) * padding)
+        if growthDirection == "UP" then
+            startY = centerY - total / 2 + height / 2
+            stepY = height + padding
+        else
+            startY = centerY + total / 2 - height / 2
+            stepY = -(height + padding)
+        end
+    else
+        local total = (n * size) + ((n - 1) * padding)
+        if growthDirection == "LEFT" then
+            startX = centerX + total / 2 - size / 2
+            stepX = -(size + padding)
+        else
+            startX = centerX - total / 2 + size / 2
+            stepX = size + padding
+        end
+    end
+    for i = 1, n do
+        local icon = icons[i]
+        if not icon then break end
+        icon:ClearAllPoints()
+        icon:SetSize(size, height)
+        icon:SetPoint("CENTER", gridArea, "TOPLEFT",
+            startX + (i - 1) * stepX, startY + (i - 1) * stepY)
+        if icon.Icon and icon.Icon.SetTexCoord then
+            icon.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        end
+    end
+end
+
 local function LayoutPreviewIconsImpl(icons, containerKey, scale)
     if type(icons) ~= "table" then return end
     if not containerKey then return end
@@ -1024,6 +1066,11 @@ local function LayoutPreviewIconsImpl(icons, containerKey, scale)
     local gridH = gridArea:GetHeight()
     local centerX = gridW / 2
     local centerY = -gridH / 2
+
+    if containerType == "aura" and rows[1] then
+        LayoutAuraPreviewIcons(icons, entries, rows[1], db.growthDirection, gridArea, centerX, centerY)
+        return
+    end
 
     local currentY = centerY + (totalHeight / 2)
     if growUp then

@@ -354,27 +354,34 @@ local function BuildAutomation(L, generalDB)
         { description = ns.L["Automatically accept incoming party/raid invites from the chosen set of senders."] })
     s.AddRow(row(s.frame, ns.L["Fast Auto Loot"], fastLootW), row(s.frame, ns.L["Auto Accept Party Invites"], inviteW))
 
+    local summonOptions = {
+        { value = "off", text = ns.L["Off"] },
+        { value = "always", text = ns.L["Always"] },
+        { value = "outOfCombat", text = ns.L["Out of Combat"] },
+    }
+    local summonW = GUI:CreateFormDropdown(s.frame, nil, summonOptions, "autoAcceptSummons", generalDB, nil,
+        { description = ns.L["Automatically accept incoming player summons without requiring a click."] })
     local roleW = GUI:CreateFormCheckbox(s.frame, nil, "autoRoleAccept", generalDB, nil,
         { description = ns.L["Automatically confirm role checks in LFG using the role you already had selected."] })
+    s.AddRow(row(s.frame, ns.L["Auto Accept Summons"], summonW), row(s.frame, ns.L["Auto Accept Role Check"], roleW))
+
     local questW = GUI:CreateFormCheckbox(s.frame, nil, "autoAcceptQuest", generalDB, nil,
         { description = ns.L["Automatically accept quests from NPCs without requiring a click."] })
-    s.AddRow(row(s.frame, ns.L["Auto Accept Role Check"], roleW), row(s.frame, ns.L["Auto Accept Quests"], questW))
-
     local turnInW = GUI:CreateFormCheckbox(s.frame, nil, "autoTurnInQuest", generalDB, nil,
         { description = ns.L["Automatically hand in completed quests and pick the only available reward when applicable."] })
+    s.AddRow(row(s.frame, ns.L["Auto Accept Quests"], questW), row(s.frame, ns.L["Auto Turn-In Quests"], turnInW))
+
     local gossipW = GUI:CreateFormCheckbox(s.frame, nil, "autoSelectGossip", generalDB, nil,
         { description = ns.L["When an NPC gossip has a single option, pick it automatically so you skip the popup."] })
-    s.AddRow(row(s.frame, ns.L["Auto Turn-In Quests"], turnInW), row(s.frame, ns.L["Auto Select Single Gossip Option"], gossipW))
-
     local pauseW = GUI:CreateFormCheckbox(s.frame, nil, "questHoldShift", generalDB, nil,
         { description = ns.L["Hold Shift while interacting to temporarily disable the quest and gossip automations above."] })
+    s.AddRow(row(s.frame, ns.L["Auto Select Single Gossip Option"], gossipW), row(s.frame, ns.L["Hold Shift to Pause Quest/Gossip Automation"], pauseW))
+
     local keyW = GUI:CreateFormCheckbox(s.frame, nil, "autoInsertKey", generalDB, nil,
         { description = ns.L["Automatically place your Mythic+ keystone into the font of power when you open the keystone window."] })
-    s.AddRow(row(s.frame, ns.L["Hold Shift to Pause Quest/Gossip Automation"], pauseW), row(s.frame, ns.L["Auto Insert M+ Keys"], keyW))
-
     local closeBagsKeyW = GUI:CreateFormCheckbox(s.frame, nil, "closeBagsOnKeystoneInsert", generalDB, nil,
         { description = ns.L["Close your bags after the keystone is auto-inserted. Requires Auto Insert M+ Keys."] })
-    s.AddRow(row(s.frame, ns.L["Close Bags After Inserting Key"], closeBagsKeyW))
+    s.AddRow(row(s.frame, ns.L["Auto Insert M+ Keys"], keyW), row(s.frame, ns.L["Close Bags After Inserting Key"], closeBagsKeyW))
 
     local logMW = GUI:CreateFormCheckbox(s.frame, nil, "autoCombatLog", generalDB, function()
         if _G.QUI_RefreshAutoCombatLogging then _G.QUI_RefreshAutoCombatLogging() end
@@ -386,14 +393,10 @@ local function BuildAutomation(L, generalDB)
 
     local telW = GUI:CreateFormCheckbox(s.frame, nil, "mplusTeleportEnabled", generalDB, nil,
         { description = ns.L["Allow clicking on a dungeon icon in the Mythic+ UI to cast its teleport spell if you have it."] })
-    local delW = GUI:CreateFormCheckbox(s.frame, nil, "autoDeleteConfirm", generalDB, nil,
-        { description = ns.L["Pre-fill the word DELETE into the confirmation box when destroying a rare or higher item."] })
-    s.AddRow(row(s.frame, ns.L["Click-to-Teleport on M+ Tab"], telW), row(s.frame, ns.L["Auto-Fill DELETE Confirmation Text"], delW))
-
     local mapTelW = GUI:CreateFormCheckbox(s.frame, nil, "worldMapTeleports", generalDB, function()
         if ns.RefreshWorldMapTeleports then ns.RefreshWorldMapTeleports() end
     end, { description = ns.L["Show a panel of this season's M+ dungeon teleports on the world map. Unlearned teleports show desaturated. Panel builds out of combat."] })
-    s.AddRow(row(s.frame, ns.L["World Map Teleport Panel"], mapTelW))
+    s.AddRow(row(s.frame, ns.L["Click-to-Teleport on M+ Tab"], telW), row(s.frame, ns.L["World Map Teleport Panel"], mapTelW))
 
     if type(generalDB.focusMarker) ~= "table" then generalDB.focusMarker = {} end
     local fm = generalDB.focusMarker
@@ -433,32 +436,11 @@ local function BuildAutomation(L, generalDB)
         { description = ns.L["Only show inside dungeons, raids, and other instances."] })
     s.AddRow(row(s.frame, ns.L["Healer Mana Bars"], hmEnableW), row(s.frame, ns.L["Instances Only"], hmInstanceW))
 
-    if type(generalDB.deathAlert) ~= "table" then generalDB.deathAlert = {} end
-    local da = generalDB.deathAlert
-    local function RefreshDA()
-        if ns.RefreshDeathAlert then ns.RefreshDeathAlert() end
-    end
-    local daEnableW = GUI:CreateFormCheckbox(s.frame, nil, "enabled", da, RefreshDA,
-        { description = ns.L["Flash an on-screen alert when a party or raid member dies (hunter feigns filtered). Position it in Layout Mode. Names fall back to 'An ally' when combat-restricted."] })
-    local daSoundW = GUI:CreateFormDropdown(s.frame, nil, Shared.GetSoundList(), "sound", da, nil,
-        { description = ns.L["Sound played with the death alert. None = silent."] })
-    s.AddRow(row(s.frame, ns.L["Group Death Alert"], daEnableW), row(s.frame, ns.L["Death Alert Sound"], daSoundW))
-
-    local daBlowW = GUI:CreateFormCheckbox(s.frame, nil, "showKillingBlow", da, RefreshDA,
-        { description = ns.L["Name what killed them, e.g. 'Zol died to Heavy Slam!'. Read from Blizzard's death recap data; the alert stays plain when no recap is available."] })
-    local daKillerW = GUI:CreateFormCheckbox(s.frame, nil, "showKiller", da, RefreshDA,
-        { description = ns.L["Also name the attacker, e.g. 'Zol died to Heavy Slam from Ingra Maloch!'."] })
-    s.AddRow(row(s.frame, ns.L["Show Killing Blow"], daBlowW), row(s.frame, ns.L["Show Attacker"], daKillerW))
-
-    local daClassColorW = GUI:CreateFormCheckbox(s.frame, nil, "classColorName", da, RefreshDA,
-        { description = ns.L["Color the dead player's name by their class."] })
-    local daInstanceW = GUI:CreateFormCheckbox(s.frame, nil, "instanceOnly", da, RefreshDA,
-        { description = ns.L["Only alert inside dungeons and raids."] })
-    s.AddRow(row(s.frame, ns.L["Class-Colored Name"], daClassColorW), row(s.frame, ns.L["Dungeons & Raids Only"], daInstanceW))
-
-    local daDurationW = GUI:CreateFormSlider(s.frame, nil, 1, 10, 0.5, "duration", da, RefreshDA,
-        { description = ns.L["How long the death alert stays on screen, in seconds."] })
-    s.AddRow(row(s.frame, ns.L["Alert Duration (sec)"], daDurationW))
+    local audioOptions = (ns.GetAudioDeviceOptions and ns.GetAudioDeviceOptions())
+        or { { value = "", text = ns.L["Off (don't lock)"] } }
+    local audioW = GUI:CreateFormDropdown(s.frame, nil, audioOptions, "audioOutputDevice", generalDB, function()
+        if ns.ApplyPreferredAudioDevice then ns.ApplyPreferredAudioDevice() end
+    end, { description = ns.L["Lock the game's audio output to a specific device. When your system switches devices (e.g. plugging in headphones), QUI forces it back. Off leaves Blizzard's default behavior."] })
 
     local ahW = GUI:CreateFormCheckbox(s.frame, nil, "auctionHouseExpansionFilter", generalDB, nil,
         { description = ns.L["Automatically toggle the current expansion filter when you open the Auction House so you only see modern items."] })
@@ -482,13 +464,6 @@ local function BuildAutomation(L, generalDB)
     local blockReleaseW = GUI:CreateFormCheckbox(s.frame, nil, "blockReleaseInRaid", generalDB, nil,
         { description = ns.L["Guard the Release Spirit button while you are dead in a raid: it locks during a 3-second countdown and afterwards only works while Ctrl is held, so you don't release before a battle resurrection."] })
     s.AddRow(row(s.frame, ns.L["Auto Release Spirit"], releaseW), row(s.frame, ns.L["Block Release in Raids"], blockReleaseW))
-
-    local audioOptions = (ns.GetAudioDeviceOptions and ns.GetAudioDeviceOptions())
-        or { { value = "", text = ns.L["Off (don't lock)"] } }
-    local audioW = GUI:CreateFormDropdown(s.frame, nil, audioOptions, "audioOutputDevice", generalDB, function()
-        if ns.ApplyPreferredAudioDevice then ns.ApplyPreferredAudioDevice() end
-    end, { description = ns.L["Lock the game's audio output to a specific device. When your system switches devices (e.g. plugging in headphones), QUI forces it back. Off leaves Blizzard's default behavior."] })
-    s.AddRow(row(s.frame, ns.L["Lock Audio Output Device"], audioW))
 
     local unwrapW = GUI:CreateFormCheckbox(s.frame, nil, "autoUnwrapCollections", generalDB, function()
         if ns.RefreshCollectionFanfare then ns.RefreshCollectionFanfare() end
@@ -531,6 +506,47 @@ local function BuildAutomation(L, generalDB)
     local tmlRecvW = GUI:CreateFormCheckbox(s.frame, nil, "logReceivedMail", tml, nil,
         { description = ns.L["Log mail you open in your inbox (sender, subject, gold, COD, attachments)."] })
     s.AddRow(row(s.frame, ns.L["Log Sent Mail"], tmlSentW), row(s.frame, ns.L["Log Received Mail"], tmlRecvW))
+
+    local delW = GUI:CreateFormCheckbox(s.frame, nil, "autoDeleteConfirm", generalDB, nil,
+        { description = ns.L["Pre-fill the word DELETE into the confirmation box when destroying a rare or higher item."] })
+    s.AddRow(row(s.frame, ns.L["Lock Audio Output Device"], audioW), row(s.frame, ns.L["Auto-Fill DELETE Confirmation Text"], delW))
+    L.closeSection(s)
+end
+
+local function BuildNotifications(L, generalDB)
+    if not generalDB then return end
+
+    L.headerAt(ns.L["Group Death Alerts"])
+    L.intro(ns.L["On-screen alerts for things happening in your group. Position each alert in Layout Mode."])
+
+    if type(generalDB.deathAlert) ~= "table" then generalDB.deathAlert = {} end
+    local da = generalDB.deathAlert
+    local function RefreshDA()
+        if ns.RefreshDeathAlert then ns.RefreshDeathAlert() end
+    end
+
+    local s = L.sectionAt()
+    local daEnableW = GUI:CreateFormCheckbox(s.frame, nil, "enabled", da, RefreshDA,
+        { description = ns.L["Flash an on-screen alert when a party or raid member dies (hunter feigns filtered). Position it in Layout Mode. Names fall back to 'An ally' when combat-restricted."] })
+    local daSoundW = GUI:CreateFormDropdown(s.frame, nil, Shared.GetSoundList(), "sound", da, nil,
+        { description = ns.L["Sound played with the death alert. None = silent."] })
+    s.AddRow(row(s.frame, ns.L["Group Death Alert"], daEnableW), row(s.frame, ns.L["Death Alert Sound"], daSoundW))
+
+    local daBlowW = GUI:CreateFormCheckbox(s.frame, nil, "showKillingBlow", da, RefreshDA,
+        { description = ns.L["Name what killed them, e.g. 'Zol died to Heavy Slam!'. Read from Blizzard's death recap data; the alert stays plain when no recap is available."] })
+    local daKillerW = GUI:CreateFormCheckbox(s.frame, nil, "showKiller", da, RefreshDA,
+        { description = ns.L["Also name the attacker, e.g. 'Zol died to Heavy Slam from Ingra Maloch!'."] })
+    s.AddRow(row(s.frame, ns.L["Show Killing Blow"], daBlowW), row(s.frame, ns.L["Show Attacker"], daKillerW))
+
+    local daClassColorW = GUI:CreateFormCheckbox(s.frame, nil, "classColorName", da, RefreshDA,
+        { description = ns.L["Color the dead player's name by their class."] })
+    local daInstanceW = GUI:CreateFormCheckbox(s.frame, nil, "instanceOnly", da, RefreshDA,
+        { description = ns.L["Only alert inside dungeons and raids."] })
+    s.AddRow(row(s.frame, ns.L["Class-Colored Name"], daClassColorW), row(s.frame, ns.L["Dungeons & Raids Only"], daInstanceW))
+
+    local daDurationW = GUI:CreateFormSlider(s.frame, nil, 1, 10, 0.5, "duration", da, RefreshDA,
+        { description = ns.L["How long the death alert stays on screen, in seconds."] })
+    s.AddRow(row(s.frame, ns.L["Alert Duration (sec)"], daDurationW))
     L.closeSection(s)
 end
 
@@ -1174,6 +1190,7 @@ local SECTION_BUILDERS = {
     extendedIgnore   = function(L, db) BuildExtendedIgnore(L, db) end,
     eventSounds      = function(L, db) BuildEventSounds(L, db) end,
     soundMute        = function(L, db) BuildSoundMute(L, db and db.general) end,
+    notifications    = function(L, db) BuildNotifications(L, db and db.general) end,
 }
 
 local SECTION_ORDER = {
@@ -1185,6 +1202,7 @@ local SECTION_ORDER = {
     "extendedIgnore",
     "eventSounds",
     "soundMute",
+    "notifications",
 }
 
 local function BuildGeneralTab(tabContent, searchContext, selectedSectionKey)
@@ -1230,6 +1248,9 @@ local generalSectionFeatures = {
     { id = "extendedIgnore",    category = "qol",        nav = { tileId = "qol", subPageIndex = 12 }, sectionKey = "extendedIgnore",   sectionTitle = "Extended Ignore",                  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 12, subTabName = "Extended Ignore" } },
     { id = "eventSounds",       category = "qol",        nav = { tileId = "qol", subPageIndex = 13 }, sectionKey = "eventSounds",      sectionTitle = "Event Sounds",                     searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 13, subTabName = "Event Sounds" } },
     { id = "soundMute",         category = "qol",        nav = { tileId = "qol", subPageIndex = 14 }, sectionKey = "soundMute",        sectionTitle = "Sound Mute",                       searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 14, subTabName = "Sound Mute" } },
+    { id = "notifications",     category = "qol",        nav = { tileId = "qol", subPageIndex = 15 }, sectionKey = "notifications",    sectionTitle = "Group Death Alerts",               searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 15, subTabName = "Notifications" },
+      -- Legacy pin route: death alert settings lived under Automation; "general.deathAlert.*" pin paths resolve here.
+      lookupKeys = { "deathAlert" } },
     { id = "uiScale",           category = "appearance", nav = { tileId = "appearance", subPageIndex = 1 }, sectionKey = "uiScale",   sectionTitle = "UI Scale",                         searchContext = { tabIndex = 10, tabName = "Appearance",      subTabIndex = 3, subTabName = "UI Scale" } },
     { id = "defaultFonts",      category = "appearance", nav = { tileId = "appearance", subPageIndex = 2 }, sectionKey = "defaultFonts", sectionTitle = "Default Font Settings",         searchContext = { tabIndex = 10, tabName = "Appearance",      subTabIndex = 4, subTabName = "Fonts" } },
 }
@@ -1243,6 +1264,7 @@ if Registry and Schema
         Registry:RegisterFeature(Schema.Feature({
             id = featureSpec.id,
             moverKey = featureSpec.moverKey or featureSpec.id,
+            lookupKeys = featureSpec.lookupKeys,
             category = featureSpec.category,
             nav = featureSpec.nav,
             getDB = GetGeneralDB,

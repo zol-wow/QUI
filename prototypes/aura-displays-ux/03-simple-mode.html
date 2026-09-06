@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QUI · Aura Displays UX — Approach 3/5: Simple Mode</title>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --surface: #12151c;
+    --panel: #1a1e28;
+    --inset: #141822;
+    --border: #2a3040;
+    --text: #e6e9f0;
+    --muted: #8b93a7;
+    --gold: #e8c15a;
+    --success: #7ac37a;
+    --danger: #e06c6c;
+    --info: #6cb2e0;
+    --monk: #00FF98;
+    --mage: #3FC7EB;
+    --warrior: #C69B6D;
+    --radius: 8px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+  }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+  /* ---------- deck chrome ---------- */
+  .caption {
+    position: fixed; top: 14px; left: 18px; z-index: 50;
+    font-size: 12px; color: var(--muted); letter-spacing: .02em;
+  }
+  .caption b { color: var(--text); font-weight: 600; }
+
+  .deck { position: absolute; inset: 0; }
+  .slide {
+    position: absolute; inset: 0; display: none;
+    padding: 56px 64px 88px;
+    overflow-y: auto;
+  }
+  .slide.active { display: block; }
+  .slide-inner {
+    max-width: 1060px; margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 40px 48px 44px;
+    min-height: calc(100vh - 160px);
+  }
+
+  .kicker { font-size: 12px; text-transform: uppercase; letter-spacing: .14em; color: var(--gold); margin-bottom: 10px; font-weight: 600; }
+  h1 { font-size: 40px; line-height: 1.15; margin-bottom: 16px; font-weight: 700; }
+  h2 { font-size: 27px; line-height: 1.2; margin-bottom: 14px; font-weight: 700; }
+  h3 { font-size: 16px; margin: 18px 0 8px; font-weight: 650; }
+  p.lede { font-size: 17px; color: var(--muted); line-height: 1.55; max-width: 760px; }
+  p, li { line-height: 1.55; }
+  .muted { color: var(--muted); }
+  .gold { color: var(--gold); }
+  .small { font-size: 13px; }
+  .hint { font-size: 12.5px; color: var(--info); margin-top: 10px; }
+  ul.tight { margin: 8px 0 0 20px; }
+  ul.tight li { margin-bottom: 7px; font-size: 14.5px; }
+
+  .cols { display: flex; gap: 28px; align-items: flex-start; }
+  .cols > * { flex: 1; min-width: 0; }
+
+  /* ---------- nav ---------- */
+  .nav {
+    position: fixed; bottom: 18px; right: 22px; z-index: 60;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .nav button {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    width: 34px; height: 30px; border-radius: 6px; cursor: pointer; font-size: 14px;
+  }
+  .nav button:hover { border-color: var(--gold); color: var(--gold); }
+  .dots { position: fixed; bottom: 25px; left: 22px; z-index: 60; display: flex; gap: 7px; }
+  .dots span {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--border);
+    cursor: pointer; transition: background .15s;
+  }
+  .dots span.on { background: var(--gold); }
+  .slide-num { font-size: 12px; color: var(--muted); margin-right: 4px; }
+
+  /* ---------- harness pill ---------- */
+  .harness {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 70;
+    display: flex; align-items: center; gap: 12px;
+    background: #f5f0e4; color: #1a1a1a;
+    border-radius: 999px; padding: 8px 18px;
+    font-size: 13px; font-weight: 600;
+    box-shadow: 0 4px 18px rgba(0,0,0,.6), 0 0 0 1px rgba(0,0,0,.35);
+  }
+  .harness a { color: #1a1a1a; text-decoration: none; padding: 2px 6px; border-radius: 6px; }
+  .harness a:hover { background: rgba(0,0,0,.1); }
+  .harness .sep { width: 1px; height: 16px; background: rgba(0,0,0,.25); }
+  .harness .label { font-weight: 700; }
+
+  /* ---------- mock addon panel bits ---------- */
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px;
+  }
+  .inset { background: var(--inset); border: 1px solid var(--border); border-radius: 6px; }
+  .panel-title {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--muted); margin-bottom: 10px; font-weight: 600;
+  }
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .06em;
+    padding: 2px 7px; border-radius: 4px; vertical-align: middle;
+  }
+  .badge.strip   { background: rgba(108,178,224,.15); color: var(--info); border: 1px solid rgba(108,178,224,.4); }
+  .badge.tracked { background: rgba(232,193,90,.12); color: var(--gold); border: 1px solid rgba(232,193,90,.4); }
+  .badge.count   { background: rgba(224,108,108,.12); color: var(--danger); border: 1px solid rgba(224,108,108,.4); font-size: 12px; padding: 3px 9px; }
+  .badge.good    { background: rgba(122,195,122,.12); color: var(--success); border: 1px solid rgba(122,195,122,.4); font-size: 12px; padding: 3px 9px; }
+
+  .frow {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 10px; border-bottom: 1px solid rgba(42,48,64,.6);
+    font-size: 13px; gap: 12px;
+  }
+  .frow:last-child { border-bottom: none; }
+  .frow .lbl { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .frow .ctl { color: var(--muted); flex-shrink: 0; }
+  .mock-dd {
+    background: var(--inset); border: 1px solid var(--border); border-radius: 5px;
+    padding: 3px 9px; font-size: 12.5px; color: var(--text); white-space: nowrap;
+  }
+  .mock-dd::after { content: " ▾"; color: var(--muted); font-size: 10px; }
+  .mock-check { display: inline-block; width: 14px; height: 14px; border: 1px solid var(--border); border-radius: 3px; background: var(--inset); position: relative; }
+  .mock-check.on { border-color: var(--gold); }
+  .mock-check.on::after { content: "✓"; position: absolute; inset: 0; color: var(--gold); font-size: 11px; line-height: 14px; text-align: center; }
+  .mock-slider { display: inline-block; width: 90px; height: 4px; background: var(--border); border-radius: 2px; position: relative; vertical-align: middle; }
+  .mock-slider::after { content: ""; position: absolute; left: 55%; top: -4px; width: 12px; height: 12px; border-radius: 50%; background: var(--gold); }
+
+  /* toggle switch (interactive) */
+  .tgl {
+    width: 34px; height: 18px; border-radius: 999px; background: var(--border);
+    position: relative; cursor: pointer; flex-shrink: 0; border: none; display: inline-block;
+    transition: background .15s;
+  }
+  .tgl::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+    border-radius: 50%; background: #6a7288; transition: left .15s, background .15s;
+  }
+  .tgl.on { background: rgba(232,193,90,.35); }
+  .tgl.on::after { left: 18px; background: var(--gold); }
+
+  /* segmented control */
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button {
+    background: var(--inset); color: var(--muted); border: none; padding: 4px 14px;
+    font-size: 12.5px; cursor: pointer; border-right: 1px solid var(--border);
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button.on { background: rgba(232,193,90,.15); color: var(--gold); font-weight: 600; }
+
+  /* ---------- sentence editor ---------- */
+  .sentence-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 22px 24px;
+  }
+  .sentence {
+    font-size: 21px; line-height: 2; font-weight: 400;
+  }
+  .tok {
+    display: inline-block; background: var(--inset); border: 1px solid rgba(232,193,90,.45);
+    border-radius: 6px; padding: 1px 10px; margin: 0 2px; cursor: pointer;
+    color: var(--gold); font-weight: 600; font-size: 19px; user-select: none;
+    transition: border-color .12s, background .12s;
+  }
+  .tok:hover { border-color: var(--gold); background: rgba(232,193,90,.08); }
+  .tok::after { content: " ▾"; font-size: 12px; color: var(--muted); }
+  .tok.spell { font-family: inherit; }
+
+  /* ---------- CSS aura icons ---------- */
+  .aura-row { display: flex; gap: 6px; align-items: flex-end; }
+  .aura-icon {
+    position: relative; border-radius: 5px;
+    border: 1px solid #3a4256; flex-shrink: 0;
+    background: linear-gradient(135deg, #1f6f4d, #0e3325);
+  }
+  .aura-icon.sz24 { width: 24px; height: 24px; }
+  .aura-icon.sz32 { width: 32px; height: 32px; }
+  .aura-icon.sz40 { width: 40px; height: 40px; }
+  .aura-icon.monk   { background: linear-gradient(135deg, #0d6b48, #062e20); }
+  .aura-icon.mage   { background: linear-gradient(135deg, #1a5f7d, #0a2a38); }
+  .aura-icon.warrior{ background: linear-gradient(135deg, #6e5233, #2e2115); }
+  .aura-icon.harm   { border-color: rgba(224,108,108,.7); }
+  .aura-icon .swipe {
+    position: absolute; inset: 0; border-radius: 4px;
+    background: conic-gradient(rgba(0,0,0,.65) 0 32%, transparent 32%);
+  }
+  .aura-icon .dur {
+    position: absolute; left: 0; right: 0; bottom: 1px; text-align: center;
+    font-size: 10px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000;
+  }
+  .aura-icon.sz40 .dur { font-size: 12px; }
+  .aura-icon .stk {
+    position: absolute; right: 1px; top: 0; font-size: 9px; font-weight: 700;
+    color: var(--gold); text-shadow: 0 1px 2px #000;
+  }
+  .aura-icon.glowing { box-shadow: 0 0 8px 2px rgba(232,193,90,.65); border-color: var(--gold); }
+
+  .aura-bar {
+    width: 220px; height: 22px; background: var(--inset); border: 1px solid var(--border);
+    border-radius: 4px; position: relative; overflow: hidden;
+  }
+  .aura-bar .fill { position: absolute; inset: 0; width: 68%; background: linear-gradient(180deg, #0d8a5c, #0a5c3e); }
+  .aura-bar .txt { position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 8px; font-size: 11px; font-weight: 600; text-shadow: 0 1px 2px #000; }
+  .aura-square { border-radius: 4px; }
+  .aura-square.sz32 { width: 32px; height: 32px; }
+
+  .preview-strip {
+    background: var(--inset); border: 1px solid var(--border); border-radius: 6px;
+    padding: 14px 16px; display: flex; align-items: center; gap: 18px; min-height: 74px;
+  }
+  .preview-strip .pv-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); width: 82px; flex-shrink: 0; }
+  .preview-strip.pinned {
+    position: sticky; top: 0; z-index: 5;
+    box-shadow: 0 6px 14px rgba(0,0,0,.45);
+  }
+  .pv-toggle { margin-left: auto; font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+
+  /* advanced disclosure */
+  .adv-row {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+    border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px;
+    background: var(--inset); cursor: pointer; font-size: 13.5px;
+    transition: border-color .12s;
+  }
+  .adv-row:hover { border-color: #3d4560; }
+  .adv-row .caret { color: var(--muted); font-size: 11px; transition: transform .15s; }
+  .adv-row.open .caret { transform: rotate(90deg); }
+  .adv-row .cnt { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .adv-body { display: none; margin: -4px 0 10px; padding: 4px 6px 4px 18px; opacity: .72; }
+  .adv-body.open { display: block; }
+  .adv-body .frow.hit { background: rgba(232,193,90,.12); border-radius: 5px; outline: 1px solid rgba(232,193,90,.5); opacity: 1; }
+
+  .search-box {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--inset); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; margin-bottom: 14px;
+  }
+  .search-box input {
+    background: transparent; border: none; outline: none; color: var(--text);
+    font-size: 13px; width: 100%; font-family: inherit;
+  }
+  .search-box input::placeholder { color: #5a6275; }
+
+  /* wall of rows */
+  .wall {
+    height: 300px; overflow-y: auto; filter: blur(1.1px); transform: scale(.94);
+    transform-origin: top center; opacity: .8; border-radius: 6px;
+  }
+  .wall .frow { padding: 5px 10px; font-size: 11.5px; }
+  .wall-wrap { position: relative; }
+  .wall-badge { position: absolute; top: 10px; right: 14px; z-index: 3; }
+
+  /* hierarchy diagram */
+  .tier {
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px;
+    background: var(--panel); margin: 0 auto;
+  }
+  .tier h4 { font-size: 15px; margin-bottom: 4px; }
+  .tier p { font-size: 13px; color: var(--muted); }
+  .tier.t1 { width: 100%; border-color: rgba(232,193,90,.55); }
+  .tier.t2 { width: 88%; }
+  .tier.t3 { width: 76%; opacity: .75; }
+  .tier-arrow { text-align: center; color: var(--muted); font-size: 15px; margin: 6px 0; }
+
+  .btn-gold {
+    background: var(--gold); color: #14161c; border: none; border-radius: 6px;
+    padding: 6px 14px; font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+  .btn-ghost {
+    background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 14px; font-size: 13px; cursor: pointer;
+  }
+
+  .verdict-box {
+    border: 1px solid rgba(232,193,90,.5); border-radius: 10px; padding: 26px 30px;
+    background: linear-gradient(180deg, rgba(232,193,90,.06), transparent);
+    margin-top: 24px;
+  }
+  .fix-col h3 { display: flex; align-items: center; gap: 8px; }
+  .dot-ok { width: 9px; height: 9px; border-radius: 50%; background: var(--success); display: inline-block; }
+  .dot-no { width: 9px; height: 9px; border-radius: 50%; background: var(--danger); display: inline-block; }
+
+  .note-card { border-left: 3px solid var(--info); padding: 10px 14px; background: var(--inset); border-radius: 0 6px 6px 0; font-size: 13.5px; margin-top: 14px; }
+  .stat { text-align: center; }
+  .stat .n { font-size: 42px; font-weight: 800; color: var(--gold); line-height: 1.1; }
+  .stat .n.bad { color: var(--danger); }
+  .stat .d { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .stats-row { display: flex; gap: 20px; justify-content: center; margin: 30px 0 8px; }
+  .stats-row .stat { flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 12px; }
+</style>
+</head>
+<body>
+
+<div class="caption">QUI · Aura Displays UX — <b>Approach 3/5: Simple Mode</b></div>
+
+<div class="deck">
+
+  <!-- ============ SLIDE 1 · TITLE ============ -->
+  <section class="slide active">
+    <div class="slide-inner" style="display:flex; flex-direction:column; justify-content:center;">
+      <div class="kicker">Approach 3 of 5 · Sentence-first progressive disclosure</div>
+      <h1>Simple Mode</h1>
+      <h2 style="color:var(--gold); font-weight:600;">Same power, 11 visible things instead of 46.</h2>
+      <p class="lede" style="margin-top:14px;">
+        Don't build a new surface. Rebuild the information hierarchy of the editor we already have.
+        Every element renders first as one editable plain-language sentence, then ~6 essential controls,
+        then everything else behind counted "Advanced" disclosures. A pinned live preview shows what you're
+        editing at all times. Advanced <em>is</em> today's full editor — nothing is removed.
+      </p>
+      <div class="stats-row" style="max-width:720px;">
+        <div class="stat"><div class="n">1</div><div class="d">sentence that says what the element does</div></div>
+        <div class="stat"><div class="n">~6</div><div class="d">essential controls visible by default</div></div>
+        <div class="stat"><div class="n">0</div><div class="d">settings removed — Advanced is the full editor</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 2 · PROBLEM ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <div class="kicker">The problem today</div>
+      <h2>Every element opens as a wall of rows</h2>
+      <p class="lede">In <b>Auras → Aura Displays</b>, clicking an element row on the Auras tab expands an inline form.
+      A Filter Strip fronts ~46 rows across Basics / Filters / Appearance &amp; Advanced — and grows past 70 with
+      Filter Mode set to Classification or Flags, Dispel Type Filter, custom borders and tooltips enabled.
+      Nothing tells you which six of those rows actually matter.</p>
+
+      <div class="cols" style="margin-top:24px;">
+        <div>
+          <div class="panel">
+            <div class="panel-title">Mock · Filter Strip element, expanded (today)</div>
+            <div class="wall-wrap">
+              <span class="badge count wall-badge">46 rows</span>
+              <div class="wall inset" id="wall46"></div>
+            </div>
+            <p class="small muted" style="margin-top:8px;">↳ scroll it — this is the real row list, faithfully boring</p>
+          </div>
+        </div>
+        <div>
+          <h3 style="margin-top:0;">The pain, in numbers</h3>
+          <ul class="tight">
+            <li><b class="gold">~35–40 controls</b> front a minimal new display (General tab alone has 23 options).</li>
+            <li><b class="gold">80–120 widgets</b> on screen for a two-element display.</li>
+            <li>A TRACKED element form is <b class="gold">~31 rows</b>; a FILTER STRIP is <b class="gold">~46</b>, up to <b class="gold">70+</b>.</li>
+            <li>Quick-created displays start at <b class="gold">16px icons with duration text OFF</b> — even though good defaults exist in <code>AD.DefaultBucket</code> (32px, 12pt). Quick-create discards them.</li>
+            <li>The Preview toggle exists in the detail-pane header, but it's off to the side of the wall, not part of the editing loop.</li>
+          </ul>
+          <div class="note-card">Users don't fail because a setting is missing. They fail because the six settings
+          that define the element are visually equal to the forty that refine it.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 3 · CORE IDEA ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <div class="kicker">The core idea</div>
+      <h2>Three tiers, one editor</h2>
+      <p class="lede">Same detail pane, same tabs (General / Auras / Load Conditions), same element rows with
+      STRIP / TRACKED badges. Only the expanded form changes: it renders in strict order of importance.</p>
+
+      <div style="max-width:680px; margin: 30px auto 0;">
+        <div class="tier t1">
+          <h4><span class="gold">Tier 1 — The sentence.</span> What this element <em>is</em>.</h4>
+          <p>"Show <b>an icon</b> of <b>Renewing Mist</b> on <b>Player</b> — <b>only my cast</b>." Every bold token
+          is an inline dropdown. Reading it teaches the data model; editing it edits the element.</p>
+        </div>
+        <div class="tier-arrow">▼</div>
+        <div class="tier t2">
+          <h4><span style="color:var(--info);">Tier 2 — Essentials.</span> The ~6 controls people actually touch.</h4>
+          <p>Size · Duration text · Stack text · Glow · Position · Sort (strips). Chosen per element kind, iterated from usage.</p>
+        </div>
+        <div class="tier-arrow">▼</div>
+        <div class="tier t3">
+          <h4><span class="muted">Tier 3 — Advanced.</span> The other 25–60, collapsed and counted.</h4>
+          <p>"Appearance · 12 more settings ▸" — click to expand exactly today's rows. Plus a settings-search box that
+          finds any of them by name. Nothing is dumbed down; it's the same editor, resorted.</p>
+        </div>
+      </div>
+
+      <div class="cols" style="margin-top:32px; max-width:680px; margin-left:auto; margin-right:auto;">
+        <div class="note-card" style="border-color:var(--gold);">
+          <b>Not a fork.</b> Simple/Advanced expansion state is remembered per user. Power users who open everything
+          once live in the full editor forever. New users see 11 things.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 4 · SENTENCE EDITOR — TRACKED ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <div class="kicker">Walkthrough 1/5 · The sentence editor</div>
+      <h2>A TRACKED element, as a sentence</h2>
+      <p class="lede">Instead of Display Type, Aura Type, Only My Cast and Unit scattered across 31 rows, the element
+      opens with one line that contains all four. Each token is a live control.</p>
+
+      <div class="panel" style="margin-top:22px;">
+        <div class="frow" style="border-bottom:1px solid var(--border); padding-bottom:10px; margin-bottom:6px;">
+          <span class="lbl"><span class="badge tracked">TRACKED</span> &nbsp;<b>Renewing Mist</b> <span class="mono muted small">115151</span></span>
+          <span class="ctl muted small">▲ collapse</span>
+        </div>
+
+        <div class="sentence-card" style="border:none; background:transparent; padding:14px 8px 6px;">
+          <div class="sentence">
+            Show <span class="tok" data-cycle="t4disp">an icon</span>
+            of <span class="tok spell" data-cycle="t4spell">Renewing Mist</span>
+            on <span class="tok" data-cycle="t4unit">Player</span>
+            — <span class="tok" data-cycle="t4mine">only my cast</span>
+          </div>
+          <p class="hint">↳ click a highlighted token to change it — the preview follows</p>
+        </div>
+
+        <div class="preview-strip" style="margin-top:12px;">
+          <span class="pv-label">Preview</span>
+          <div id="t4preview"></div>
+          <span id="t4caption" class="small muted"></span>
+          <span class="pv-toggle"><span>Preview</span><span class="tgl on" style="pointer-events:none;"></span></span>
+        </div>
+      </div>
+
+      <div class="cols" style="margin-top:20px;">
+        <div class="note-card">
+          <b>Why a sentence?</b> It's self-documenting. "Debuffs (Harmful)", "Only My Cast", "Unit" are today four
+          unrelated dropdowns; in a sentence their relationship is grammar. New users learn the model just by reading
+          the default: <i>"Show an icon of Renewing Mist on Player — only my cast."</i>
+        </div>
+        <div class="note-card" style="border-color:var(--gold);">
+          <b>Same data underneath.</b> Every token maps 1:1 to an existing setting (Display Type: Icon / Colored Square / Bar;
+          Aura Type; Only My Cast; Unit from the General tab). The sentence is a render order, not a new schema.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 5 · SENTENCE EDITOR — STRIP ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <div class="kicker">Walkthrough 2/5 · The sentence editor</div>
+      <h2>A FILTER STRIP, as a sentence</h2>
+      <p class="lede">Strips are the scary form — 46 rows. But their essence is five decisions: how many, what kind,
+      on whom, filtered how, growing which way. The sentence fronts exactly those, wired to today's
+      "What to Show" presets.</p>
+
+      <div class="panel" style="margin-top:22px;">
+        <div class="frow" style="border-bottom:1px solid var(--border); padding-bottom:10px; margin-bottom:6px;">
+          <span class="lbl"><span class="badge strip">STRIP</span> &nbsp;<b>My HoTs</b></span>
+          <span class="ctl muted small">▲ collapse</span>
+        </div>
+
+        <div class="sentence-card" style="border:none; background:transparent; padding:14px 8px 6px;">
+          <div class="sentence">
+            Show <span class="tok" data-cycle="t5max">up to 8</span>
+            <span class="tok" data-cycle="t5kind">buffs</span>
+            on <span class="tok" data-cycle="t5unit">Player</span>
+            matching <span class="tok" data-cycle="t5filter">Only my auras</span>,
+            growing <span class="tok" data-cycle="t5grow">right</span>
+          </div>
+          <p class="hint">↳ click to try it — max icons, aura type, filter preset and grow direction all cycle</p>
+        </div>
+
+        <div class="preview-strip" style="margin-top:12px; min-height:96px;">
+          <span class="pv-label">Preview</span>
+          <div id="t5preview" class="aura-row"></div>
+          <span class="pv-toggle"><span>Preview</span><span class="tgl on" style="pointer-events:none;"></span></span>
+        </div>
+      </div>
+
+      <div class="cols" style="margin-top:20px;">
+        <div class="note-card">
+          <b>"matching Only my auras"</b> is the existing What to Show list verbatim: All · Only my auras · Defensives ·
+          Important · Purgeable · Dispellable by me · Crowd control · Boss debuffs · Role-relevant boss debuffs ·
+          Specific spells · Custom… Picking <b>Custom…</b> is the escape hatch — it opens the Filtering advanced
+          section (Filter Mode, Filter Flags, Classification, whitelist/blacklist editors).
+        </div>
+        <div class="note-card" style="border-color:var(--gold);">
+          <b>Escape hatch rule:</b> any combination the sentence grammar can't express renders as
+          "matching <i>Custom filter (4 rules)</i>" — a token that jumps straight to Advanced. The sentence never lies;
+          when it can't summarize, it says so and hands over.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 6 · ESSENTIALS + LIVE PREVIEW ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <div class="kicker">Walkthrough 3/5 · Essentials + pinned preview</div>
+      <h2>Six controls, and a preview that never scrolls away</h2>
+      <p class="lede">Below the sentence sits the essentials block — the handful of settings almost every element
+      needs tuned. The preview strip is pinned to the top of the detail pane (building on the existing Preview
+      toggle in the pane header), so cause and effect are never off-screen at the same time.</p>
+
+      <div class="panel" style="margin-top:20px; max-height:430px; overflow-y:auto;">
+        <div class="preview-strip pinned">
+          <span class="pv-label">Preview</span>
+          <div id="t6preview" class="aura-row"></div>
+          <span class="pv-toggle"><span>Preview</span><span class="tgl on" style="pointer-events:none;"></span></span>
+        </div>
+
+        <div class="panel-title" style="margin-top:14px;">Essentials</div>
+        <div class="inset">
+          <div class="frow">
+            <span class="lbl">Size</span>
+            <span class="ctl" style="display:flex; align-items:center; gap:10px;">
+              <span class="seg" id="t6size">
+                <button data-px="24">S</button><button data-px="32" class="on">M</button><button data-px="40">L</button>
+              </span>
+              <span class="mono small" id="t6px" style="width:38px; text-align:right;">32px</span>
+            </span>
+          </div>
+          <div class="frow">
+            <span class="lbl">Duration text</span>
+            <span class="ctl"><span class="tgl on" id="t6dur"></span></span>
+          </div>
+          <div class="frow">
+            <span class="lbl">Stack text</span>
+            <span class="ctl"><span class="tgl on" id="t6stk"></span></span>
+          </div>
+          <div class="frow">
+            <span class="lbl">Glow when active <span class="muted small">(Pandemic Glow)</span></span>
+            <span class="ctl"><span class="tgl" id="t6glow"></span></span>
+          </div>
+          <div class="frow">
+            <span class="lbl">Position</span>
+            <span class="ctl" style="display:flex; align-items:center; gap:8px;">
+              <span class="mock-dd">Anchor: BOTTOM</span>
+              <span class="mono small">x 0 · y −140</span>
+              <span class="muted small">↳ or nudge with arrow keys on the preview</span>
+            </span>
+          </div>
+          <div class="frow" style="opacity:.45;">
+            <span class="lbl">Sort <span class="muted small">(strips only)</span></span>
+            <span class="ctl"><span class="mock-dd">Time remaining ↓</span></span>
+          </div>
+        </div>
+        <p class="hint" style="padding:0 4px;">↳ flip the toggles and size — the pinned preview updates live</p>
+      </div>
+
+      <div class="note-card" style="margin-top:16px;">
+        <b>One condensed Position row</b> replaces five (Anchor nine-point, X Offset, Y Offset, Grow Direction,
+        Icons Per Row for strips) at the surface level; the full versions stay in Advanced → Appearance. The nudge
+        hint points at the cheap, obvious win: arrow-key nudging on the preview itself.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 7 · ADVANCED + SEARCH ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <div class="kicker">Walkthrough 4/5 · Advanced disclosure + settings search</div>
+      <h2>The other forty rows: collapsed, counted, searchable</h2>
+      <p class="lede">Advanced sections are one row each, with an honest count. Expanding one shows exactly
+      today's controls — dense, familiar, slightly greyed to signal expert territory. A search box at the top of the
+      detail pane finds any setting by name, so "where is the swipe option" stops being a scrolling exercise.</p>
+
+      <div class="panel" style="margin-top:20px;">
+        <div class="search-box">
+          <span class="muted">⌕</span>
+          <input id="t7search" type="text" placeholder="find a setting… e.g. 'pandemic'">
+          <span class="small muted mono" id="t7count"></span>
+        </div>
+
+        <div class="adv-row" data-sec="appearance"><span class="caret">▸</span> Appearance <span class="cnt">12 more settings</span></div>
+        <div class="adv-body" data-sec="appearance">
+          <div class="frow" data-label="Hide Duration Swipe"><span class="lbl">Hide Duration Swipe</span><span class="ctl"><span class="mock-check"></span></span></div>
+          <div class="frow" data-label="Reverse Swipe"><span class="lbl">Reverse Swipe</span><span class="ctl"><span class="mock-check"></span></span></div>
+          <div class="frow" data-label="Swipe Style"><span class="lbl">Swipe Style</span><span class="ctl"><span class="mock-dd">Dark</span></span></div>
+          <div class="frow" data-label="Pandemic Glow"><span class="lbl">Pandemic Glow</span><span class="ctl"><span class="mock-check on"></span></span></div>
+          <div class="frow" data-label="Dispel Ring Colors"><span class="lbl">Dispel Ring Colors</span><span class="ctl"><span class="mock-dd">By dispel type</span></span></div>
+          <div class="frow" data-label="Hide Border"><span class="lbl">Hide Border</span><span class="ctl"><span class="mock-check"></span></span></div>
+          <div class="frow" data-label="Spacing"><span class="lbl">Spacing</span><span class="ctl"><span class="mock-slider"></span> <span class="mono small">4</span></span></div>
+          <div class="frow" data-label="Icons Per Row"><span class="lbl">Icons Per Row</span><span class="ctl"><span class="mock-slider"></span> <span class="mono small">8</span></span></div>
+        </div>
+
+        <div class="adv-row" data-sec="text"><span class="caret">▸</span> Text <span class="cnt">12 more</span></div>
+        <div class="adv-body" data-sec="text">
+          <div class="frow" data-label="Duration Font Size"><span class="lbl">Duration · Font Size</span><span class="ctl"><span class="mock-slider"></span> <span class="mono small">12</span></span></div>
+          <div class="frow" data-label="Duration Text Anchor"><span class="lbl">Duration · Text Anchor</span><span class="ctl"><span class="mock-dd">BOTTOM</span></span></div>
+          <div class="frow" data-label="Duration X Y Offset"><span class="lbl">Duration · X / Y Offset</span><span class="ctl"><span class="mono small">0 / −2</span></span></div>
+          <div class="frow" data-label="Duration Color"><span class="lbl">Duration · Color</span><span class="ctl"><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:#fff;border:1px solid var(--border);"></span></span></div>
+          <div class="frow" data-label="Stack Font Size"><span class="lbl">Stacks · Font Size</span><span class="ctl"><span class="mock-slider"></span> <span class="mono small">11</span></span></div>
+          <div class="frow" data-label="Stack Text Anchor"><span class="lbl">Stacks · Text Anchor</span><span class="ctl"><span class="mock-dd">TOPRIGHT</span></span></div>
+        </div>
+
+        <div class="adv-row" data-sec="tooltip"><span class="caret">▸</span> Tooltip &amp; Dispel <span class="cnt">9 more</span></div>
+        <div class="adv-body" data-sec="tooltip">
+          <div class="frow" data-label="Hide Tooltips in Combat"><span class="lbl">Hide Tooltips in Combat</span><span class="ctl"><span class="mock-check on"></span></span></div>
+          <div class="frow" data-label="Custom Tooltip Anchor"><span class="lbl">Custom Tooltip Anchor</span><span class="ctl"><span class="mock-dd">ANCHOR_CURSOR</span></span></div>
+          <div class="frow" data-label="Dispel Type Filter"><span class="lbl">Dispel Type Filter</span><span class="ctl"><span class="mock-dd">Magic, Poison</span></span></div>
+        </div>
+
+        <div class="adv-row" data-sec="filtering"><span class="caret">▸</span> Filtering <span class="cnt">14 more</span></div>
+        <div class="adv-body" data-sec="filtering">
+          <div class="frow" data-label="Filter Mode"><span class="lbl">Filter Mode</span><span class="ctl"><span class="mock-dd">Off</span></span></div>
+          <div class="frow" data-label="Only My Auras"><span class="lbl">Only My Auras</span><span class="ctl"><span class="mock-check on"></span></span></div>
+          <div class="frow" data-label="Hide Permanent"><span class="lbl">Hide Permanent</span><span class="ctl"><span class="mock-check"></span></span></div>
+          <div class="frow" data-label="Max Duration"><span class="lbl">Max Duration</span><span class="ctl"><span class="mono small">60s</span></span></div>
+          <div class="frow" data-label="Spell Blacklist"><span class="lbl">Spell Blacklist</span><span class="ctl"><span class="mock-dd">2 entries</span></span></div>
+          <div class="frow" data-label="Spell Whitelist"><span class="lbl">Spell Whitelist</span><span class="ctl"><span class="mock-dd">Empty</span></span></div>
+        </div>
+
+        <p class="hint" style="margin-top:4px;">↳ click a section to expand it — or type "pandemic" / "swipe" / "tooltip" in the search box</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 8 · BEFORE / AFTER ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <div class="kicker">Walkthrough 5/5 · Before / after</div>
+      <h2>46 rows → 11 visible things</h2>
+      <p class="lede">Same Filter Strip element, same settings underneath. Left: today. Right: Simple Mode's default
+      render — one sentence, six essentials, four counted disclosures.</p>
+
+      <div class="cols" style="margin-top:22px;">
+        <div>
+          <div class="panel">
+            <div class="panel-title">Today <span class="badge count" style="float:right;">46 rows</span></div>
+            <div class="wall-wrap">
+              <div class="wall inset" id="wall46b"></div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="panel">
+            <div class="panel-title">Simple Mode <span class="badge good" style="float:right;">11 visible things</span></div>
+            <div class="inset" style="padding:12px;">
+              <div style="font-size:14px; line-height:1.9;">
+                Show <span class="tok" style="font-size:13px; pointer-events:none;">up to 8</span>
+                <span class="tok" style="font-size:13px; pointer-events:none;">buffs</span>
+                on <span class="tok" style="font-size:13px; pointer-events:none;">Player</span>
+                matching <span class="tok" style="font-size:13px; pointer-events:none;">Only my auras</span>,
+                growing <span class="tok" style="font-size:13px; pointer-events:none;">right</span>
+              </div>
+            </div>
+            <div class="inset" style="margin-top:8px;">
+              <div class="frow"><span class="lbl">Size</span><span class="ctl"><span class="seg"><button>S</button><button class="on">M</button><button>L</button></span></span></div>
+              <div class="frow"><span class="lbl">Duration text</span><span class="ctl"><span class="tgl on" style="pointer-events:none;"></span></span></div>
+              <div class="frow"><span class="lbl">Stack text</span><span class="ctl"><span class="tgl on" style="pointer-events:none;"></span></span></div>
+              <div class="frow"><span class="lbl">Glow when active</span><span class="ctl"><span class="tgl" style="pointer-events:none;"></span></span></div>
+              <div class="frow"><span class="lbl">Position</span><span class="ctl"><span class="mock-dd">BOTTOM · 0, −140</span></span></div>
+              <div class="frow"><span class="lbl">Sort</span><span class="ctl"><span class="mock-dd">Time remaining ↓</span></span></div>
+            </div>
+            <div style="margin-top:8px;">
+              <div class="adv-row" style="margin-bottom:6px;"><span class="caret">▸</span> Appearance <span class="cnt">12 more settings</span></div>
+              <div class="adv-row" style="margin-bottom:6px;"><span class="caret">▸</span> Text <span class="cnt">12 more</span></div>
+              <div class="adv-row" style="margin-bottom:6px;"><span class="caret">▸</span> Tooltip &amp; Dispel <span class="cnt">9 more</span></div>
+              <div class="adv-row" style="margin-bottom:0;"><span class="caret">▸</span> Filtering <span class="cnt">14 more</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="small muted" style="margin-top:14px;">Count on the right: 1 sentence + 6 essentials + 4 section rows = 11.
+      Every one of the 46 is still one click away, and expansion state is remembered — open Filtering once and it stays open for you.</p>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 9 · DEFAULTS ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <div class="kicker">Defaults are part of the design</div>
+      <h2>Ship <code>AD.DefaultBucket</code>. Finally.</h2>
+      <p class="lede">Good defaults already exist in the codebase — 32px icons, 12pt duration text — but quick-create
+      discards them and mints 16px icons with duration text OFF. Simple Mode makes the defaults the product: the
+      sentence you get on "Add Tracked Aura" should already look right in the preview.</p>
+
+      <div class="cols" style="margin-top:26px;">
+        <div>
+          <div class="panel">
+            <div class="panel-title">Quick-create today</div>
+            <div class="preview-strip">
+              <span class="pv-label">Preview</span>
+              <div class="aura-row">
+                <div class="aura-icon sz24 monk" style="width:16px;height:16px;"><div class="swipe"></div></div>
+                <div class="aura-icon sz24 mage" style="width:16px;height:16px;"><div class="swipe"></div></div>
+              </div>
+              <span class="small muted">16px · duration text off · unreadable in a real fight</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="panel" style="border-color:rgba(232,193,90,.5);">
+            <div class="panel-title">Quick-create with DefaultBucket applied</div>
+            <div class="preview-strip">
+              <span class="pv-label">Preview</span>
+              <div class="aura-row">
+                <div class="aura-icon sz32 monk"><div class="swipe"></div><div class="dur">12</div></div>
+                <div class="aura-icon sz32 mage"><div class="swipe" style="background:conic-gradient(rgba(0,0,0,.65) 0 60%, transparent 60%);"></div><div class="dur">4</div><div class="stk">3</div></div>
+              </div>
+              <span class="small muted">32px · 12pt duration text · looks like the screenshots</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note-card" style="border-color:var(--gold); margin-top:22px; max-width:760px;">
+        <b>Defaults ARE the simple mode.</b> If the default output of "Add Tracked Aura" is something you'd actually
+        raid with, most users never need Tier 3 at all. This is the cheapest single change in the whole deck and it
+        stands alone even if everything else is rejected.
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 10 · FIXES / DOESN'T ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <div class="kicker">Honest scorecard</div>
+      <h2>What this fixes — and what it doesn't</h2>
+      <div class="cols" style="margin-top:22px;">
+        <div class="fix-col">
+          <h3><span class="dot-ok"></span> Fixes</h3>
+          <ul class="tight">
+            <li><b>Overwhelm.</b> 46 equal-weight rows become 11 ranked things. First-session success rate is the metric.</li>
+            <li><b>Teaches the model.</b> The sentence explains Aura Type / Unit / Only My Cast / What to Show by using them in grammar, not in a wiki.</li>
+            <li><b>Findability.</b> Settings search + counted sections replace scroll-and-squint.</li>
+            <li><b>Cause and effect.</b> Pinned live preview keeps every edit visibly consequential.</li>
+            <li><b>One surface.</b> No wizard, no second editor to keep in sync — Advanced <em>is</em> the current editor.</li>
+          </ul>
+        </div>
+        <div class="fix-col">
+          <h3><span class="dot-no"></span> Doesn't fix</h3>
+          <ul class="tight">
+            <li><b>Discovering WHAT to build.</b> No content, no templates, no "Mistweaver starter pack". A blank display is still a blank display. (That's approaches 2 and 5.)</li>
+            <li><b>Exotic combos read badly.</b> "Show up to 12 debuffs matching Filter Flags ∩ Classification minus 14 blacklisted spells…" — the grammar breaks. Needs the explicit fallback: unparseable elements render as <i>"Custom filter (n rules)"</i> and route to Advanced only.</li>
+            <li><b>i18n is real work.</b> Sentence templates with movable token slots must go through QUI's <code>ns.L</code> system per locale — word order differs, and new strings need the i18n/search-cache regen step. Budget for it; don't string-concatenate.</li>
+            <li><b>Essentials selection is opinion.</b> The "right six" per element kind will be wrong on the first pass and needs iteration against real usage.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SLIDE 11 · IMPLEMENTATION + VERDICT ============ -->
+  <section class="slide">
+    <div class="slide-inner">
+      <div class="kicker">Implementation notes</div>
+      <h2>This is a re-sort, not a rewrite</h2>
+      <ul class="tight" style="max-width:820px; font-size:15px;">
+        <li>The editor is already shared across Aura Displays / Group Frames / Unit Frames / Nameplates via a capability
+        system in <code>QUI_Options/aura_elements_editor.lua</code> (2095 lines) that gates whole controls per host.
+        A <code>simpleMode</code> capability is the same mechanism pointed at a new axis: <b>the precedent exists.</b></li>
+        <li>Work = rendering order + tiering metadata per control (essential / advanced-section / sentence-token),
+        plus the sentence renderer and the search index over control labels.</li>
+        <li>The preview infrastructure exists (the On/Off toggle in the detail-pane header) — pinning it and driving it
+        from edits is incremental, not greenfield.</li>
+        <li>Per-user expansion memory is a handful of saved-variable booleans keyed by section.</li>
+        <li>Ship order that de-risks: (1) DefaultBucket applied to quick-create, (2) sections + counts + search,
+        (3) essentials tier, (4) sentence renderer last — it's the most valuable and the most speculative.</li>
+      </ul>
+
+      <div class="verdict-box">
+        <div class="kicker" style="margin-bottom:6px;">Verdict</div>
+        <p style="font-size:20px; font-weight:650; line-height:1.4;">
+          Steal this if the editor itself is the product and you want one surface, not two.
+        </p>
+        <p class="muted" style="margin-top:10px; font-size:14.5px;">
+          It makes the existing editor learnable without forking it, and its cheapest pieces (defaults, sections,
+          search) are worth stealing even if the sentence editor never ships. It will not, on its own, tell a fresh
+          Mistweaver what displays to build — pair it with a content-side approach for that.
+        </p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<!-- deck nav -->
+<div class="dots" id="dots"></div>
+<div class="nav">
+  <span class="slide-num" id="slideNum">1 / 11</span>
+  <button id="prevBtn" title="Previous (←)">←</button>
+  <button id="nextBtn" title="Next (→)">→</button>
+</div>
+
+<!-- prototype harness -->
+<div class="harness">
+  <a href="02-templates.html">‹ 02</a>
+  <span class="sep"></span>
+  <span class="label">Approach 3/5 — Simple Mode</span>
+  <span class="sep"></span>
+  <a href="04-canvas.html">04 ›</a>
+  <span class="sep"></span>
+  <a href="index.html">☰ all</a>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ============ deck navigation ============ */
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var dotsEl = document.getElementById("dots");
+  var numEl = document.getElementById("slideNum");
+  var cur = 0;
+
+  slides.forEach(function (_, i) {
+    var d = document.createElement("span");
+    d.addEventListener("click", function () { go(i); });
+    dotsEl.appendChild(d);
+  });
+  var dots = Array.prototype.slice.call(dotsEl.children);
+
+  function go(i) {
+    if (i < 0 || i >= slides.length) return;
+    slides[cur].classList.remove("active");
+    dots[cur].classList.remove("on");
+    cur = i;
+    slides[cur].classList.add("active");
+    dots[cur].classList.add("on");
+    numEl.textContent = (cur + 1) + " / " + slides.length;
+    slides[cur].scrollTop = 0;
+  }
+  go(0);
+
+  document.getElementById("prevBtn").addEventListener("click", function () { go(cur - 1); });
+  document.getElementById("nextBtn").addEventListener("click", function () { go(cur + 1); });
+  document.addEventListener("keydown", function (e) {
+    var t = document.activeElement;
+    if (t && (t.tagName === "INPUT" || t.tagName === "SELECT" || t.tagName === "TEXTAREA")) return;
+    if (e.key === "ArrowRight") go(cur + 1);
+    if (e.key === "ArrowLeft") go(cur - 1);
+  });
+
+  /* ============ wall-of-rows generator (slides 2 & 8) ============ */
+  var stripRows = [
+    ["Element Name", "My HoTs"], ["Aura Type", "Buffs (Helpful)"], ["Max Icons", "8"],
+    ["Icon Size", "16"], ["Anchor", "BOTTOM"], ["Grow Direction", "Right"],
+    ["Spacing", "4"], ["Icons Per Row", "8"], ["X Offset", "0"], ["Y Offset", "-140"],
+    ["What to Show", "Only my auras"], ["Sort Order", "Time remaining ↓"],
+    ["Filter Mode", "Off"], ["Only My Auras", "✓"], ["Hide Permanent", "✗"],
+    ["Max Duration", "60s"], ["Dispel Type Filter", "None"], ["Hide Duration Swipe", "✗"],
+    ["Reverse Swipe", "✗"], ["Swipe Style", "Dark"], ["Hide Border", "✗"],
+    ["Show Duration Text", "✗"], ["Duration Font Size", "10"], ["Duration Text Anchor", "BOTTOM"],
+    ["Duration X Offset", "0"], ["Duration Y Offset", "-2"], ["Duration Color", "#fff"],
+    ["Show Stack Text", "✓"], ["Stack Font Size", "11"], ["Stack Text Anchor", "TOPRIGHT"],
+    ["Stack X Offset", "0"], ["Stack Y Offset", "0"], ["Stack Color", "#e8c15a"],
+    ["Hide Tooltips in Combat", "✓"], ["Custom Tooltip Anchor", "ANCHOR_CURSOR"],
+    ["Tooltip X Offset", "0"], ["Tooltip Y Offset", "0"], ["Pandemic Glow", "✗"],
+    ["Dispel Ring Colors", "By dispel type"], ["Custom Border Color", "—"],
+    ["Border Thickness", "1"], ["Spell Blacklist", "0 entries"], ["Spell Whitelist", "0 entries"],
+    ["Classification Filter", "—"], ["Filter Flags", "—"], ["Role-relevant Only", "✗"]
+  ];
+  function buildWall(id) {
+    var host = document.getElementById(id);
+    if (!host) return;
+    var html = "";
+    stripRows.forEach(function (r) {
+      html += '<div class="frow"><span class="lbl">' + r[0] +
+              '</span><span class="ctl">' + r[1] + "</span></div>";
+    });
+    host.innerHTML = html;
+  }
+  buildWall("wall46");
+  buildWall("wall46b");
+
+  /* ============ cycle-token helper ============ */
+  var cycles = {
+    t4disp:  ["an icon", "a bar", "a colored square"],
+    t4spell: ["Renewing Mist", "Rising Sun Kick", "Arcane Intellect"],
+    t4unit:  ["Player", "Target", "Focus"],
+    t4mine:  ["only my cast", "from anyone"],
+    t5max:   ["up to 8", "up to 4", "up to 12"],
+    t5kind:  ["buffs", "debuffs"],
+    t5unit:  ["Player", "Target"],
+    t5filter:["Only my auras", "All", "Defensives", "Purgeable", "Boss debuffs", "Custom…"],
+    t5grow:  ["right", "left", "up", "down"]
+  };
+  var tokState = {};
+  Object.keys(cycles).forEach(function (k) { tokState[k] = 0; });
+
+  document.querySelectorAll(".tok[data-cycle]").forEach(function (el) {
+    el.addEventListener("click", function () {
+      var key = el.getAttribute("data-cycle");
+      tokState[key] = (tokState[key] + 1) % cycles[key].length;
+      el.textContent = cycles[key][tokState[key]];
+      if (key.indexOf("t4") === 0) renderT4();
+      if (key.indexOf("t5") === 0) renderT5();
+    });
+  });
+
+  /* ============ slide 4 preview: tracked ============ */
+  var spellClass = { "Renewing Mist": "monk", "Rising Sun Kick": "monk", "Arcane Intellect": "mage" };
+  function renderT4() {
+    var disp  = cycles.t4disp[tokState.t4disp];
+    var spell = cycles.t4spell[tokState.t4spell];
+    var unit  = cycles.t4unit[tokState.t4unit];
+    var mine  = cycles.t4mine[tokState.t4mine];
+    var cls = spellClass[spell] || "monk";
+    var pv = document.getElementById("t4preview");
+    if (disp === "an icon") {
+      pv.innerHTML = '<div class="aura-icon sz32 ' + cls + '"><div class="swipe"></div><div class="dur">12</div></div>';
+    } else if (disp === "a bar") {
+      pv.innerHTML = '<div class="aura-bar"><div class="fill' +
+        (cls === "mage" ? '" style="background:linear-gradient(180deg,#2f8fb5,#1a5a75);"' : '"') +
+        '></div><div class="txt"><span>' + spell + "</span><span>12s</span></div></div>";
+    } else {
+      var col = cls === "mage" ? "#3FC7EB" : "#00FF98";
+      pv.innerHTML = '<div class="aura-square sz32" style="background:' + col + '; opacity:.85;"></div>';
+    }
+    document.getElementById("t4caption").textContent =
+      spell + " · " + unit + " · " + mine;
+  }
+  renderT4();
+
+  /* ============ slide 5 preview: strip ============ */
+  function renderT5() {
+    var max  = parseInt(cycles.t5max[tokState.t5max].replace("up to ", ""), 10);
+    var kind = cycles.t5kind[tokState.t5kind];
+    var grow = cycles.t5grow[tokState.t5grow];
+    var pv = document.getElementById("t5preview");
+    var dirStyle = { right: "row", left: "row-reverse", up: "column-reverse", down: "column" }[grow];
+    pv.style.flexDirection = dirStyle;
+    pv.style.alignItems = (grow === "up" || grow === "down") ? "flex-start" : "flex-end";
+    var shown = Math.min(max, (grow === "up" || grow === "down") ? 3 : 6); // keep the mock compact
+    var classes = ["monk", "mage", "warrior"];
+    var html = "";
+    for (var i = 0; i < shown; i++) {
+      var pct = 20 + ((i * 23) % 70);
+      html += '<div class="aura-icon sz32 ' + classes[i % 3] + (kind === "debuffs" ? " harm" : "") + '">' +
+        '<div class="swipe" style="background:conic-gradient(rgba(0,0,0,.65) 0 ' + pct + '%, transparent ' + pct + '%);"></div>' +
+        '<div class="dur">' + (18 - i * 3) + "</div>" +
+        (i === 1 ? '<div class="stk">2</div>' : "") + "</div>";
+    }
+    if (max > shown) {
+      html += '<span class="small muted" style="align-self:center; padding:0 6px;">…' + max + " max</span>";
+    }
+    pv.innerHTML = html;
+  }
+  renderT5();
+
+  /* ============ slide 6: essentials drive pinned preview ============ */
+  var t6 = { px: 32, dur: true, stk: true, glow: false };
+  function renderT6() {
+    var pv = document.getElementById("t6preview");
+    var sz = "sz" + t6.px;
+    var classes = ["monk", "mage", "warrior"];
+    var html = "";
+    for (var i = 0; i < 3; i++) {
+      var pct = 25 + i * 22;
+      html += '<div class="aura-icon ' + sz + " " + classes[i] +
+        (t6.glow && i === 0 ? " glowing" : "") + '">' +
+        '<div class="swipe" style="background:conic-gradient(rgba(0,0,0,.65) 0 ' + pct + '%, transparent ' + pct + '%);"></div>' +
+        (t6.dur ? '<div class="dur">' + (14 - i * 4) + "</div>" : "") +
+        (t6.stk && i === 1 ? '<div class="stk">3</div>' : "") + "</div>";
+    }
+    pv.innerHTML = html;
+    document.getElementById("t6px").textContent = t6.px + "px";
+  }
+  document.querySelectorAll("#t6size button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      document.querySelectorAll("#t6size button").forEach(function (x) { x.classList.remove("on"); });
+      b.classList.add("on");
+      t6.px = parseInt(b.getAttribute("data-px"), 10);
+      renderT6();
+    });
+  });
+  [["t6dur", "dur"], ["t6stk", "stk"], ["t6glow", "glow"]].forEach(function (pair) {
+    var el = document.getElementById(pair[0]);
+    el.addEventListener("click", function () {
+      t6[pair[1]] = !t6[pair[1]];
+      el.classList.toggle("on", t6[pair[1]]);
+      renderT6();
+    });
+  });
+  renderT6();
+
+  /* ============ slide 7: advanced disclosure + search ============ */
+  document.querySelectorAll(".adv-row[data-sec]").forEach(function (row) {
+    row.addEventListener("click", function () {
+      var sec = row.getAttribute("data-sec");
+      var body = document.querySelector('.adv-body[data-sec="' + sec + '"]');
+      var open = body.classList.toggle("open");
+      row.classList.toggle("open", open);
+    });
+  });
+
+  var searchEl = document.getElementById("t7search");
+  var countEl = document.getElementById("t7count");
+  if (searchEl) {
+    searchEl.addEventListener("input", function () {
+      var q = searchEl.value.trim().toLowerCase();
+      var hits = 0;
+      document.querySelectorAll(".adv-body .frow[data-label]").forEach(function (r) {
+        r.classList.remove("hit");
+      });
+      if (q.length < 2) {
+        countEl.textContent = "";
+        return;
+      }
+      var sectionsToOpen = {};
+      document.querySelectorAll(".adv-body .frow[data-label]").forEach(function (r) {
+        if (r.getAttribute("data-label").toLowerCase().indexOf(q) !== -1) {
+          r.classList.add("hit");
+          hits++;
+          sectionsToOpen[r.closest(".adv-body").getAttribute("data-sec")] = true;
+        }
+      });
+      Object.keys(sectionsToOpen).forEach(function (sec) {
+        document.querySelector('.adv-body[data-sec="' + sec + '"]').classList.add("open");
+        document.querySelector('.adv-row[data-sec="' + sec + '"]').classList.add("open");
+      });
+      countEl.textContent = hits ? hits + " match" + (hits === 1 ? "" : "es") : "no matches";
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

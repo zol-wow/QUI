@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QUI · Aura Displays UX — Approach 1/5: Guided Wizard</title>
+<style>
+  :root{
+    --bg:#0a0c10; --surface:#12151c; --panel:#1a1e28; --inset:#141822;
+    --border:#2a3040; --text:#e6e9f0; --muted:#8b93a7;
+    --gold:#e8c15a; --ok:#7ac37a; --danger:#e06c6c; --info:#6cb2e0;
+    --monk:#00FF98; --mage:#3FC7EB; --warrior:#C69B6D; --druid:#FF7C0A;
+    --r:8px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-size:15px; line-height:1.5; overflow:hidden;
+  }
+  code, .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:0.9em;}
+  code{background:var(--inset); border:1px solid var(--border); border-radius:4px; padding:1px 5px; color:var(--info);}
+
+  /* ---------- deck chrome ---------- */
+  .caption{
+    position:fixed; top:14px; left:18px; z-index:50;
+    font-size:12px; color:var(--muted); letter-spacing:.02em;
+  }
+  .caption b{color:var(--gold); font-weight:600;}
+  .slide{
+    position:absolute; inset:0; display:none; overflow:auto;
+    padding:64px 72px 96px;
+  }
+  .slide.active{display:flex; flex-direction:column; justify-content:flex-start;}
+  .slide-inner{max-width:1100px; width:100%; margin:0 auto;}
+  .slide.center .slide-inner{margin:auto;}
+  h1{font-size:42px; font-weight:700; letter-spacing:-.01em; line-height:1.15;}
+  h2{font-size:28px; font-weight:700; margin-bottom:6px; letter-spacing:-.01em;}
+  h3{font-size:16px; font-weight:600;}
+  .kicker{font-size:12px; text-transform:uppercase; letter-spacing:.14em; color:var(--gold); font-weight:600; margin-bottom:10px;}
+  .sub{color:var(--muted); font-size:16px; max-width:760px; margin-bottom:24px;}
+  .muted{color:var(--muted);}
+  .hint{font-size:12px; color:var(--info); margin-top:8px;}
+  .hint::before{content:"↳ ";}
+
+  .navbtns{position:fixed; bottom:18px; right:20px; z-index:60; display:flex; gap:8px;}
+  .navbtns button{
+    background:var(--panel); color:var(--text); border:1px solid var(--border);
+    border-radius:var(--r); width:38px; height:34px; cursor:pointer; font-size:15px;
+  }
+  .navbtns button:hover{border-color:var(--gold); color:var(--gold);}
+  .dots{position:fixed; bottom:26px; left:20px; z-index:60; display:flex; gap:7px;}
+  .dots span{width:9px; height:9px; border-radius:50%; background:var(--border); cursor:pointer; transition:background .15s;}
+  .dots span.on{background:var(--gold);}
+  .dots span:hover{background:var(--muted);}
+
+  /* harness pill — deliberately not part of the design language */
+  .harness{
+    position:fixed; bottom:14px; left:50%; transform:translateX(-50%); z-index:100;
+    background:#f5f2ea; color:#1a1a1a; border-radius:999px;
+    padding:7px 16px; font-size:13px; font-weight:600;
+    box-shadow:0 4px 22px rgba(0,0,0,.65), 0 0 0 1px rgba(0,0,0,.3);
+    display:flex; align-items:center; gap:12px; white-space:nowrap;
+  }
+  .harness a{color:#1a1a1a; text-decoration:none; padding:1px 6px; border-radius:6px;}
+  .harness a:hover{background:rgba(0,0,0,.1);}
+  .harness .sep{width:1px; height:16px; background:rgba(0,0,0,.25);}
+  .harness .lbl{font-weight:500; color:#444;}
+
+  /* ---------- shared mock components ---------- */
+  .mockpanel{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--r);
+    padding:20px;
+  }
+  .mocktitle{
+    display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600;
+    color:var(--muted); text-transform:uppercase; letter-spacing:.08em;
+    margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--border);
+  }
+  .btn{
+    display:inline-block; background:var(--inset); border:1px solid var(--border);
+    color:var(--text); border-radius:var(--r); padding:8px 16px; font-size:14px;
+    cursor:pointer; font-family:inherit; transition:border-color .12s;
+  }
+  .btn:hover{border-color:var(--gold);}
+  .btn.gold{background:var(--gold); color:#1a1508; font-weight:700; border-color:var(--gold);}
+  .btn.gold:hover{filter:brightness(1.08);}
+  .btn.small{padding:4px 10px; font-size:12px;}
+  .badge{
+    display:inline-block; font-size:10px; font-weight:700; letter-spacing:.08em;
+    padding:2px 7px; border-radius:4px; vertical-align:middle;
+  }
+  .badge.strip{background:rgba(108,178,224,.15); color:var(--info); border:1px solid rgba(108,178,224,.4);}
+  .badge.tracked{background:rgba(232,193,90,.14); color:var(--gold); border:1px solid rgba(232,193,90,.4);}
+  select,input[type=text]{
+    background:var(--inset); border:1px solid var(--border); color:var(--text);
+    border-radius:var(--r); padding:8px 12px; font-size:14px; font-family:inherit; outline:none;
+  }
+  select:focus,input[type=text]:focus{border-color:var(--gold);}
+  .cols{display:flex; gap:28px; align-items:flex-start;}
+  .cols>*{flex:1; min-width:0;}
+
+  /* wizard step header inside mocks */
+  .wizhead{display:flex; align-items:center; gap:14px; margin-bottom:18px;}
+  .wizsteps{display:flex; gap:6px;}
+  .wizsteps i{
+    width:26px; height:26px; border-radius:50%; border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center; font-style:normal;
+    font-size:12px; color:var(--muted); background:var(--inset);
+  }
+  .wizsteps i.cur{background:var(--gold); color:#1a1508; border-color:var(--gold); font-weight:700;}
+  .wizsteps i.done{border-color:var(--ok); color:var(--ok);}
+  .wizq{font-size:19px; font-weight:700;}
+
+  /* goal cards */
+  .goalgrid{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
+  .goal{
+    background:var(--inset); border:1px solid var(--border); border-radius:var(--r);
+    padding:16px; cursor:pointer; transition:border-color .12s, transform .08s;
+  }
+  .goal:hover{border-color:var(--gold); transform:translateY(-2px);}
+  .goal.sel{border-color:var(--gold); box-shadow:0 0 0 1px var(--gold);}
+  .goal .glyph{
+    width:34px; height:34px; border-radius:var(--r); margin-bottom:10px;
+    display:flex; align-items:center; justify-content:center; font-size:17px;
+    background:var(--panel); border:1px solid var(--border);
+  }
+  .goal h4{font-size:14px; font-weight:600; margin-bottom:3px;}
+  .goal p{font-size:12px; color:var(--muted); margin-bottom:8px; min-height:34px;}
+  .goal .maps{font-size:10.5px; color:var(--info); font-family:ui-monospace,Menlo,Consolas,monospace;}
+
+  /* spell rows / pills */
+  .spellrow{
+    display:flex; align-items:center; gap:10px; padding:8px 10px;
+    border:1px solid transparent; border-radius:var(--r); cursor:pointer;
+  }
+  .spellrow:hover{background:var(--panel); border-color:var(--border);}
+  .spellrow.added{opacity:.45; pointer-events:none;}
+  .sicon{width:26px; height:26px; border-radius:5px; flex:none; border:1px solid #000;}
+  .spellrow .sid{margin-left:auto; color:var(--muted); font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px;}
+  .pillbar{display:flex; flex-wrap:wrap; gap:8px; min-height:34px; padding:6px 0;}
+  .pill{
+    display:inline-flex; align-items:center; gap:7px; background:var(--panel);
+    border:1px solid var(--gold); border-radius:999px; padding:4px 6px 4px 12px; font-size:13px;
+  }
+  .pill b{font-weight:600;}
+  .pill .x{
+    width:18px;height:18px;border-radius:50%;background:var(--inset); color:var(--muted);
+    display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;
+  }
+  .pill .x:hover{color:var(--danger);}
+  .chip{
+    display:inline-block; font-size:12px; padding:4px 12px; border-radius:999px;
+    border:1px solid var(--border); background:var(--inset); color:var(--text); cursor:pointer;
+  }
+  .chip:hover{border-color:var(--monk);}
+  .chip.added{opacity:.4; pointer-events:none;}
+
+  /* style cards + preview */
+  .stylecards{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
+  .stylecard{
+    background:var(--inset); border:1px solid var(--border); border-radius:var(--r);
+    padding:14px; text-align:center; cursor:pointer;
+  }
+  .stylecard:hover{border-color:var(--gold);}
+  .stylecard.sel{border-color:var(--gold); box-shadow:0 0 0 1px var(--gold);}
+  .stylecard .demo{height:56px; display:flex; align-items:center; justify-content:center; margin-bottom:8px;}
+  .stylecard h4{font-size:13px; font-weight:600;}
+  .stylecard p{font-size:11px; color:var(--muted);}
+  .aicon{
+    position:relative; border-radius:6px; border:1px solid #000;
+    background:linear-gradient(135deg,#2c6e49,#1b4332); overflow:hidden; flex:none;
+  }
+  .aicon .swipe{
+    position:absolute; inset:0;
+    background:conic-gradient(from 0deg, rgba(0,0,0,.65) 0 120deg, transparent 120deg 360deg);
+  }
+  .aicon .dur{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-weight:700; color:#fff; text-shadow:0 1px 2px #000;
+  }
+  .abar{
+    position:relative; height:16px; width:120px; background:var(--inset);
+    border:1px solid #000; border-radius:3px; overflow:hidden; flex:none;
+  }
+  .abar .fill{position:absolute; inset:0; right:35%; background:linear-gradient(180deg,#f3d27a,var(--gold));}
+  .abar .spark{position:absolute; top:-2px; bottom:-2px; left:65%; width:3px; background:#fff; box-shadow:0 0 8px 2px rgba(255,255,255,.8);}
+  .asq{background:var(--ok); border:1px solid #000; border-radius:3px; flex:none;}
+  .seg{display:inline-flex; border:1px solid var(--border); border-radius:var(--r); overflow:hidden;}
+  .seg button{
+    background:var(--inset); border:none; color:var(--muted); padding:7px 16px;
+    font-size:13px; cursor:pointer; font-family:inherit; border-right:1px solid var(--border);
+  }
+  .seg button:last-child{border-right:none;}
+  .seg button.sel{background:var(--gold); color:#1a1508; font-weight:700;}
+  .previewstrip{
+    margin-top:16px; background:var(--inset); border:1px dashed var(--border); border-radius:var(--r);
+    padding:18px; display:flex; align-items:center; gap:10px; min-height:80px;
+  }
+  .previewstrip .plabel{font-size:11px; color:var(--muted); margin-right:12px; text-transform:uppercase; letter-spacing:.08em;}
+
+  /* 9-zone picker */
+  .zonegrid{
+    display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr);
+    gap:4px; aspect-ratio:16/9; background:var(--inset); border:1px solid var(--border);
+    border-radius:var(--r); padding:6px; max-width:340px;
+  }
+  .zonegrid button{
+    background:var(--panel); border:1px solid var(--border); border-radius:4px;
+    color:var(--muted); font-size:10px; cursor:pointer; font-family:inherit;
+  }
+  .zonegrid button:hover{border-color:var(--gold); color:var(--text);}
+  .zonegrid button.sel{background:rgba(232,193,90,.18); border-color:var(--gold); color:var(--gold); font-weight:700;}
+
+  /* problem slide */
+  .popupmock{
+    width:300px; height:240px; background:var(--panel); border:1px solid var(--border);
+    border-radius:var(--r); padding:12px; font-size:12px; flex:none;
+    display:flex; flex-direction:column; gap:8px; box-shadow:0 8px 30px rgba(0,0,0,.5);
+  }
+  .popupmock .row{display:flex; gap:6px; align-items:center;}
+  .fakefield{background:var(--inset); border:1px solid var(--border); border-radius:5px; padding:5px 8px; color:var(--muted); flex:1; font-size:11px;}
+  .silhouette{display:flex; flex-direction:column; gap:5px; max-height:300px; overflow:hidden; position:relative;}
+  .silhouette .sil{height:9px; border-radius:3px; background:var(--border); opacity:.55;}
+  .silhouette::after{
+    content:""; position:absolute; left:0; right:0; bottom:0; height:90px;
+    background:linear-gradient(transparent, var(--panel));
+  }
+  .stat{background:var(--panel); border:1px solid var(--border); border-radius:var(--r); padding:16px 18px;}
+  .stat .n{font-size:30px; font-weight:700; color:var(--danger); line-height:1.1;}
+  .stat .d{font-size:12.5px; color:var(--muted); margin-top:4px;}
+  .statrow{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px;}
+
+  /* flow diagram */
+  .flow{display:flex; align-items:stretch; gap:0; margin:26px 0;}
+  .flownode{
+    flex:1; background:var(--panel); border:1px solid var(--border); border-radius:var(--r);
+    padding:16px; position:relative;
+  }
+  .flownode .num{
+    width:24px;height:24px;border-radius:50%;background:var(--gold);color:#1a1508;
+    font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;
+  }
+  .flownode h4{font-size:14px;font-weight:600;margin-bottom:3px;}
+  .flownode p{font-size:12px;color:var(--muted);}
+  .flowarrow{display:flex;align-items:center;padding:0 8px;color:var(--gold);font-size:18px;flex:none;}
+
+  /* fixes / doesn't */
+  .prosconlist{list-style:none;}
+  .prosconlist li{padding:9px 0 9px 26px; position:relative; border-bottom:1px solid var(--border); font-size:14.5px;}
+  .prosconlist li:last-child{border-bottom:none;}
+  .prosconlist li::before{position:absolute; left:0; font-weight:700;}
+  .prosconlist.pro li::before{content:"✓"; color:var(--ok);}
+  .prosconlist.con li::before{content:"✕"; color:var(--danger);}
+  .panelh{font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; margin-bottom:8px;}
+  .panelh.ok{color:var(--ok);} .panelh.bad{color:var(--danger);}
+
+  .implist{list-style:none;}
+  .implist li{padding:12px 0; border-bottom:1px solid var(--border);}
+  .implist li:last-child{border-bottom:none;}
+  .implist b{display:block; font-size:15px; margin-bottom:2px;}
+  .implist span{color:var(--muted); font-size:13.5px;}
+  .cost{font-size:10px; font-weight:700; letter-spacing:.08em; padding:2px 8px; border-radius:4px; margin-left:8px; vertical-align:middle;}
+  .cost.low{background:rgba(122,195,122,.15); color:var(--ok);}
+  .cost.med{background:rgba(232,193,90,.15); color:var(--gold);}
+  .cost.high{background:rgba(224,108,108,.15); color:var(--danger);}
+
+  .successcard{
+    background:var(--panel); border:1px solid var(--ok); border-radius:var(--r);
+    padding:22px; max-width:560px;
+  }
+  .kv{display:grid; grid-template-columns:130px 1fr; gap:5px 14px; font-size:13.5px; margin:14px 0 18px;}
+  .kv dt{color:var(--muted);}
+  .kv dd{font-weight:500;}
+
+  .escape{font-size:13px; color:var(--muted); margin-top:16px;}
+  .escape a{color:var(--info); text-decoration:underline; cursor:pointer;}
+  .toast{
+    margin-top:14px; padding:10px 14px; border-radius:var(--r); font-size:13.5px;
+    background:rgba(122,195,122,.1); border:1px solid rgba(122,195,122,.4); color:var(--ok);
+    display:none;
+  }
+  .toast.show{display:block;}
+  .verdict-box{
+    border:1px solid var(--gold); border-radius:var(--r); background:rgba(232,193,90,.06);
+    padding:26px 30px; margin-top:26px;
+  }
+  .stripvariant{display:none;}
+  .mode-strip .stripvariant{display:block;}
+  .mode-strip .trackedvariant{display:none;}
+  .togglelink{font-size:12px; color:var(--info); cursor:pointer; text-decoration:underline;}
+  @media (max-width:900px){ .cols{flex-direction:column;} .slide{padding:56px 28px 110px;} }
+</style>
+</head>
+<body>
+
+<div class="caption">QUI · Aura Displays UX — <b>Approach 1/5: Guided Wizard</b></div>
+
+<!-- ═══════════ SLIDE 1 · TITLE ═══════════ -->
+<section class="slide center" id="s1">
+  <div class="slide-inner" style="text-align:center; max-width:820px;">
+    <div class="kicker">Approach 1 of 5 · Guided Creation Wizard</div>
+    <h1>From blank form to working display<br>in four questions.</h1>
+    <p class="sub" style="margin:22px auto 0;">
+      Replace the quick-create popup with a full-pane, 4-step wizard that front-loads
+      <em>intent</em> and applies strong defaults — so a first Aura Display takes about
+      60 seconds and zero blank-form dread. Everything stays editable in the classic
+      3-tab editor afterwards.
+    </p>
+    <div style="margin-top:34px; display:flex; gap:10px; justify-content:center;">
+      <span class="badge tracked">TRACKED</span>
+      <span class="badge strip">STRIP</span>
+    </div>
+    <p class="hint" style="margin-top:38px;">navigate with ← → arrow keys, or the dots bottom-left</p>
+  </div>
+</section>
+
+<!-- ═══════════ SLIDE 2 · THE PROBLEM TODAY ═══════════ -->
+<section class="slide" id="s2">
+  <div class="slide-inner">
+    <div class="kicker">The problem today</div>
+    <h2>Creation is a trapdoor into a wall of controls</h2>
+    <p class="sub">The "New Display" button opens a cramped 300×240 popup, then drops you straight into the full editor — and it silently ships bad defaults.</p>
+    <div class="statrow">
+      <div class="stat"><div class="n">35–40</div><div class="d">controls fronted by a <em>minimal</em> new display</div></div>
+      <div class="stat"><div class="n">80–120</div><div class="d">widgets across 3 tabs for a two-element display</div></div>
+      <div class="stat"><div class="n">~46</div><div class="d">form rows for one filter strip (70+ with everything enabled)</div></div>
+    </div>
+    <div class="cols">
+      <div style="flex:0 0 320px;">
+        <h3 style="margin-bottom:10px;">The current popup, faithfully</h3>
+        <div class="popupmock">
+          <div style="font-weight:600; font-size:13px; border-bottom:1px solid var(--border); padding-bottom:6px;">New Display</div>
+          <div class="seg" style="align-self:flex-start;"><button class="sel" style="font-size:11px; padding:4px 10px;">Track spells</button><button style="font-size:11px; padding:4px 10px;">Filter strip</button></div>
+          <div class="row"><div class="fakefield mono">spell ID…</div><span class="btn small">Browse</span></div>
+          <div class="row"><div class="fakefield">Name</div></div>
+          <div class="row"><div class="fakefield">Unit: Player ▾</div></div>
+          <div style="margin-top:auto;"><span class="btn small gold">Create</span></div>
+        </div>
+        <p class="muted" style="font-size:12.5px; margin-top:10px;">
+          Result spawns at screen <b>center</b>; you must enter Layout Mode and drag it away.
+        </p>
+      </div>
+      <div>
+        <h3 style="margin-bottom:10px;">…then the editor: three tabs of this</h3>
+        <div class="mockpanel">
+          <div class="mocktitle">General &nbsp;·&nbsp; Auras &nbsp;·&nbsp; Load Conditions</div>
+          <div class="silhouette">
+            <div class="sil" style="width:38%"></div><div class="sil" style="width:82%"></div>
+            <div class="sil" style="width:64%"></div><div class="sil" style="width:71%"></div>
+            <div class="sil" style="width:45%"></div><div class="sil" style="width:88%"></div>
+            <div class="sil" style="width:52%"></div><div class="sil" style="width:76%"></div>
+            <div class="sil" style="width:69%"></div><div class="sil" style="width:41%"></div>
+            <div class="sil" style="width:84%"></div><div class="sil" style="width:57%"></div>
+            <div class="sil" style="width:73%"></div><div class="sil" style="width:48%"></div>
+            <div class="sil" style="width:80%"></div><div class="sil" style="width:62%"></div>
+          </div>
+        </div>
+        <p style="font-size:13.5px; margin-top:12px; color:var(--danger);">
+          <b>Quick-create bug:</b> new displays get <b>16px icons</b> and duration text
+          <b>OFF</b>, because the popup discards the well-tuned defaults bucket
+          (<code>AD.DefaultBucket</code>: 32px icons, 12pt text) that already exists in code.
+        </p>
+        <p class="muted" style="font-size:13px; margin-top:6px;">No templates. No per-display import/export. Groups are organization-only.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ SLIDE 3 · CORE IDEA ═══════════ -->
+<section class="slide" id="s3">
+  <div class="slide-inner">
+    <div class="kicker">Core idea</div>
+    <h2>Ask intent first, configure second</h2>
+    <p class="sub">
+      A full-pane wizard replaces the popup. Each step asks one plain-language question;
+      answers compile into the same Display data the editor already understands.
+      QUI has precedent: the role-based Setup Wizard for unit/group frames
+      (<code>core/aura_wizard.lua</code>) — it just never reached Aura Displays.
+    </p>
+    <div class="flow">
+      <div class="flownode"><div class="num">1</div><h4>What do you want to track?</h4><p>6 goal cards. Picks TRACKED vs STRIP, seeds unit &amp; filters.</p></div>
+      <div class="flowarrow">→</div>
+      <div class="flownode"><div class="num">2</div><h4>Which spell(s)?</h4><p>Spec-aware search with suggestions. Skippable. Becomes "Which auras?" for strips.</p></div>
+      <div class="flowarrow">→</div>
+      <div class="flownode"><div class="num">3</div><h4>How should it look?</h4><p>Icon / Bar / Colored Square as live mini-mocks. S/M/L presets. Good defaults pre-selected.</p></div>
+      <div class="flowarrow">→</div>
+      <div class="flownode"><div class="num">4</div><h4>Where and when?</h4><p>9-zone position picker, unit, simplified Load. Then one gold button.</p></div>
+    </div>
+    <div class="cols" style="margin-top:6px;">
+      <div class="mockpanel" style="border-color:rgba(122,195,122,.4);">
+        <div class="panelh ok">Design contract</div>
+        <p style="font-size:14px;">Nothing the wizard writes is special. The result is an ordinary Display — open it in the classic 3-tab editor and every choice is just a pre-filled field.</p>
+      </div>
+      <div class="mockpanel">
+        <div class="panelh" style="color:var(--info);">Power-user escape hatch</div>
+        <p style="font-size:14px;">Step 1 carries a persistent "Skip wizard — blank display" link. Nobody who knows what they're doing is forced through four screens.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ SLIDE 4 · STEP 1 ═══════════ -->
+<section class="slide" id="s4">
+  <div class="slide-inner">
+    <div class="kicker">Walkthrough · Step 1 of 4</div>
+    <h2>“What do you want to track?”</h2>
+    <p class="sub">Six goal cards cover the vast majority of first displays. Each card maps to concrete settings — shown in small print so the mapping is learnable, not magical.</p>
+    <div class="mockpanel">
+      <div class="wizhead">
+        <div class="wizsteps"><i class="cur">1</i><i>2</i><i>3</i><i>4</i></div>
+        <div class="wizq">What do you want to track?</div>
+      </div>
+      <div class="goalgrid" id="goalgrid">
+        <div class="goal" data-goal="A specific buff or proc (yours)" data-kind="tracked" data-map="TRACKED · Icon · Only My Cast">
+          <div class="glyph" style="color:var(--monk);">✦</div>
+          <h4>A specific buff or proc <span class="muted">(yours)</span></h4>
+          <p>One icon that lights up when your buff is active, with time remaining.</p>
+          <div class="maps">→ TRACKED · Icon · Only My Cast</div>
+        </div>
+        <div class="goal" data-goal="A specific debuff on a target" data-kind="tracked" data-map="TRACKED · unit: Target">
+          <div class="glyph" style="color:var(--danger);">☠</div>
+          <h4>A specific debuff on a target</h4>
+          <p>Watch your DoT or debuff on whatever you're attacking.</p>
+          <div class="maps">→ TRACKED · unit: Target</div>
+        </div>
+        <div class="goal" data-goal="All my short buffs" data-kind="strip" data-map="STRIP · Helpful">
+          <div class="glyph" style="color:var(--gold);">⁘</div>
+          <h4>All my short buffs</h4>
+          <p>A row of every temporary buff on you — procs, potions, externals.</p>
+          <div class="maps">→ STRIP · Helpful</div>
+        </div>
+        <div class="goal" data-goal="Debuffs I can dispel" data-kind="strip" data-map="STRIP · Dispellable by me">
+          <div class="glyph" style="color:var(--info);">✚</div>
+          <h4>Debuffs I can dispel</h4>
+          <p>Only shows things your class can actually remove.</p>
+          <div class="maps">→ STRIP · Dispellable by me</div>
+        </div>
+        <div class="goal" data-goal="Boss debuffs on me" data-kind="strip" data-map="STRIP · Boss debuffs">
+          <div class="glyph" style="color:var(--druid);">⚠</div>
+          <h4>Boss debuffs on me</h4>
+          <p>Big, obvious warnings for encounter mechanics targeting you.</p>
+          <div class="maps">→ STRIP · Boss debuffs</div>
+        </div>
+        <div class="goal" data-goal="Someone else's auras" data-kind="tracked" data-map="unit picker: Co-Tank / Party 1–4">
+          <div class="glyph" style="color:var(--warrior);">⚑</div>
+          <h4>Someone else's auras</h4>
+          <p>Track a co-tank's mitigation or a party member's buffs.</p>
+          <div class="maps">→ unit picker emphasis (Co-Tank, Party)</div>
+        </div>
+      </div>
+      <div class="toast" id="goaltoast"></div>
+      <div class="escape">Know what you're doing? <a onclick="alert('Escape hatch: creates an empty Display and opens the classic 3-tab editor — exactly today\'s behavior, minus the popup.')">Skip wizard — start with a blank display</a></div>
+    </div>
+    <p class="hint">click a goal card to try it — the wizard preconfigures the next steps</p>
+  </div>
+</section>
+
+<!-- ═══════════ SLIDE 5 · STEP 2 ═══════════ -->
+<section class="slide" id="s5">
+  <div class="slide-inner">
+    <div class="kicker">Walkthrough · Step 2 of 4</div>
+    <h2>“Which spell(s)?”</h2>
+    <p class="sub">Spec-aware search replaces the bare spell-ID box. For strip goals this step becomes <b>“Which auras?”</b> with the What to Show dropdown preselected by the goal. Either way, it's skippable.</p>
+    <div class="mockpanel" id="step2panel">
+      <div class="wizhead">
+        <div class="wizsteps"><i class="done">✓</i><i class="cur">2</i><i>3</i><i>4</i></div>
+        <div class="wizq" id="step2q">Which spell(s)?</div>
+        <span class="togglelink" style="margin-left:auto;" onclick="toggleStep2()" id="step2toggle">view strip variant</span>
+      </div>
+
+      <div class="trackedvariant">
+        <input type="text" id="spellsearch" placeholder="Search spells by name or ID…" style="width:100%;" oninput="filterSpells()">
+        <div id="spelllist" style="margin-top:8px;">
+          <div class="spellrow" data-spell="Renewing Mist" data-id="115151" onclick="addSpell(this)"><div class="sicon" style="background:linear-gradient(135deg,#3aa76d,#1b6e45);"></div><b>Renewing Mist</b><span class="sid mono">115151</span></div>
+          <div class="spellrow" data-spell="Rising Sun Kick" data-id="107428" onclick="addSpell(this)"><div class="sicon" style="background:linear-gradient(135deg,#e8a33d,#a05c14);"></div><b>Rising Sun Kick</b><span class="sid mono">107428</span></div>
+          <div class="spellrow" data-spell="Thunder Focus Tea" data-id="116680" onclick="addSpell(this)"><div class="sicon" style="background:linear-gradient(135deg,#57c7d4,#1f7a8c);"></div><b>Thunder Focus Tea</b><span class="sid mono">116680</span></div>
+          <div class="spellrow" data-spell="Life Cocoon" data-id="116849" onclick="addSpell(this)"><div class="sicon" style="background:linear-gradient(135deg,#d4c957,#8c7a1f);"></div><b>Life Cocoon</b><span class="sid mono">116849</span></div>
+          <div class="spellrow" data-spell="Revival" data-id="115310" onclick="addSpell(this)"><div class="sicon" style="background:linear-gradient(135deg,#c957d4,#7a1f8c);"></div><b>Revival</b><span class="sid mono">115310</span></div>
+        </div>
+        <div style="margin-top:14px;">
+          <div style="font-size:12px; color:var(--monk); font-weight:600; margin-bottom:7px;">✦ Suggested for Mistweaver Monk</div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <span class="chip" data-spell="Renewing Mist" data-id="115151" onclick="addChip(this)">Renewing Mist</span>
+            <span class="chip" data-spell="Thunder Focus Tea" data-id="116680" onclick="addChip(this)">Thunder Focus Tea</span>
+            <span class="chip" data-spell="Life Cocoon" data-id="116849" onclick="addChip(this)">Life Cocoon</span>
+          </div>
+        </div>
+        <div style="margin-top:14px; border-top:1px solid var(--border); padding-top:10px;">
+          <div style="font-size:12px; color:var(--muted); margin-bottom:4px;">Selected — each becomes a Tracked element:</div>
+          <div class="pillbar" id="pillbar"><span class="muted" style="font-size:13px;" id="pillempty">nothing selected yet</span></div>
+        </div>
+      </div>
+
+      <div class="stripvariant">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+          <label style="font-size:13.5px; color:var(--muted);">What to Show</label>
+          <select id="whattoshow">
+            <option>All</option><option>Only my auras</option><option>Defensives</option>
+            <option>Important</option><option>Purgeable</option><option selected>Dispellable by me</option>
+            <option>Crowd control</option><option>Boss debuffs</option>
+            <option>Role-relevant boss debuffs</option><option>Specific spells</option><option>Custom…</option>
+          </select>
+          <span class="badge strip">STRIP</span>
+        </div>
+        <p style="font-size:13.5px; color:var(--muted);">Preselected from your goal card. The full ~46-row filter form still exists — in the editor, later, only if you need it.</p>
+      </div>
+
+      <div class="escape" style="margin-top:16px;"><a onclick="alert('Skipping creates the element(s) with an empty spell list; the Auras tab in the editor is the natural place to add them later.')">Skip this step</a> — you can add spells later.</div>
+    </div>
+    <p class="hint">click suggestion rows or Mistweaver chips to build the selection · type in the box to filter</p>
+  </div>
+</section>
+
+<!-- ═══════════ SLIDE 6 · STEP 3 ═══════════ -->
+<section class="slide" id="s6">
+  <div class="slide-inner">
+    <div class="kicker">Walkthrough · Step 3 of 4</div>
+    <h2>“How should it look?”</h2>
+    <p class="sub">Display Types shown as what they <em>are</em>, not as dropdown strings. Defaults pre-selected: Icon, M (32px), duration text ON — which pointedly fixes today's 16px quick-create bug.</p>
+    <div class="mockpanel">
+      <div class="wizhead">
+        <div class="wizsteps"><i class="done">✓</i><i class="done">✓</i><i class="cur">3</i><i>4</i></div>
+        <div class="wizq">How should it look?</div>
+      </div>
+      <div class="stylecards" id="stylecards">
+        <div class="stylecard sel" data-style="Icon" onclick="pickStyle(this)">
+          <div class="demo"><div class="aicon" style="width:32px;height:32px;"><div class="swipe"></div><div class="dur" style="font-size:12px;">12</div></div></div>
+          <h4>Icon</h4><p>Cooldown swipe + duration text</p>
+        </div>
+        <div class="stylecard" data-style="Bar" onclick="pickStyle(this)">
+          <div class="demo"><div class="abar"><div class="fill"></div><div class="spark"></div></div></div>
+          <h4>Bar</h4><p>Fills with remaining time</p>
+        </div>
+        <div class="stylecard" data-style="Colored Square" onclick="pickStyle(this)">
+          <div class="demo"><div class="asq" style="width:18px;height:18px;"></div></div>
+          <h4>Colored Square</h4><p>Minimal on/off state light</p>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:18px; margin-top:16px; flex-wrap:wrap;">
+        <div>
+          <div style="font-size:12px; color:var(--muted); margin-bottom:5px;">Size</div>
+          <div class="seg" id="sizeseg">
+            <button data-size="S" data-px="24" onclick="pickSize(this)">S · 24px</button>
+            <button data-size="M" data-px="32" class="sel" onclick="pickSize(this)">M · 32px</button>
+            <button data-size="L" data-px="44" onclick="pickSize(this)">L · 44px</button>
+          </div>
+        </div>
+        <label style="font-size:13.5px; display:flex; align-items:center; gap:8px; margin-top:18px; cursor:pointer;">
+          <input type="checkbox" id="durcheck" checked onchange="renderPreview()"> Show duration text
+        </label>
+        <span class="muted" style="font-size:12px; margin-top:18px;">(defaults from <code>AD.DefaultBucket</code> — finally applied)</span>
+      </div>
+      <div class="previewstrip">
+        <span class="plabel">Live preview</span>
+        <div id="preview" style="display:flex; gap:8px; align-items:center;"></div>
+      </div>
+    </div>
+    <p class="hint">click a style card, a size, or the duration toggle — the preview updates</p>
+  </div>
+</section>
+
+<!-- ═══════════ SLIDE 7 · STEP 4 ═══════════ -->
+<section class="slide" id="s7">
+  <div class="slide-inner">
+    <div class="kicker">Walkthrough · Step 4 of 4</div>
+    <h2>“Where and when?”</h2>
+    <p class="sub">No more spawning at screen center. Pick a zone, pick a unit, pick a simplified load rule — then one gold button. The full Load Conditions tab (roles, 13 classes, specs, per-boss encounters) stays available in the editor.</p>
+    <div class="mockpanel">
+      <div class="wizhead">
+        <div class="wizsteps"><i class="done">✓</i><i class="done">✓</i><i class="done">✓</i><i class="cur">4</i></div>
+        <div class="wizq">Where and when?</div>
+      </div>
+      <div class="cols">
+        <div style="flex:0 0 360px;">
+          <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Screen position</div>
+          <div class="zonegrid" id="zonegrid">
+            <button data-zone="Top Left">TOP LEFT</button><button data-zone="Top Center">TOP</button><button data-zone="Top Right">TOP RIGHT</button>
+            <button data-zone="Mid Left">LEFT</button><button data-zone="Center" class="sel">CENTER</button><button data-zone="Mid Right">RIGHT</button>
+            <button data-zone="Bottom Left">BOT LEFT</button><button data-zone="Bottom Center">BOTTOM</button><button data-zone="Bottom Right">BOT RIGHT</button>
+          </div>
+          <p class="muted" style="font-size:12px; margin-top:6px;">Fine-tune later in Layout Mode.</p>
+        </div>
+        <div>
+          <div style="margin-bottom:16px;">
+            <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Unit</div>
+            <select id="unitsel" style="min-width:220px;">
+              <option selected>Player</option><option>Pet</option><option>Target</option><option>Focus</option>
+              <option>Boss 1</option><option>Boss 2</option><option>Boss 3</option><option>Boss 4</option><option>Boss 5</option>
+              <option>Party 1</option><option>Party 2</option><option>Party 3</option><option>Party 4</option>
+              <option>Arena 1</option><option>Arena 2</option><option>Arena 3</option><option>Arena 4</option><option>Arena 5</option>
+              <option>Co-Tank</option><option>Specific player…</option>
+            </select>
+            <span class="muted" style="font-size:12px; margin-left:8px;">defaulted from Step 1</span>
+          </div>
+          <div style="margin-bottom:22px;">
+            <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">Load</div>
+            <div class="seg" id="loadseg">
+              <button data-load="This spec only" class="sel" onclick="pickLoad(this)">This spec only</button>
+              <button data-load="This class" onclick="pickLoad(this)">This class</button>
+              <button data-load="Always" onclick="pickLoad(this)">Always</button>
+            </div>
+            <p class="muted" style="font-size:12px; margin-top:6px;">Expands to full Load Conditions in the editor.</p>
+          </div>
+          <button class="btn gold" style="font-size:16px; padding:12px 28px;" onclick="createDisplay()">Create Display</button>
+        </div>
+      </div>
+    </div>
+    <p class="hint">pick a zone, unit &amp; load rule — then hit Create Display to see the success state</p>
+  </div>
+</section>
+
+<!-- ═══════════ SLIDE 8 · SUCCESS STATE ═══════════ -->
+<section class="slide center" id="s8">
+  <div class="slide-inner" style="max-width:640px;">
+    <div class="kicker">Walkthrough · Done</div>
+    <h2 style="color:var(--ok);">✓ Display created</h2>
+    <p class="sub">The success state names what happened and offers exactly three next moves. "Create another" carries this run's answers over as defaults — the wizard-fatigue antidote for display #2 through #20.</p>
+    <div class="successcard">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <h3 id="sumname">My Mistweaver Procs</h3>
+        <span class="badge tracked" id="sumbadge">TRACKED</span>
+      </div>
+      <dl class="kv">
+        <dt>Goal</dt><dd id="sumgoal">A specific buff or proc (yours)</dd>
+        <dt>Spells</dt><dd id="sumspells" class="mono">—</dd>
+        <dt>Display Type</dt><dd id="sumstyle">Icon · M (32px) · duration text on</dd>
+        <dt>Unit</dt><dd id="sumunit">Player</dd>
+        <dt>Position</dt><dd id="sumzone">Center</dd>
+        <dt>Load</dt><dd id="sumload">This spec only</dd>
+        <dt>Group</dt><dd>Ungrouped</dd>
+      </dl>
+      <div style="display:flex; gap:10px;">
+        <button class="btn gold" onclick="alert('Opens the classic two-pane editor: General / Auras / Load Conditions — every wizard answer is just a pre-filled field.')">Open in editor</button>
+        <button class="btn" onclick="goTo(3)">Create another</button>
+        <button class="btn" onclick="goTo(8)">Done</button>
+      </div>
+    </div>
+    <p class="muted" style="font-size:13px; margin-top:14px;">It lands in the classic 3-tab editor for tweaking — the wizard writes ordinary Display data, nothing forked.</p>
+  </div>
+</section>
+
+<!-- ═══════════ SLIDE 9 · FIXES / DOESN'T ═══════════ -->
+<section class="slide" id="s9">
+  <div class="slide-inner">
+    <div class="kicker">Honest accounting</div>
+    <h2>What it fixes — and what it doesn't</h2>
+    <p class="sub">A wizard is a front door, not a renovation. Worth being precise about which pain numbers it actually moves.</p>
+    <div class="cols">
+      <div class="mockpanel" style="border-color:rgba(122,195,122,.4);">
+        <div class="panelh ok">Fixes</div>
+        <ul class="prosconlist pro">
+          <li><b>First-run dread.</b> 4 questions instead of 35–40 controls staring back at you.</li>
+          <li><b>The defaults bug.</b> <code>AD.DefaultBucket</code> (32px, 12pt duration) is finally applied on creation instead of discarded.</li>
+          <li><b>Center-spawn drag ritual.</b> The 9-zone picker places displays roughly right on the first try.</li>
+          <li><b>Discoverability of "What to Show".</b> Goal cards surface Dispellable / Boss debuffs / Helpful without opening a 46-row form.</li>
+          <li><b>Spell-ID hunting.</b> Spec-aware suggestions replace alt-tabbing to Wowhead for your first display.</li>
+        </ul>
+      </div>
+      <div class="mockpanel" style="border-color:rgba(224,108,108,.4);">
+        <div class="panelh bad">Doesn't fix</div>
+        <ul class="prosconlist con">
+          <li><b>Editor complexity afterwards.</b> The 80–120 widget editor is untouched; the wizard just delays your meeting with it.</li>
+          <li><b>Wizard fatigue.</b> By display #20, four steps is friction. Mitigated by "Create another" carrying settings over, and the blank-display escape hatch — but not eliminated.</li>
+          <li><b>No sharing story.</b> Still no templates, no per-display import/export. (Approaches 2 and 5 attack this.)</li>
+          <li><b>Groups stay organization-only.</b> No shared layout or styling falls out of this.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ SLIDE 10 · IMPLEMENTATION NOTES ═══════════ -->
+<section class="slide" id="s10">
+  <div class="slide-inner">
+    <div class="kicker">Implementation notes</div>
+    <h2>Mostly plumbing that already exists</h2>
+    <div class="mockpanel" style="margin-top:8px;">
+      <ul class="implist">
+        <li>
+          <b>Reuse quick-create plumbing <span class="cost low">LOW</span></b>
+          <span>The wizard's final "Create Display" calls the same creation path as today's popup — kind, spells, name, unit are the identical payload, plus style/position/load fields the editor already owns.</span>
+        </li>
+        <li>
+          <b>Apply <code>AD.DefaultBucket</code> on create <span class="cost low">LOW</span></b>
+          <span>The tuned defaults (32px icons, 12pt duration text) exist in code today and are simply not wired into quick-create. Worth shipping as a standalone bugfix even if the wizard never happens.</span>
+        </li>
+        <li>
+          <b>Wizard shell precedent <span class="cost med">MED</span></b>
+          <span><code>core/aura_wizard.lua</code> already implements a role-based setup wizard for unit/group frames — step navigation, full-pane layout, and apply-on-finish patterns to crib from.</span>
+        </li>
+        <li>
+          <b>9-zone position picker <span class="cost med">MED</span></b>
+          <span>Maps to anchor point + offset presets; hands off to the existing Layout Mode for fine-tuning. New UI, but small surface.</span>
+        </li>
+        <li>
+          <b>Spec-aware spell suggestions <span class="cost high">HIGH — biggest content cost</span></b>
+          <span>Needs a curated table of suggestion-worthy spells per spec (13 classes × ~3 specs). Not hard code, but real authoring and upkeep every patch. Ship v1 with the wizard minus chips if needed; the search box alone still beats a bare spell-ID field.</span>
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ SLIDE 11 · VERDICT ═══════════ -->
+<section class="slide center" id="s11">
+  <div class="slide-inner" style="text-align:center; max-width:760px;">
+    <div class="kicker">Verdict</div>
+    <h2>Steal this if the #1 goal is<br>first-display success rate.</h2>
+    <div class="verdict-box" style="text-align:left;">
+      <p style="font-size:15.5px; margin-bottom:12px;">
+        The wizard converts "which of these 40 controls matters?" into four questions a
+        first-timer can answer from intent alone — and quietly fixes the worst current bug
+        (discarded defaults) along the way.
+      </p>
+      <p style="font-size:15.5px; color:var(--muted);">
+        It deliberately does <b>not</b> make the editor simpler or add sharing; it makes the
+        <em>entrance</em> survivable. Pairs naturally with any of the other four approaches —
+        the goal cards in Step 1 are an obvious mounting point for templates or recipes.
+      </p>
+    </div>
+    <p class="muted" style="margin-top:26px; font-size:13.5px;">Next: Approach 2 — Templates. Use the pill below or press →.</p>
+  </div>
+</section>
+
+<!-- deck chrome -->
+<div class="dots" id="dots"></div>
+<div class="navbtns">
+  <button onclick="prev()" aria-label="Previous slide">←</button>
+  <button onclick="next()" aria-label="Next slide">→</button>
+</div>
+<div class="harness">
+  <a href="05-recipes.html">‹ 05</a>
+  <span class="sep"></span>
+  <span class="lbl">Approach 1/5 — Guided Wizard</span>
+  <span class="sep"></span>
+  <a href="02-templates.html">02 ›</a>
+  <span class="sep"></span>
+  <a href="index.html">☰ all</a>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ---------- deck navigation ---------- */
+  var slides = document.querySelectorAll('.slide');
+  var cur = 0;
+  var dots = document.getElementById('dots');
+  slides.forEach(function(_, i){
+    var d = document.createElement('span');
+    d.addEventListener('click', function(){ goTo(i); });
+    dots.appendChild(d);
+  });
+  function render(){
+    slides.forEach(function(s, i){ s.classList.toggle('active', i === cur); });
+    dots.querySelectorAll('span').forEach(function(d, i){ d.classList.toggle('on', i === cur); });
+  }
+  window.goTo = function(i){ cur = Math.max(0, Math.min(slides.length - 1, i)); render(); };
+  window.next = function(){ goTo(cur + 1); };
+  window.prev = function(){ goTo(cur - 1); };
+  document.addEventListener('keydown', function(e){
+    var t = document.activeElement;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+    if (e.key === 'ArrowRight') next();
+    else if (e.key === 'ArrowLeft') prev();
+  });
+
+  /* ---------- wizard mock state ---------- */
+  var state = {
+    goal: 'A specific buff or proc (yours)',
+    kind: 'tracked',
+    spells: [],
+    style: 'Icon',
+    size: 'M', px: 32,
+    duration: true,
+    zone: 'Center',
+    load: 'This spec only'
+  };
+
+  /* step 1: goal cards */
+  var goals = document.querySelectorAll('#goalgrid .goal');
+  goals.forEach(function(g){
+    g.addEventListener('click', function(){
+      goals.forEach(function(o){ o.classList.remove('sel'); });
+      g.classList.add('sel');
+      state.goal = g.dataset.goal;
+      state.kind = g.dataset.kind;
+      var toast = document.getElementById('goaltoast');
+      toast.textContent = '✓ Goal set → ' + g.dataset.map + '. Steps 2–4 are now preconfigured with these defaults. Press → to continue.';
+      toast.classList.add('show');
+      // reflect kind in step 2 variant
+      document.getElementById('step2panel').classList.toggle('mode-strip', state.kind === 'strip');
+      syncStep2Header();
+      updateSummary();
+    });
+  });
+
+  /* step 2: spells */
+  function syncStep2Header(){
+    var strip = document.getElementById('step2panel').classList.contains('mode-strip');
+    document.getElementById('step2q').textContent = strip ? 'Which auras?' : 'Which spell(s)?';
+    document.getElementById('step2toggle').textContent = strip ? 'view tracked variant' : 'view strip variant';
+  }
+  window.toggleStep2 = function(){
+    document.getElementById('step2panel').classList.toggle('mode-strip');
+    syncStep2Header();
+  };
+  function addSpellByData(name, id){
+    if (state.spells.some(function(s){ return s.id === id; })) return;
+    state.spells.push({ name: name, id: id });
+    renderPills();
+    updateSummary();
+  }
+  window.addSpell = function(row){
+    row.classList.add('added');
+    addSpellByData(row.dataset.spell, row.dataset.id);
+  };
+  window.addChip = function(chip){
+    chip.classList.add('added');
+    var row = document.querySelector('#spelllist .spellrow[data-id="' + chip.dataset.id + '"]');
+    if (row) row.classList.add('added');
+    addSpellByData(chip.dataset.spell, chip.dataset.id);
+  };
+  function removeSpell(id){
+    state.spells = state.spells.filter(function(s){ return s.id !== id; });
+    var row = document.querySelector('#spelllist .spellrow[data-id="' + id + '"]');
+    if (row) row.classList.remove('added');
+    var chip = document.querySelector('.chip[data-id="' + id + '"]');
+    if (chip) chip.classList.remove('added');
+    renderPills();
+    updateSummary();
+  }
+  function renderPills(){
+    var bar = document.getElementById('pillbar');
+    bar.innerHTML = '';
+    if (!state.spells.length){
+      bar.innerHTML = '<span class="muted" style="font-size:13px;">nothing selected yet</span>';
+      return;
+    }
+    state.spells.forEach(function(s){
+      var p = document.createElement('span');
+      p.className = 'pill';
+      p.innerHTML = '<b>' + s.name + '</b><span class="mono" style="color:var(--muted);font-size:11px;">' + s.id + '</span>';
+      var x = document.createElement('span');
+      x.className = 'x'; x.textContent = '✕';
+      x.addEventListener('click', function(){ removeSpell(s.id); });
+      p.appendChild(x);
+      bar.appendChild(p);
+    });
+  }
+  window.filterSpells = function(){
+    var q = document.getElementById('spellsearch').value.toLowerCase();
+    document.querySelectorAll('#spelllist .spellrow').forEach(function(r){
+      var hit = r.dataset.spell.toLowerCase().indexOf(q) !== -1 || r.dataset.id.indexOf(q) !== -1;
+      r.style.display = hit ? '' : 'none';
+    });
+  };
+
+  /* step 3: look */
+  window.pickStyle = function(card){
+    document.querySelectorAll('#stylecards .stylecard').forEach(function(c){ c.classList.remove('sel'); });
+    card.classList.add('sel');
+    state.style = card.dataset.style;
+    renderPreview(); updateSummary();
+  };
+  window.pickSize = function(btn){
+    document.querySelectorAll('#sizeseg button').forEach(function(b){ b.classList.remove('sel'); });
+    btn.classList.add('sel');
+    state.size = btn.dataset.size;
+    state.px = parseInt(btn.dataset.px, 10);
+    renderPreview(); updateSummary();
+  };
+  window.renderPreview = function(){
+    state.duration = document.getElementById('durcheck').checked;
+    var pv = document.getElementById('preview');
+    pv.innerHTML = '';
+    var durs = ['12', '7', '3'];
+    var hues = ['linear-gradient(135deg,#2c6e49,#1b4332)','linear-gradient(135deg,#8a5a2c,#5a3a1b)','linear-gradient(135deg,#2c4d6e,#1b3043)'];
+    for (var i = 0; i < 3; i++){
+      var el;
+      if (state.style === 'Icon'){
+        el = document.createElement('div');
+        el.className = 'aicon';
+        el.style.width = el.style.height = state.px + 'px';
+        el.style.background = hues[i];
+        el.innerHTML = '<div class="swipe" style="background:conic-gradient(from 0deg, rgba(0,0,0,.65) 0 ' + (90 + i * 60) + 'deg, transparent ' + (90 + i * 60) + 'deg 360deg);"></div>'
+          + (state.duration ? '<div class="dur" style="font-size:' + Math.max(9, Math.round(state.px * 0.38)) + 'px;">' + durs[i] + '</div>' : '');
+      } else if (state.style === 'Bar'){
+        el = document.createElement('div');
+        el.className = 'abar';
+        el.style.width = (state.px * 3.5) + 'px';
+        el.style.height = Math.round(state.px * 0.5) + 'px';
+        var pct = 65 - i * 20;
+        el.innerHTML = '<div class="fill" style="right:' + (100 - pct) + '%;"></div><div class="spark" style="left:' + pct + '%;"></div>'
+          + (state.duration ? '<div style="position:absolute;right:4px;top:0;bottom:0;display:flex;align-items:center;font-size:' + Math.max(9, Math.round(state.px * 0.32)) + 'px;font-weight:700;color:#fff;text-shadow:0 1px 2px #000;">' + durs[i] + '</div>' : '');
+      } else {
+        el = document.createElement('div');
+        el.className = 'asq';
+        el.style.width = el.style.height = Math.round(state.px * 0.55) + 'px';
+        el.style.background = ['#7ac37a', '#e8c15a', '#6cb2e0'][i];
+      }
+      pv.appendChild(el);
+    }
+  };
+
+  /* step 4: where & when */
+  document.querySelectorAll('#zonegrid button').forEach(function(b){
+    b.addEventListener('click', function(){
+      document.querySelectorAll('#zonegrid button').forEach(function(o){ o.classList.remove('sel'); });
+      b.classList.add('sel');
+      state.zone = b.dataset.zone;
+      updateSummary();
+    });
+  });
+  window.pickLoad = function(btn){
+    document.querySelectorAll('#loadseg button').forEach(function(b){ b.classList.remove('sel'); });
+    btn.classList.add('sel');
+    state.load = btn.dataset.load;
+    updateSummary();
+  };
+  document.getElementById('unitsel').addEventListener('change', updateSummary);
+  window.createDisplay = function(){
+    updateSummary();
+    goTo(7); // slide 8 (index 7): success state
+  };
+
+  /* success summary */
+  function updateSummary(){
+    var strip = state.kind === 'strip';
+    document.getElementById('sumgoal').textContent = state.goal;
+    document.getElementById('sumbadge').textContent = strip ? 'STRIP' : 'TRACKED';
+    document.getElementById('sumbadge').className = 'badge ' + (strip ? 'strip' : 'tracked');
+    document.getElementById('sumname').textContent = strip ? 'My ' + state.goal : 'My Mistweaver Procs';
+    document.getElementById('sumspells').textContent = strip
+      ? ('What to Show: ' + document.getElementById('whattoshow').value)
+      : (state.spells.length ? state.spells.map(function(s){ return s.name + ' (' + s.id + ')'; }).join(', ') : '— (add later in the Auras tab)');
+    document.getElementById('sumstyle').textContent = state.style + ' · ' + state.size + ' (' + state.px + 'px)' + (state.duration ? ' · duration text on' : ' · duration text off');
+    document.getElementById('sumunit').textContent = document.getElementById('unitsel').value;
+    document.getElementById('sumzone').textContent = state.zone;
+    document.getElementById('sumload').textContent = state.load;
+  }
+
+  renderPreview();
+  updateSummary();
+  render();
+})();
+</script>
+</body>
+</html>
