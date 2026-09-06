@@ -1515,6 +1515,9 @@ local function UpdateButtonVisibility()
     end
 
     UpdateGreatVaultButton()
+    if MinimapCluster then
+        MinimapCluster:Layout()
+    end
 end
 
 local function BuildMiddleClickMenu()
@@ -3601,6 +3604,9 @@ function Minimap_Module:Refresh()
         end
     end
 
+    if MinimapCluster then
+        MinimapCluster:Layout()
+    end
     EndQUIControlledMinimapUpdate(0.75)
     FlushMinimapDebugStats(false)
 end
