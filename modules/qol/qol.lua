@@ -766,6 +766,13 @@ local function SummonIsActive()
         and C_SummonInfo.GetSummonConfirmTimeLeft() > 0
 end
 
+local function AcceptSummon()
+    if C_SummonInfo and C_SummonInfo.ConfirmSummon then
+        C_SummonInfo.ConfirmSummon()
+        C_Timer.After(0, _G.HideSummonConfirmationDialogs)
+    end
+end
+
 local function TryAcceptPendingSummon()
     if not summonAcceptPending then return end
     local mode = GetAutoAcceptSummonMode()
@@ -782,7 +789,7 @@ local function TryAcceptPendingSummon()
         return
     end
     summonAcceptPending = false
-    if C_SummonInfo and C_SummonInfo.ConfirmSummon then C_SummonInfo.ConfirmSummon() end
+    AcceptSummon()
 end
 
 local function OnConfirmSummon()
@@ -798,7 +805,7 @@ local function OnConfirmSummon()
         C_Timer.After(0.2, TryAcceptPendingSummon)
         return
     end
-    if C_SummonInfo and C_SummonInfo.ConfirmSummon then C_SummonInfo.ConfirmSummon() end
+    AcceptSummon()
 end
 
 local function OnDuelRequested(challengerName)
