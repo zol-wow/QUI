@@ -93,6 +93,14 @@ local function InstallParkHooks(frame, state)
     end
 
     state.parkHooked = true
+    if frame.SetAlpha then
+        hooksecurefunc(frame, "SetAlpha", function()
+            if not state.hidden or state.restoring or state.alphaGuard then return end
+            state.alphaGuard = true
+            frame:SetAlpha(0)
+            state.alphaGuard = nil
+        end)
+    end
     if frame.SetPoint then hooksecurefunc(frame, "SetPoint", QueueRepark) end
     if frame.SetAllPoints then hooksecurefunc(frame, "SetAllPoints", QueueRepark) end
     if frame.SetParent then hooksecurefunc(frame, "SetParent", QueueRepark) end
@@ -265,6 +273,7 @@ function Suppressor:CheckParkIntegrity(frame)
     if not frame then return false end
     local state = self._states[frame]
     if not state or not state.hidden or state.restoring or state.parkQueued then return false end
+    if frame.SetAlpha then frame:SetAlpha(0) end
     if IsParked(frame) then return true end
     return self:Suppress(frame)
 end

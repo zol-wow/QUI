@@ -198,17 +198,22 @@ function CDMCatalog.GetTrackedCategorySet(category, allowUnlearned)
             return nil, false
         end
 
-        if provider.GetOrderedCooldownIDsForCategory then
-            local ok, ids = pcall(
-                provider.GetOrderedCooldownIDsForCategory,
-                provider,
-                category,
-                allowUnlearned and true or false)
-            if ok and type(ids) == "table" then
-                return ids, true
+        local displayData = provider.displayData
+        local ordered = type(displayData) == "table" and displayData.orderedCooldownIDs
+        local infoByID = type(displayData) == "table" and displayData.cooldownInfoByID
+        if type(ordered) ~= "table" or type(infoByID) ~= "table" then
+            return nil, false
+        end
+        local ids = {}
+        for _, cooldownID in ipairs(ordered) do
+            local info = infoByID[cooldownID]
+            if not info then return nil, false end
+            if not (_G.CDM_HIDE_INVISIBLE_ITEMS and info.isInvisible)
+                and info.category == category and (info.isKnown or allowUnlearned) then
+                ids[#ids + 1] = cooldownID
             end
         end
-        return nil, false
+        return ids, true
     end
 
     local ids = CDMCatalog.GetCategorySet(category, allowUnlearned)

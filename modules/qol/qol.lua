@@ -751,6 +751,63 @@ local function OnPartyInvite(inviterName)
     end
 end
 
+local summonAcceptPending = false
+local PlayerCanTeleport = _G.PlayerCanTeleport
+
+local function GetAutoAcceptSummonMode()
+    local settings = GetSettings()
+    local mode = settings and settings.autoAcceptSummons
+    if mode == true then return "always" end
+    return mode
+end
+
+local function SummonIsActive()
+    return C_SummonInfo and C_SummonInfo.GetSummonConfirmTimeLeft
+        and C_SummonInfo.GetSummonConfirmTimeLeft() > 0
+end
+
+local function AcceptSummon()
+    if C_SummonInfo and C_SummonInfo.ConfirmSummon then
+        C_SummonInfo.ConfirmSummon()
+        C_Timer.After(0, _G.HideSummonConfirmationDialogs)
+    end
+end
+
+local function TryAcceptPendingSummon()
+    if not summonAcceptPending then return end
+    local mode = GetAutoAcceptSummonMode()
+    if (mode ~= "always" and mode ~= "outOfCombat") or not SummonIsActive() then
+        summonAcceptPending = false
+        return
+    end
+    if UnitAffectingCombat("player") then
+        if mode == "outOfCombat" then summonAcceptPending = false end
+        return
+    end
+    if not PlayerCanTeleport or not PlayerCanTeleport() then
+        C_Timer.After(0.2, TryAcceptPendingSummon)
+        return
+    end
+    summonAcceptPending = false
+    AcceptSummon()
+end
+
+local function OnConfirmSummon()
+    summonAcceptPending = false
+    local mode = GetAutoAcceptSummonMode()
+    if mode ~= "always" and mode ~= "outOfCombat" then return end
+    if UnitAffectingCombat("player") then
+        if mode == "always" then summonAcceptPending = true end
+        return
+    end
+    if not PlayerCanTeleport or not PlayerCanTeleport() then
+        summonAcceptPending = true
+        C_Timer.After(0.2, TryAcceptPendingSummon)
+        return
+    end
+    AcceptSummon()
+end
+
 local function OnDuelRequested(challengerName)
     local ignored = ns.ShouldAutoDeclineFrom and ns.ShouldAutoDeclineFrom(challengerName)
     local settings = GetSettings()
@@ -1326,6 +1383,8 @@ end
 qolFrame:RegisterEvent("MERCHANT_SHOW")
 qolFrame:RegisterEvent("LFG_ROLE_CHECK_SHOW")
 qolFrame:RegisterEvent("PARTY_INVITE_REQUEST")
+qolFrame:RegisterEvent("CONFIRM_SUMMON")
+qolFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 qolFrame:RegisterEvent("DUEL_REQUESTED")
 qolFrame:RegisterEvent("PET_BATTLE_PVP_DUEL_REQUESTED")
 qolFrame:RegisterEvent("PLAYER_DEAD")
@@ -1349,6 +1408,10 @@ qolFrame:SetScript("OnEvent", function(self, event, ...)
         OnRoleCheckShow()
     elseif event == "PARTY_INVITE_REQUEST" then
         OnPartyInvite(...)
+    elseif event == "CONFIRM_SUMMON" then
+        OnConfirmSummon()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        TryAcceptPendingSummon()
     elseif event == "DUEL_REQUESTED" then
         OnDuelRequested(...)
     elseif event == "PET_BATTLE_PVP_DUEL_REQUESTED" then

@@ -74,35 +74,101 @@ local function Fold(text)
     return string.lower(text)
 end
 
-function ns.QUI_AuraDisplaysOptions.BuildListModel(displays, searchText, isCollapsed)
+-- Nested list model. `tree.children[""]` names the root groups and
+-- `tree.children[name]` each group's ordered child groups; groups render as a
+-- tree with their displays, then an Ungrouped section. While searching, a
+-- display matches on its own name or any ancestor group's name, collapse is
+-- ignored, and empty branches are pruned.
+function ns.QUI_AuraDisplaysOptions.BuildListModel(displays, searchText, isCollapsed, tree)
     local search = (type(searchText) == "string" and searchText ~= "") and Fold(searchText) or nil
-    local groups, order = {}, {}
+    local children = (type(tree) == "table" and type(tree.children) == "table")
+        and tree.children or {}
+
+    local buckets, ungrouped = {}, {}
     for i = 1, #displays do
         local display = displays[i]
-        local key = display.group or ""
-        local matches = not search
-            or Fold(display.name or ""):find(search, 1, true) ~= nil
-            or Fold(key):find(search, 1, true) ~= nil
-        if matches then
-            local bucket = groups[key]
+        local key = display.group
+        if type(key) == "string" and key ~= "" then
+            local bucket = buckets[key]
             if not bucket then
                 bucket = {}
-                groups[key] = bucket
-                order[#order + 1] = key
+                buckets[key] = bucket
             end
             bucket[#bucket + 1] = display
+        else
+            ungrouped[#ungrouped + 1] = display
         end
     end
+
     local model = {}
-    for i = 1, #order do
-        local key = order[i]
-        local bucket = groups[key]
-        local collapsed = not search and isCollapsed(key) or false
-        model[#model + 1] = { kind = "header", group = key, count = #bucket, collapsed = collapsed }
-        if not collapsed then
+    local visited = {}
+
+    local function AddGroup(name, depth, ancestorMatch)
+        if visited[name] then return 0 end
+        visited[name] = true
+        local groupMatch = ancestorMatch
+            or (search and Fold(name):find(search, 1, true) ~= nil)
+        local headerIndex = #model + 1
+        model[headerIndex] = { kind = "header", group = name, depth = depth }
+        local collapsed = not search and isCollapsed(name) or false
+        model[headerIndex].collapsed = collapsed
+
+        local count = 0
+        local bucket = buckets[name]
+        if bucket then
             for j = 1, #bucket do
-                model[#model + 1] = { kind = "display", display = bucket[j] }
+                local display = bucket[j]
+                local matches = not search or groupMatch
+                    or Fold(display.name or ""):find(search, 1, true) ~= nil
+                if matches then
+                    count = count + 1
+                    if not collapsed then
+                        model[#model + 1] = { kind = "display", display = display, depth = depth + 1 }
+                    end
+                end
             end
+        end
+
+        local childNames = children[name]
+        if childNames then
+            for j = 1, #childNames do
+                if collapsed then
+                    -- Children stay hidden but still contribute to the count.
+                    local before = #model
+                    count = count + AddGroup(childNames[j], depth + 1, groupMatch)
+                    for k = #model, before + 1, -1 do model[k] = nil end
+                else
+                    count = count + AddGroup(childNames[j], depth + 1, groupMatch)
+                end
+            end
+        end
+
+        model[headerIndex].count = count
+        if search and count == 0 and not groupMatch then
+            -- Prune the empty branch: nothing under it matched.
+            for k = #model, headerIndex, -1 do model[k] = nil end
+            return 0
+        end
+        return count
+    end
+
+    local roots = children[""] or {}
+    for i = 1, #roots do
+        AddGroup(roots[i], 0, false)
+    end
+
+    local ungroupedShown = {}
+    for i = 1, #ungrouped do
+        local display = ungrouped[i]
+        local matches = not search
+            or Fold(display.name or ""):find(search, 1, true) ~= nil
+        if matches then ungroupedShown[#ungroupedShown + 1] = display end
+    end
+    if #ungroupedShown > 0 then
+        model[#model + 1] = { kind = "header", group = "", depth = 0,
+            count = #ungroupedShown, collapsed = false }
+        for i = 1, #ungroupedShown do
+            model[#model + 1] = { kind = "display", display = ungroupedShown[i], depth = 1 }
         end
     end
     return model
@@ -115,6 +181,20 @@ local function EnsureLoad(display)
     display.load.roles = display.load.roles or {}
     display.load.encounters = display.load.encounters or {}
     return display.load
+end
+
+local function UnitLabelFor(display)
+    if display.unitMode == "cotank" then return ns.L["Co-Tank"] end
+    if display.unitMode == "name" then
+        if type(display.unit) == "string" and display.unit ~= "" then
+            return display.unit
+        end
+        return ns.L["Specific player..."]
+    end
+    for i = 1, #UNIT_OPTIONS do
+        if UNIT_OPTIONS[i].value == display.unit then return UNIT_OPTIONS[i].text end
+    end
+    return display.unit or ns.L["Player"]
 end
 
 local function HasHelpfulTrackedElement(display)
@@ -140,6 +220,7 @@ local PANE_GAP = 10
 local FALLBACK_ICON = 134400
 
 local selectedID = nil
+local selectedGroup = nil
 local searchText = ""
 local previewEnabled = true
 local specsExpanded = false
@@ -178,21 +259,48 @@ local UI = { headerRows = {}, displayRows = {} }
 
 local function SyncPreview()
     if not (AD and type(AD.ShowPreviewFor) == "function") then return end
-    if previewEnabled and selectedID then
-        AD.ShowPreviewFor(selectedID)
-    elseif UI.lastPreviewID then
+    local wantedID = previewEnabled and selectedID or nil
+    local wantedGroup = previewEnabled and selectedGroup or nil
+    if UI.lastPreviewID and UI.lastPreviewID ~= wantedID then
         AD.HidePreviewFor(UI.lastPreviewID)
     end
-    UI.lastPreviewID = previewEnabled and selectedID or nil
+    if UI.lastPreviewGroup and UI.lastPreviewGroup ~= wantedGroup
+        and type(AD.HidePreviewForGroup) == "function" then
+        AD.HidePreviewForGroup(UI.lastPreviewGroup)
+    end
+    UI.lastPreviewID = nil
+    UI.lastPreviewGroup = nil
+    if wantedID then
+        AD.ShowPreviewFor(wantedID)
+        UI.lastPreviewID = wantedID
+        if type(AD.EnablePreviewDrag) == "function" then
+            AD.EnablePreviewDrag("display", wantedID)
+        end
+    elseif wantedGroup and type(AD.ShowPreviewForGroup) == "function" then
+        AD.ShowPreviewForGroup(wantedGroup)
+        UI.lastPreviewGroup = wantedGroup
+        if type(AD.EnablePreviewDrag) == "function" then
+            AD.EnablePreviewDrag("group", wantedGroup)
+        end
+    elseif type(AD.DisablePreviewDrag) == "function" then
+        AD.DisablePreviewDrag()
+    end
 end
 
 local function SelectDisplay(id)
-    if UI.lastPreviewID and UI.lastPreviewID ~= id then
-        AD.HidePreviewFor(UI.lastPreviewID)
-        UI.lastPreviewID = nil
-    end
     selectedID = id
+    selectedGroup = nil
     newGroupPending = false
+    SyncPreview()
+    if UI.RebuildList then UI.RebuildList() end
+    if UI.RebuildDetail then UI.RebuildDetail() end
+end
+
+local function SelectGroup(groupName)
+    selectedID = nil
+    selectedGroup = groupName
+    newGroupPending = false
+    activeDetailTab = "group"
     SyncPreview()
     if UI.RebuildList then UI.RebuildList() end
     if UI.RebuildDetail then UI.RebuildDetail() end
@@ -215,7 +323,7 @@ function ns.QUI_AuraDisplaysOptions._QuickCreate(spec)
         display.unit = nil
     elseif choice == "__name" then
         display.unitMode = "name"
-        display.unit = ""
+        display.unit = type(spec.unitName) == "string" and spec.unitName:match("^%s*(.-)%s*$") or ""
     else
         display.unitMode = "token"
         display.unit = choice
@@ -223,14 +331,22 @@ function ns.QUI_AuraDisplaysOptions._QuickCreate(spec)
     E.EnsureSeeded(display.auras, AD.DefaultBucket)
     local bucket = display.auras.elements["*"]
     for i = #bucket, 1, -1 do bucket[i] = nil end
+    -- Seed at DefaultBucket quality (32px, duration text on), not the bare
+    -- 16px constructor defaults quick-create used to ship.
+    local T = ns.QUI_AuraDisplayTemplates
     if spec.kind == "tracked" then
         local spellID = spec.spellID
             and E.ResolveTrackedSpellID and E.ResolveTrackedSpellID(spec.spellID)
             or spec.spellID
-        bucket[1] = E.NewTrackedElement(spellID and { spellID } or {}, "icon")
-        bucket[1].iconSize = 100
+        if T and type(T.TunedTrackedElement) == "function" then
+            bucket[1] = T.TunedTrackedElement(spellID and { spellID } or {}, "icon", "HELPFUL", nil, 100)
+        else
+            bucket[1] = E.NewTrackedElement(spellID and { spellID } or {}, "icon")
+            bucket[1].iconSize = 100
+        end
     else
-        bucket[1] = E.NewFilterStripElement("HELPFUL")
+        local seeded = AD.DefaultBucket()
+        bucket[1] = seeded[1] or E.NewFilterStripElement("HELPFUL")
     end
     return display
 end
@@ -251,15 +367,25 @@ do
                     local text = self:GetText()
                     self:ClearFocus()
                     field:Hide()
+                    if UI.lastPreviewGroup == renameTarget
+                        and type(AD.HidePreviewForGroup) == "function" then
+                        AD.HidePreviewForGroup(renameTarget)
+                        UI.lastPreviewGroup = nil
+                    end
                     local ok, reason = AD.RenameGroup(renameTarget, text)
                     if ok then
+                        if selectedGroup == renameTarget then selectedGroup = text end
                         AD.Refresh()
                         UI.RebuildList()
                         if UI.RebuildDetail then UI.RebuildDetail() end
-                    elseif reason == "collision" and UIErrorsFrame then
-                        UIErrorsFrame:AddMessage(
-                            ns.L["A group with that name already exists."],
-                            1.0, 0.3, 0.3, 1.0)
+                    else
+                        if UIErrorsFrame then
+                            local message = reason == "collision"
+                                and ns.L["A group with that name already exists."]
+                                or ns.L["Group names cannot be empty."]
+                            UIErrorsFrame:AddMessage(message, 1.0, 0.3, 0.3, 1.0)
+                        end
+                        SyncPreview()
                     end
                 end,
                 onCommit = function()
@@ -279,6 +405,62 @@ do
     end
 end
 
+local ShowExportDialog
+do
+    local dialog, editBox
+    ShowExportDialog = function(text)
+        if not dialog then
+            dialog = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+            dialog:SetSize(460, 110)
+            dialog:SetPoint("CENTER")
+            dialog:SetFrameStrata("TOOLTIP")
+            dialog:SetMovable(true)
+            dialog:EnableMouse(true)
+            dialog:RegisterForDrag("LeftButton")
+            dialog:SetScript("OnDragStart", dialog.StartMoving)
+            dialog:SetScript("OnDragStop", dialog.StopMovingOrSizing)
+            dialog:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+            dialog:SetBackdropColor(0.06, 0.06, 0.06, 0.97)
+            dialog:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
+
+            local titleLabel = GUI:CreateLabel(dialog, ns.L["Export String"], 13)
+            titleLabel:SetPoint("TOP", 0, -10)
+            local hint = GUI:CreateLabel(dialog,
+                ns.L["Press Ctrl+C to copy, then Escape to close."], 10, C.textMuted)
+            hint:SetPoint("TOP", titleLabel, "BOTTOM", 0, -4)
+
+            local box
+            box, editBox = GUI:CreateInlineEditBox(dialog, {
+                width = 430,
+                onEscapePressed = function(self)
+                    self:ClearFocus()
+                    dialog:Hide()
+                end,
+            })
+            box:SetPoint("TOP", hint, "BOTTOM", 0, -8)
+            -- Read-only: any edit snaps back to the exported string.
+            editBox:SetScript("OnTextChanged", function(self, userInput)
+                if userInput and dialog._exportText then
+                    self:SetText(dialog._exportText)
+                    self:HighlightText()
+                end
+            end)
+
+            local closeBtn = GUI:CreateButton(dialog, ns.L["Close"], 90, 22, function()
+                dialog:Hide()
+            end)
+            closeBtn:SetPoint("BOTTOM", 0, 10)
+            UI.exportDialog = dialog
+        end
+        dialog._exportText = text
+        editBox:SetText(text)
+        dialog:Show()
+        editBox:SetFocus()
+        editBox:HighlightText()
+    end
+end
+
 local function AcquireHeaderRow(parent, index)
     local row = UI.headerRows[index]
     if not row then
@@ -286,8 +468,10 @@ local function AcquireHeaderRow(parent, index)
         row:SetSize(LIST_W - 20, 22)
         row:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
         row:SetBackdropColor(0.08, 0.14, 0.18, 0.9)
+        row.collapse = GUI:CreateButton(row, "", 16, 16, nil)
+        row.collapse:SetPoint("LEFT", 2, 0)
         row.label = GUI:CreateLabel(row, "", 11)
-        row.label:SetPoint("LEFT", 4, 0)
+        row.label:SetPoint("LEFT", row.collapse, "RIGHT", 2, 0)
         row.rename = GUI:CreateButton(row, "✎", 16, 16, nil)
         row.rename:SetPoint("RIGHT", -60, 0)
         row.toggle = GUI:CreateButton(row, "", 40, 16, nil)
@@ -311,19 +495,41 @@ local function AcquireHeaderRow(parent, index)
     return row
 end
 
+local TREE_INDENT = 12
+
+-- Depth-first list of every group record, parents before children, so
+-- dropdowns show the tree in path order.
+local function AllGroupNames(out, parent)
+    out = out or {}
+    local children = AD.GroupChildren(parent)
+    for i = 1, #children do
+        out[#out + 1] = children[i]
+        AllGroupNames(out, children[i])
+    end
+    return out
+end
+
 local function PaintGroupHeaderRow(row, y, node)
+    local indent = (node.depth or 0) * TREE_INDENT
     row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", 0, -y)
+    row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", indent, -y)
+    row:SetWidth(math.max(LIST_W - 20 - indent, 80))
     local title = node.group == "" and ns.L["Ungrouped"] or node.group
-    local marker = node.group == "" and "" or (node.collapsed and "> " or "v ")
-    row.label:SetText(marker .. title .. " (" .. node.count .. ")")
-    row:SetScript("OnClick", function()
+    row.label:SetText(title .. " (" .. node.count .. ")")
+    row.collapse:SetText(node.collapsed and ">" or "v")
+    row.collapse:SetScript("OnClick", function()
         if node.group ~= "" then
             AD.SetGroupCollapsed(node.group, not node.collapsed)
         end
         UI.RebuildList()
     end)
     local real = node.group ~= ""
+    if real and selectedGroup == node.group then
+        local ar, ag, ab = AccentRGB()
+        row:SetBackdropColor(ar * 0.3, ag * 0.3, ab * 0.3, 0.9)
+    else
+        row:SetBackdropColor(0.08, 0.14, 0.18, 0.9)
+    end
     row.rename:Hide()
     row.toggle:Hide()
     row.del:Hide()
@@ -347,6 +553,13 @@ local function PaintGroupHeaderRow(row, y, node)
                 cancelText = ns.L["Cancel"],
                 isDestructive = true,
                 onAccept = function()
+                    if selectedGroup == node.group then
+                        if UI.lastPreviewGroup and type(AD.HidePreviewForGroup) == "function" then
+                            AD.HidePreviewForGroup(UI.lastPreviewGroup)
+                        end
+                        UI.lastPreviewGroup = nil
+                        selectedGroup = nil
+                    end
                     AD.DeleteGroup(node.group)
                     AD.Refresh()
                     UI.RebuildList()
@@ -366,7 +579,9 @@ local function PaintGroupHeaderRow(row, y, node)
                 row.del:Hide()
             end
         end)
+        row:SetScript("OnClick", function() SelectGroup(node.group) end)
     else
+        row:SetScript("OnClick", nil)
         row:SetScript("OnEnter", nil)
         row:SetScript("OnLeave", nil)
     end
@@ -415,9 +630,11 @@ local function AcquireDisplayRow(parent, index)
     return row
 end
 
-local function PaintDisplayRow(row, y, display)
+local function PaintDisplayRow(row, y, display, depth)
+    local indent = math.max((depth or 1) - 1, 0) * TREE_INDENT
     row:ClearAllPoints()
-    row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", 0, -y)
+    row:SetPoint("TOPLEFT", row:GetParent(), "TOPLEFT", indent, -y)
+    row:SetWidth(math.max(LIST_W - 20 - indent, 80))
     if display.id == selectedID then
         local ar, ag, ab = AccentRGB()
         row:SetBackdropColor(ar * 0.3, ag * 0.3, ab * 0.3, 0.9)
@@ -598,7 +815,27 @@ BuildLeftPane = function(left)
     end
 
     local newBtn = GUI:CreateButton(left, ns.L["New Display"], LIST_W, 24, function()
-        ShowQuickCreatePopup()
+        local Create = ns.QUI_AuraDisplaysCreate
+        if Create and type(Create.ShowDialog) == "function" then
+            Create.ShowDialog({
+                onCreated = function(display)
+                    if not display then return end
+                    AD.Refresh()
+                    SelectDisplay(display.id)
+                end,
+                onImported = function(summary)
+                    AD.Refresh()
+                    if UI.RebuildList then UI.RebuildList() end
+                    if summary and summary.rootKind == "display" and summary.rootID then
+                        SelectDisplay(summary.rootID)
+                    elseif summary and summary.rootKind == "group" and summary.rootName then
+                        SelectGroup(summary.rootName)
+                    end
+                end,
+            })
+        else
+            ShowQuickCreatePopup()
+        end
     end, "primary")
     newBtn:SetPoint("TOPLEFT", search, "BOTTOMLEFT", 0, -4)
     newBtn:SetPoint("TOPRIGHT", search, "BOTTOMRIGHT", 0, -4)
@@ -609,8 +846,22 @@ BuildLeftPane = function(left)
     scroll:SetPoint("BOTTOMRIGHT", left, "BOTTOMRIGHT", -18, 0)
 
     UI.RebuildList = function()
+        -- Materialize records for any group a display references by name only
+        -- (legacy data, "New group..." commits) so the tree can render it.
+        local displays = AD.OrderedDisplays()
+        for i = 1, #displays do
+            local g = displays[i].group
+            if type(g) == "string" and g ~= "" then AD.GetGroup(g, true) end
+        end
+        local children = {}
+        local function FillChildren(parent)
+            local list = AD.GroupChildren(parent)
+            children[parent or ""] = list
+            for i = 1, #list do FillChildren(list[i]) end
+        end
+        FillChildren(nil)
         local model = ns.QUI_AuraDisplaysOptions.BuildListModel(
-            AD.OrderedDisplays(), searchText, AD.GroupCollapsed)
+            AD.OrderedDisplays(), searchText, AD.GroupCollapsed, { children = children })
         local headerIdx, displayIdx, y = 0, 0, 0
         for i = 1, #model do
             local node = model[i]
@@ -619,7 +870,7 @@ BuildLeftPane = function(left)
                 y = y + PaintGroupHeaderRow(AcquireHeaderRow(listContent, headerIdx), y, node)
             else
                 displayIdx = displayIdx + 1
-                y = y + PaintDisplayRow(AcquireDisplayRow(listContent, displayIdx), y, node.display)
+                y = y + PaintDisplayRow(AcquireDisplayRow(listContent, displayIdx), y, node.display, node.depth)
             end
         end
         for i = headerIdx + 1, #UI.headerRows do UI.headerRows[i]:Hide() end
@@ -641,14 +892,8 @@ function ns.QUI_AuraDisplaysOptions._BuildGeneralTab(host, ctx, display)
     end, nil, { description = ns.L["The name shown in this list and in Layout Mode."] })
 
     local groupOptions = { { value = "", text = ns.L["No group"] } }
-    local seen = {}
-    local displays = AD.OrderedDisplays()
-    for i = 1, #displays do
-        local g = displays[i].group
-        if type(g) == "string" and g ~= "" and not seen[g] then
-            seen[g] = true
-            groupOptions[#groupOptions + 1] = { value = g, text = g }
-        end
+    for _, name in ipairs(AllGroupNames()) do
+        groupOptions[#groupOptions + 1] = { value = name, text = AD.GroupPathLabel(name) }
     end
     groupOptions[#groupOptions + 1] = { value = "__new", text = ns.L["New group..."] }
 
@@ -667,6 +912,7 @@ function ns.QUI_AuraDisplaysOptions._BuildGeneralTab(host, ctx, display)
                 self:ClearFocus()
                 if type(text) == "string" and text ~= "" then
                     display.group = text
+                    AD.GetGroup(text, true)
                     AD.Refresh()
                     if UI.RebuildList then UI.RebuildList() end
                 end
@@ -687,7 +933,7 @@ function ns.QUI_AuraDisplaysOptions._BuildGeneralTab(host, ctx, display)
                 AD.Refresh()
                 if UI.RebuildList then UI.RebuildList() end
             end,
-            { description = ns.L["Displays sharing a group are listed and collapsed together."] })
+            { description = ns.L["Displays sharing a group move and flow together using the group's layout settings."] })
     end
 
     card.AddRow(
@@ -794,6 +1040,149 @@ function ns.QUI_AuraDisplaysOptions._BuildGeneralTab(host, ctx, display)
     return host:GetHeight()
 end
 
+function ns.QUI_AuraDisplaysOptions._BuildGroupTab(host, ctx, groupName)
+    local group = AD.GetGroup(groupName, true)
+    if not group then return 1 end
+    local L = ns.QUI_SettingsLayoutShared.MakeLayout(host)
+
+    local generalCard = L.sectionAt()
+    local nameProxy = { name = groupName, _quiTransientOptionsProxy = true }
+    local nameW = GUI:CreateFormEditBox(generalCard.frame, nil, "name", nameProxy, function()
+        local newName = nameProxy.name
+        if newName == groupName then return end
+        if UI.lastPreviewGroup == groupName and type(AD.HidePreviewForGroup) == "function" then
+            AD.HidePreviewForGroup(groupName)
+            UI.lastPreviewGroup = nil
+        end
+        local ok, reason = AD.RenameGroup(groupName, newName)
+        if ok then
+            selectedGroup = newName
+            AD.Refresh()
+            if UI.RebuildList then UI.RebuildList() end
+            if ctx and ctx.RebuildDetail then ctx.RebuildDetail() end
+        else
+            nameProxy.name = groupName
+            if UIErrorsFrame then
+                local message = reason == "collision"
+                    and ns.L["A group with that name already exists."]
+                    or ns.L["Group names cannot be empty."]
+                UIErrorsFrame:AddMessage(message, 1.0, 0.3, 0.3, 1.0)
+            end
+            SyncPreview()
+        end
+    end, nil, { description = ns.L["The group name shown in this list and in Layout Mode."] })
+    local enabledW = GUI:CreateFormCheckbox(generalCard.frame, nil, "enabled", group, function()
+        AD.Refresh()
+        if UI.RebuildList then UI.RebuildList() end
+    end, { description = ns.L["Toggle every aura display in this group together."] })
+    generalCard.AddRow(
+        Shared.BuildSettingRow(generalCard.frame, ns.L["Name"], nameW),
+        Shared.BuildSettingRow(generalCard.frame, ns.L["Enabled"], enabledW)
+    )
+
+    local parentOptions = { { value = "", text = ns.L["No parent (root group)"] } }
+    for _, name in ipairs(AllGroupNames()) do
+        if name ~= groupName and not AD.GroupIsAncestor(groupName, name) then
+            parentOptions[#parentOptions + 1] = { value = name, text = AD.GroupPathLabel(name) }
+        end
+    end
+    local parentProxy = { parentChoice = AD.GroupParent(groupName) or "",
+        _quiTransientOptionsProxy = true }
+    local parentW = GUI:CreateFormDropdown(generalCard.frame, nil, parentOptions,
+        "parentChoice", parentProxy, function()
+            local choice = parentProxy.parentChoice
+            local ok, reason = AD.SetGroupParent(groupName,
+                choice ~= "" and choice or nil)
+            if not ok and UIErrorsFrame then
+                local message = reason == "depth"
+                    and ns.L["Groups can only be nested a few levels deep."]
+                    or ns.L["A group cannot be nested inside itself or its children."]
+                UIErrorsFrame:AddMessage(message, 1.0, 0.3, 0.3, 1.0)
+                parentProxy.parentChoice = AD.GroupParent(groupName) or ""
+            end
+            AD.Refresh()
+            if UI.RebuildList then UI.RebuildList() end
+            if ctx and ctx.RebuildDetail then ctx.RebuildDetail() end
+        end, {
+            description = ns.L["Nest this group inside another group. Nested groups flow as blocks in the parent's layout; only root groups have Layout Mode movers."],
+        })
+
+    local orderRow = CreateFrame("Frame", nil, generalCard.frame)
+    orderRow:SetHeight(24)
+    local function MoveGroup(delta)
+        if AD.MoveGroupWithinParent(groupName, delta) then
+            AD.Refresh()
+            if UI.RebuildList then UI.RebuildList() end
+        end
+    end
+    local upBtn = GUI:CreateButton(orderRow, ns.L["Move Up"], 80, 22,
+        function() MoveGroup(-1) end)
+    upBtn:SetPoint("LEFT", 0, 0)
+    local downBtn = GUI:CreateButton(orderRow, ns.L["Move Down"], 80, 22,
+        function() MoveGroup(1) end)
+    downBtn:SetPoint("LEFT", upBtn, "RIGHT", 6, 0)
+
+    generalCard.AddRow(
+        Shared.BuildSettingRow(generalCard.frame, ns.L["Parent Group"], parentW),
+        Shared.BuildSettingRow(generalCard.frame, ns.L["Sibling Order"], orderRow)
+    )
+    L.closeSection(generalCard)
+
+    local layoutCard = L.sectionAt()
+    local growW = GUI:CreateFormDropdown(layoutCard.frame, nil, {
+        { value = "RIGHT", text = ns.L["Right"] },
+        { value = "LEFT", text = ns.L["Left"] },
+        { value = "CENTER_H", text = ns.L["Center (H)"] },
+        { value = "DOWN", text = ns.L["Down"] },
+        { value = "UP", text = ns.L["Up"] },
+        { value = "CENTER_V", text = ns.L["Center (V)"] },
+    }, "growDirection", group, AD.Refresh, {
+        description = ns.L["Direction displays are added from the group anchor. Center options alternate around the anchor."],
+    })
+    local alignW = GUI:CreateFormDropdown(layoutCard.frame, nil, {
+        { value = "START", text = ns.L["Start"] },
+        { value = "CENTER", text = ns.L["Center"] },
+        { value = "END", text = ns.L["End"] },
+    }, "alignment", group, AD.Refresh, {
+        description = ns.L["Alignment on the axis perpendicular to the grow direction."],
+    })
+    layoutCard.AddRow(
+        Shared.BuildSettingRow(layoutCard.frame, ns.L["Grow Direction"], growW),
+        Shared.BuildSettingRow(layoutCard.frame, ns.L["Cross-axis Alignment"], alignW)
+    )
+
+    local spacingW = GUI:CreateFormSlider(layoutCard.frame, nil, 0, 100, 1,
+        "spacing", group, AD.Refresh, { deferOnDrag = true },
+        { description = ns.L["Pixel gap between aura displays in this group."] })
+    local scaleW = GUI:CreateFormSlider(layoutCard.frame, nil, 0.25, 3, 0.05,
+        "scale", group, AD.Refresh, { deferOnDrag = true, precision = 2 },
+        { description = ns.L["Scale multiplier applied to the entire group."] })
+    layoutCard.AddRow(
+        Shared.BuildSettingRow(layoutCard.frame, ns.L["Spacing"], spacingW),
+        Shared.BuildSettingRow(layoutCard.frame, ns.L["Scale"], scaleW)
+    )
+
+    local widthW = GUI:CreateFormSlider(layoutCard.frame, nil, 0, 400, 1,
+        "itemWidth", group, AD.Refresh, { deferOnDrag = true },
+        { description = ns.L["Width reserved for every display. 0 uses each display's natural width."] })
+    local heightW = GUI:CreateFormSlider(layoutCard.frame, nil, 0, 400, 1,
+        "itemHeight", group, AD.Refresh, { deferOnDrag = true },
+        { description = ns.L["Height reserved for every display. 0 uses each display's natural height."] })
+    layoutCard.AddRow(
+        Shared.BuildSettingRow(layoutCard.frame, ns.L["Item Width"], widthW),
+        Shared.BuildSettingRow(layoutCard.frame, ns.L["Item Height"], heightW)
+    )
+    local dynamicW = GUI:CreateFormCheckbox(layoutCard.frame, nil, "dynamicLayout", group, AD.Refresh, {
+        description = ns.L["Pack this group's displays together so the gaps left by inactive auras close up. Applies to displays whose only element is a tracked icon list watching the same unit; other displays keep their reserved positions after the packed block. Packing pauses while previewing and in Layout Mode."],
+        keywords = { "dynamic", "collapse", "compact", "pack" },
+    })
+    layoutCard.AddRow(Shared.BuildSettingRow(layoutCard.frame, ns.L["Dynamic Layout (Collapse Hidden)"], dynamicW))
+    L.closeSection(layoutCard)
+
+    L.finish()
+    return host:GetHeight()
+end
+
 function ns.QUI_AuraDisplaysOptions._BuildAurasTab(host, ctx, display)
     E.EnsureSeeded(display.auras, AD.DefaultBucket)
     local AurasEditor = ns.QUI_AuraElementsEditor
@@ -835,11 +1224,15 @@ function ns.QUI_AuraDisplaysOptions._BuildAurasTab(host, ctx, display)
             trackedDisplayTypes = { icon = true, square = true, bar = true },
             iconSizeMax         = 200,
             containerLayout     = true,
+            dynamicTrackedLayout = true,
             allowSpecOverride   = true,
             roleGate            = false,
             cancelEligible      = false,
             unitPolarity        = AD.UnitPolarityFor(display),
             defaultBucketFn     = AD.DefaultBucket,
+            simpleMode          = true,
+            summaryUnit         = UnitLabelFor(display),
+            durationDecimals    = true,
         },
         onLayoutChanged = function(newHeight)
             if type(newHeight) == "number" and ctx and ctx.ResizeTab then
@@ -994,6 +1387,29 @@ BuildRightPane = function(right, ctx)
     title:SetPoint("LEFT", 2, 0)
 
     local deleteBtn = GUI:CreateButton(header, ns.L["Delete"], 70, 22, function()
+        if selectedGroup then
+            local groupName = selectedGroup
+            GUI:ShowConfirmation({
+                title = ns.L["Delete Group?"],
+                message = string.format(ns.L["Delete '%1$s'?"], groupName),
+                warningText = ns.L["Displays in this group will become ungrouped."],
+                acceptText = ns.L["Delete"],
+                cancelText = ns.L["Cancel"],
+                isDestructive = true,
+                onAccept = function()
+                    if UI.lastPreviewGroup and type(AD.HidePreviewForGroup) == "function" then
+                        AD.HidePreviewForGroup(UI.lastPreviewGroup)
+                    end
+                    UI.lastPreviewGroup = nil
+                    AD.DeleteGroup(groupName)
+                    selectedGroup = nil
+                    AD.Refresh()
+                    if UI.RebuildList then UI.RebuildList() end
+                    if UI.RebuildDetail then UI.RebuildDetail() end
+                end,
+            })
+            return
+        end
         local display = selectedID and AD.GetDisplay(selectedID)
         if not display then return end
         GUI:ShowConfirmation({
@@ -1027,6 +1443,23 @@ BuildRightPane = function(right, ctx)
     end)
     dupBtn:SetPoint("RIGHT", deleteBtn, "LEFT", -4, 0)
 
+    local exportBtn = GUI:CreateButton(header, ns.L["Export"], 70, 22, function()
+        local Share = ns.QUI_AuraDisplayShare
+        if not Share then return end
+        local str, err
+        if selectedID then
+            str, err = Share.ExportDisplayString(selectedID)
+        elseif selectedGroup then
+            str, err = Share.ExportGroupString(selectedGroup)
+        end
+        if str then
+            ShowExportDialog(str)
+        elseif err and UIErrorsFrame then
+            UIErrorsFrame:AddMessage(err, 1.0, 0.3, 0.3, 1.0)
+        end
+    end)
+    exportBtn:SetPoint("RIGHT", dupBtn, "LEFT", -4, 0)
+
     local previewBtn
     local function PaintPreviewButton()
         previewBtn:SetText(previewEnabled and ns.L["Preview: On"] or ns.L["Preview: Off"])
@@ -1036,7 +1469,7 @@ BuildRightPane = function(right, ctx)
         PaintPreviewButton()
         SyncPreview()
     end)
-    previewBtn:SetPoint("RIGHT", dupBtn, "LEFT", -4, 0)
+    previewBtn:SetPoint("RIGHT", exportBtn, "LEFT", -4, 0)
     PaintPreviewButton()
     title:SetPoint("RIGHT", previewBtn, "LEFT", -8, 0)
 
@@ -1058,6 +1491,9 @@ BuildRightPane = function(right, ctx)
         { key = "alerts", label = ns.L["Alerts"] },
         { key = "load", label = ns.L["Load Conditions"] },
     }
+    local GROUP_TABS = {
+        { key = "group", label = ns.L["Group Layout"] },
+    }
     local BUILDERS = {
         general = ns.QUI_AuraDisplaysOptions._BuildGeneralTab,
         auras = ns.QUI_AuraDisplaysOptions._BuildAurasTab,
@@ -1075,19 +1511,30 @@ BuildRightPane = function(right, ctx)
             end
         end
         local display = selectedID and AD.GetDisplay(selectedID)
-        title:SetText(display and (display.name or display.id) or "")
-        deleteBtn:SetShown(display ~= nil)
+        local groupName = selectedGroup
+        if groupName and not AD.GetGroup(groupName, false) then
+            selectedGroup = nil
+            groupName = nil
+        end
+        if groupName then
+            activeDetailTab = "group"
+        elseif activeDetailTab == "group" then
+            activeDetailTab = "general"
+        end
+        title:SetText(groupName or (display and (display.name or display.id) or ""))
+        deleteBtn:SetShown(display ~= nil or groupName ~= nil)
         dupBtn:SetShown(display ~= nil)
-        previewBtn:SetShown(display ~= nil)
+        exportBtn:SetShown(display ~= nil or groupName ~= nil)
+        previewBtn:SetShown(display ~= nil or groupName ~= nil)
         if paint then
-            paint(TABS, activeDetailTab, function(key)
+            paint(groupName and GROUP_TABS or TABS, activeDetailTab, function(key)
                 activeDetailTab = key
                 UI.RebuildDetail()
             end)
         end
-        if not display then
+        if not display and not groupName then
             local hint = GUI:CreateLabel(tabContent,
-                ns.L["Select a display on the left, or create one."], 11, C.textMuted)
+                ns.L["Select a display or group on the left, or create a display."], 11, C.textMuted)
             hint:SetPoint("TOPLEFT", 4, -12)
             tabContent:SetHeight(60)
             return
@@ -1096,9 +1543,15 @@ BuildRightPane = function(right, ctx)
         host:SetPoint("TOPLEFT")
         host:SetPoint("TOPRIGHT")
         host:SetHeight(1)
-        local builder = BUILDERS[activeDetailTab] or BUILDERS.general
-        local height = builder(host, { RebuildDetail = UI.RebuildDetail,
-            ResizeTab = function(h) tabContent:SetHeight(math.max(h, 1)) end }, display)
+        local detailContext = { RebuildDetail = UI.RebuildDetail,
+            ResizeTab = function(h) tabContent:SetHeight(math.max(h, 1)) end }
+        local height
+        if groupName then
+            height = ns.QUI_AuraDisplaysOptions._BuildGroupTab(host, detailContext, groupName)
+        else
+            local builder = BUILDERS[activeDetailTab] or BUILDERS.general
+            height = builder(host, detailContext, display)
+        end
         tabContent:SetHeight(math.max(height or 1, 1))
         SyncPreview()
     end
@@ -1117,6 +1570,7 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
     end
 
     if selectedID and not AD.GetDisplay(selectedID) then selectedID = nil end
+    if selectedGroup and not AD.GetGroup(selectedGroup, false) then selectedGroup = nil end
 
     local topOffset = 0
     local profileCopy = ns.QUI_ProfileCopyOptions
@@ -1137,7 +1591,13 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
             onCopied = function()
                 if UI.lastPreviewID then AD.HidePreviewFor(UI.lastPreviewID) end
                 UI.lastPreviewID = nil
+                if UI.lastPreviewGroup and type(AD.HidePreviewForGroup) == "function" then
+                    AD.HidePreviewForGroup(UI.lastPreviewGroup)
+                end
+                UI.lastPreviewGroup = nil
+                if type(AD.DisablePreviewDrag) == "function" then AD.DisablePreviewDrag() end
                 selectedID = nil
+                selectedGroup = nil
                 if UI.RebuildList then UI.RebuildList() end
                 if UI.RebuildDetail then UI.RebuildDetail() end
             end,
@@ -1155,8 +1615,16 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
             AD.HidePreviewFor(UI.lastPreviewID)
             UI.lastPreviewID = nil
         end
+        if UI.lastPreviewGroup and type(AD.HidePreviewForGroup) == "function" then
+            AD.HidePreviewForGroup(UI.lastPreviewGroup)
+            UI.lastPreviewGroup = nil
+        end
         if UI.groupRenameField then UI.groupRenameField:Hide() end
         if UI.quickCreatePopup then UI.quickCreatePopup:Hide() end
+        if UI.exportDialog then UI.exportDialog:Hide() end
+        if type(AD.DisablePreviewDrag) == "function" then AD.DisablePreviewDrag() end
+        local Create = ns.QUI_AuraDisplaysCreate
+        if Create and type(Create.HideDialog) == "function" then Create.HideDialog() end
     end)
     pane:HookScript("OnShow", SyncPreview)
 

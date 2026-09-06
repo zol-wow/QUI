@@ -23,7 +23,9 @@ local STALE_MISS_LIMIT = 3
 local PROFILE_FEATURE_CATEGORIES = {
     auraDisplays = {
         topLevelKeys = { "auraDisplays" },
-        frameAnchorPrefix = "auraDisplay_",
+        -- Display movers and group movers live under different prefixes
+        -- ("auraDisplay_" is not a prefix of "auraDisplayGroup_").
+        frameAnchorPrefixes = { "auraDisplay_", "auraDisplayGroup_" },
     },
     groupFrames = {
         topLevelKeys = { "quiGroupFrames", "raidBuffs" },
@@ -636,11 +638,33 @@ function Pins:BuildInactiveProfileSnapshot(db, profileName)
     return snapshot
 end
 
+local function CategoryAnchorPrefixes(category)
+    if type(category) ~= "table" then return nil end
+    if type(category.frameAnchorPrefixes) == "table" then
+        return category.frameAnchorPrefixes
+    end
+    if type(category.frameAnchorPrefix) == "string" then
+        return { category.frameAnchorPrefix }
+    end
+    return nil
+end
+
+local function KeyHasAnyPrefix(key, prefixes)
+    if type(key) ~= "string" then return false end
+    for i = 1, #prefixes do
+        local prefix = prefixes[i]
+        if type(prefix) == "string" and key:sub(1, #prefix) == prefix then
+            return true
+        end
+    end
+    return false
+end
+
 function Pins:CopyProfileFeatureAnchors(targetProfile, sourceProfile, category)
     local keys = category and category.frameAnchorKeys
-    local prefix = category and category.frameAnchorPrefix
+    local prefixes = CategoryAnchorPrefixes(category)
     if type(targetProfile) ~= "table" or type(sourceProfile) ~= "table"
-        or (type(keys) ~= "table" and type(prefix) ~= "string") then
+        or (type(keys) ~= "table" and type(prefixes) ~= "table") then
         return false
     end
 
@@ -657,15 +681,15 @@ function Pins:CopyProfileFeatureAnchors(targetProfile, sourceProfile, category)
         end
     end
 
-    if type(prefix) == "string" then
+    if type(prefixes) == "table" then
         for key in pairs(targetAnchors) do
-            if type(key) == "string" and key:sub(1, #prefix) == prefix then
+            if KeyHasAnyPrefix(key, prefixes) then
                 targetAnchors[key] = nil
             end
         end
         if type(sourceAnchors) == "table" then
             for key, value in pairs(sourceAnchors) do
-                if type(key) == "string" and key:sub(1, #prefix) == prefix then
+                if KeyHasAnyPrefix(key, prefixes) then
                     targetAnchors[key] = CloneValue(value)
                 end
             end

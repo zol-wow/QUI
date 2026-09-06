@@ -33,6 +33,119 @@ hardening.
   suppresses native buff bars before data readiness, avoiding tainted callbacks
   and startup flicker.
 
+## v5.3-beta7 - 2026-09-06
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Auto-accepted summons now close Blizzard's confirmation popup**, including
+  summons accepted after combat or a teleport finishes.
+
+## v5.3-beta6 - 2026-09-06
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Aura Display creation and layout tools, buff-icon growth controls, and focused
+combat UI fixes for the 5.3 beta line.
+
+### Added
+
+- **Aura Displays have templates, guided setup, and custom creation.** Browse
+  spells with clearer same-name variants, choose a display style, and configure
+  its unit, position, and load conditions.
+- **Aura Displays support nested groups, draggable previews, and share strings**
+  for individual displays or whole groups, with configurable spacing,
+  alignment, and sizing.
+- **Aura Displays can collapse gaps left by inactive tracked icons.** Compatible
+  grouped displays watching the same unit can also pack together.
+- **Cooldown Manager buff icons have growth direction and anchor controls.**
+  Grow centered, left, right, up, or down; choose which edge stays fixed during
+  free placement. Existing anchors to other frames remain in control.
+
+### Changed
+
+- **Group Death Alert settings now live under QoL → Notifications.** Existing
+  pinned alert settings open the new tab.
+
+### Fixed
+
+- **Cooldown Manager respects per-spell duration-text visibility overrides**
+  on native icons, and settings tooltips remain above the override panel.
+- **Replaced Blizzard buff bars stay hidden through HUD fades**, and tracked
+  bars refresh after closing Blizzard's Cooldown Manager settings.
+- **Hidden unit-frame castbars can appear during combat** when Blizzard allows
+  the frame to be shown.
+- **Damage Meter preserves spell names and healing rows during combat.** When
+  restricted values prevent combining healing and absorbs, it retains the
+  native healing view.
+
+## v5.3-beta5 - 2026-09-04
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Unit-frame castbars no longer attempt blocked resizing when layout remains
+  restricted after a deferred update.** Pending updates resume when allowed and
+  stop when the cast ends, preventing duplicate background retries.
+
+## v5.3-beta4 - 2026-09-04
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Summon automation, visible teleport cooldowns, and focused castbar and settings
+layout fixes for the 5.3 beta line.
+
+### Added
+
+- **Auto Accept Summons offers Off, Always, and Out of Combat modes.** Always
+  waits until combat ends before accepting a still-active summon; Out of Combat
+  leaves summons received during combat for manual confirmation.
+- **Dungeon teleport buttons show cooldowns** in the Mythic+ window and world
+  map, while the Info Bar travel flyout shows countdowns for known teleports.
+
+### Fixed
+
+- **Unit-frame castbars defer restricted layout changes** and retry their
+  positioning without attaching to protected targets.
+- **QoL Automation settings stay in two columns**, including the final DELETE
+  confirmation control.
+
+## v5.3-beta3 - 2026-09-04
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+Settings and Character-window polish plus targeted Bags, Incoming Casts, and
+Cooldown Manager fixes for the 5.3 beta line.
+
+### Changed
+
+- **QUI settings have clearer contrast and more consistent interaction states.**
+  Tooltips fade smoothly, scrolling is animated, and buttons, checkboxes,
+  dropdowns, tabs, and disabled controls share consistent visual feedback.
+- **The Character window skin now covers its full chrome**, including the
+  shell, bottom tabs, equipment and title popouts, and Reputation and Currency
+  panes. Character and Inspect settings flyouts now share the same styling and
+  scrolling behavior.
+
+### Fixed
+
+- **Bank and guild-bank money dialogs accept exact gold, silver, and copper**
+  and close cleanly with their bank window.
+- **Guild-bank item transfers work from the displayed tab**, including the
+  combined All view, and continue working after closing and reopening the bank.
+- **Incoming Casts and group-frame targeted-spell markers remain reliable
+  through combat transitions** without creating new UI elements during combat.
+- **Cooldown Manager leaves Blizzard's native viewer setting under Blizzard's
+  control.** Replaced native buff bars hide during early loading and restore
+  correctly when suppression is disabled.
+
 ## v5.3-beta2 - 2026-09-01
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and

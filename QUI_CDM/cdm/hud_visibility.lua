@@ -131,7 +131,7 @@ end
 local _viewerAlphaProxy = CreateFrame and CreateFrame("Frame") or nil
 local _rawViewerSetAlpha = _viewerAlphaProxy and _viewerAlphaProxy.SetAlpha or nil
 local _securecall = securecallfunction or function(fn, ...) return fn(...) end
-local REANCHOR_VIEWER_KEYS = { "essential", "utility", "buff", "trackedBar" }
+local REANCHOR_VIEWER_KEYS = { "essential", "utility", "buff" }
 
 local function ApplyReanchorViewerAlpha(alpha)
     if not _rawViewerSetAlpha then return end

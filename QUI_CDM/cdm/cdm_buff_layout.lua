@@ -12,8 +12,6 @@ local tostring = tostring
 local CreateFrame = CreateFrame
 local InCombatLockdown = InCombatLockdown
 local C_Timer = C_Timer
-local hooksecurefunc = hooksecurefunc
-local _securecall = securecallfunction or function(fn, ...) return fn(...) end
 local table_insert = table.insert
 
 local CDMBuffLayout = {}
@@ -664,8 +662,6 @@ end
 
 local trackedBarReadyFrame
 local trackedBarReadyQueued = false
-local barViewerLayoutHooked = false
-local InstallBarViewerLayoutHook
 
 local function IsCooldownViewerReady()
     local catalog = ns.CDMCatalog
@@ -696,30 +692,8 @@ local function QueueTrackedBarLayoutWhenReady()
         trackedBarReadyQueued = false
         local ready = IsCooldownViewerReady()
         if not ready then return end
-        if InstallBarViewerLayoutHook then InstallBarViewerLayoutHook() end
         if LayoutBuffBars then LayoutBuffBars() end
     end)
-end
-
-InstallBarViewerLayoutHook = function()
-    if barViewerLayoutHooked then return end
-    if not IsCooldownViewerReady() then
-        QueueTrackedBarLayoutWhenReady()
-        return
-    end
-
-    local blizzBarViewer = _G["BuffBarCooldownViewer"]
-    if blizzBarViewer and blizzBarViewer.Layout then
-        local function onBarViewerLayout()
-            if InCombatLockdown() then return end
-            C_Timer.After(0.1, function()
-                if isBarLayoutRunning then return end
-                LayoutBuffBars()
-            end)
-        end
-        hooksecurefunc(blizzBarViewer, "Layout", function(...) _securecall(onBarViewerLayout, ...) end)
-        barViewerLayoutHooked = true
-    end
 end
 
 local function GetBuffIconFrames()
@@ -841,6 +815,7 @@ LayoutBuffIcons = function()
     local targetCount = currentCount
 
     local isVertical = (growthDirection == "UP" or growthDirection == "DOWN")
+    local growLeft = (growthDirection == "LEFT")
 
     local px = QUICore:GetPixelSize()
 
@@ -865,10 +840,15 @@ LayoutBuffIcons = function()
         end
         startY = snapPx(startY, px)
     else
-        startX = -totalWidth / 2 + iconWidth / 2
+        if growLeft then
+            startX = totalWidth / 2 - iconWidth / 2
+        else
+            startX = -totalWidth / 2 + iconWidth / 2
+        end
         startX = snapPx(startX, px)
         startY = 0
     end
+    local stepX = growLeft and -(iconWidth + padding) or (iconWidth + padding)
 
     local needsReposition = false
     for i, icon in ipairs(icons) do
@@ -885,7 +865,7 @@ LayoutBuffIcons = function()
                 break
             end
         else
-            local expectedX = snapCenter(startX + (i - 1) * (iconWidth + padding), iconWidth, viewer)
+            local expectedX = snapCenter(startX + (i - 1) * stepX, iconWidth, viewer)
             if not PositionMatchesTolerance(icon, expectedX, 2) then
                 needsReposition = true
                 break
@@ -910,7 +890,7 @@ LayoutBuffIcons = function()
                 icon:SetPoint("CENTER", viewer, "CENTER",
                     snapCenter(0, iconWidth, viewer), snapCenter(y, iconHeight, viewer))
             else
-                local x = startX + (i - 1) * (iconWidth + padding)
+                local x = startX + (i - 1) * stepX
                 icon:SetPoint("CENTER", viewer, "CENTER",
                     snapCenter(x, iconWidth, viewer), snapCenter(startY, iconHeight, viewer))
             end
@@ -1150,7 +1130,6 @@ local function Initialize()
         end
     end
 
-    InstallBarViewerLayoutHook()
     local barAuraCoalesce = CreateFrame("Frame")
     barAuraCoalesce:Hide()
     barAuraCoalesce:SetScript("OnUpdate", function(self)

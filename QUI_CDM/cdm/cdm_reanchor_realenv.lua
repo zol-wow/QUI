@@ -203,9 +203,9 @@ local function _StyleStackText(frame, rowConfig, baseFont, outline)
     end
 end
 
-local function _DecorateWork(decorator, live, shell, rowConfig)
+local function _DecorateWork(decorator, live, shell, rowConfig, spellOverride)
     if shell and shell.Border and shell.Border.Hide then shell.Border:Hide() end
-    return decorator:Decorate(live, rowConfig)
+    return decorator:Decorate(live, rowConfig, spellOverride)
 end
 
 local _barWidgets = setmetatable({}, { __mode = "k" })
@@ -386,7 +386,7 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
 
     local Helpers = ns.Helpers
     local _chrome = setmetatable({}, { __mode = "k" })
-    local function applyChrome(frame, rowConfig, _firstChrome)
+    local function applyChrome(frame, rowConfig, _firstChrome, spellOverride)
         -- applyChrome is the alpha authority for reanchored live icons:
         -- OverlayRect resets alpha to 1 each layout pass, so row opacity
         -- must be reapplied here on every call.
@@ -421,10 +421,14 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
                 cd:SetCountdownFont(countFontName)
             end
         end
-        if cd and cd.SetHideCountdownNumbers then
-            cd:SetHideCountdownNumbers(rowConfig.hideDurationText and true or false)
+        local hideDurationText = rowConfig.hideDurationText
+        if spellOverride and spellOverride.hideDurationText ~= nil then
+            hideDurationText = spellOverride.hideDurationText
         end
-        if not rowConfig.hideDurationText then
+        if cd and cd.SetHideCountdownNumbers then
+            cd:SetHideCountdownNumbers(hideDurationText and true or false)
+        end
+        if not hideDurationText then
             _AnchorCountdownText(cd, frame, rowConfig)
         end
         _StyleStackText(frame, rowConfig, generalFont, generalOutline)
@@ -479,7 +483,13 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
             return true
         end
         if decorator then
-            return _securecall(_DecorateWork, decorator, live, shell, rowConfig)
+            local entry = shell and shell._spellEntry
+            -- The settings panel keys overrides by the stored ID, even when
+            -- the live aura resolves to a different display spell.
+            local spellID = entry and (entry.id or entry.spellID)
+            local spellOverride = key and spellID and SpellData and SpellData.GetSpellOverride
+                and SpellData:GetSpellOverride(key, spellID) or nil
+            return _securecall(_DecorateWork, decorator, live, shell, rowConfig, spellOverride)
         end
     end
 

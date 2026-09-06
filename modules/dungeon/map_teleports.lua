@@ -23,14 +23,18 @@ local function UpdateCooldowns()
     cooldownRefreshPending = false
     for _, btn in ipairs(buttons) do
         if btn.spellID and btn.cooldown then
-            local dur = C_Spell.GetSpellCooldownDuration(btn.spellID)
-            local updated
-            if dur then
-                updated = Helpers.ApplyCooldownFromStart(btn.cooldown, dur)
+            if not Helpers.CanMutateCooldown(btn.cooldown) then
+                cooldownRefreshPending = true
             else
-                updated = Helpers.ClearCooldown(btn.cooldown)
+                local dur = C_Spell.GetSpellCooldownDuration(btn.spellID)
+                local updated
+                if dur then
+                    updated = Helpers.ApplyCooldownFromStart(btn.cooldown, dur)
+                else
+                    updated = Helpers.ClearCooldown(btn.cooldown)
+                end
+                if updated == false then cooldownRefreshPending = true end
             end
-            if updated == false then cooldownRefreshPending = true end
         end
     end
 end
@@ -96,6 +100,7 @@ local function Build()
 
         btn.cooldown = CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
         btn.cooldown:SetAllPoints(btn.icon)
+        btn.cooldown:Show()
 
         btn.label = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         btn.label:SetPoint("LEFT", btn.icon, "RIGHT", 4, 0)

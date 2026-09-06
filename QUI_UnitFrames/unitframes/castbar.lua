@@ -380,8 +380,11 @@ local function SetCastbarFrameVisible(frame, shouldShow)
 
     if shouldShow then
         frame:SetAlpha(1)
-        if not frame:IsShown() and not inCombat then
-            frame:Show()
+        if not frame:IsShown() then
+            local check = _G.C_RestrictedActions and _G.C_RestrictedActions.CheckAllowProtectedFunctions
+            if (check and check(frame, true)) or (not check and not inCombat) then
+                frame:Show()
+            end
         end
         return
     end
@@ -527,16 +530,26 @@ local function PinCastbarToRestrictedTarget(anchorFrame, target, offsetX, offset
     end
     if not nsHelpers.FrameMutationRestricted(target) then return false end
 
-    if widthAdjustment ~= nil then
-        local targetWidth = SafeToNumber(target:GetWidth())
-        if targetWidth and targetWidth > 0 then
-            anchorFrame:SetWidth(QUICore:PixelRound(targetWidth + (2 * widthAdjustment), anchorFrame))
+    local function pin()
+        if widthAdjustment ~= nil then
+            local targetWidth = SafeToNumber(target:GetWidth())
+            if targetWidth and targetWidth > 0 then
+                anchorFrame:SetWidth(QUICore:PixelRound(targetWidth + (2 * widthAdjustment), anchorFrame))
+            end
         end
+
+        return nsHelpers.PinFrameToTargetAbsolute(
+            anchorFrame, "TOP", target, "BOTTOM", offsetX, offsetY
+        ) == true
     end
 
-    return nsHelpers.PinFrameToTargetAbsolute(
-        anchorFrame, "TOP", target, "BOTTOM", offsetX, offsetY
-    ) == true
+    if not pin() then
+        anchorFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
+        C_Timer.After(0, function()
+            if not anchorFrame._quiDestroyed then pin() end
+        end)
+    end
+    return true
 end
 
 local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, barHeight)
@@ -2198,7 +2211,16 @@ local function HandleNoCast(castbar, castSettings, isPlayer, onUpdateHandler)
     end)
 end
 
+local function CancelPendingCastRetry(castbar)
+    local pending = castbar._quiPendingCastRetry
+    if pending then
+        pending.ticker:Cancel()
+        castbar._quiPendingCastRetry = nil
+    end
+end
+
 local function CastbarTeardown(self, isPlayer)
+    CancelPendingCastRetry(self)
     if isPlayer then ClearEmpoweredState(self) end
     ClearChannelTickState(self)
     self.timerDriven = false
@@ -2554,6 +2576,34 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
     castbar.castbarOnUpdate = CastBar_OnUpdate
 
     function castbar:Cast(spellID, isEmpowerEvent, fromCastStart)
+        local check = _G.C_RestrictedActions and _G.C_RestrictedActions.CheckAllowProtectedFunctions
+        if check and not check(self, true) then
+            local pending = self._quiPendingCastRetry
+            if pending then
+                pending.spellID = spellID
+                pending.isEmpowerEvent = isEmpowerEvent
+                pending.fromCastStart = fromCastStart
+                return
+            end
+            pending = {spellID = spellID, isEmpowerEvent = isEmpowerEvent, fromCastStart = fromCastStart}
+            self._quiPendingCastRetry = pending
+            pending.ticker = C_Timer.NewTicker(0.05, function(ticker)
+                if self._quiPendingCastRetry ~= pending then
+                    ticker:Cancel()
+                    return
+                end
+                if self._quiDestroyed then
+                    CancelPendingCastRetry(self)
+                    return
+                end
+                if not check(self, true) then return end
+                CancelPendingCastRetry(self)
+                self:Cast(pending.spellID, pending.isEmpowerEvent, pending.fromCastStart)
+            end)
+            return
+        end
+        CancelPendingCastRetry(self)
+
         local spellName, text, texture, startTimeMS, endTimeMS, notInterruptible, unitSpellID, isChanneled, channelStages, durationObj, hasSecretTiming, castKnown = GetCastInfo(self, self.unit, fromCastStart)
         local resolvedSpellID = unitSpellID
         if not IsSecretValue(spellID) and spellID ~= nil then
@@ -2773,6 +2823,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
                 ClearEmpoweredState(self)
                 self:Cast(spellID, false, true)
             else
+                CancelPendingCastRetry(self)
                 ClearEmpoweredState(self)
                 ClearChannelTickState(self)
                 self:SetScript("OnUpdate", nil)
@@ -2979,6 +3030,14 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     anchorFrame.bossOnUpdate = BossCastBar_OnUpdate
 
     function anchorFrame:Cast(fromCastStart)
+        local check = _G.C_RestrictedActions and _G.C_RestrictedActions.CheckAllowProtectedFunctions
+        if check and not check(self, true) then
+            C_Timer.After(0, function()
+                if not self._quiDestroyed then self:Cast(fromCastStart) end
+            end)
+            return
+        end
+
         local spellName, text, texture, startTimeMS, endTimeMS, notInterruptible, unitSpellID, isChanneled, _, durationObj, hasSecretTiming, castKnown = GetCastInfo(self, self.unit, fromCastStart)
 
         local canShowCast = false
@@ -3167,6 +3226,7 @@ local function DestroyCastbar(castbar)
     if not castbar then return end
 
     castbar._quiDestroyed = true
+    CancelPendingCastRetry(castbar)
 
     ClearChannelTickState(castbar)
     castbar:UnregisterAllEvents()

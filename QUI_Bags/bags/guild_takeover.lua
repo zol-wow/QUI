@@ -15,7 +15,7 @@ local capturedScripts = nil
 local capturedParent = nil
 local hiddenHolder = nil
 
-local SCRIPT_NAMES = { "OnEvent", "OnShow", "OnHide" }
+local SCRIPT_NAMES = { "OnHide" }
 
 local GUILD_OPENER = { GetName = function() return "QUI_GuildBankWindow" end }
 
@@ -26,18 +26,13 @@ end
 function GuildTakeover.Init()
     local loaded = (C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded(LOD_ADDON))
         or (IsAddOnLoaded and IsAddOnLoaded(LOD_ADDON))
-    if loaded then
-        GuildTakeover.SuppressNow()
-    end
-    if not suppressed then
-        pending = true
-    end
+    pending = not loaded
 end
 
 function GuildTakeover.OnAddonLoaded(name)
     if name ~= LOD_ADDON or not pending then return end
     pending = false
-    GuildTakeover.SuppressNow()
+    if live then GuildTakeover.SuppressNow() end
 end
 
 function GuildTakeover.SuppressNow()
@@ -51,8 +46,6 @@ function GuildTakeover.SuppressNow()
         capturedScripts[name] = guildBankFrame:GetScript(name)
         guildBankFrame:SetScript(name, nil)
     end
-    guildBankFrame:Hide()
-
     if not hiddenHolder then
         hiddenHolder = Bags.TakeoverShared.MakeHiddenHolder()
     end
@@ -62,6 +55,7 @@ end
 
 function GuildTakeover.OnOpened()
     if live then return end
+    GuildTakeover.SuppressNow()
     live = true
     Bags.GuildWindow.ShowLive()
     Bags.Takeover.OpenForFrame(GUILD_OPENER)
@@ -71,6 +65,7 @@ function GuildTakeover.OnClosed()
     if not live then return end
     closing = false
     live = false
+    GuildTakeover.Revert()
     Bags.GuildWindow.OnBankClosed()
     Bags.Takeover.CloseForFrame(GUILD_OPENER)
 end
