@@ -4,6 +4,16 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3-beta9 - 2026-09-06
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Weapon-oil timers refresh after entering an instance or changing zones.**
+  QUI refreshes the native buff container to recover missing enchantment durations.
+
 ## v5.3-beta8 - 2026-09-06
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
