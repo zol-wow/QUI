@@ -31,10 +31,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 --]]
 
--- Only load in Classic Era on Season of Discovery and Anniversary realms
-if WOW_PROJECT_ID == WOW_PROJECT_CLASSIC and C_Seasons.GetActiveSeason() ~= 2 and C_Seasons.GetActiveSeason() ~= 11 and C_Seasons.GetActiveSeason() ~= 12 then return end
-
-local MAJOR, MINOR = "LibDualSpec-1.0", 29
+local MAJOR, MINOR = "LibDualSpec-1.0", 32
 assert(LibStub, MAJOR.." requires LibStub")
 local lib, minor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
@@ -291,7 +288,6 @@ end
 options.new = {
 	name = "New",
 	type = "input",
-	order = 30,
 	get = false,
 	set = function(info, value)
 		local db = info.handler.db
@@ -301,19 +297,20 @@ options.new = {
 			db:SetProfile(value)
 		end
 	end,
+	order = 30,
 }
 
 options.choose = {
 	name = "Existing Profiles",
 	type = "select",
-	order = 40,
 	get = "GetCurrentProfile",
 	set = "SetProfile",
 	values = "ListProfiles",
 	arg = "common",
 	disabled = function(info)
 		return info.handler.db:IsDualSpecEnabled()
-	end
+	end,
+	order = 40,
 }
 
 options.enabled = {
@@ -331,11 +328,11 @@ options.enabled = {
 		return desc
 	end,
 	descStyle = "inline",
-	order = 41,
-	width = "full",
 	get = function(info) return info.handler.db:IsDualSpecEnabled() end,
 	set = function(info, value) info.handler.db:SetDualSpecEnabled(value) end,
 	disabled = function() return lib.currentSpec == 0 end,
+	order = 41,
+	width = "full",
 }
 
 local points = {}
@@ -379,7 +376,6 @@ for i = 1, numSpecs do
 				end
 			end
 		end or nil,
-		order = 42 + i,
 		get = function(info)
 			local specIndex = tonumber(info[#info]:sub(-1))
 			return info.handler.db:GetDualSpecProfile(specIndex)
@@ -391,6 +387,8 @@ for i = 1, numSpecs do
 		values = "ListProfiles",
 		arg = "common",
 		disabled = function(info) return not info.handler.db:IsDualSpecEnabled() end,
+		order = 42 + i,
+		width = 1.5,
 	}
 end
 
@@ -418,6 +416,12 @@ function lib:EnhanceOptions(optionTable, target)
 	options.new.desc = optionTable.args.new.desc
 	options.choose.name = optionTable.args.choose.name
 	options.choose.desc = optionTable.args.choose.desc
+
+	-- copy properties
+	options.new.validate = optionTable.args.new.validate
+	options.new.usage = optionTable.args.new.usage
+	options.new.width = optionTable.args.new.width
+	options.choose.width = optionTable.args.choose.width
 
 	-- add our new options
 	if not optionTable.plugins then
