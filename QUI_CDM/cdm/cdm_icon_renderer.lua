@@ -2842,10 +2842,9 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
             ReapplySwipeStyle(icon.Cooldown, icon)
         end
 
-        if _resolverRuntimePolicy.IsRealCooldownDurationMode(resolvedMode) and icon._usabilityTinted then
+        if realCooldownActive and icon._usabilityTinted then
             icon.Icon:SetVertexColor(1, 1, 1, 1)
             icon._usabilityTinted = nil
-            icon._lastVisualState = nil
         end
     end
 
