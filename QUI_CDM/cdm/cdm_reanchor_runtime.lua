@@ -558,6 +558,7 @@ function CDMReanchorRuntime:_PrepareContainerState(containerKey)
 end
 
 function CDMReanchorRuntime:RefreshContainers(containerKeys)
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("reanchor batch entry") end
     local keys, seen = {}, {}
     containerKeys = containerKeys or DEFAULT_BATCH_KEYS
     for i = 1, #containerKeys do
@@ -629,6 +630,7 @@ function CDMReanchorRuntime:RefreshContainers(containerKeys)
 end
 
 function CDMReanchorRuntime:RefreshContainer(containerKey, prepared, placementPlan, batchCommit)
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("reanchor container entry") end
     if not batchCommit and self:_ShouldDeferOwnedReleaseInCombat(containerKey) then
         self._pendingCombatRefresh = self._pendingCombatRefresh or {}
         self._pendingCombatRefresh[containerKey] = true
@@ -675,6 +677,7 @@ function CDMReanchorRuntime:RefreshContainer(containerKey, prepared, placementPl
             containerKey, frameMap, settings, prepared, placementPlan)
     end
 
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("reanchor entries assembled") end
     if not batchCommit then self:ClearContainerRegistry(containerKey) end
     local reanchored = {}
     for i = 1, #entries do
@@ -696,6 +699,7 @@ function CDMReanchorRuntime:RefreshContainer(containerKey, prepared, placementPl
             end
             if deps.auraPhase then
                 deps.auraPhase:Hook(w.liveFrame, containerKey, w.src)
+                if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("reanchor aura hooks installed") end
                 if deps.auraPhase.Reassert then
                     deps.auraPhase:Reassert(w.liveFrame, w.src)
                 end
