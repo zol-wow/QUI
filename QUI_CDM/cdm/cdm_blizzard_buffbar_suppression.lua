@@ -44,13 +44,13 @@ end
 
 local function RestorePoints(frame, points)
     if not (frame and frame.ClearAllPoints and frame.SetPoint) then return end
-    frame:ClearAllPoints()
+    ns.Helpers.BaseClearAllPoints(frame)
     if type(points) == "table" and #points > 0 then
         for i = 1, #points do
-            frame:SetPoint(unpackValue(points[i]))
+            ns.Helpers.BaseSetPoint(frame, unpackValue(points[i]))
         end
     elseif _G.UIParent then
-        frame:SetPoint("CENTER", _G.UIParent, "CENTER", 0, 0)
+        ns.Helpers.BaseSetPoint(frame, "CENTER", _G.UIParent, "CENTER", 0, 0)
     end
 end
 
@@ -59,8 +59,8 @@ local function ParkOffscreen(frame, state)
         return false
     end
     state.parkGuard = true
-    frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", _G.UIParent, "BOTTOMLEFT", 0, -10000)
+    ns.Helpers.BaseClearAllPoints(frame)
+    ns.Helpers.BaseSetPoint(frame, "TOPLEFT", _G.UIParent, "BOTTOMLEFT", 0, -10000)
     state.parkGuard = nil
     return true
 end

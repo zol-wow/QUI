@@ -3366,7 +3366,7 @@ function ownedEngine:BootstrapReanchorRuntime()
                     local bridge = boot.bridge
                     if bridge and bridge.InstallAnchorGuard then
                         bridge:InstallAnchorGuard(frame)
-                        if ns._cdmCombatReloadGrace and (key == "essential" or key == "utility")
+                        if (key == "essential" or key == "utility")
                             and (not bridge.IsClaimed or not bridge:IsClaimed(frame))
                             and bridge.Sink then
                             bridge:Sink(frame)
