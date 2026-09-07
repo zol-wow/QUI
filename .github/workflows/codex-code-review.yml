@@ -123,7 +123,7 @@ jobs:
           printf '%s\n' "$CODEX_SCHEMA" > "$RUNNER_TEMP/codex-schema.json"
           printf '%s\n' "$CODEX_PROMPT" | codex exec \
             --ephemeral --ignore-user-config --ignore-rules \
-            -C "$GITHUB_WORKSPACE" -m gpt-5.6-sol \
+            -C "$GITHUB_WORKSPACE" -m gpt-6-astra \
             -c 'model_reasoning_effort="medium"' \
             --sandbox read-only \
             --output-schema "$RUNNER_TEMP/codex-schema.json" \
