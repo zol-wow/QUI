@@ -92,7 +92,7 @@ end
 local function CreateBar()
     if bar then return end
     bar = CreateFrame("Frame", "QUI_InfoBar", UIParent)
-    bar:SetFrameStrata("HIGH")
+    bar:SetFrameStrata("LOW")
 
     bar:SetScript("OnSizeChanged", QueueReflow)
 
