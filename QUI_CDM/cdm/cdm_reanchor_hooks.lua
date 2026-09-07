@@ -333,9 +333,9 @@ function CDMReanchorHooks:_GlueViewer(entry)
     local container = getContainer and getContainer(entry.key) or nil
     if not (viewer and container) then return false end
     if canWrite and not canWrite() then return false end
-    viewer:ClearAllPoints()
-    viewer:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
-    viewer:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
+    ns.Helpers.BaseClearAllPoints(viewer)
+    ns.Helpers.BaseSetPoint(viewer, "TOPLEFT", container, "TOPLEFT", 0, 0)
+    ns.Helpers.BaseSetPoint(viewer, "BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
     return true
 end
 

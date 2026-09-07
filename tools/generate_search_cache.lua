@@ -770,6 +770,9 @@ _G.GetCVarBool = function()
     return false
 end
 _G.C_CVar = {
+    GetCVarBool = function(cvar)
+        return _G.GetCVarBool(cvar)
+    end,
     GetCVar = function(cvar)
         return _G.GetCVar(cvar)
     end,

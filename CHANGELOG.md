@@ -33,6 +33,46 @@ hardening.
   suppresses native buff bars before data readiness, avoiding tainted callbacks
   and startup flicker.
 
+## v5.3-beta10 - 2026-09-07
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Rotate Minimap is available in minimap settings.** The toggle follows
+  Blizzard's native rotation setting, including changes made outside QUI.
+
+### Fixed
+
+- **Action-bar suppression preserves Blizzard's secure button state**, and
+  cooldown animations recover when faded buttons become visible again.
+- **Cooldown Manager icons stay correctly hidden and anchored.** Unclaimed
+  cooldowns stay offscreen, buff icons retain their native anchors, and viewer
+  visibility remains consistent when Blizzard refreshes it.
+- **QUI preserves other addons' `/pull` commands** during registration and cleanup.
+
+## v5.3-beta9 - 2026-09-06
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Weapon-oil timers refresh after entering an instance or changing zones.**
+  QUI refreshes the native buff container to recover missing enchantment durations.
+
+## v5.3-beta8 - 2026-09-06
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Right-side Blizzard action bars recover their layout when the minimap cluster
+  is hidden.** QUI refreshes the cluster bounds after minimap button and position
+  updates so stale geometry does not leave negative space for the action bars.
+
 ## v5.3-beta7 - 2026-09-06
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
