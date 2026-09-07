@@ -83,7 +83,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end)
         if rotateW:IsVisible() then rotateW:RegisterEvent("CVAR_UPDATE") end
         UpdateRotation()
-        s1.AddRow(row(s1.frame, ns.L["Rotate Minimap"], rotateW))
+        local hideAddonW = GUI:CreateFormCheckbox(s1.frame, nil, "hideAddonButtons", mm, function()
+            if _G.QUI_RefreshMinimapAddonButtons then _G.QUI_RefreshMinimapAddonButtons() end
+        end, { description = ns.L["Hide addon minimap buttons until you mouse over the minimap. Reduces clutter when you aren't using them."] })
+        s1.AddRow(row(s1.frame, ns.L["Rotate Minimap"], rotateW), row(s1.frame, ns.L["Hide Addon Buttons Until Hover"], hideAddonW))
 
         local coordW = GUI:CreateFormSlider(s1.frame, nil, 1, 10, 1, "coordUpdateInterval", mm, nil,
             { description = ns.L["How often the coordinate datatext refreshes, in seconds. Lower is smoother but slightly more expensive."] })
@@ -91,10 +94,6 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             { description = ns.L["Corner rounding applied to addon minimap buttons in pixels. 0 is square."] })
         s1.AddRow(row(s1.frame, ns.L["Coord Update Interval (sec)"], coordW), row(s1.frame, ns.L["Addon Button Corner Radius"], btnRadiusW))
 
-        local hideAddonW = GUI:CreateFormCheckbox(s1.frame, nil, "hideAddonButtons", mm, function()
-            if _G.QUI_RefreshMinimapAddonButtons then _G.QUI_RefreshMinimapAddonButtons() end
-        end, { description = ns.L["Hide addon minimap buttons until you mouse over the minimap. Reduces clutter when you aren't using them."] })
-        s1.AddRow(row(s1.frame, ns.L["Hide Addon Buttons Until Hover"], hideAddonW))
         layout.closeSection(s1)
 
         layout.headerAt(ns.L["Border"])
