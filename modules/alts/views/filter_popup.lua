@@ -234,4 +234,11 @@ function FilterPopup.Attach(opts)
         RenderRows()
         popup:Show()
     end)
+
+    return function()
+        if not popup or not popup:IsShown() then return end
+        allRows = opts.getRows() or {}
+        matched = FilterPopup.MatchRows(allRows, popup._search:GetText())
+        RenderRows()
+    end
 end
