@@ -1,25 +1,22 @@
--- luacheck: read globals ColorManager ITEM_QUALITY_COLORS ChatEdit_InsertLink
+-- luacheck: read globals ColorManager ITEM_QUALITY_COLORS ChatEdit_InsertLink GameTooltip_OnUpdate
 local ADDON_NAME, ns = ...
 
 local Shared = ns.AltsViewShared
 local ClassColor = Shared.ClassColor
-local GeneralFont = Shared.GeneralFont
-local GeneralOutline = Shared.GeneralOutline
 local MakeFS = Shared.MakeFS
 local Alts = ns.Alts or {}; ns.Alts = Alts
 
-local Helpers = ns.Helpers
 local UIKit = ns.UIKit
 
 local EquipmentView = {}
 Alts.EquipmentView = EquipmentView
 
-local ROW_H, HEADER_H = 22, 22
+local ROW_H, HEADER_H = 32, 50
 local BOTTOM_BAND = 34
 local CELL_PAD = 6
 local SLOT_LABEL_W = 80
-local COL_W = 78
-local ICON_SIZE = 18
+local COL_W = 96
+local ICON_SIZE = 28
 
 local SLOT_DEFS = {
     { slot = 1,  label = ns.L["Head"] },
@@ -62,12 +59,23 @@ function EquipmentView.BuildSlotRows(characters)
     return rows
 end
 
-function EquipmentView.BuildColumns(characters)
+function EquipmentView.BuildColumns(characters, hiddenCharacters, sortKey)
     local cols = {}
     for key, rec in pairs(characters or {}) do
-        cols[#cols + 1] = { key = key, name = (rec and rec.name) or key }
+        if not (hiddenCharacters and hiddenCharacters[key]) then
+            local details = rec and rec.details or {}
+            cols[#cols + 1] = {
+                key = key, name = (rec and rec.name) or key,
+                level = details.level, ilvl = details.ilvl,
+            }
+        end
     end
     table.sort(cols, function(a, b)
+        if sortKey == "level" or sortKey == "ilvl" then
+            local av = type(a[sortKey]) == "number" and a[sortKey] or -math.huge
+            local bv = type(b[sortKey]) == "number" and b[sortKey] or -math.huge
+            if av ~= bv then return av > bv end
+        end
         if a.name == b.name then return a.key < b.key end
         return a.name < b.name
     end)
@@ -100,10 +108,15 @@ local function Builder(parent)
     local Bus   = ns.Storage and ns.Storage.Bus
 
     local frame = CreateFrame("Frame", nil, parent)
+    local itemTooltip = CreateFrame("GameTooltip", "QUI_AltsEquipmentTooltip", UIParent, "GameTooltipTemplate")
+    itemTooltip.supportsItemComparison = false
+    itemTooltip:SetScript("OnUpdate", GameTooltip_OnUpdate)
+    itemTooltip:Hide()
+    frame:SetScript("OnHide", function() itemTooltip:Hide() end)
 
     local view      = { frame = frame }
-    local colOffset = 0
-    local scrollbar
+    local colOffset, rowOffset = 0, 0
+    local scrollbar, verticalScroll, refreshFilter
     local slotRows  = {}
     local columns   = {}
     local cachedChars = {}
@@ -114,9 +127,13 @@ local function Builder(parent)
     local labelPool  = {}
 
     local function VisibleCols()
-        local w = (frame:GetWidth() or 0) - SLOT_LABEL_W
+        local w = (frame:GetWidth() or 0) - SLOT_LABEL_W - Shared.SCROLLBAR_RESERVE
         if w < COL_W then return 1 end
         return math.max(1, math.floor(w / COL_W))
+    end
+
+    local function VisibleRows()
+        return math.max(1, math.floor(((frame:GetHeight() or 0) - HEADER_H - 2 - BOTTOM_BAND) / ROW_H))
     end
 
     local function GetSlotLabel(i)
@@ -124,7 +141,7 @@ local function Builder(parent)
         if fs then return fs end
         fs = MakeFS(frame, 11)
         fs:SetPoint("TOPLEFT", frame, "TOPLEFT", CELL_PAD,
-            -(HEADER_H + 2) - (i - 1) * ROW_H - 6)
+            -(HEADER_H + 2) - (i - 1) * ROW_H - 11)
         fs:SetWidth(SLOT_LABEL_W - CELL_PAD)
         fs:SetJustifyH("LEFT")
         fs:SetTextColor(0.7, 0.7, 0.7)
@@ -137,7 +154,6 @@ local function Builder(parent)
         if fs then return fs end
         fs = MakeFS(frame, 11)
         fs:SetWidth(COL_W - 4)
-        fs:SetJustifyH("CENTER")
         headerPool[c] = fs
         return fs
     end
@@ -147,7 +163,6 @@ local function Builder(parent)
         if fs then return fs end
         fs = MakeFS(frame, 11)
         fs:SetWidth(COL_W - 4)
-        fs:SetJustifyH("CENTER")
         fs:SetTextColor(0.8, 0.8, 0.8)
         footerPool[c] = fs
         return fs
@@ -172,11 +187,12 @@ local function Builder(parent)
         cell._ilvl:SetJustifyH("LEFT")
         cell:SetScript("OnEnter", function(self)
             if not self._link then return end
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetHyperlink(self._link)
-            GameTooltip:Show()
+            GameTooltip:Hide()
+            itemTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            itemTooltip:SetHyperlink(self._link)
+            itemTooltip:Show()
         end)
-        cell:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        cell:SetScript("OnLeave", function() itemTooltip:Hide() end)
         cell:SetScript("OnClick", function(self)
             if self._link and IsShiftKeyDown() and ChatEdit_InsertLink then
                 ChatEdit_InsertLink(self._link)
@@ -187,32 +203,39 @@ local function Builder(parent)
     end
 
     local status = MakeFS(frame, 11)
-    status:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", CELL_PAD, 4)
+    status:SetPoint("TOPLEFT", frame, "TOPLEFT", CELL_PAD, -6)
     status:SetTextColor(0.8, 0.8, 0.8)
 
+    local empty = MakeFS(frame, 11)
+    empty:SetPoint("TOPLEFT", frame, "TOPLEFT", SLOT_LABEL_W, -HEADER_H - 6)
+    empty:SetText(ns.L["No characters selected"])
+    empty:SetTextColor(1, 1, 1)
+    empty:Hide()
+
     local function RenderGrid()
+        itemTooltip:Hide()
         local visible = VisibleCols()
         local maxOff = math.max(0, #columns - visible)
         if colOffset > maxOff then colOffset = maxOff end
         if colOffset < 0 then colOffset = 0 end
 
-        for i, rowDef in ipairs(slotRows) do
+        local shownRows = math.min(VisibleRows(), #slotRows)
+        rowOffset = math.max(0, math.min(rowOffset, #slotRows - shownRows))
+        for i = 1, shownRows do
+            local rowDef = slotRows[rowOffset + i]
             local fs = GetSlotLabel(i)
             fs:SetText(rowDef.label)
             fs:Show()
         end
-        for i = #slotRows + 1, #labelPool do labelPool[i]:Hide() end
-        for i = #slotRows + 1, #cellPool do
+        for i = shownRows + 1, #labelPool do labelPool[i]:Hide() end
+        for i = shownRows + 1, #cellPool do
             local row = cellPool[i]
             if row then
                 for _, cell in pairs(row) do cell:Hide() end
             end
         end
 
-        local bodyH = frame:GetHeight() or 0
-        local footY = -(HEADER_H + 2) - #slotRows * ROW_H
-        local minFootY = BOTTOM_BAND - bodyH
-        if footY < minFootY then footY = minFootY end
+        local footY = -(HEADER_H + 2) - shownRows * ROW_H
 
         for c = 1, visible do
             local col = columns[colOffset + c]
@@ -220,14 +243,14 @@ local function Builder(parent)
             local header = GetHeader(c)
             local footer = GetFooter(c)
             header:ClearAllPoints()
-            header:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -4)
+            header:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -32)
             footer:ClearAllPoints()
             footer:SetPoint("TOPLEFT", frame, "TOPLEFT", x, footY)
 
             if not col then
                 header:Hide()
                 footer:Hide()
-                for i = 1, #slotRows do
+                for i = 1, #cellPool do
                     if cellPool[i] and cellPool[i][c] then cellPool[i][c]:Hide() end
                 end
             else
@@ -241,7 +264,8 @@ local function Builder(parent)
                 footer:Show()
 
                 local slots = rec and rec.equipped and rec.equipped.slots
-                for i, rowDef in ipairs(slotRows) do
+                for i = 1, shownRows do
+                    local rowDef = slotRows[rowOffset + i]
                     local cell = GetCell(i, c)
                     cell:ClearAllPoints()
                     cell:SetPoint("TOPLEFT", frame, "TOPLEFT", x,
@@ -271,13 +295,15 @@ local function Builder(parent)
         for c = visible + 1, #headerPool do
             headerPool[c]:Hide()
             if footerPool[c] then footerPool[c]:Hide() end
-            for i = 1, #slotRows do
+            for i = 1, #cellPool do
                 if cellPool[i] and cellPool[i][c] then cellPool[i][c]:Hide() end
             end
         end
 
-        status:SetText(string.format("%d characters", #columns))
+        status:SetText(string.format(ns.L["%d of %d shown"], #columns, #EquipmentView.BuildColumns(cachedChars)))
+        empty:SetShown(#columns == 0)
         if scrollbar then scrollbar:Update(#columns, visible, colOffset) end
+        if verticalScroll then verticalScroll:Update(#slotRows, shownRows, rowOffset) end
     end
 
     function view.Refresh()
@@ -289,32 +315,96 @@ local function Builder(parent)
                 if rec then cachedChars[key] = rec end
             end
         end
-        slotRows = EquipmentView.BuildSlotRows(cachedChars)
-        columns  = EquipmentView.BuildColumns(cachedChars)
+        local settings = Alts.GetSettings and Alts.GetSettings()
+        columns = EquipmentView.BuildColumns(cachedChars, settings and settings.equipmentHiddenCharacters,
+            settings and settings.equipmentSort)
+        local selectedChars = {}
+        for _, col in ipairs(columns) do selectedChars[col.key] = cachedChars[col.key] end
+        slotRows = #columns > 0 and EquipmentView.BuildSlotRows(selectedChars) or {}
         RenderGrid()
+        if refreshFilter then refreshFilter() end
     end
+
+    local characterFilter = UIKit.CreateButton(frame, { text = ns.L["Characters"], height = 22 })
+    characterFilter:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Shared.SCROLLBAR_RESERVE, 0)
+    local sortButton = UIKit.CreateButton(frame, {
+        text = ns.L["Sort"], height = 22,
+        onClick = function(self)
+            MenuUtil.CreateContextMenu(self, function(_, root)
+                local function IsSelected(key)
+                    local settings = Alts.GetSettings and Alts.GetSettings()
+                    return (settings and settings.equipmentSort or "name") == key
+                end
+                local function SetSelected(key)
+                    local settings = Alts.GetSettings and Alts.GetSettings()
+                    if not settings then return end
+                    settings.equipmentSort = key
+                    colOffset = 0
+                    view.Refresh()
+                end
+                root:CreateRadio(ns.L["Name"], IsSelected, SetSelected, "name")
+                root:CreateRadio(ns.L["Level"], IsSelected, SetSelected, "level")
+                root:CreateRadio(ns.L["Item Level"], IsSelected, SetSelected, "ilvl")
+            end)
+        end,
+    })
+    sortButton:SetPoint("RIGHT", characterFilter, "LEFT", -6, 0)
+    refreshFilter = Alts.FilterPopup.Attach({
+        tabFrame = frame,
+        anchorButton = characterFilter,
+        getRows = function()
+            local filterRows = {}
+            local settings = Alts.GetSettings and Alts.GetSettings()
+            for _, col in ipairs(EquipmentView.BuildColumns(cachedChars, nil, settings and settings.equipmentSort)) do
+                local level = type(col.level) == "number" and tostring(col.level) or "—"
+                filterRows[#filterRows + 1] = { id = col.key, label = ns.L["Lvl"] .. " " .. level .. " · " .. col.key }
+            end
+            return filterRows
+        end,
+        isChecked = function(key)
+            local settings = Alts.GetSettings and Alts.GetSettings()
+            return not (settings and settings.equipmentHiddenCharacters and settings.equipmentHiddenCharacters[key])
+        end,
+        setChecked = function(key, checked)
+            local settings = Alts.GetSettings and Alts.GetSettings()
+            if not settings then return end
+            settings.equipmentHiddenCharacters = settings.equipmentHiddenCharacters or {}
+            settings.equipmentHiddenCharacters[key] = not checked or nil
+        end,
+        onChanged = function()
+            colOffset, rowOffset = 0, 0
+            view.Refresh()
+        end,
+    })
+
+    verticalScroll = Shared.CreateScrollBar(frame, {
+        orientation = "vertical",
+        onScroll = function(n) rowOffset = n; RenderGrid() end,
+    })
+    verticalScroll.track:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -HEADER_H)
+    verticalScroll.track:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, BOTTOM_BAND)
 
     scrollbar = Shared.CreateScrollBar(frame, {
         orientation = "horizontal",
         onScroll = function(n) colOffset = n; RenderGrid() end,
     })
     scrollbar.track:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", SLOT_LABEL_W, 4)
-    scrollbar.track:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 4)
+    scrollbar.track:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Shared.SCROLLBAR_RESERVE, 4)
 
     frame:EnableMouseWheel(true)
     frame:SetScript("OnMouseWheel", function(_, delta)
-        local maxOff = math.max(0, #columns - VisibleCols())
-        colOffset = colOffset - delta
-        if colOffset < 0 then colOffset = 0 end
-        if colOffset > maxOff then colOffset = maxOff end
+        if IsShiftKeyDown() then colOffset = colOffset - delta
+        else rowOffset = rowOffset - delta end
         RenderGrid()
     end)
+    frame:SetScript("OnSizeChanged", function() view.Refresh() end)
 
     if Bus and Bus.Subscribe then
         local function OnBus()
             if frame:IsVisible() then view.Refresh() end
         end
         Bus.Subscribe("EquippedChanged", OnBus)
+        Bus.Subscribe("CharacterChanged", OnBus)
         Bus.Subscribe("CharacterDeleted", OnBus)
     end
 

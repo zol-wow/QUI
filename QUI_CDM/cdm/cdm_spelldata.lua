@@ -2369,9 +2369,12 @@ local function LearnedCatalogSignature()
 end
 
 local function RunReconcileSequence(guardUnchanged)
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("reconcile entry") end
     local restored = CDMSpellData:CheckAllDormantSpells()
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("dormant spells checked") end
     local before = guardUnchanged and LearnedCatalogSignature() or nil
     CDMSpellData:ReconcileAllContainers()
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("catalog reconciled") end
     if guardUnchanged and not restored and before == LearnedCatalogSignature() then
         return
     end
@@ -3496,6 +3499,7 @@ function CDMSpellData:Initialize()
     eventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
     eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     eventFrame:SetScript("OnEvent", function(self, event, arg)
+        if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("spelldata event entry: " .. event) end
         if not IsCDMRuntimeEnabled() then
             self:UnregisterAllEvents()
             return

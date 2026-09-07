@@ -36,6 +36,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         if not db or not db.alts or not ns.QUI_Options then return 80 end
         local alts = db.alts
         if not alts.columns then alts.columns = {} end
+        if alts.columns.guild == nil then alts.columns.guild = true end
         if not alts.scanners then alts.scanners = {} end
 
         local function Refresh()
@@ -84,6 +85,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             { key = "gold",        label = ns.L["Gold"] },
             { key = "played",      label = ns.L["Played time"] },
             { key = "rested",      label = ns.L["Rested XP"] },
+            { key = "guild",       label = ns.L["Guild"] },
             { key = "zone",        label = ns.L["Zone"] },
             { key = "lastSeen",    label = ns.L["Last seen"] },
             { key = "professions", label = ns.L["Professions"] },

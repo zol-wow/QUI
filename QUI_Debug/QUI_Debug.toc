@@ -18,6 +18,7 @@ editmode_diagnose.lua
 combat_end_profiler.lua
 ui_smoke.lua
 aura_probe.lua
+cdm_taint_trace.lua
 cdm_debug.lua
 # activate.lua must stay LAST: drains the main addon's debug-instrumentation gate
 activate.lua

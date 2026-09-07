@@ -2733,6 +2733,7 @@ local function RunPostLayoutRefresh()
 end
 
 RefreshAll = function(forceSync)
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("RefreshAll entry") end
     if not initialized then
         return
     end
@@ -2771,12 +2772,15 @@ RefreshAll = function(forceSync)
         end
     end
 
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("RefreshAll positions restored") end
     SyncSettingsFeatureLookups()
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("RefreshAll settings synced") end
 
     refreshAllReanchorBatchActive = true
     refreshAllReanchorBatchCounts = nil
     if ns._cdmBoot and ns._cdmBoot.RefreshBuiltins then
         InitBuffContainer()
+        if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("RefreshAll buff initialized") end
         RefreshReanchoredBuiltin(ns._cdmBoot, "essential", false)
     end
 
@@ -3637,6 +3641,7 @@ function ownedEngine:Initialize()
     RegisterClassTalentSwitchCallbacks()
 
     eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2)
+        if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("containers event entry: " .. event) end
         if not IsCDMRuntimeEnabled() then
             self:UnregisterAllEvents()
             return
@@ -3701,10 +3706,12 @@ function ownedEngine:Initialize()
             end
         elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
             local newSpecID = ConsumePendingClassTalentSpecSwitchID() or GetCurrentSpecID()
+            if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("spec ID resolved") end
             if not newSpecID or newSpecID ~= _previousSpecID then
                 if _previousSpecID and _previousSpecID ~= 0 then
                     SaveCurrentSpecProfile()
                 end
+                if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("previous spec saved") end
                 if ns.InvalidateCDMFrameCache then ns.InvalidateCDMFrameCache() end
                 if ns.CDMSpellData and ns.CDMSpellData.InvalidateLearnedCache then
                     ns.CDMSpellData:InvalidateLearnedCache()
@@ -3712,7 +3719,9 @@ function ownedEngine:Initialize()
                 specTrackingReady = false
                 specTrackingPendingRefresh = true
                 specTrackingRetryToken = specTrackingRetryToken + 1
+                if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("before spec profile restore") end
                 local readyNow = LoadOrSnapshotSpecProfile(newSpecID, 1, specTrackingRetryToken)
+                if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("after spec profile restore") end
                 _previousSpecID = newSpecID
                 _previousLoadoutID = GetEffectiveLoadoutIDForSpec(newSpecID)
                 local specDB = GetSpecStateDB(true)
@@ -3738,6 +3747,7 @@ function ownedEngine:Initialize()
             local myToken = loadoutTrackingToken
 
             loadoutDebounceTimer = C_Timer.NewTimer(0.5, function()
+                if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("loadout timer entry") end
                 loadoutDebounceTimer = nil
                 if myToken ~= loadoutTrackingToken then return end
                 if not specTrackingReady then
@@ -3783,12 +3793,15 @@ function ownedEngine:Initialize()
         elseif event == "PLAYER_TALENT_UPDATE" then
             if not specTrackingReady then
                 local readyNow = InitSpecTracking()
+                if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("talent tracking initialized") end
                 specTrackingReady = readyNow
                 if readyNow and specTrackingPendingRefresh then
                     FinalizeSpecTracking()
+                    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("talent tracking finalized") end
                 end
             end
             ResolveInitialLoadoutSlot()
+            if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("containers talent event exit") end
         elseif event == "SPECIALIZATION_CHANGE_CAST_FAILED" then
             ClearPendingClassTalentSwitchIntent()
         elseif event == "TRAIT_CONFIG_LIST_UPDATED" then

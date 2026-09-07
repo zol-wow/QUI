@@ -36,6 +36,7 @@ function Shared.MakeFS(parent, size)
     local fs = parent:CreateFontString(nil, "ARTWORK")
     CJKFont(fs, Shared.GeneralFont(), size or 11, Shared.GeneralOutline())
     fs:SetWordWrap(false)
+    fs:SetJustifyH("LEFT")
     return fs
 end
 

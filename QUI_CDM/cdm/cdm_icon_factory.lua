@@ -495,6 +495,7 @@ function CDMIconFactory:ReleaseIcon(icon)
     icon._spellEntry = nil
     icon._rangeTinted = nil
     icon._usabilityTinted = nil
+    icon._lastVisualState = nil
     icon._cdDesaturated = nil
     icon._spellOverrideDesaturate = nil
     icon._desaturateIgnoreAura = nil

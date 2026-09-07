@@ -3938,6 +3938,7 @@ local function PrintCDMDebugHelp()
     print("  /cdmdebug profile [status|clean]          -> CDM profile tools")
     print("  /cdmdebug probe                           -> resolver parity sweep")
     print("  /cdmdebug mint                            -> native mint/provider taint verdict")
+    print("  /cdmdebug taintcalls [report|off]          -> trace native cooldown setter ownership changes")
     print("  /cdmdebug borrow <spell> [container]      -> borrow a spare native item frame; off|report")
     print("  /cdmdebug native <spell> [seconds]         -> native frame/aura/charge lifecycle trace")
     print("  /cdmdebug buff                            -> reanchor BuffIcon pipeline dump")
@@ -3969,6 +3970,15 @@ local function RunCDMDebugCommand(msg)
         RunCDMDebugProbe()
     elseif lower == "mint" then
         RunCDMDebugMint()
+    elseif lower == "taintcalls" then
+        if rest == "off" then
+            ns.CDMTaintTrace:Stop()
+            ns.CDMTaintTrace:Report()
+        elseif rest == "report" then
+            ns.CDMTaintTrace:Report()
+        else
+            ns.CDMTaintTrace:Start()
+        end
     elseif lower == "borrow" then
         RunCDMDebugBorrow(rest)
     elseif lower == "native" then
