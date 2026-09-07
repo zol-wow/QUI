@@ -284,6 +284,7 @@ GameTooltipText = nil ---@type any
 GameTooltipTextLeft1 = nil ---@type any
 GameTooltipTextSmall = nil ---@type any
 GameTooltip_Hide = nil ---@type any
+GameTooltip_OnUpdate = nil ---@type any
 GameTooltip_SetBackdropStyle = nil ---@type any
 GameTooltip_SetDefaultAnchor = nil ---@type any
 GameTooltip_SetTitle = nil ---@type any
