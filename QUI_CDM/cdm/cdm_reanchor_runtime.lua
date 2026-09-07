@@ -737,13 +737,14 @@ function CDMReanchorRuntime:RefreshContainer(containerKey, prepared, placementPl
         deps.applySize(container, plan.metrics)
     end
 
-    local skipNativeSink = IsBuffIconKey(containerKey)
+    local preserveNativeAnchors = IsBuffIconKey(containerKey)
     for i = 1, #items do
         local frame = items[i]
         if not claimedFrames[frame] and not self:IsFrameClaimedByAnyContainer(frame) then
             local previouslyClaimed = bridge.IsClaimed and bridge:IsClaimed(frame)
-            if not skipNativeSink or previouslyClaimed then
-                bridge:Sink(frame)
+            if not preserveNativeAnchors or previouslyClaimed or settings.enabled == false
+                or bridge:ResolveIdentity(frame) ~= nil then
+                bridge:Sink(frame, preserveNativeAnchors)
             end
             if deps.hideLiveTooltip then deps.hideLiveTooltip(frame) end
         end

@@ -65,14 +65,22 @@ function CDMReanchor:Overlay(frame, anchorIcon)
     return self:OverlayRect(frame, anchorIcon, "TOPLEFT", 0, 0, "BOTTOMRIGHT", 0, 0)
 end
 
-function CDMReanchor:Sink(frame)
+function CDMReanchor:Sink(frame, preserveAnchors)
     local fd = self:GetData(frame)
     fd.claimedBy = nil
     fd.overlayAnchor = nil
     fd.overlayRect = nil
     fd.sunk = true
+    fd.preserveAnchors = preserveAnchors
     local raw, sc = self._raw, self._securecall
     sc(raw.SetAlpha, frame, 0)
+    if not preserveAnchors then
+        if self._hooksecurefunc and frame.SetPoint then self:InstallAnchorGuard(frame) end
+        fd.sinking = true
+        sc(raw.ClearAllPoints, frame)
+        sc(raw.SetPoint, frame, "TOPLEFT", self._sinkAnchor, "BOTTOMLEFT", 0, -10000)
+        fd.sinking = nil
+    end
 end
 
 function CDMReanchor:InstallAnchorGuard(frame)
@@ -83,8 +91,8 @@ function CDMReanchor:InstallAnchorGuard(frame)
     local function reassert(f, _point, relativeTo)
         local d = bridge._frameData[f]
         if not d or not d.overlayAnchor then
-            if d and d.sunk then
-                bridge._raw.SetAlpha(f, 0)
+            if d and d.sunk and not d.sinking then
+                bridge:Sink(f, d.preserveAnchors)
             end
             return
         end

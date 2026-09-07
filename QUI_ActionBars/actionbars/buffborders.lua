@@ -693,8 +693,17 @@ end
 
 local paRegenFrame = CreateFrame("Frame")
 paRegenFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-paRegenFrame:SetScript("OnEvent", function()
-    FlushPendingContainerWork()
+paRegenFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+paRegenFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_ENTERING_WORLD" then
+        C_Timer.After(0, function()
+            if previewActive then return end
+            local container = buffContainer and buffContainer._quiLiveContainer
+            if container then container:UpdateAllAuras() end
+        end)
+    else
+        FlushPendingContainerWork()
+    end
 end)
 
 local function SetupDebugInstrumentation()
