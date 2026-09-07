@@ -526,8 +526,6 @@ layoutUpdateFrame:SetScript("OnEvent", function()
             end
             local RefreshUnitFrames = _G.QUI_RefreshUnitFrames
             if RefreshUnitFrames then ns.SafeCall("bulkhead", RefreshUnitFrames) end
-            local RefreshGroupFrames = _G.QUI_RefreshGroupFrames
-            if RefreshGroupFrames then ns.SafeCall("bulkhead", RefreshGroupFrames) end
         end
     end)
 end)

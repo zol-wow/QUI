@@ -132,6 +132,14 @@ local _viewerAlphaProxy = CreateFrame and CreateFrame("Frame") or nil
 local _rawViewerSetAlpha = _viewerAlphaProxy and _viewerAlphaProxy.SetAlpha or nil
 local _securecall = securecallfunction or function(fn, ...) return fn(...) end
 local REANCHOR_VIEWER_KEYS = { "essential", "utility", "buff" }
+local _viewerAlphaStates = setmetatable({}, { __mode = "k" })
+
+local function ReassertViewerAlpha(viewer)
+    local state = _viewerAlphaStates[viewer]
+    if not state or not ns._cdmBoot or not IsCDMMasterEnabled()
+        or (viewer.IsForbidden and viewer:IsForbidden()) then return end
+    _securecall(_rawViewerSetAlpha, viewer, state.alpha)
+end
 
 local function ApplyReanchorViewerAlpha(alpha)
     if not _rawViewerSetAlpha then return end
@@ -142,6 +150,15 @@ local function ApplyReanchorViewerAlpha(alpha)
     for i = 1, #REANCHOR_VIEWER_KEYS do
         local viewer = wiring:GetViewerForKey(REANCHOR_VIEWER_KEYS[i])
         if viewer and (not viewer.IsForbidden or not viewer:IsForbidden()) then
+            local state = _viewerAlphaStates[viewer]
+            if not state then
+                state = {}
+                _viewerAlphaStates[viewer] = state
+                if hooksecurefunc then
+                    hooksecurefunc(viewer, "SetAlpha", function(...) _securecall(ReassertViewerAlpha, ...) end)
+                end
+            end
+            state.alpha = alpha
             _securecall(_rawViewerSetAlpha, viewer, alpha)
         end
     end

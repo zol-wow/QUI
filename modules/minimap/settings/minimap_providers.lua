@@ -64,6 +64,27 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             { description = ns.L["Gradually zoom the minimap back out to the default zoom level after a period of inactivity."] })
         s1.AddRow(row(s1.frame, ns.L["Middle-Click Menu"], middleW), row(s1.frame, ns.L["Auto-Zoom After Idle"], autoZoomW))
 
+        local rotateW = GUI:CreateFormCheckbox(s1.frame, nil, nil, nil, function(value)
+            C_CVar.SetCVar("rotateMinimap", value and "1" or "0")
+        end, { description = ns.L["Rotate the map as you turn instead of keeping north at the top."]
+            .. " " .. ns.L["Blizzard Edit Mode layouts can override this setting."] })
+        local function UpdateRotation()
+            rotateW:SetValue(C_CVar.GetCVarBool("rotateMinimap"), true)
+        end
+        rotateW:HookScript("OnShow", function(self)
+            self:RegisterEvent("CVAR_UPDATE")
+            UpdateRotation()
+        end)
+        rotateW:HookScript("OnHide", function(self)
+            self:UnregisterEvent("CVAR_UPDATE")
+        end)
+        rotateW:SetScript("OnEvent", function(_, _, cvar)
+            if cvar:lower() == "rotateminimap" then UpdateRotation() end
+        end)
+        if rotateW:IsVisible() then rotateW:RegisterEvent("CVAR_UPDATE") end
+        UpdateRotation()
+        s1.AddRow(row(s1.frame, ns.L["Rotate Minimap"], rotateW))
+
         local coordW = GUI:CreateFormSlider(s1.frame, nil, 1, 10, 1, "coordUpdateInterval", mm, nil,
             { description = ns.L["How often the coordinate datatext refreshes, in seconds. Lower is smoother but slightly more expensive."] })
         local btnRadiusW = GUI:CreateFormSlider(s1.frame, nil, 0, 12, 1, "buttonRadius", mm, Refresh,
