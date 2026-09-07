@@ -555,11 +555,13 @@ local defaults = {
             window = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 0, width = 920, height = 540 },
             columns = {
                 ilvl = true, gold = true, played = true, rested = true,
-                zone = true, lastSeen = true, professions = true,
+                zone = true, lastSeen = true, professions = true, guild = true,
             },
             scanners = { reputations = true, weeklies = true, lockouts = true },
             currencyFilter = {},
             reputationFilter = {},
+            equipmentHiddenCharacters = {},
+            equipmentSort = "name",
         },
 
         damageMeter = {

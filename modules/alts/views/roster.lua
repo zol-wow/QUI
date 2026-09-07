@@ -24,6 +24,7 @@ local COLUMNS = {
     { id = "played",      label = ns.L["Played"],      width = 72,  sortKey = "playedTotal", desc = true },
     { id = "rested",      label = ns.L["Rested"],      width = 56,  sortKey = "restedXP",    desc = true },
     { id = "professions", label = ns.L["Professions"], width = 160 },
+    { id = "guild",       label = ns.L["Guild"],       width = 150 },
     { id = "zone",        label = ns.L["Zone"],        width = 150 },
     { id = "lastSeen",    label = ns.L["Seen"],        width = 72,  sortKey = "lastSeen",    desc = true },
 }
@@ -55,6 +56,8 @@ function RosterView.CellText(col, row, now)
             end
         end
         return (#parts > 0) and table.concat(parts, " · ") or "—"
+    elseif col.id == "guild" then
+        return d.guild and d.guild ~= "" and d.guild or "—"
     elseif col.id == "zone" then
         return d.zone or "—"
     elseif col.id == "lastSeen" then
@@ -66,7 +69,8 @@ end
 function RosterView.BuildActiveColumns(columnsCfg)
     local active = {}
     for _, col in ipairs(COLUMNS) do
-        if col.always or columnsCfg == nil or columnsCfg[col.id] then
+        if col.always or columnsCfg == nil or columnsCfg[col.id]
+            or (col.id == "guild" and columnsCfg.guild == nil) then
             active[#active + 1] = col
         end
     end
