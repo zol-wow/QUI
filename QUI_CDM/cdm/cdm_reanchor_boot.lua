@@ -5,6 +5,15 @@ ns.CDMReanchorBoot = CDMReanchorBoot
 
 local _issecretvalue = issecretvalue or function() return false end
 
+local function CallNativeWidget(frame, widget, method, fn, ...)
+    local trace = ns.CDMNativeCallTrace
+    local token = trace and trace:Before(frame, method)
+    fn(widget, ...)
+    if token then trace:After(frame, method, token) end
+end
+
+CDMReanchorBoot._CallNativeWidget = CallNativeWidget
+
 local function MakePositionOwned(env)
     return function(icon, container, point, relPoint, x, y, rowConfig)
         if icon.GetScale and icon:GetScale() ~= 1 then
@@ -109,17 +118,17 @@ function CDMReanchorBoot.BuildRuntime(env)
     local function reassertColor(frame, cd, containerKey)
         if not (cd and cd.SetSwipeColor) then return end
         if effectsHidden(containerKey) then
-            cd:SetSwipeColor(0, 0, 0, 0)
-            if cd.SetDrawSwipe then cd:SetDrawSwipe(false) end
-            if cd.SetDrawEdge then cd:SetDrawEdge(false) end
+            CallNativeWidget(frame, cd, "SetSwipeColor", cd.SetSwipeColor, 0, 0, 0, 0)
+            if cd.SetDrawSwipe then CallNativeWidget(frame, cd, "SetDrawSwipe", cd.SetDrawSwipe, false) end
+            if cd.SetDrawEdge then CallNativeWidget(frame, cd, "SetDrawEdge", cd.SetDrawEdge, false) end
             return
         end
         if isBuffIconFrameKey(containerKey) then
             if swipeSettings().showBuffIconSwipe == false then
-                cd:SetSwipeColor(0, 0, 0, 0)
+                CallNativeWidget(frame, cd, "SetSwipeColor", cd.SetSwipeColor, 0, 0, 0, 0)
             else
                 local r, g, b, a = modeColor("aura")
-                cd:SetSwipeColor(r, g, b, a)
+                CallNativeWidget(frame, cd, "SetSwipeColor", cd.SetSwipeColor, r, g, b, a)
             end
             return
         end
@@ -127,54 +136,54 @@ function CDMReanchorBoot.BuildRuntime(env)
             if not frame.GetCooldownID then return end
             local s = swipeSettings()
             if not isAuraPhaseEnabled() or s.showBuffSwipe == false then
-                cd:SetSwipeColor(0, 0, 0, 0)
+                CallNativeWidget(frame, cd, "SetSwipeColor", cd.SetSwipeColor, 0, 0, 0, 0)
             else
                 local r, g, b, a = modeColor("aura")
-                cd:SetSwipeColor(r, g, b, a)
+                CallNativeWidget(frame, cd, "SetSwipeColor", cd.SetSwipeColor, r, g, b, a)
             end
         elseif cooldownShown(frame) then
             local r, g, b, a = modeColor("cooldown")
-            cd:SetSwipeColor(r, g, b, a)
+            CallNativeWidget(frame, cd, "SetSwipeColor", cd.SetSwipeColor, r, g, b, a)
         else
-            cd:SetSwipeColor(0, 0, 0, 0)
+            CallNativeWidget(frame, cd, "SetSwipeColor", cd.SetSwipeColor, 0, 0, 0, 0)
         end
     end
-    local function reassertEdge(_frame, cd, containerKey)
+    local function reassertEdge(frame, cd, containerKey)
         if not (cd and cd.SetDrawEdge) then return end
         if effectsHidden(containerKey) then
-            cd:SetDrawEdge(false)
+            CallNativeWidget(frame, cd, "SetDrawEdge", cd.SetDrawEdge, false)
             return
         end
         local s = swipeSettings()
         if isBuffIconFrameKey(containerKey) then
             if s.showBuffIconSwipe == false or s.showBuffEdge == false then
-                cd:SetDrawEdge(false)
+                CallNativeWidget(frame, cd, "SetDrawEdge", cd.SetDrawEdge, false)
             end
             return
         end
         if s.showRechargeEdge then return end
-        cd:SetDrawEdge(false)
+        CallNativeWidget(frame, cd, "SetDrawEdge", cd.SetDrawEdge, false)
     end
     local function reassertSwipe(frame, cd, containerKey, show)
         if not (cd and cd.SetDrawSwipe) then return end
         local s = swipeSettings()
         if effectsHidden(containerKey) then
-            if show then cd:SetDrawSwipe(false) end
+            if show then CallNativeWidget(frame, cd, "SetDrawSwipe", cd.SetDrawSwipe, false) end
             return
         end
         if isBuffIconFrameKey(containerKey) then
             if s.showBuffIconSwipe == false and show then
-                cd:SetDrawSwipe(false)
+                CallNativeWidget(frame, cd, "SetDrawSwipe", cd.SetDrawSwipe, false)
             elseif s.showBuffIconSwipe ~= false and show == false then
-                cd:SetDrawSwipe(true)
+                CallNativeWidget(frame, cd, "SetDrawSwipe", cd.SetDrawSwipe, true)
             end
             return
         end
         if frameCanUseAuraForDisplay(frame) then
             if not isAuraPhaseEnabled() or s.showBuffSwipe == false then
-                if show then cd:SetDrawSwipe(false) end
+                if show then CallNativeWidget(frame, cd, "SetDrawSwipe", cd.SetDrawSwipe, false) end
             elseif show == false then
-                cd:SetDrawSwipe(true)
+                CallNativeWidget(frame, cd, "SetDrawSwipe", cd.SetDrawSwipe, true)
             end
             return
         end
@@ -182,20 +191,20 @@ function CDMReanchorBoot.BuildRuntime(env)
         if _issecretvalue(gcd) then return end
         if gcd == true then
             if s.showGCDSwipe == true and not show then
-                cd:SetDrawSwipe(true)
+                CallNativeWidget(frame, cd, "SetDrawSwipe", cd.SetDrawSwipe, true)
             elseif s.showGCDSwipe ~= true and show then
-                cd:SetDrawSwipe(false)
+                CallNativeWidget(frame, cd, "SetDrawSwipe", cd.SetDrawSwipe, false)
             end
             return
         end
         if s.showCooldownSwipe == false and show then
-            cd:SetDrawSwipe(false)
+            CallNativeWidget(frame, cd, "SetDrawSwipe", cd.SetDrawSwipe, false)
             return
         end
         if not show then
             local hasCharges = type(frame and frame.HasVisualDataSource_Charges) == "function"
                 and frame:HasVisualDataSource_Charges()
-            if not hasCharges then cd:SetDrawSwipe(true) end
+            if not hasCharges then CallNativeWidget(frame, cd, "SetDrawSwipe", cd.SetDrawSwipe, true) end
         end
     end
     local function cleanSpellID(spellID)
@@ -250,11 +259,12 @@ function CDMReanchorBoot.BuildRuntime(env)
             duration = Sources.QuerySpellCooldownDuration(spellID, true)
         end
         if not duration then return end
-        if cd.SetUseAuraDisplayTime then cd:SetUseAuraDisplayTime(false) end
+        if cd.SetUseAuraDisplayTime then CallNativeWidget(frame, cd, "SetUseAuraDisplayTime", cd.SetUseAuraDisplayTime, false) end
         if ns.CDMRenderers and ns.CDMRenderers.ApplyDurationObjectCooldown then
-            ns.CDMRenderers.ApplyDurationObjectCooldown(cd, duration, true, false)
+            CallNativeWidget(frame, cd, "ApplyDurationObjectCooldown",
+                ns.CDMRenderers.ApplyDurationObjectCooldown, duration, true, false)
         elseif cd.SetCooldownFromDurationObject then
-            cd:SetCooldownFromDurationObject(duration, true)
+            CallNativeWidget(frame, cd, "SetCooldownFromDurationObject", cd.SetCooldownFromDurationObject, duration, true)
         end
     end
     local auraPhase = ns.CDMReanchorAuraPhase and ns.CDMReanchorAuraPhase.New({
