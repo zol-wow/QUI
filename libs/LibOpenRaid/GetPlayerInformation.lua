@@ -1051,14 +1051,6 @@ do
         end
 
         function openRaidLib.AuraTracker.ScanUnitAuras(unitId)
-            --QUI patch (12.1): see getAuraDuration — the aura walk is
-            --RequiresUnitAuraAccess-guarded (hard error) under encounter/M+/
-            --PvP restrictions. Bail BEFORE touching scan state so the next
-            --unrestricted scan still diffs removals correctly.
-            if (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()) then
-                return
-            end
-
             local maxCount = nil
             local bUsePackedAura = true
             openRaidLib.AuraTracker.CurrentUnitId = unitId
@@ -1066,7 +1058,7 @@ do
             openRaidLib.AuraTracker.AurasFoundOnScan = {}
 
             --code of 'ForEachAura' has been updated to use the latest API available
-            pcall(AuraUtil.ForEachAura, unitId, "HELPFUL", maxCount, openRaidLib.AuraTracker.ScanCallback, bUsePackedAura)
+            AuraUtil.ForEachAura(unitId, "HELPFUL", maxCount, openRaidLib.AuraTracker.ScanCallback, bUsePackedAura)
 
             local thisUnitAuras = openRaidLib.AuraTracker.CurrentAuras[unitId]
             for spellId in pairs(thisUnitAuras) do

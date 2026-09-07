@@ -190,11 +190,7 @@ function CDMCatalog.GetTrackedCategorySet(category, allowUnlearned)
             return nil, false
         end
 
-        local okManager, manager
-        if provider.GetLayoutManager then
-            okManager, manager = pcall(provider.GetLayoutManager, provider)
-        end
-        if not okManager or not manager then
+        if not provider.layoutManager then
             return nil, false
         end
 

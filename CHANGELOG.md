@@ -33,6 +33,29 @@ hardening.
   suppresses native buff bars before data readiness, avoiding tainted callbacks
   and startup flicker.
 
+## v5.3-beta11 - 2026-09-07
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Improved
+
+- **Alt equipment is easier to browse**, with filtering, sorting, scrolling,
+  dedicated item tooltips, and an optional guild column in the roster.
+- **Weekly progress shows lockouts inline**, with row toggles and compact
+  Great Vault summaries.
+- **Minimap general settings use a compact two-column toggle layout.**
+
+### Fixed
+
+- **Cooldown Manager preserves unusable-spell tint across cooldown transitions**
+  and defers settings refreshes to avoid rebuilding during Blizzard updates.
+- **Cooldown Manager avoids writing to Blizzard's native layout serializer.**
+- **Dimmed group frames retain their tooltips**, while fully hidden frames
+  still suppress them.
+- **The info bar sits below foreground UI**, and the gold datatext keeps its
+  gold color.
+
 ## v5.3-beta10 - 2026-09-07
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
