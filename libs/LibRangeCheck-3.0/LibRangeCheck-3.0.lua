@@ -40,7 +40,7 @@ License: MIT
 -- @class file
 -- @name LibRangeCheck-3.0
 local MAJOR_VERSION = "LibRangeCheck-3.0"
-local MINOR_VERSION = 35
+local MINOR_VERSION = 36
 
 ---@class lib
 local lib, oldminor = LibStub:NewLibrary(MAJOR_VERSION, MINOR_VERSION)
@@ -114,7 +114,13 @@ local UnitClass = UnitClass
 local UnitRace = UnitRace
 local GetInventoryItemLink = GetInventoryItemLink
 local GetTime = GetTime
-local HandSlotId = GetInventorySlotInfo("HANDSSLOT")
+
+local HandSlotId
+if C_PaperDollInfo and C_PaperDollInfo.GetInventorySlotInfo then
+  HandSlotId = C_PaperDollInfo.GetInventorySlotInfo("HANDSSLOT")
+else
+  HandSlotId = GetInventorySlotInfo("HANDSSLOT")
+end
 local math_floor = math.floor
 local UnitIsVisible = UnitIsVisible
 
