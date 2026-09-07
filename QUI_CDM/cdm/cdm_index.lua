@@ -246,28 +246,17 @@ _eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
     end
 end)
 
-local _securecall = securecallfunction or function(fn, ...) return fn(...) end
-local function _OnSettingsRefreshLayout() Notify("refresh_layout") end
-
-local _refreshLayoutHooked = false
-local function InstallRefreshLayoutHook()
-    if _refreshLayoutHooked then return end
-    if not (CooldownViewerSettings and CooldownViewerSettings.RefreshLayout) then return end
-    local ok = pcall(hooksecurefunc, CooldownViewerSettings, "RefreshLayout", function(...)
-        _securecall(_OnSettingsRefreshLayout, ...)
-    end)
-    if ok then _refreshLayoutHooked = true end
+local _settingsRefreshPending = false
+if EventRegistry and EventRegistry.RegisterCallback then
+    EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
+        if _settingsRefreshPending then return end
+        _settingsRefreshPending = true
+        C_Timer.After(0, function()
+            _settingsRefreshPending = false
+            Notify("refresh_layout")
+        end)
+    end, CDMIndex)
 end
-
-InstallRefreshLayoutHook()
-local _hookFrame = CreateFrame("Frame")
-_hookFrame:RegisterEvent("PLAYER_LOGIN")
-_hookFrame:SetScript("OnEvent", function(self)
-    InstallRefreshLayoutHook()
-    if _refreshLayoutHooked then
-        self:UnregisterAllEvents()
-    end
-end)
 
 local function BuildOrderedMaps()
     if _orderedSpellMap and _orderedMapsVersion == _version then
