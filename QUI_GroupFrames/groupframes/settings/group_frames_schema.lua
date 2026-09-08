@@ -879,6 +879,14 @@ local function RenderLayoutSection(sectionHost, ctx)
         })
         card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Limit Groups by Raid Size"], limitGroupsCheckbox))
 
+        local hideBenchCheckbox = gui:CreateFormCheckbox(card.frame, nil, "hideBenchGroupsInMythic", layout, function()
+            refresh(true)
+            RequestTabRepaint(ctx)
+        end, {
+            description = ns.L["Hide raid members in groups 7 and 8 while inside a Mythic raid. Works in every Group By mode, including flat layouts. Has no effect outside Mythic."],
+        })
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Hide Groups 7-8 in Mythic"], hideBenchCheckbox))
+
         local hiddenPlayersEdit = gui:CreateFormEditBox(card.frame, nil, "hiddenPlayers", groupFrames.gfdb, function()
             refresh(true)
         end, {
