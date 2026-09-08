@@ -4,6 +4,30 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3-beta14 - 2026-09-08
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Encounter-gated Aura Display groups activate during combat**, and individual
+  editing previews stay visible when their group uses dynamic packing.
+- **Aura Display imports reject malformed legacy duration and color settings**
+  before they can cause rendering errors.
+- **Damage Meter death recaps retain the selected death**, including when the
+  same player dies multiple times and when the detail view refreshes.
+- **Cooldown Manager shows setup instructions when Blizzard's native viewers
+  are disabled**, without changing Blizzard's settings.
+- **The MicroMenu finishes initializing after a temporary owner releases it.**
+  The custom Info Bar Shop button is removed to leave shop opening to Blizzard.
+
+### Improved
+
+- **Reduced repeated combat work** by reusing Aura Display visibility lists,
+  moving aura-sound normalization out of rendering, and keeping one cancellable
+  boss-cast retry instead of accumulating retry chains.
+
 ## v5.3-beta13 - 2026-09-08
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
