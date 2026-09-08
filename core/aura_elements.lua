@@ -298,13 +298,9 @@ function E.NormalizeElement(e)
         if e.auraType == nil then e.auraType = "HELPFUL" end
         if e.dynamicLayout ~= true then e.dynamicLayout = false end
         if type(e.border) ~= "table" then e.border = { thickness = 2 } end
-        local trackedSpellIDs = {}
         if type(e.spells) == "table" then
             for i, spellID in ipairs(e.spells) do
                 e.spells[i] = E.ResolveTrackedSpellID(spellID)
-                if type(e.spells[i]) == "number" then
-                    trackedSpellIDs[e.spells[i]] = true
-                end
             end
         end
         if type(e.onlyMineSpells) == "table" then
@@ -313,16 +309,6 @@ function E.NormalizeElement(e)
                 normalizedOnlyMine[E.ResolveTrackedSpellID(spellID)] = value
             end
             e.onlyMineSpells = normalizedOnlyMine
-        end
-        if type(e.auraSounds) == "table" then
-            local normalizedAuraSounds = {}
-            for spellID, sounds in pairs(e.auraSounds) do
-                local resolvedID = E.ResolveTrackedSpellID(tonumber(spellID) or spellID)
-                if trackedSpellIDs[resolvedID] and type(sounds) == "table" then
-                    normalizedAuraSounds[resolvedID] = sounds
-                end
-            end
-            e.auraSounds = next(normalizedAuraSounds) and normalizedAuraSounds or nil
         end
     end
     if e.dispelBorderMode ~= "stealable" and e.dispelBorderMode ~= "all" then
@@ -338,6 +324,23 @@ function E.NormalizeElement(e)
     end
     if e.applyToRoles == nil then e.applyToRoles = "all" end
     return e
+end
+
+function E.NormalizeAuraSounds(e)
+    if type(e.auraSounds) ~= "table" then return nil end
+    local trackedSpellIDs = {}
+    for _, spellID in ipairs(e.spells or {}) do
+        if type(spellID) == "number" then trackedSpellIDs[spellID] = true end
+    end
+    local normalizedAuraSounds = {}
+    for spellID, sounds in pairs(e.auraSounds) do
+        local resolvedID = E.ResolveTrackedSpellID(tonumber(spellID) or spellID)
+        if trackedSpellIDs[resolvedID] and type(sounds) == "table" then
+            normalizedAuraSounds[resolvedID] = sounds
+        end
+    end
+    e.auraSounds = next(normalizedAuraSounds) and normalizedAuraSounds or nil
+    return e.auraSounds
 end
 
 local ROLE_GATE_TO_ASSIGNED = { tank = "TANK", healer = "HEALER", dps = "DAMAGER" }

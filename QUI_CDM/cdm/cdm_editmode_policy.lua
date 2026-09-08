@@ -28,11 +28,7 @@ function CDMEditModePolicy.NeedsManualSetup(systems, enums)
     return false
 end
 
-local _applied = false
-
-function CDMEditModePolicy.Enforce()
-    if _applied then return end
-    if _G.QUI_IsCDMMasterEnabled and not _G.QUI_IsCDMMasterEnabled() then return end
+local function LayoutNeedsManualSetup()
     local C_EditMode = _G.C_EditMode
     local Enum = _G.Enum
     if not (C_EditMode and C_EditMode.GetLayouts
@@ -51,13 +47,12 @@ function CDMEditModePolicy.Enforce()
     if type(presets) ~= "table" or #presets == 0 then return end
     if type(layoutInfo.activeLayout) ~= "number" then return end
     if layoutInfo.activeLayout <= #presets then
-        _applied = true
-        return
+        return false
     end
     local activeLayout = layoutInfo.layouts[layoutInfo.activeLayout - #presets]
     if not activeLayout or type(activeLayout.systems) ~= "table" then return end
 
-    local needsSetup = CDMEditModePolicy.NeedsManualSetup(activeLayout.systems, {
+    return CDMEditModePolicy.NeedsManualSetup(activeLayout.systems, {
         cooldownSystem = Enum.EditModeSystem.CooldownViewer,
         visSetting = Enum.EditModeCooldownViewerSetting.VisibleSetting,
         visAlways = Enum.CooldownViewerVisibleSetting.Always,
@@ -65,19 +60,34 @@ function CDMEditModePolicy.Enforce()
         buffIconIdx = Enum.EditModeCooldownViewerSystemIndices.BuffIcon,
         buffBarIdx = Enum.EditModeCooldownViewerSystemIndices.BuffBar,
     })
+end
+
+local _applied = false
+
+function CDMEditModePolicy.Enforce()
+    if _applied then return end
+    if _G.QUI_IsCDMMasterEnabled and not _G.QUI_IsCDMMasterEnabled() then return end
+    local C_CVar = _G.C_CVar
+    local viewerDisabled = C_CVar and C_CVar.GetCVarBool
+        and C_CVar.GetCVarBool("cooldownViewerEnabled") == false
+    local needsSetup = viewerDisabled or LayoutNeedsManualSetup()
+    if needsSetup == nil then return end
 
     _applied = true
     if not needsSetup or not (_G.StaticPopupDialogs and _G.StaticPopup_Show) then return end
     _G.StaticPopupDialogs["QUI_CDM_EDITMODE_MANUAL"] = {
-        text = "QUI detected a Blizzard Cooldown Manager layout mismatch."
+        text = (viewerDisabled and "QUI detected that Blizzard's Cooldown Manager is disabled."
+            or "QUI detected a Blizzard Cooldown Manager layout mismatch.")
             .. " QUI did not change Blizzard's Edit Mode layout.\n\n"
             .. "1. Open /qui > Module Addons, disable Cooldown Manager, and reload.\n"
-            .. "2. Open Edit Mode and set each Cooldown Manager viewer's"
+            .. "2. Open WoW Options, search for '" .. (_G.ENABLE_COOLDOWN_VIEWER or "Enable Cooldown Manager")
+            .. "', and enable it.\n"
+            .. "3. Open Edit Mode and set each Cooldown Manager viewer's"
             .. " Visibility to Always.\n"
-            .. "3. On Tracked Buffs and Tracked Bars, enable Hide When Inactive.\n"
-            .. "4. Save the layout, leave Edit Mode, re-enable Cooldown Manager,"
+            .. "4. On Tracked Buffs and Tracked Bars, enable Hide When Inactive.\n"
+            .. "5. Save the layout, leave Edit Mode, re-enable Cooldown Manager,"
             .. " and reload.\n\n"
-            .. "This notice repeats each login until the layout is correct.",
+            .. "This notice repeats each login until the native viewers are enabled and the layout is correct.",
         button1 = _G.OKAY or "Okay",
         timeout = 0,
         whileDead = 1,
