@@ -784,7 +784,9 @@ function CreateBarContainer(barKey)
         end
     ]])
     local driver = "[overridebar][vehicleui][possessbar][petbattle] hide; show"
-    if barKey == "pet" then
+    if barKey == "bar1" then
+        driver = "[overridebar][vehicleui][petbattle] hide; show"
+    elseif barKey == "pet" then
         driver = "[overridebar][vehicleui][possessbar][petbattle][nopet] hide; show"
         local function notifyAnchor()
             if _G.QUI_UpdateFramesAnchoredTo then
