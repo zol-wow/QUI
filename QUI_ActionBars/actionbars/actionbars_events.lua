@@ -281,6 +281,7 @@ function OnOwnedEvent(self, event, ...)
             ActionBarsOwned.pendingStanceUpdate = true
         end
         ApplyBar1OverrideBindings()
+        SetupOwnedBarMouseover("bar1")
 
     elseif event == "UPDATE_SHAPESHIFT_COOLDOWN" or event == "UPDATE_SHAPESHIFT_USABLE" then
         ActionBarsOwned.UpdateAllStanceButtons()

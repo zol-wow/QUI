@@ -33,6 +33,30 @@ hardening.
   suppresses native buff bars before data readiness, avoiding tainted callbacks
   and startup flicker.
 
+## v5.3-beta13 - 2026-09-08
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Possession abilities stay visible and retain their usual key bindings**
+  when vehicles without a dedicated action-bar skin use Action Bar 1,
+  including after fade timers expire.
+
+## v5.3-beta12 - 2026-09-07
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Raid markers display on focus and other unit frames when Blizzard returns
+  a restricted marker index.**
+- **Updated bundled libraries for current API compatibility**, preserving
+  secret-value handling for addon chat traffic and supporting legacy and
+  namespaced inventory APIs.
+
 ## v5.3-beta11 - 2026-09-07
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and

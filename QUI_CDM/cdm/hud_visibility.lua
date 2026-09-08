@@ -858,6 +858,9 @@ local function ApplyActionBarListAlpha(frames, alpha)
 end
 
 local function GetActionBarEntryAlpha(entry)
+    local states = ns.ActionBarsOwned and ns.ActionBarsOwned.fadeState
+    local state = states and states[entry.barKey]
+    if state and state.requestedAlpha ~= nil then return state.requestedAlpha end
     return entry.container:GetAlpha()
 end
 
@@ -867,6 +870,7 @@ local ActionBarsVisibility = CreateVisibilityController({
     applyAlpha = ApplyActionBarListAlpha,
     getAlpha = GetActionBarEntryAlpha,
     includeVehicle = true,
+    instantApply = true,
     leaveDelay = 0.3,
     update = function() UpdateActionBarsVisibility() end,
 })
@@ -1047,6 +1051,8 @@ visibilityEventFrame:RegisterEvent("PLAYER_IMPULSE_APPLIED")
 visibilityEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
 visibilityEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
 visibilityEventFrame:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR")
+visibilityEventFrame:RegisterEvent("UPDATE_POSSESS_BAR")
+visibilityEventFrame:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
 visibilityEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 visibilityEventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
 visibilityEventFrame:RegisterEvent("PLAYER_IS_GLIDING_CHANGED")
