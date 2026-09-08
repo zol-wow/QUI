@@ -733,9 +733,14 @@ end
 QUI_GF.GetVisualDB = GetVisualDB
 QUI_GF.CalculateHeaderSize = CalculateHeaderSize
 
+function _state.TooltipsSuppressed(general)
+    if not general or general.showTooltips == false then return true end
+    return general.hideTooltipsInCombat == true and InCombatLockdown()
+end
+
 local function ShowUnitTooltip(frame)
     local general = GetGeneralSettings(frame._isRaid)
-    if not general or general.showTooltips == false then return end
+    if _state.TooltipsSuppressed(general) then return end
     local unit = QUI_GF.GetFrameUnit(frame)
     if not unit or not UnitExists(unit) then return end
     GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
@@ -748,6 +753,19 @@ local function HideUnitTooltip()
     if t then t:Cancel(); _state._tooltipTimer = nil end
     _state._tooltipPending = nil
     GameTooltip:Hide()
+end
+
+-- Combat start: drop a group-frame tooltip that is already open (or pending)
+-- when the owning frame's profile asks for tooltips to stay hidden in combat.
+function _state.HideUnitTooltipOnCombatStart()
+    local pending = _state._tooltipPending
+    local owner = GameTooltip:IsShown() and GameTooltip:GetOwner() or nil
+    local frame = pending or owner
+    if not frame or not QUI_GF.GetFrameUnit(frame) then return end
+    local general = GetGeneralSettings(frame._isRaid)
+    if general and general.hideTooltipsInCombat == true then
+        HideUnitTooltip()
+    end
 end
 
 local function GetHealthBarColor(unit, isRaid)
@@ -2091,7 +2109,7 @@ local function DecorateGroupFrame(frame)
 
         frame:HookScript("OnEnter", function(self)
             local general = GetGeneralSettings(self._isRaid)
-            if not general or general.showTooltips == false then return end
+            if _state.TooltipsSuppressed(general) then return end
             _state._tooltipPending = self
             if _state._tooltipTimer then return end
             _state._tooltipTimer = C_Timer.NewTimer(0.10, function()
@@ -4700,6 +4718,7 @@ local function OnEvent(self, event, arg1, ...)
         _state.EnsureCombatVisibleRoots()
         wipe(_range.cache)
         wipe(_range.cacheTime)
+        _state.HideUnitTooltipOnCombatStart()
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         wipe(_range.cache)
