@@ -788,7 +788,7 @@ local function PlayerSpecID()
     return nil
 end
 
-function AD.PassesLoad(display)
+function AD.PassesLoad(display, ignoreEncounter)
     local load = type(display) == "table" and display.load or nil
     if type(load) ~= "table" then return true end
 
@@ -804,7 +804,7 @@ function AD.PassesLoad(display)
         local role = PlayerRoleToken()
         if not role or load.roles[role] ~= true then return false end
     end
-    if AD.HasEncounterLoadConditions(display) then
+    if not ignoreEncounter and AD.HasEncounterLoadConditions(display) then
         if not activeEncounter or load.encounters[activeEncounter] ~= true then return false end
     end
     return true
@@ -815,11 +815,11 @@ function AD.HasEncounterLoadConditions(display)
     return type(load) == "table" and not SetIsEmpty(load.encounters)
 end
 
-function AD.DisplayActive(display)
+function AD.DisplayActive(display, ignoreEncounter)
     if type(display) ~= "table" then return false end
     if display.enabled == false then return false end
     if not AD.GroupEnabled(display.group) then return false end
-    if not AD.PassesLoad(display) then return false end
+    if not AD.PassesLoad(display, ignoreEncounter) then return false end
     return AD.ResolveUnit(display) ~= nil
 end
 
@@ -1565,23 +1565,27 @@ ApplyDisplay = function(display, allowCreate)
         local specID = H and type(H.GetCurrentSpecID) == "function" and H.GetCurrentSpecID() or nil
         activeElements = E.ActiveElementsForSpec(display.auras, specID)
     end
-    local elements = unit and activeElements or EMPTY
+    local preparedUnit = unit
+    if not preparedUnit and AD.HasEncounterLoadConditions(display) and AD.DisplayActive(display, true) then
+        preparedUnit = AD.ResolveUnit(display)
+    end
+    local elements = preparedUnit and activeElements or EMPTY
 
     local layout = BuildDisplayLayout(display, activeElements)
     host._naturalW, host._naturalH = layout.width, layout.height
     host:SetSize(layout.width, layout.height)
 
     local skipElement
-    local Slots = unit and ns.AuraSlots
+    local Slots = preparedUnit and ns.AuraSlots
     if Slots and type(Slots.LivePolarityMismatch) == "function" then
         skipElement = function(element)
             if element.mode ~= "tracked" then return false end
-            return Slots.LivePolarityMismatch(unit, element.auraType or "HELPFUL")
+            return Slots.LivePolarityMismatch(preparedUnit, element.auraType or "HELPFUL")
         end
     end
 
     AuraSurface.ApplyElementPass(host, elements, {
-        unit = unit or "player",
+        unit = preparedUnit or "player",
         allowCreate = allowCreate == true and not InCombatLockdown(),
         cancelEligible = false,
         profileFor = DisplayElementProfile,
@@ -1656,7 +1660,7 @@ local PACK_FLOW = {
 }
 
 local function PackableElement(display, specID)
-    if not E or not AD.DisplayActive(display) then return nil end
+    if not E or not AD.DisplayActive(display) or AD.HasEncounterLoadConditions(display) then return nil end
     if type(display.auras) ~= "table" then return nil end
     local elements = E.ActiveElementsForSpec(display.auras, specID)
     local found
@@ -1882,7 +1886,7 @@ function AD.ReflowGroups(displays)
 
         local groupDisplays = buckets[groupName]
         local packAllowed = group.dynamicLayout == true and not previewActive
-            and not layoutActive and not GroupPreviewRelated(groupName)
+            and not layoutActive and not PreviewBoxMode(groupName)
         local pack = (packAllowed and groupDisplays) and BuildPack(groupHost, group, groupDisplays) or nil
         if not pack and groupHost._quiPackContainer then
             ParkPackContainer(groupHost._quiPackContainer)
@@ -1902,7 +1906,7 @@ function AD.ReflowGroups(displays)
                         host._quiGroupPacked = true
                         host:Hide()
                     end
-                elseif host and (forcePreview or AD.DisplayActive(display)) then
+                elseif host and (forcePreview or AD.DisplayActive(display, true)) then
                     memberSpecs[#memberSpecs + 1] = {
                         id = display.id,
                         display = display,
