@@ -286,7 +286,7 @@ function CreateExtraButtonHolder(buttonType, displayName)
     mover:SetFrameStrata("HIGH")
     mover:Hide()
 
-    local text = mover:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local text = mover:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     text:SetPoint("CENTER")
     text:SetText(displayName)
     mover.text = text

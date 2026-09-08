@@ -1170,7 +1170,7 @@ local function CreateHuntPanel()
     else
         panel.title:SetFont(Helpers.GetGeneralFont(), 12, Helpers.GetGeneralFontOutline())
     end
-    panel.title:SetTextColor(1, 0.82, 0)
+    panel.title:SetTextColor(1, 1, 1)
     panel.title:SetText(ns.L["Available Hunts"])
 
     panel.lines = {}

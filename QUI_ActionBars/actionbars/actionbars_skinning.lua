@@ -655,6 +655,7 @@ FadeHideEffects = function(button, state)
             cooldown:HookScript("OnShow", function(self)
                 local st = GetFrameState(button)
                 if st and st.fadeHidden then
+                    st._fhCooldownFrameShown = true
                     self:Hide()
                 end
             end)

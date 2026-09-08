@@ -1,3 +1,4 @@
+-- luacheck: read globals MoneyInputFrame_GetCopper MoneyInputFrame_ResetMoney
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
 local UIKit = ns.UIKit
@@ -89,31 +90,24 @@ end
 
 function Chassis.ShowMoneyPopup(key, kind, onAccept)
     local depositing = (kind == "deposit")
+    local function submit(dialog)
+        local amount = MoneyInputFrame_GetCopper(dialog.MoneyInputFrame)
+        if amount > 0 then onAccept(depositing, amount) end
+    end
+    StaticPopup_Hide(key)
     StaticPopupDialogs[key] = {
         text = depositing and ns.L["Deposit gold:"] or ns.L["Withdraw gold:"],
         button1 = ACCEPT,
         button2 = CANCEL,
-        hasEditBox = true,
-        maxLetters = 10,
-        OnShow = function(self)
-            local box = self.editBox or self.EditBox
-            if box then box:SetText("") end
-        end,
-        OnAccept = function(self)
-            local box = self.editBox or self.EditBox
-            local text = box and box:GetText() or ""
-            if not text:match("^%d+$") then return end
-            local gold = tonumber(text)
-            if not gold then return end
-            gold = math.floor(gold)
-            if gold <= 0 then return end
-            onAccept(depositing, gold * 10000)
+        hasMoneyInputFrame = true,
+        OnAccept = submit,
+        OnHide = function(self)
+            MoneyInputFrame_ResetMoney(self.MoneyInputFrame)
         end,
         EditBoxOnEnterPressed = function(box)
-            StaticPopup_OnClick(box:GetParent(), 1)
-        end,
-        EditBoxOnEscapePressed = function(box)
-            box:GetParent():Hide()
+            local dialog = box:GetParent():GetParent()
+            submit(dialog)
+            dialog:Hide()
         end,
         timeout = 0,
         whileDead = true,
@@ -220,16 +214,15 @@ function Chassis.CreateWindow(opts)
     win._title:SetPoint("LEFT", PAD, 0)
     win._title:SetText(opts.title or "")
 
-    local close = CreateFrame("Button", nil, header)
-    close:SetSize(HEADER_H - 8, HEADER_H - 8)
-    close:SetPoint("RIGHT", -6, 0)
-    win._closeText = close:CreateFontString(nil, "ARTWORK")
-    win._closeText:SetPoint("CENTER", 0, 0)
-    CJKFont(win._closeText, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
-    win._closeText:SetText("X")
-    close:SetScript("OnClick", function()
-        if opts.onUserClose then opts.onUserClose() else win:Hide() end
-    end)
+    local close = UIKit.CreateCloseButton(header, {
+        size = HEADER_H - 8,
+        point = "RIGHT",
+        x = -6,
+        onClick = function()
+            if opts.onUserClose then opts.onUserClose() else win:Hide() end
+        end,
+    })
+    win._closeText = close.text
     win._close = close
 
     local search = CreateFrame("EditBox", nil, header)

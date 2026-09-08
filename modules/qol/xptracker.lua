@@ -222,7 +222,7 @@ local function CreateFrame_XPTracker()
 
     local headerRight = detailsFrame:CreateFontString(nil, "OVERLAY")
     CJKFont(headerRight, fontPath, headerFontSize, fontOutline)
-    headerRight:SetTextColor(1.0, 0.82, 0.0, 1)
+    headerRight:SetTextColor(1, 1, 1, 1)
     headerRight:SetPoint("TOPRIGHT", detailsFrame, "TOPRIGHT", -6, -5)
     headerRight:SetText(ns.L["Level 1"])
     frame.headerRight = headerRight

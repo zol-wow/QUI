@@ -206,7 +206,7 @@ local function CreateBlizzardSettingsPanel()
     local panel = CreateFrame("Frame", "QUI_BlizzardSettingsPanel")
     panel.name = "QUI"
 
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("QUI")
 
@@ -644,10 +644,32 @@ function QUI:OnEnable()
 end
 
 function QUI:RegisterOptionalPullAlias()
+    if self.pullAliasOwned then
+        return true
+    end
+
+    for addonName in pairs(PULL_COMMAND_OWNERS) do
+        if IsAddonLoaded(addonName) then
+            return false
+        end
+    end
+
     local existingOwner = hash_SlashCmdList and hash_SlashCmdList["/PULL"]
     if existingOwner then
         self.pullAliasOwned = false
         return false
+    end
+
+    for key in pairs(SlashCmdList) do
+        local index = 1
+        local alias = _G["SLASH_" .. key .. index]
+        while alias do
+            if string.upper(alias) == "/PULL" then
+                return false
+            end
+            index = index + 1
+            alias = _G["SLASH_" .. key .. index]
+        end
     end
 
     SlashCmdList[QUI_PULL_SLASH_KEY] = function(msg)
@@ -663,11 +685,11 @@ function QUI:UnregisterOptionalPullAlias()
         return
     end
 
-    SlashCmdList[QUI_PULL_SLASH_KEY] = nil
-    _G["SLASH_" .. QUI_PULL_SLASH_KEY .. "1"] = nil
-    if hash_SlashCmdList then
+    if hash_SlashCmdList and hash_SlashCmdList["/PULL"] == SlashCmdList[QUI_PULL_SLASH_KEY] then
         hash_SlashCmdList["/PULL"] = nil
     end
+    SlashCmdList[QUI_PULL_SLASH_KEY] = nil
+    _G["SLASH_" .. QUI_PULL_SLASH_KEY .. "1"] = nil
     self.pullAliasOwned = false
 end
 

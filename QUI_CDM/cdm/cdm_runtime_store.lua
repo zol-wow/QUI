@@ -100,6 +100,9 @@ local function SetFrameState(frame, state, fallbackContainer, frameKind)
     target.frameKind = frameKind
     target.frame = frame
     _version = _version + 1
+    if ns.CDMAlerts and ns.CDMAlerts.OnStateChanged then
+        ns.CDMAlerts.OnStateChanged(frame, target)
+    end
     return target
 end
 
@@ -122,6 +125,7 @@ end
 function CDMRuntimeStore.ClearFrame(frame)
     if not frame then return end
     frame._cdmRuntimeState = nil
+    frame._quiAlertState = nil
     _version = _version + 1
 end
 

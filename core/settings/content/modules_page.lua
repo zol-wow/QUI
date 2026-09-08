@@ -17,13 +17,6 @@ local BOTTOM_PADDING  = 20
 
 local CONTENT_TOP_Y   = -32
 
-local function GetAccent()
-    if C and C.accent then
-        return C.accent[1], C.accent[2], C.accent[3]
-    end
-    return 0.204, 0.827, 0.6
-end
-
 local function CollectVisibleModules()
     local groups     = {}
     local groupOrder = {}
@@ -154,17 +147,15 @@ local function CreateModuleTogglePill(parent, featureId, entry)
 
     btn:SetScript("OnEnter", function(self)
         if self._isLocked then
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(ns.L["Cannot change during combat — leave combat to toggle."], 1, 1, 1, 1, true)
-            GameTooltip:Show()
+            GUI.Tooltip:Show(self, ns.L["Cannot change during combat — leave combat to toggle."], { anchor = "TOP" })
             return
         end
         isHovered = true
         ApplyVisual()
     end)
 
-    btn:SetScript("OnLeave", function()
-        GameTooltip:Hide()
+    btn:SetScript("OnLeave", function(self)
+        GUI.Tooltip:Hide(false, self)
         isHovered = false
         ApplyVisual()
     end)
@@ -215,14 +206,10 @@ local function BuildModuleCell(parent, item)
     if entry.caption and entry.caption ~= "" then
         cell:EnableMouse(true)
         cell:SetScript("OnEnter", function(self)
-            local ar, ag, ab = GetAccent()
-            GameTooltip:SetOwner(self, "ANCHOR_TOP")
-            GameTooltip:SetText(label, ar, ag, ab, 1, true)
-            GameTooltip:AddLine(entry.caption, 0.85, 0.85, 0.85, true)
-            GameTooltip:Show()
+            GUI.Tooltip:Show(self, entry.caption, { title = label, anchor = "TOP" })
         end)
-        cell:SetScript("OnLeave", function()
-            GameTooltip:Hide()
+        cell:SetScript("OnLeave", function(self)
+            GUI.Tooltip:Hide(false, self)
         end)
     end
 

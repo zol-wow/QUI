@@ -8,67 +8,7 @@ local function IsCDMRuntimeEnabled()
     return not Shared or Shared.IsRuntimeEnabled()
 end
 
-local cooldownViewerCVarFrame = CreateFrame("Frame")
-cooldownViewerCVarFrame.dataEverLoaded = false
-cooldownViewerCVarFrame:RegisterEvent("VARIABLES_LOADED")
-cooldownViewerCVarFrame:RegisterEvent("COOLDOWN_VIEWER_DATA_LOADED")
-
-local function IsCooldownViewerCVarEnabled()
-    if GetCVarBool then
-        local value = GetCVarBool("cooldownViewerEnabled")
-        if value ~= nil then
-            return value and true or false
-        end
-    end
-
-    if GetCVar then
-        local value = GetCVar("cooldownViewerEnabled")
-        return tostring(value) == "1"
-    end
-
-    return nil
-end
-
-local function SyncCooldownViewerCVarToMasterToggle()
-    local target = 1
-    local current = IsCooldownViewerCVarEnabled()
-    if current ~= nil and ((target == 0 and current == false) or (target == 1 and current == true)) then
-        return true
-    end
-
-    local dataLoaded = cooldownViewerCVarFrame.dataEverLoaded
-    if not dataLoaded then
-        local catalog = ns.CDMCatalog
-        if catalog and catalog.IsCooldownViewerReady and catalog.IsCooldownViewerReady() then
-            cooldownViewerCVarFrame.dataEverLoaded = true
-            dataLoaded = true
-        end
-    end
-    if dataLoaded then
-        return false
-    end
-
-    if SetCVar then
-        SetCVar("cooldownViewerEnabled", target)
-    end
-
-    return true
-end
-
-cooldownViewerCVarFrame:SetScript("OnEvent", function(self, event)
-    if event == "COOLDOWN_VIEWER_DATA_LOADED" then
-        self.dataEverLoaded = true
-        self:UnregisterEvent("COOLDOWN_VIEWER_DATA_LOADED")
-        return
-    end
-    if event == "VARIABLES_LOADED" then
-        self:UnregisterEvent("VARIABLES_LOADED")
-        SyncCooldownViewerCVarToMasterToggle()
-    end
-end)
-
 local CDMSpellData = {}
-CDMSpellData.SyncCooldownViewerCVar = SyncCooldownViewerCVarToMasterToggle
 
 CDMSpellData._cdmCooldownLearnedPreferred = {}
 
@@ -649,7 +589,6 @@ RegisterAuraCaptureFrame()
 
 function CDMSpellData:DisableRuntime()
     initialized = false
-    cooldownViewerCVarFrame:UnregisterAllEvents()
     auraCaptureFrame:UnregisterAllEvents()
     auraCaptureFrame:SetScript("OnEvent", nil)
     if runtimeEventFrame then
@@ -1905,6 +1844,7 @@ local function ResolveOwnedEntry(entry, containerKey, index)
         type = entry.type,
         id = entry.id,
         source = entry.source,
+        quiAlerts = entry.quiAlerts,
     }
 
     if entry.type == "spell" then
@@ -2429,9 +2369,12 @@ local function LearnedCatalogSignature()
 end
 
 local function RunReconcileSequence(guardUnchanged)
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("reconcile entry") end
     local restored = CDMSpellData:CheckAllDormantSpells()
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("dormant spells checked") end
     local before = guardUnchanged and LearnedCatalogSignature() or nil
     CDMSpellData:ReconcileAllContainers()
+    if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("catalog reconciled") end
     if guardUnchanged and not restored and before == LearnedCatalogSignature() then
         return
     end
@@ -2592,6 +2535,9 @@ local function CloneEntry(entry)
     if type(entry) ~= "table" then return entry end
     local out = {}
     for k, v in pairs(entry) do out[k] = v end
+    if type(entry.quiAlerts) == "table" then
+        out.quiAlerts = CopyTable(entry.quiAlerts)
+    end
     return out
 end
 
@@ -3553,6 +3499,7 @@ function CDMSpellData:Initialize()
     eventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
     eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
     eventFrame:SetScript("OnEvent", function(self, event, arg)
+        if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("spelldata event entry: " .. event) end
         if not IsCDMRuntimeEnabled() then
             self:UnregisterAllEvents()
             return

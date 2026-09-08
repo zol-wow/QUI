@@ -474,6 +474,11 @@ function SetOwnedBarAlpha(barKey, alpha)
     local container = ActionBarsOwned.containers[barKey]
     if not container then return end
 
+    GetOwnedBarFadeState(barKey).requestedAlpha = alpha
+    if barKey == "bar1" and SecureCmdOptionParse("[possessbar] show") == "show" then
+        alpha = 1
+    end
+
     local buttons = ActionBarsOwned.nativeButtons[barKey]
 
     container:SetAlpha(alpha)

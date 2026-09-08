@@ -59,10 +59,23 @@ function S.ApplyElementPass(host, elements, opts)
             local profile = opts.profileFor(element)
             opts.anchorContainer(container, host, element, profile)
             local skipped = opts.skip and opts.skip(element)
+            local dynamic = type(AuraSlots.UsesDynamicGroups) == "function"
+                and AuraSlots.UsesDynamicGroups(element)
             if skipped then
                 if element.mode == "tracked" then AuraSlots.Park(container) end
                 container:SetEnabled(false)
                 container:Hide()
+            elseif element.mode == "tracked" and dynamic then
+                -- Packed tracked icons ride Blizzard aura groups (one per
+                -- spell) so hidden auras leave no gap; any slots from an
+                -- earlier fixed-layout pass are parked.
+                local groups = AuraSlots.DynamicGroups(container, element, profile)
+                if not AuraGlue.RunConfigPass(container, profile, groups, allowCreate) then
+                    incomplete = true
+                end
+                AuraSlots.Park(container)
+                container:SetEnabled(true)
+                container:Show()
             elseif element.mode == "tracked" then
                 if not AuraGlue.RunConfigPass(container, profile, {}, allowCreate) then
                     incomplete = true
@@ -84,7 +97,7 @@ function S.ApplyElementPass(host, elements, opts)
 
             if inactivePool then
                 local inactiveContainer = inactivePool[i]
-                local inactiveEligible = element.mode == "tracked"
+                local inactiveEligible = element.mode == "tracked" and not dynamic
                     and (element.displayType == nil or element.displayType == "icon")
                 local wantInactive = inactiveEligible and not skipped and opts.showInactive == true
                 if wantInactive and not inactiveContainer then

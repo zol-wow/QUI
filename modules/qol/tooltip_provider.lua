@@ -184,6 +184,9 @@ function TooltipProvider:IsOwnerFadedOut(owner)
     if Helpers.IsSecretValue(alpha) then
         return false -- @secret-policy: treat-unknown-alpha-as-visible
     end
+    if owner._quiDecorated then
+        return (tonumber(alpha) or 1) <= 0
+    end
     return (tonumber(alpha) or 1) < FADED_ALPHA_THRESHOLD
 end
 

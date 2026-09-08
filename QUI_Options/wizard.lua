@@ -2,6 +2,7 @@ local ADDON_NAME, ns = ...
 local QUI = QUI
 local L = ns.L
 local Helpers = ns.Helpers
+local UIKit = ns.UIKit
 
 local Wizard = { applied = {} }
 ns.QUI_SetupWizard = Wizard
@@ -286,7 +287,7 @@ PAGES = {
                 if _G.QUI_RefreshNCDM then _G.QUI_RefreshNCDM() end
                 MarkApplied(L["Feature toggles adjusted"])
             end), body, sy)
-            sy = AddText(body, L["QUI's cooldown tracking built on Blizzard's Cooldown Manager. Blizzard's viewer setting syncs automatically."], sy, 11)
+            sy = AddText(body, L["QUI's cooldown tracking uses Blizzard's Cooldown Manager. If the viewer layout needs changes, QUI shows the required Edit Mode steps without editing Blizzard's layout."], sy, 11)
 
             profile.actionBars = profile.actionBars or {}
             profile.actionBars.fade = profile.actionBars.fade or {}
@@ -428,10 +429,13 @@ local function EnsureFrame()
     frame.progress = GUI:CreateLabel(frame, "", 12, C.text)
     frame.progress:SetPoint("TOPRIGHT", -44, -18)
 
-    local closeBtn = GUI:CreateButton(frame, "X", 22, 22, function()
-        Wizard:Hide()
-    end)
-    closeBtn:SetPoint("TOPRIGHT", -12, -12)
+    UIKit.CreateCloseButton(frame, {
+        size = 22,
+        point = "TOPRIGHT",
+        x = -12,
+        y = -12,
+        onClick = function() Wizard:Hide() end,
+    })
 
     bodyHost = CreateFrame("Frame", nil, frame)
     bodyHost:SetPoint("TOPLEFT", 20, -48)

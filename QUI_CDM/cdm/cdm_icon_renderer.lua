@@ -2842,10 +2842,9 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
             ReapplySwipeStyle(icon.Cooldown, icon)
         end
 
-        if _resolverRuntimePolicy.IsRealCooldownDurationMode(resolvedMode) and icon._usabilityTinted then
+        if realCooldownActive and icon._usabilityTinted then
             icon.Icon:SetVertexColor(1, 1, 1, 1)
             icon._usabilityTinted = nil
-            icon._lastVisualState = nil
         end
     end
 
@@ -3152,6 +3151,7 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         _isCustomEntry = true,
         _sourceSpecID = entry._sourceSpecID,
         source = entry.source,
+        quiAlerts = entry.quiAlerts,
         linkedSpellID = entry.linkedSpellID,
         linkedSpellIDs = entry.linkedSpellIDs,
         _selfAura = selfAura,
@@ -3182,6 +3182,7 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         end
     end
     local managedAuraRoute = isAuraEntry
+        and not (ns.CDMAlerts and ns.CDMAlerts.HasEnabled and ns.CDMAlerts.HasEnabled(spellEntry))
         and auraRuns
         and auraRuns.ShouldUseSettings(settings, viewerType)
         and auraRuns.ResolveRoute

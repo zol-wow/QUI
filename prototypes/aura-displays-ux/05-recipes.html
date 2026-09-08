@@ -1,0 +1,1169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QUI · Aura Displays UX — Approach 5/5: Intent Interview</title>
+<style>
+  :root{
+    --bg:#0a0c10; --surface:#12151c; --panel:#1a1e28; --inset:#141822;
+    --border:#2a3040; --text:#e6e9f0; --muted:#8b93a7; --gold:#e8c15a;
+    --ok:#7ac37a; --danger:#e06c6c; --info:#6cb2e0; --r:8px;
+    --monk:#00FF98; --mage:#3FC7EB; --warrior:#C69B6D;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-size:15px; line-height:1.5; overflow:hidden;
+  }
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.92em;}
+
+  /* ---------- deck chrome ---------- */
+  .caption{
+    position:fixed; top:14px; left:18px; z-index:50;
+    font-size:12px; color:var(--muted); letter-spacing:.02em;
+  }
+  .caption b{color:var(--gold); font-weight:600;}
+  .navzone{
+    position:fixed; bottom:16px; right:18px; z-index:50;
+    display:flex; align-items:center; gap:12px;
+  }
+  .dots{display:flex; gap:6px;}
+  .dot{
+    width:9px; height:9px; border-radius:50%; background:var(--border);
+    cursor:pointer; border:none; padding:0; transition:background .15s, transform .15s;
+  }
+  .dot:hover{background:var(--muted);}
+  .dot.on{background:var(--gold); transform:scale(1.25);}
+  .navbtn{
+    background:var(--panel); color:var(--text); border:1px solid var(--border);
+    border-radius:var(--r); width:34px; height:30px; cursor:pointer; font-size:14px;
+  }
+  .navbtn:hover{border-color:var(--gold); color:var(--gold);}
+
+  .harness{
+    position:fixed; bottom:14px; left:50%; transform:translateX(-50%); z-index:60;
+    background:#e9ecf3; color:#12151c; border-radius:999px;
+    box-shadow:0 6px 24px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.15);
+    padding:7px 16px; font-size:12.5px; font-weight:600;
+    display:flex; align-items:center; gap:10px; white-space:nowrap;
+  }
+  .harness a{color:#1a3f8f; text-decoration:none; padding:1px 4px; border-radius:5px;}
+  .harness a:hover{background:#c9d4ec;}
+  .harness .sep{color:#9aa2b5;}
+
+  /* ---------- slides ---------- */
+  .slide{
+    display:none; position:fixed; inset:0; padding:56px 56px 74px;
+    align-items:center; justify-content:center;
+  }
+  .slide.active{display:flex;}
+  .frame{
+    background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    width:min(1240px,100%); max-height:100%; overflow:auto;
+    padding:40px 48px; box-shadow:0 20px 60px rgba(0,0,0,.5);
+  }
+  h1{font-size:34px; line-height:1.2; font-weight:700;}
+  h2{font-size:24px; font-weight:700; margin-bottom:6px;}
+  h3{font-size:15px; font-weight:700;}
+  .kicker{color:var(--gold); font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; margin-bottom:10px;}
+  .sub{color:var(--muted); margin-bottom:22px; max-width:900px;}
+  .lead{font-size:17px; color:var(--text); max-width:820px;}
+  .muted{color:var(--muted);}
+  .gold{color:var(--gold);}
+  .small{font-size:12.5px;}
+  .hint{color:var(--gold); font-size:12.5px; margin-top:10px;}
+
+  .cols{display:flex; gap:22px; align-items:stretch;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:18px;}
+  .grid3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px;}
+
+  .card{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--r);
+    padding:16px 18px;
+  }
+  .card h3{margin-bottom:6px;}
+  .card p{font-size:13.5px; color:var(--muted);}
+
+  .stat{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--r);
+    padding:14px 16px; text-align:left;
+  }
+  .stat .n{font-size:26px; font-weight:700; color:var(--danger);}
+  .stat .l{font-size:12.5px; color:var(--muted); margin-top:2px;}
+
+  .tag{
+    display:inline-block; font-size:11px; font-weight:700; letter-spacing:.05em;
+    border-radius:5px; padding:1px 7px; vertical-align:middle;
+  }
+  .tag.gold{background:rgba(232,193,90,.14); color:var(--gold); border:1px solid rgba(232,193,90,.4);}
+  .tag.ok{background:rgba(122,195,122,.12); color:var(--ok); border:1px solid rgba(122,195,122,.35);}
+  .tag.bad{background:rgba(224,108,108,.12); color:var(--danger); border:1px solid rgba(224,108,108,.35);}
+  .tag.info{background:rgba(108,178,224,.12); color:var(--info); border:1px solid rgba(108,178,224,.35);}
+
+  ul.tight{margin-left:18px; font-size:13.5px;}
+  ul.tight li{margin-bottom:7px;}
+  ul.tight li::marker{color:var(--gold);}
+
+  /* ---------- mock options panel bits ---------- */
+  .mock{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--r);
+    overflow:hidden;
+  }
+  .mock-title{
+    background:var(--inset); border-bottom:1px solid var(--border);
+    padding:8px 14px; font-size:12px; font-weight:700; color:var(--muted);
+    letter-spacing:.06em; text-transform:uppercase; display:flex; justify-content:space-between; align-items:center;
+  }
+  .mock-body{padding:16px;}
+
+  .qtext{font-size:22px; font-weight:700; margin:6px 0 4px;}
+  .qsub{color:var(--muted); font-size:13.5px; margin-bottom:16px;}
+  .qpath{font-size:11.5px; color:var(--muted); letter-spacing:.03em;}
+  .qpath b{color:var(--gold); font-weight:600;}
+
+  .ans{
+    display:block; width:100%; text-align:left; cursor:pointer;
+    background:var(--inset); color:var(--text); border:1px solid var(--border);
+    border-radius:var(--r); padding:14px 16px; margin-bottom:10px; font-size:15.5px;
+    font-family:inherit; transition:border-color .12s, background .12s;
+  }
+  .ans:hover{border-color:var(--gold); background:#1a2030;}
+  .ans .d{display:block; font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .ans.picked{border-color:var(--gold); background:rgba(232,193,90,.08);}
+  .ans[disabled]{opacity:.45; cursor:default;}
+
+  .pane{display:none;}
+  .pane.on{display:block;}
+
+  .resetlink{
+    background:none; border:none; color:var(--muted); font-size:11.5px; cursor:pointer;
+    text-decoration:underline; font-family:inherit; letter-spacing:normal; text-transform:none;
+  }
+  .resetlink:hover{color:var(--gold);}
+
+  /* build sheet */
+  .sheet{background:var(--inset); border:1px solid var(--border); border-radius:var(--r); overflow:hidden; min-width:0;}
+  .sheet-title{
+    padding:9px 14px; border-bottom:1px solid var(--border); font-size:12px; font-weight:700;
+    color:var(--gold); letter-spacing:.08em; text-transform:uppercase;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .sheet-g{padding:8px 14px 4px; border-bottom:1px solid #1d2230;}
+  .sheet-g:last-child{border-bottom:none;}
+  .sheet-g .gt{font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px;}
+  .sline{
+    display:flex; justify-content:space-between; gap:10px; font-size:13px; padding:3px 0;
+    border-radius:5px;
+  }
+  .sline .k{color:var(--muted);}
+  .sline .v{text-align:right; font-weight:600;}
+  .sline.empty .v{color:#4a5163; font-weight:400; font-style:italic;}
+  .sline.new{animation:lineIn 1.4s ease-out;}
+  .sline .auto{font-size:10px; color:var(--info); font-weight:700; margin-left:5px; letter-spacing:.05em;}
+  .sline .warn{color:var(--danger);}
+  @keyframes lineIn{
+    0%{background:rgba(232,193,90,.35);}
+    100%{background:transparent;}
+  }
+
+  /* spell search */
+  .spellsearch{width:100%;}
+  .spellsearch input{
+    width:100%; background:var(--inset); border:1px solid var(--border); border-radius:var(--r);
+    color:var(--text); padding:11px 14px; font-size:15px; font-family:inherit; outline:none;
+  }
+  .spellsearch input:focus{border-color:var(--gold);}
+  .sugg{
+    display:none; margin-top:8px; width:100%; text-align:left; cursor:pointer;
+    background:var(--inset); border:1px solid var(--border); border-radius:var(--r);
+    padding:10px 14px; color:var(--text); font-family:inherit; font-size:14.5px;
+  }
+  .sugg.on{display:flex; align-items:center; gap:12px;}
+  .sugg:hover{border-color:var(--monk);}
+  .sicon{width:30px; height:30px; border-radius:6px; flex:none;
+    background:radial-gradient(circle at 30% 30%, #1f8f66, #0b3d2c); border:1px solid var(--monk);}
+
+  /* look cards */
+  .lookcards{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;}
+  .lookcard{
+    background:var(--inset); border:1px solid var(--border); border-radius:var(--r);
+    padding:14px; cursor:pointer; text-align:center; font-family:inherit; color:var(--text);
+  }
+  .lookcard:hover{border-color:var(--gold);}
+  .lookcard .demo{height:64px; display:flex; align-items:center; justify-content:center; margin-bottom:10px;}
+  .lookcard .lt{font-size:13.5px; font-weight:700;}
+  .lookcard .ld{font-size:11.5px; color:var(--muted);}
+  .demo-icon{
+    width:40px; height:40px; border-radius:6px; position:relative;
+    background:radial-gradient(circle at 30% 30%, #1f8f66, #0b3d2c); border:1px solid var(--monk);
+  }
+  .demo-icon .dur{position:absolute; inset:auto 0 -1px 0; text-align:center; font-size:12px; font-weight:700; color:#fff; text-shadow:0 1px 2px #000;}
+  .demo-icon .stk{position:absolute; right:1px; top:0; font-size:10px; font-weight:700; color:#fff; text-shadow:0 1px 2px #000;}
+  .demo-bar{width:120px; height:16px; border-radius:4px; background:var(--bg); border:1px solid var(--border); position:relative; overflow:hidden;}
+  .demo-bar .fill{position:absolute; inset:0; width:62%; background:linear-gradient(90deg,#0b7a52,#00c97a);}
+  .demo-bar .bl{position:absolute; inset:0; font-size:10px; line-height:15px; padding:0 5px; color:#fff; text-shadow:0 1px 2px #000; display:flex; justify-content:space-between;}
+  .demo-sq{width:14px; height:14px; border-radius:3px; background:var(--monk); box-shadow:0 0 8px rgba(0,255,152,.5);}
+
+  /* finish receipt */
+  .receipt .sline{padding:4px 0;}
+  .finishbtns{display:flex; gap:10px; margin-top:16px;}
+  .btn{
+    border-radius:var(--r); padding:9px 18px; font-size:14px; font-weight:700; cursor:pointer;
+    font-family:inherit; border:1px solid var(--border); background:var(--inset); color:var(--text);
+  }
+  .btn:hover{border-color:var(--gold);}
+  .btn.primary{background:var(--gold); color:#1a1405; border-color:var(--gold);}
+  .btn.primary:hover{filter:brightness(1.08);}
+
+  /* master/detail recipes mock */
+  .md{display:flex; min-height:380px;}
+  .md-list{width:190px; flex:none; background:var(--inset); border-right:1px solid var(--border); padding:8px;}
+  .md-item{padding:7px 10px; border-radius:6px; font-size:13px; color:var(--muted); cursor:default;}
+  .md-item.sel{background:rgba(232,193,90,.1); color:var(--text); border:1px solid rgba(232,193,90,.35);}
+  .md-detail{flex:1; padding:14px 16px; min-width:0;}
+  .dtabs{display:flex; gap:4px; border-bottom:1px solid var(--border); margin-bottom:12px;}
+  .dtab{padding:6px 14px; font-size:12.5px; color:var(--muted); border:1px solid transparent; border-bottom:none; border-radius:6px 6px 0 0;}
+  .dtab.on{color:var(--gold); background:var(--inset); border-color:var(--border);}
+  .setrow{display:flex; justify-content:space-between; align-items:center; padding:6px 4px; border-bottom:1px solid #1d2230; font-size:13px;}
+  .setrow .sk{color:var(--muted);}
+  .setrow .sv{font-weight:600;}
+  .setrow .sv.off{color:#4a5163;}
+  .setrow.flash{animation:lineIn 1.6s ease-out;}
+  .swatch{display:inline-block; width:12px; height:12px; border-radius:3px; background:var(--gold); vertical-align:-1px; margin-right:5px;}
+
+  .recipemenu{
+    display:none; position:absolute; right:0; top:36px; z-index:10; width:290px;
+    background:var(--inset); border:1px solid var(--gold); border-radius:var(--r);
+    box-shadow:0 12px 32px rgba(0,0,0,.6); overflow:hidden;
+  }
+  .recipemenu.on{display:block;}
+  .ritem{
+    display:block; width:100%; text-align:left; padding:10px 14px; cursor:pointer;
+    background:none; border:none; border-bottom:1px solid #1d2230; color:var(--text);
+    font-family:inherit; font-size:13.5px;
+  }
+  .ritem:last-child{border-bottom:none;}
+  .ritem:hover{background:#1a2030;}
+  .ritem .rd{display:block; font-size:11.5px; color:var(--muted);}
+  .ritem.nope{color:var(--muted);}
+  .ritem.nope .warnmark{color:var(--danger); font-weight:700;}
+
+  .diffbox{
+    display:none; margin-top:14px; background:var(--inset); border:1px solid var(--gold);
+    border-radius:var(--r); padding:14px 16px;
+  }
+  .diffbox.on{display:block;}
+  .diffrow{display:flex; gap:10px; font-size:13px; padding:4px 0; align-items:baseline;}
+  .diffrow .dk{color:var(--muted); width:170px; flex:none;}
+  .diffrow .old{color:var(--danger); text-decoration:line-through;}
+  .diffrow .arr{color:var(--muted);}
+  .diffrow .nu{color:var(--ok); font-weight:700;}
+  .toast{
+    display:none; margin-top:12px; font-size:13px; color:var(--ok);
+    background:rgba(122,195,122,.08); border:1px solid rgba(122,195,122,.35);
+    border-radius:var(--r); padding:8px 12px;
+  }
+  .toast.on{display:flex; justify-content:space-between; align-items:center;}
+  .explainbox{
+    display:none; margin-top:14px; background:rgba(224,108,108,.06); border:1px solid rgba(224,108,108,.4);
+    border-radius:var(--r); padding:12px 16px; font-size:13.5px;
+  }
+  .explainbox.on{display:block;}
+
+  /* ask the panel */
+  .askwrap input{
+    width:100%; background:var(--inset); border:1px solid var(--border); border-radius:var(--r);
+    color:var(--text); padding:12px 16px; font-size:15.5px; font-family:inherit; outline:none;
+  }
+  .askwrap input:focus{border-color:var(--gold);}
+  .chips{display:flex; gap:8px; margin-top:10px;}
+  .chip{
+    background:var(--inset); border:1px solid var(--border); border-radius:999px;
+    color:var(--muted); padding:4px 13px; font-size:12.5px; cursor:pointer; font-family:inherit;
+  }
+  .chip:hover{border-color:var(--gold); color:var(--gold);}
+  .askres{margin-top:16px;}
+  .askres .rescard{
+    background:var(--inset); border:1px solid var(--border); border-radius:var(--r);
+    padding:12px 16px; margin-bottom:10px; animation:lineIn 1.4s ease-out;
+  }
+  .rescard.recipehit{border-color:rgba(232,193,90,.5);}
+  .rescard .rk{font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin-bottom:3px;}
+  .rescard.recipehit .rk{color:var(--gold);}
+  .rescard .rk.setk{color:var(--info);}
+  .rescard .rt{font-size:14.5px; font-weight:700;}
+  .rescard .rb{font-size:12.5px; color:var(--muted); margin-top:2px;}
+
+  /* intent-gap diagram slide 2 */
+  .bubble{
+    background:var(--inset); border:1px solid var(--gold); border-radius:14px 14px 14px 4px;
+    padding:14px 18px; font-size:16.5px; font-style:italic; max-width:290px;
+  }
+  .maparrow{color:var(--gold); font-size:26px; align-self:center; flex:none;}
+  .settingchip{
+    background:var(--inset); border:1px solid var(--border); border-radius:6px;
+    padding:5px 10px; font-size:12.5px; margin:4px 0; display:block;
+  }
+  .settingchip b{color:var(--text); font-weight:600;}
+  .tabcol{background:var(--panel); border:1px solid var(--border); border-radius:var(--r); padding:12px 14px; flex:1;}
+  .tabcol .tct{font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gold); margin-bottom:6px;}
+
+  .flowrow{display:flex; gap:14px; align-items:stretch; margin:18px 0;}
+  .flowstep{flex:1; background:var(--panel); border:1px solid var(--border); border-radius:var(--r); padding:16px;}
+  .flowstep .fn{color:var(--gold); font-weight:700; font-size:12px; letter-spacing:.08em; text-transform:uppercase;}
+  .flowstep h3{margin:4px 0 6px;}
+  .flowstep p{font-size:13px; color:var(--muted);}
+  .flowarrow{align-self:center; color:var(--gold); font-size:22px; flex:none;}
+
+  .verdict{
+    border-left:4px solid var(--gold); background:rgba(232,193,90,.06);
+    padding:18px 24px; border-radius:0 var(--r) var(--r) 0; font-size:19px; margin:22px 0;
+  }
+  .footnote{font-size:12px; color:var(--muted); margin-top:14px;}
+  .classmonk{color:var(--monk);} .classmage{color:var(--mage);} .classwar{color:var(--warrior);}
+</style>
+</head>
+<body>
+
+<div class="caption">QUI · <b>Aura Displays UX</b> — Approach 5/5: Intent Interview</div>
+
+<!-- ============ SLIDE 1 · TITLE ============ -->
+<section class="slide" id="s1">
+  <div class="frame" style="text-align:center; padding:70px 60px;">
+    <div class="kicker">Approach 5 of 5 · Design pitch</div>
+    <h1 style="font-size:44px; margin-bottom:14px;">Intent Interview <span class="gold">+</span> Recipes</h1>
+    <p class="lead" style="margin:0 auto 26px;">Answer questions, learn the machine — <b>the interview shows its work.</b><br>
+    One plain-language question at a time on the left; a live “build sheet” of the <i>real settings</i> it configures on the right. The same engine powers one-click <b>recipes</b> that modify existing displays.</p>
+    <div style="display:flex; gap:14px; justify-content:center; margin-top:10px;">
+      <div class="card" style="width:230px;"><h3>Conversational</h3><p>One decision per screen. Branches on your answers — not a linear form.</p></div>
+      <div class="card" style="width:230px;"><h3>Transparent</h3><p>Every answer writes visible lines to the build sheet, grouped by the real tabs.</p></div>
+      <div class="card" style="width:230px;"><h3>Not just for creating</h3><p>Recipes apply intent-level changes to displays you already have.</p></div>
+    </div>
+    <p class="footnote">Navigate: ← / → arrow keys, dots bottom-right. Mock screens are clickable.</p>
+  </div>
+</section>
+
+<!-- ============ SLIDE 2 · PROBLEM ============ -->
+<section class="slide" id="s2">
+  <div class="frame">
+    <div class="kicker">The problem today</div>
+    <h2>One sentence of intent = six settings across two tabs</h2>
+    <p class="sub">Aura Displays (Auras tab → sub-tab 6) is powerful, but the surface area is brutal — and nothing maps <i>what the user wants</i> to <i>which controls express it</i>.</p>
+
+    <div class="grid3" style="margin-bottom:22px; grid-template-columns:1fr 1fr 1fr 1fr;">
+      <div class="stat"><div class="n">35–40</div><div class="l">controls facing a minimal new display</div></div>
+      <div class="stat"><div class="n">80–120</div><div class="l">widgets on a two-element display</div></div>
+      <div class="stat"><div class="n">~46</div><div class="l">form rows on a filter strip (70+ fully enabled)</div></div>
+      <div class="stat"><div class="n">16px</div><div class="l">quick-create default icon size, duration text off — <span class="mono">AD.DefaultBucket</span> exists but is unused</div></div>
+    </div>
+
+    <h3 style="margin-bottom:10px;">The intent gap, made visible</h3>
+    <div class="cols">
+      <div style="flex:none; display:flex; align-items:center;">
+        <div class="bubble">“Show my defensive when it’s active.”</div>
+      </div>
+      <div class="maparrow">⟶</div>
+      <div class="tabcol">
+        <div class="tct">General tab</div>
+        <span class="settingchip"><b>Name:</b> Defensive</span>
+        <span class="settingchip"><b>Unit:</b> Player <span class="muted">(1 of 23 options)</span></span>
+      </div>
+      <div class="tabcol">
+        <div class="tct">Auras tab</div>
+        <span class="settingchip"><b>Element:</b> TRACKED <span class="muted">(not STRIP)</span></span>
+        <span class="settingchip"><b>Tracked Spells:</b> <span class="mono classmonk">115203</span> Fortifying Brew</span>
+        <span class="settingchip"><b>Only My Cast:</b> On</span>
+        <span class="settingchip"><b>Display Type:</b> Icon · <b>Duration Text:</b> On</span>
+      </div>
+    </div>
+    <p class="footnote">Six decisions, two tabs, and the user must already know STRIP vs TRACKED, that Unit defaults matter, and where Duration Text lives. Nothing in the UI teaches this mapping. That gap — not any single control — is what keeps people on WeakAuras imports.</p>
+  </div>
+</section>
+
+<!-- ============ SLIDE 3 · CORE IDEA ============ -->
+<section class="slide" id="s3">
+  <div class="frame">
+    <div class="kicker">Core idea</div>
+    <h2>Interview → build sheet → recipes: one intent engine, three faces</h2>
+    <p class="sub">Turn plain language into real settings — and never hide the translation.</p>
+
+    <div class="flowrow">
+      <div class="flowstep">
+        <div class="fn">1 · Interview</div>
+        <h3>One question at a time, branching</h3>
+        <p>“What should this react to?” Three big answers. The next question depends on the last answer — a spell path and a category path are genuinely different conversations.</p>
+      </div>
+      <div class="flowarrow">→</div>
+      <div class="flowstep" style="border-color:rgba(232,193,90,.5);">
+        <div class="fn">2 · Build sheet (the hero)</div>
+        <h3>A live settings receipt</h3>
+        <p>Every answer appends real setting lines — <b>Tracked Spells: <span class="mono">115151</span></b>, <b>Icon Size: 32</b> — grouped under <b>General / Auras / Load Conditions</b>, the actual tab names. You learn where things live while answering.</p>
+      </div>
+      <div class="flowarrow">→</div>
+      <div class="flowstep">
+        <div class="fn">3 · Recipes</div>
+        <h3>Intent-level edits, forever</h3>
+        <p>The same engine runs in reverse on <i>existing</i> displays: “Glow when about to expire” → a confirm-diff of the 3 settings it will change. Value doesn’t end after creation.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Why this isn’t “a wizard with extra steps” (see Approach 1)</h3>
+      <ul class="tight" style="margin-top:8px;">
+        <li><b>Branching, not linear:</b> one decision per screen; the tree adapts. A linear form shows you fields you don’t need.</li>
+        <li><b>Teaching, not hiding:</b> the build sheet exposes the model. Wizard users stay wizard users; interview users graduate to the full editor.</li>
+        <li><b>A modification tool, not just a creator:</b> recipes work on any existing display — including ones the interview never touched.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 4 · INTERVIEW Q1/Q2 (branching) ============ -->
+<section class="slide" id="s4">
+  <div class="frame">
+    <div class="kicker">Walkthrough 1/5 · The interview begins</div>
+    <h2>Q1 branches for real — try all three answers</h2>
+    <p class="sub">Left: the question. Right: the build sheet filling in as you answer. <span class="hint">↳ click an answer</span></p>
+    <div class="cols">
+      <div style="flex:2; min-width:0;">
+        <div class="mock">
+          <div class="mock-title"><span>New Aura Display — Interview</span><button class="resetlink" onclick="iv4Reset()">restart</button></div>
+          <div class="mock-body">
+            <!-- Q1 -->
+            <div class="pane on" id="s4q1">
+              <div class="qpath">Question <b>1</b></div>
+              <div class="qtext">What should this react to?</div>
+              <div class="qsub">Pick the closest — you can refine everything later in the editor.</div>
+              <button class="ans" onclick="iv4Pick('spell')">A specific spell or proc<span class="d">e.g. my Renewing Mist, a trinket proc, a defensive</span></button>
+              <button class="ans" onclick="iv4Pick('cat')">A whole category of auras<span class="d">e.g. everything I can dispel, boss debuffs</span></button>
+              <button class="ans" onclick="iv4Pick('unit')">Something on another player<span class="d">e.g. my co-tank’s cooldowns, party member debuffs</span></button>
+            </div>
+            <!-- Q2: spell search -->
+            <div class="pane" id="s4q2spell">
+              <div class="qpath">Q1: <b>specific spell</b> → Question <b>2</b></div>
+              <div class="qtext">Which spell?</div>
+              <div class="qsub">Search by name — the interview stores the spell ID for you.</div>
+              <div class="spellsearch">
+                <input type="text" id="s4search" placeholder="Type a spell name…" autocomplete="off" oninput="iv4Search(this.value)">
+                <button class="sugg" id="s4sugg" onclick="iv4PickSpell()">
+                  <span class="sicon"></span>
+                  <span><b class="classmonk">Renewing Mist</b> <span class="mono muted">115151</span><br><span class="small muted">Monk · Mistweaver — a buff you cast (helpful)</span></span>
+                </button>
+              </div>
+              <p class="hint">↳ try typing <b>ren</b>, then click the suggestion</p>
+            </div>
+            <!-- Q2': category -->
+            <div class="pane" id="s4q2cat">
+              <div class="qpath">Q1: <b>category</b> → Question <b>2</b></div>
+              <div class="qtext">Which auras?</div>
+              <div class="qsub">Categories become a filter <b>STRIP</b> element — one strip shows many auras at once.</div>
+              <button class="ans" onclick="iv4Cat('dispel')">Ones I can dispel<span class="d">→ What to Show: Dispellable by me</span></button>
+              <button class="ans" onclick="iv4Cat('boss')">Boss debuffs on me<span class="d">→ What to Show: Boss debuffs</span></button>
+              <button class="ans" onclick="iv4Cat('mine')">My own short buffs<span class="d">→ What to Show: Only my auras, Hide Permanent</span></button>
+            </div>
+            <!-- Q1c: other player -->
+            <div class="pane" id="s4q2unit">
+              <div class="qpath">Q1: <b>another player</b></div>
+              <div class="qtext">Whose auras?</div>
+              <div class="qsub">This sets <b>General → Unit</b> (23 options: Player, Target, Focus, Boss 1–5, Party 1–4, Co-Tank, Specific player…). Then the interview rejoins the spell/category fork.</div>
+              <button class="ans" onclick="iv4Unit('Co-Tank')">My co-tank<span class="d">→ Unit: Co-Tank</span></button>
+              <button class="ans" onclick="iv4Unit('Party 1')">A party member<span class="d">→ Unit: Party 1–4</span></button>
+              <button class="ans" onclick="iv4Unit('Specific player')">A specific player by name<span class="d">→ Unit: Specific player…</span></button>
+            </div>
+            <!-- done note -->
+            <div class="pane" id="s4done">
+              <div class="qpath" id="s4donepath"></div>
+              <div class="qtext" style="font-size:18px;">✓ Noted — next question would follow.</div>
+              <div class="qsub" id="s4donetext"></div>
+              <p class="small muted">The full spell path continues on the next slide. Hit <b>restart</b> (top right) to explore another branch.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1; min-width:250px;">
+        <div class="sheet" id="sheet4">
+          <div class="sheet-title"><span>Build sheet</span><span class="small" style="letter-spacing:normal; text-transform:none; color:var(--muted); font-weight:400;">what your answers set</span></div>
+          <div class="sheet-g"><div class="gt">General</div><div id="sh4-gen"><div class="sline empty"><span class="k">Name</span><span class="v">—</span></div><div class="sline empty"><span class="k">Unit</span><span class="v">Player (default)</span></div></div></div>
+          <div class="sheet-g"><div class="gt">Auras</div><div id="sh4-aur"><div class="sline empty"><span class="k">Element</span><span class="v">— nothing yet</span></div></div></div>
+          <div class="sheet-g"><div class="gt">Load Conditions</div><div id="sh4-load"><div class="sline empty"><span class="k">(empty = always loads)</span><span class="v"></span></div></div></div>
+        </div>
+        <p class="footnote">Grouped under the real tab names — the sheet doubles as a map of the editor.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 5 · INTERVIEW Q3/Q4 ============ -->
+<section class="slide" id="s5">
+  <div class="frame">
+    <div class="kicker">Walkthrough 2/5 · Spell path continues</div>
+    <h2>State, then look — one decision per screen</h2>
+    <p class="sub">Continuing the <b class="classmonk">Renewing Mist</b> branch from the previous slide. <span class="hint">↳ answer Q3, then Q4 appears</span></p>
+    <div class="cols">
+      <div style="flex:2; min-width:0;">
+        <div class="mock">
+          <div class="mock-title"><span>New Aura Display — Interview</span><button class="resetlink" onclick="iv5Reset()">restart</button></div>
+          <div class="mock-body">
+            <div class="pane on" id="s5q3">
+              <div class="qpath">Q1: spell → Q2: <b class="classmonk">Renewing Mist</b> → Question <b>3</b></div>
+              <div class="qtext">Show it when it’s active, or when it’s missing?</div>
+              <div class="qsub">“Active” tracks the buff’s remaining time. “Missing” alerts you when it’s <i>not</i> up.</div>
+              <button class="ans" onclick="iv5State('active')">When it’s active<span class="d">icon/bar appears while the buff is running</span></button>
+              <button class="ans" onclick="iv5State('missing')">When it’s missing<span class="d">inverse display — appears only when the buff is absent</span></button>
+              <p class="small muted" id="s5warn" style="display:none; margin-top:6px;">⚠ <span class="warn" style="color:var(--danger);">Honesty note:</span> “missing” needs an inverse-display mode the engine may not have yet — see slide 10. The interview flags it instead of silently misconfiguring.</p>
+            </div>
+            <div class="pane" id="s5q4">
+              <div class="qpath">→ Question <b>4</b></div>
+              <div class="qtext">How do you want to see it?</div>
+              <div class="qsub">These aren’t abstract names — each card is a live preview of the setting combo it applies.</div>
+              <div class="lookcards">
+                <button class="lookcard" onclick="iv5Look('icon')">
+                  <div class="demo"><div class="demo-icon"><span class="stk">2</span><span class="dur">6.2</span></div></div>
+                  <div class="lt">Icon with duration</div>
+                  <div class="ld">Icon · 32px · Duration + Stack Text</div>
+                </button>
+                <button class="lookcard" onclick="iv5Look('bar')">
+                  <div class="demo"><div class="demo-bar"><div class="fill"></div><div class="bl"><span>Renewing Mist</span><span>6.2</span></div></div></div>
+                  <div class="lt">Bar</div>
+                  <div class="ld">Bar · name + time label</div>
+                </button>
+                <button class="lookcard" onclick="iv5Look('square')">
+                  <div class="demo"><div class="demo-sq"></div></div>
+                  <div class="lt">Minimal square</div>
+                  <div class="ld">Colored Square · tiny, glanceable</div>
+                </button>
+              </div>
+            </div>
+            <div class="pane" id="s5done">
+              <div class="qtext" style="font-size:18px;">✓ Look chosen — conditions are next (slide 6).</div>
+              <div class="qsub">Notice: two questions produced five concrete settings. In the current editor these live in different sections of the Auras tab.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1; min-width:250px;">
+        <div class="sheet">
+          <div class="sheet-title"><span>Build sheet</span></div>
+          <div class="sheet-g"><div class="gt">General</div><div id="sh5-gen">
+            <div class="sline"><span class="k">Name</span><span class="v classmonk">Renewing Mist</span></div>
+            <div class="sline"><span class="k">Unit</span><span class="v">Player</span></div>
+          </div></div>
+          <div class="sheet-g"><div class="gt">Auras</div><div id="sh5-aur">
+            <div class="sline"><span class="k">Element</span><span class="v">TRACKED</span></div>
+            <div class="sline"><span class="k">Tracked Spells</span><span class="v mono">115151</span></div>
+            <div class="sline"><span class="k">Aura Type</span><span class="v">Buffs (Helpful)</span></div>
+            <div class="sline"><span class="k">Only My Cast</span><span class="v">On<span class="auto">AUTO</span></span></div>
+          </div></div>
+          <div class="sheet-g"><div class="gt">Load Conditions</div><div id="sh5-load"><div class="sline empty"><span class="k">(empty = always loads)</span><span class="v"></span></div></div></div>
+        </div>
+        <p class="footnote"><span class="tag info">AUTO</span> = inferred from an earlier answer (it’s your own cast), shown so it can be trusted — or corrected in the editor.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 6 · INTERVIEW Q5 + FINISH ============ -->
+<section class="slide" id="s6">
+  <div class="frame">
+    <div class="kicker">Walkthrough 3/5 · Conditions, then the receipt</div>
+    <h2>The finish screen is the whole build sheet, honestly recapped</h2>
+    <p class="sub"><span class="hint">↳ answer Q5 to see the finish screen</span></p>
+    <div class="cols">
+      <div style="flex:2; min-width:0;">
+        <div class="mock">
+          <div class="mock-title"><span>New Aura Display — Interview</span><button class="resetlink" onclick="iv6Reset()">restart</button></div>
+          <div class="mock-body">
+            <div class="pane on" id="s6q5">
+              <div class="qpath">→ Question <b>5</b> (last one)</div>
+              <div class="qtext">Only in some situations?</div>
+              <div class="qsub">This writes <b>Load Conditions</b> — Roles / Classes / Specs / Encounters. Empty means it always loads.</div>
+              <button class="ans" onclick="iv6Cond('always')">Always<span class="d">Load Conditions stay empty</span></button>
+              <button class="ans" onclick="iv6Cond('spec')">This spec only<span class="d">→ Load Conditions: Spec = Mistweaver (detected)</span></button>
+              <button class="ans" onclick="iv6Cond('raid')">In raids only<span class="d">→ Load Conditions: Encounters / instance = Raid</span></button>
+            </div>
+            <div class="pane" id="s6fin">
+              <div class="qtext">✓ Done — here’s everything the interview configured</div>
+              <div class="qsub">Your display is placed <b>center screen</b> — drag it into position, or fine-tune anything below in the editor.</div>
+              <div class="sheet receipt" style="margin-bottom:4px;">
+                <div class="sheet-title"><span>Build sheet — final</span><span class="small" style="text-transform:none; letter-spacing:normal; font-weight:400; color:var(--muted);">5 answers → 11 settings</span></div>
+                <div class="sheet-g"><div class="gt">General</div>
+                  <div class="sline"><span class="k">Name</span><span class="v classmonk">Renewing Mist</span></div>
+                  <div class="sline"><span class="k">Group</span><span class="v">(none)</span></div>
+                  <div class="sline"><span class="k">Unit</span><span class="v">Player</span></div>
+                </div>
+                <div class="sheet-g"><div class="gt">Auras</div>
+                  <div class="sline"><span class="k">Element</span><span class="v">TRACKED</span></div>
+                  <div class="sline"><span class="k">Tracked Spells</span><span class="v mono">115151</span></div>
+                  <div class="sline"><span class="k">Aura Type</span><span class="v">Buffs (Helpful)</span></div>
+                  <div class="sline"><span class="k">Only My Cast</span><span class="v">On<span class="auto">AUTO</span></span></div>
+                  <div class="sline"><span class="k">Display Type</span><span class="v">Icon</span></div>
+                  <div class="sline"><span class="k">Icon Size</span><span class="v">32</span></div>
+                  <div class="sline"><span class="k">Duration Text</span><span class="v">On</span></div>
+                  <div class="sline"><span class="k">Stack Text</span><span class="v">On</span></div>
+                </div>
+                <div class="sheet-g"><div class="gt">Load Conditions</div>
+                  <div class="sline" id="s6condline"><span class="k">Spec</span><span class="v">Mistweaver</span></div>
+                </div>
+              </div>
+              <div class="finishbtns">
+                <button class="btn primary" title="mock">Done</button>
+                <button class="btn" title="mock">Open in editor</button>
+                <button class="btn" onclick="iv6Reset()">Ask another way</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1; min-width:250px;">
+        <div class="card">
+          <h3>Why the recap matters</h3>
+          <p style="margin-top:6px;">This is the anti-black-box move. The user leaves with a mental model: <i>“my answers became these 11 settings, and they live under these 3 tabs.”</i> Next time they may skip the interview entirely — that’s the goal, not a failure.</p>
+        </div>
+        <div class="card" style="margin-top:14px;">
+          <h3>“Ask another way” = the dead-end exit</h3>
+          <p style="margin-top:6px;">Every branch keeps two escape hatches: restart the interview, or <b>Open in editor</b> with everything so far pre-filled. A question tree must never trap anyone.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 7 · CATEGORY / STRIP BRANCH ============ -->
+<section class="slide" id="s7">
+  <div class="frame">
+    <div class="kicker">Walkthrough 4/5 · The other branch</div>
+    <h2>The category path builds a STRIP — different questions, same transparency</h2>
+    <p class="sub">If Q1 was “a whole category of auras”, the interview asks category questions instead of a spell search. Branches reconverge at “How do you want to see it?”. <span class="hint">↳ click an answer</span></p>
+    <div class="cols">
+      <div style="flex:2; min-width:0;">
+        <div class="mock">
+          <div class="mock-title"><span>New Aura Display — Interview (category branch)</span><button class="resetlink" onclick="iv7Reset()">restart</button></div>
+          <div class="mock-body">
+            <div class="pane on" id="s7q">
+              <div class="qpath">Q1: <b>category</b> → Question <b>2</b></div>
+              <div class="qtext">Which auras?</div>
+              <div class="qsub">Each answer maps to a “What to Show” preset — the filter-strip control that currently hides behind ~46 form rows.</div>
+              <button class="ans" onclick="iv7Pick('dispel')">Ones I can dispel<span class="d">healer bread-and-butter</span></button>
+              <button class="ans" onclick="iv7Pick('boss')">Boss debuffs on me<span class="d">the “move out of the fire” list</span></button>
+              <button class="ans" onclick="iv7Pick('mine')">My own short buffs<span class="d">procs and rotational buffs, no food/flask clutter</span></button>
+            </div>
+            <div class="pane" id="s7done">
+              <div class="qtext" style="font-size:18px;">✓ Strip configured — the interview continues to Q4 (look) and Q5 (conditions).</div>
+              <div class="qsub" id="s7donetext"></div>
+            </div>
+          </div>
+        </div>
+        <p class="footnote">Not shown here: “Specific spells”, “Custom…”, Filter Mode (Off / Filter Flags / Classification / Spell Whitelist) — the interview covers the common 80%; “Custom…” answers hand off to <b>Open in editor</b>.</p>
+      </div>
+      <div style="flex:1; min-width:250px;">
+        <div class="sheet">
+          <div class="sheet-title"><span>Build sheet</span></div>
+          <div class="sheet-g"><div class="gt">General</div><div id="sh7-gen">
+            <div class="sline"><span class="k">Unit</span><span class="v">Player</span></div>
+          </div></div>
+          <div class="sheet-g"><div class="gt">Auras</div><div id="sh7-aur">
+            <div class="sline empty"><span class="k">Element</span><span class="v">— nothing yet</span></div>
+          </div></div>
+          <div class="sheet-g"><div class="gt">Load Conditions</div><div id="sh7-load"><div class="sline empty"><span class="k">(empty = always loads)</span><span class="v"></span></div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 8 · RECIPES ============ -->
+<section class="slide" id="s8">
+  <div class="frame">
+    <div class="kicker">Walkthrough 5/5 · Recipes — the second hero</div>
+    <h2>Intent-level edits on existing displays, with a confirm-diff</h2>
+    <p class="sub">The interview engine, pointed at a display you already have. No hunting through 80 widgets for the right three. <span class="hint">↳ click “Recipes ▾”, then pick one</span></p>
+    <div class="mock">
+      <div class="mock-title"><span>Auras → Aura Displays</span><button class="resetlink" onclick="rcReset()">reset mock</button></div>
+      <div class="md">
+        <div class="md-list">
+          <div class="md-item sel">Renewing Mist</div>
+          <div class="md-item">Defensives strip</div>
+          <div class="md-item">Co-Tank CDs</div>
+          <div class="md-item">Boss debuffs</div>
+        </div>
+        <div class="md-detail">
+          <div style="display:flex; justify-content:space-between; align-items:center; position:relative; margin-bottom:4px;">
+            <div class="dtabs" style="border:none; margin:0;">
+              <div class="dtab on">General</div><div class="dtab">Auras</div><div class="dtab">Load Conditions</div>
+            </div>
+            <div style="position:relative;">
+              <button class="btn" id="rcBtn" style="border-color:var(--gold); color:var(--gold); padding:6px 14px;" onclick="rcToggle()">Recipes ▾</button>
+              <div class="recipemenu" id="rcMenu">
+                <button class="ritem" onclick="rcPick('glow')">Glow when about to expire<span class="rd">Pandemic Glow + color + threshold</span></button>
+                <button class="ritem" onclick="rcPick('big')">Bigger and centered<span class="rd">Icon Size 40 · Anchor CENTER</span></button>
+                <button class="ritem" onclick="rcPick('mine')">Hide other people’s auras<span class="rd">Only My Auras: On</span></button>
+                <button class="ritem" onclick="rcPick('raid')">Only show in raids<span class="rd">Load Conditions: instance = Raid</span></button>
+                <button class="ritem nope" onclick="rcPick('announce')"><span class="warnmark">⚠</span> Announce in chat when missing<span class="rd">not possible today — click to see why</span></button>
+              </div>
+            </div>
+          </div>
+          <div class="setrow"><span class="sk">Icon Size</span><span class="sv" id="rv-size">16</span></div>
+          <div class="setrow"><span class="sk">Anchor</span><span class="sv" id="rv-anchor">TOPLEFT</span></div>
+          <div class="setrow"><span class="sk">Duration Text</span><span class="sv" id="rv-dur">On</span></div>
+          <div class="setrow"><span class="sk">Pandemic Glow</span><span class="sv off" id="rv-glow">Off</span></div>
+          <div class="setrow"><span class="sk">Pandemic Glow Color</span><span class="sv off" id="rv-glowcol">—</span></div>
+          <div class="setrow"><span class="sk">Pandemic Threshold</span><span class="sv off" id="rv-glowthr">—</span></div>
+          <div class="setrow"><span class="sk">Only My Auras</span><span class="sv off" id="rv-mine">Off</span></div>
+
+          <div class="diffbox" id="rcDiff">
+            <h3 style="margin-bottom:8px;">This recipe will change <span class="gold" id="rcCount">3</span> settings:</h3>
+            <div id="rcDiffRows"></div>
+            <div class="finishbtns" style="margin-top:12px;">
+              <button class="btn primary" onclick="rcApply()">Apply</button>
+              <button class="btn" onclick="rcCancel()">Cancel</button>
+            </div>
+          </div>
+          <div class="toast" id="rcToast"><span id="rcToastText"></span><button class="resetlink" onclick="rcUndo()">Undo</button></div>
+          <div class="explainbox" id="rcExplain">
+            <b style="color:var(--danger);">Not possible today — and we say so.</b><br>
+            <span class="muted">Aura Displays has no chat/sound output and no “aura missing” trigger state. Faking it with a hidden always-on strip would lie about what the engine does. The recipe stays visible but honest: it names the missing capability so it can become a real feature request instead of a support ticket.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="footnote">The confirm-diff is non-negotiable: recipes touch a display the user may have hand-tuned. Before→after values, then Apply — with Undo. Same trust move as the build sheet.</p>
+  </div>
+</section>
+
+<!-- ============ SLIDE 9 · ASK THE PANEL ============ -->
+<section class="slide" id="s9">
+  <div class="frame">
+    <div class="kicker">Bonus surface · Ask the panel</div>
+    <h2>The same engine behind the options search box</h2>
+    <p class="sub">Search that answers intent — surfacing recipes and diagnoses, not just setting names. <span class="hint">↳ type, or click a sample query</span></p>
+    <div class="cols">
+      <div style="flex:3; min-width:0;">
+        <div class="mock">
+          <div class="mock-title">QUI Options — Search</div>
+          <div class="mock-body askwrap">
+            <input type="text" id="askInput" placeholder="Search settings… or just describe the problem" autocomplete="off" oninput="askGo(this.value)">
+            <div class="chips">
+              <button class="chip" onclick="askChip('glow expire')">“glow expire”</button>
+              <button class="chip" onclick="askChip('why is my icon huge in combat')">“why is my icon huge in combat”</button>
+            </div>
+            <div class="askres" id="askRes">
+              <p class="small muted" style="margin-top:14px;">Results appear here — recipes first, raw settings below.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:2; min-width:260px;">
+        <div class="card">
+          <h3>Why bolt this on?</h3>
+          <p style="margin-top:6px;">The recipe library and the interview’s answer→settings mapping are already keyword-indexed content. Feeding them to the existing options search is nearly free — and it’s where confused users already go first.</p>
+        </div>
+        <div class="card" style="margin-top:14px;">
+          <h3>Diagnosis, not just lookup</h3>
+          <p style="margin-top:6px;">“Icon huge in combat” can cross-reference actual display records: which display has a large Icon Size <i>and</i> combat-scoped Load Conditions? That’s an answer, not a search hit.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 10 · HONEST TRADEOFFS ============ -->
+<section class="slide" id="s10">
+  <div class="frame">
+    <div class="kicker">Honest assessment</div>
+    <h2>What it fixes — and what it doesn’t</h2>
+    <div class="grid2" style="margin-top:18px;">
+      <div class="card" style="border-color:rgba(122,195,122,.4);">
+        <h3 style="color:var(--ok); margin-bottom:10px;">What it fixes</h3>
+        <ul class="tight">
+          <li><b>Bridges the intent→settings gap directly.</b> “Show my defensive when active” becomes 5 clicks instead of 6 settings across 2 tabs.</li>
+          <li><b>Teaches instead of hiding.</b> The build sheet uses real setting names under real tab names — users graduate to the editor rather than depending on the tool.</li>
+          <li><b>Ongoing value after creation.</b> Recipes work on existing displays forever — the other four approaches mostly stop mattering once a display exists.</li>
+          <li><b>Fixes bad quick-create defaults for free.</b> Interview output goes through one curated defaults path (finally putting <span class="mono">AD.DefaultBucket</span>-quality defaults to work) — no more 16px icons with duration text off.</li>
+          <li><b>Honesty is built in.</b> Confirm-diffs, AUTO tags, and “not possible” recipes keep trust intact.</li>
+        </ul>
+      </div>
+      <div class="card" style="border-color:rgba(224,108,108,.4);">
+        <h3 style="color:var(--danger); margin-bottom:10px;">What it doesn’t — the real costs</h3>
+        <ul class="tight">
+          <li><b>Content is the hard part.</b> Authoring and maintaining the question tree + recipe library is significant, ongoing design work. The engine is cheap; the writing isn’t.</li>
+          <li><b>Branching trees can dead-end.</b> Any intent the tree doesn’t cover hits a wall — every screen must keep the “Open in editor” exit, pre-filled with progress so far.</li>
+          <li><b>“When it’s missing” may exceed the engine.</b> Inverse displays aren’t clearly supported today; the interview must flag it (as mocked on slide 5), not fake it. Same for “announce when missing”.</li>
+          <li><b>Doesn’t shrink the editor.</b> The 80–120 widget detail pane is untouched — this is a ramp onto it, not a replacement. Pairs naturally with approaches 2–4.</li>
+          <li><b>Slower for experts.</b> Five screens vs. one dense form. Experts need a skip-to-editor path from question one.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 11 · IMPLEMENTATION ============ -->
+<section class="slide" id="s11">
+  <div class="frame">
+    <div class="kicker">Implementation notes</div>
+    <h2>Cheap engine, content-shaped cost</h2>
+    <p class="sub">Nothing here needs new display-engine capability (except the flagged “missing aura” path).</p>
+    <div class="grid3">
+      <div class="card">
+        <h3>Interview output = a plain display record</h3>
+        <p style="margin-top:6px;">The finish screen just calls the existing <span class="mono">NewDisplay</span> path plus the existing element constructors (STRIP / TRACKED) with the accumulated settings table. No parallel data model, no interview-specific persistence — “Open in editor” is trivially correct because there is only one record.</p>
+      </div>
+      <div class="card">
+        <h3>Recipes = declarative setting-patches</h3>
+        <p style="margin-top:6px;">A recipe is a name, keyword list, applicability predicate (e.g. needs a TRACKED element), and a list of <span class="mono">{path, value}</span> patches. Confirm-diff and undo fall out of that shape for free. The engine is a weekend; the library of good recipes is the real investment.</p>
+      </div>
+      <div class="card">
+        <h3>Build sheet labels = existing options metadata</h3>
+        <p style="margin-top:6px;">Setting display-names and tab grouping already exist in the options metadata / search index — the build sheet renders from it, so labels can’t drift from the real panel. The “Ask the panel” surface indexes recipe keywords into the same search.</p>
+      </div>
+    </div>
+    <div class="card" style="margin-top:18px;">
+      <h3>Suggested build order</h3>
+      <p style="margin-top:6px;"><b>1.</b> Recipe engine + 5 recipes with confirm-diff (standalone value, smallest risk) → <b>2.</b> Interview spell-path only, reusing recipe patches as its vocabulary → <b>3.</b> Category/STRIP branch + unit branch → <b>4.</b> Search integration. Each step ships alone; the interview is never blocked on covering every intent.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 12 · VERDICT ============ -->
+<section class="slide" id="s12">
+  <div class="frame" style="padding:56px 60px;">
+    <div class="kicker">Verdict</div>
+    <h2 style="font-size:30px;">Steal this if you want new users to <span class="gold">graduate into power users</span> — instead of staying dependent on wizards.</h2>
+    <div class="verdict">The build sheet is the idea worth stealing even if nothing else survives: any guided flow QUI ships should <b>show its work in real setting names</b>. It costs one panel and buys a teaching tool, a trust signal, and a map of the editor.</div>
+    <div class="grid3">
+      <div class="card"><h3>Steal whole</h3><p>Build sheet + confirm-diff recipes. Both are engine-cheap and compose with any other approach in this series.</p></div>
+      <div class="card"><h3>Steal partially</h3><p>The interview’s spell path alone (Q1→spell→look→conditions) covers the single most common intent and fixes quick-create defaults as a side effect.</p></div>
+      <div class="card"><h3>Skip if</h3><p>No appetite for ongoing content authoring — a stale question tree or thin recipe library is worse than none, because it teaches users the tool can’t help them.</p></div>
+    </div>
+    <p class="footnote">End of approach 5/5 · Use the pill below to revisit any deck, or ☰ for the index.</p>
+  </div>
+</section>
+
+<!-- deck nav -->
+<div class="navzone">
+  <div class="dots" id="dots"></div>
+  <button class="navbtn" id="prevBtn" title="Previous slide">←</button>
+  <button class="navbtn" id="nextBtn" title="Next slide">→</button>
+</div>
+
+<!-- prototype harness pill -->
+<div class="harness">
+  <a href="04-canvas.html">‹ 04</a>
+  <span>Approach 5/5 — Intent Interview</span>
+  <a href="01-wizard.html">01 ›</a>
+  <span class="sep">|</span>
+  <a href="index.html">☰ all</a>
+</div>
+
+<script>
+/* ================= deck navigation ================= */
+var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+var cur = 0;
+var dotsWrap = document.getElementById('dots');
+slides.forEach(function(s, i){
+  var d = document.createElement('button');
+  d.className = 'dot'; d.title = 'Slide ' + (i+1);
+  d.addEventListener('click', function(){ go(i); });
+  dotsWrap.appendChild(d);
+});
+var dots = Array.prototype.slice.call(dotsWrap.children);
+function go(i){
+  if(i < 0 || i >= slides.length) return;
+  slides[cur].classList.remove('active');
+  dots[cur].classList.remove('on');
+  cur = i;
+  slides[cur].classList.add('active');
+  dots[cur].classList.add('on');
+}
+document.getElementById('prevBtn').addEventListener('click', function(){ go(cur-1); });
+document.getElementById('nextBtn').addEventListener('click', function(){ go(cur+1); });
+document.addEventListener('keydown', function(e){
+  var t = document.activeElement;
+  if(t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+  if(e.key === 'ArrowRight'){ go(cur+1); }
+  else if(e.key === 'ArrowLeft'){ go(cur-1); }
+});
+go(0);
+
+/* ================= helpers ================= */
+function pane(id, on){ document.getElementById(id).classList[on ? 'add' : 'remove']('on'); }
+function addLine(groupId, k, v, opts){
+  opts = opts || {};
+  var g = document.getElementById(groupId);
+  // remove placeholder "empty" lines on first real write
+  if(!opts.keepEmpty){
+    Array.prototype.slice.call(g.querySelectorAll('.sline.empty')).forEach(function(el){
+      if(opts.clearEmpty) el.remove();
+    });
+  }
+  var line = document.createElement('div');
+  line.className = 'sline new';
+  line.innerHTML = '<span class="k">' + k + '</span><span class="v">' + v + '</span>';
+  g.appendChild(line);
+  return line;
+}
+function setHTML(id, html){ document.getElementById(id).innerHTML = html; }
+
+/* ================= slide 4 interview ================= */
+var sh4Empty = {
+  gen: document.getElementById('sh4-gen').innerHTML,
+  aur: document.getElementById('sh4-aur').innerHTML,
+  load: document.getElementById('sh4-load').innerHTML
+};
+function iv4Reset(){
+  ['s4q1','s4q2spell','s4q2cat','s4q2unit','s4done'].forEach(function(id){ pane(id, id === 's4q1'); });
+  setHTML('sh4-gen', sh4Empty.gen);
+  setHTML('sh4-aur', sh4Empty.aur);
+  setHTML('sh4-load', sh4Empty.load);
+  var inp = document.getElementById('s4search');
+  inp.value = ''; document.getElementById('s4sugg').classList.remove('on');
+}
+function iv4Pick(which){
+  pane('s4q1', false);
+  if(which === 'spell'){
+    pane('s4q2spell', true);
+    addLine('sh4-aur', 'Element', 'TRACKED', {clearEmpty:true});
+  } else if(which === 'cat'){
+    pane('s4q2cat', true);
+    addLine('sh4-aur', 'Element', 'STRIP', {clearEmpty:true});
+  } else {
+    pane('s4q2unit', true);
+  }
+}
+function iv4Search(v){
+  var show = v.toLowerCase().indexOf('ren') !== -1;
+  document.getElementById('s4sugg').classList.toggle('on', show);
+}
+function iv4PickSpell(){
+  pane('s4q2spell', false);
+  addLine('sh4-gen', 'Name', '<span class="classmonk">Renewing Mist</span>', {clearEmpty:true});
+  addLine('sh4-aur', 'Tracked Spells', '<span class="mono">115151</span>');
+  addLine('sh4-aur', 'Aura Type', 'Buffs (Helpful)');
+  addLine('sh4-aur', 'Only My Cast', 'On<span class="auto">AUTO</span>');
+  setHTML('s4donepath', 'Q1: <b>specific spell</b> → Q2: <b>Renewing Mist</b>');
+  setHTML('s4donetext', 'Three settings from one click — including the inferred Only My Cast, tagged AUTO on the sheet. Next: “active or missing?” (slide 5).');
+  pane('s4done', true);
+}
+function iv4Cat(which){
+  pane('s4q2cat', false);
+  var map = {
+    dispel: [['What to Show','Dispellable by me'], ['Sort Order','Expiration'], ['Filter Mode','Off (preset)']],
+    boss:   [['What to Show','Boss debuffs'], ['Sort Order','Expiration'], ['Filter Mode','Off (preset)']],
+    mine:   [['What to Show','Only my auras'], ['Hide Permanent','On'], ['Sort Order','Expiration']]
+  };
+  map[which].forEach(function(kv){ addLine('sh4-aur', kv[0], kv[1]); });
+  setHTML('s4donepath', 'Q1: <b>category</b> → Q2: answered');
+  setHTML('s4donetext', 'A STRIP element with a “What to Show” preset — the control that normally hides behind ~46 form rows. This branch continues on slide 7.');
+  pane('s4done', true);
+}
+function iv4Unit(u){
+  pane('s4q2unit', false);
+  addLine('sh4-gen', 'Unit', u, {clearEmpty:true});
+  setHTML('s4donepath', 'Q1: <b>another player</b> → Unit set');
+  setHTML('s4donetext', 'Unit: ' + u + ' written to General. The interview now rejoins the spell/category fork for that unit — restart to try it.');
+  pane('s4done', true);
+}
+
+/* ================= slide 5 interview ================= */
+function iv5Reset(){
+  ['s5q3','s5q4','s5done'].forEach(function(id){ pane(id, id === 's5q3'); });
+  document.getElementById('s5warn').style.display = 'none';
+  // rebuild sheet extras
+  var aur = document.getElementById('sh5-aur');
+  Array.prototype.slice.call(aur.querySelectorAll('.sline.new')).forEach(function(el){ el.remove(); });
+}
+function iv5State(which){
+  if(which === 'missing'){
+    document.getElementById('s5warn').style.display = 'block';
+    addLine('sh5-aur', 'Show When', '<span class="warn">Missing (inverse)</span> ⚠');
+  } else {
+    addLine('sh5-aur', 'Show When', 'Aura active');
+  }
+  pane('s5q3', false);
+  pane('s5q4', true);
+}
+function iv5Look(which){
+  var map = {
+    icon:   [['Display Type','Icon'], ['Icon Size','32'], ['Duration Text','On'], ['Stack Text','On']],
+    bar:    [['Display Type','Bar'], ['Duration Text','On'], ['Stack Text','On']],
+    square: [['Display Type','Colored Square'], ['Icon Size','14'], ['Duration Text','Off']]
+  };
+  map[which].forEach(function(kv){ addLine('sh5-aur', kv[0], kv[1]); });
+  pane('s5q4', false);
+  pane('s5done', true);
+}
+
+/* ================= slide 6 interview ================= */
+function iv6Reset(){
+  pane('s6q5', true); pane('s6fin', false);
+}
+function iv6Cond(which){
+  var line = document.getElementById('s6condline');
+  if(which === 'always'){
+    line.innerHTML = '<span class="k">(empty = always loads)</span><span class="v"></span>';
+    line.className = 'sline empty';
+  } else if(which === 'spec'){
+    line.innerHTML = '<span class="k">Spec</span><span class="v">Mistweaver<span class="auto">DETECTED</span></span>';
+    line.className = 'sline new';
+  } else {
+    line.innerHTML = '<span class="k">Instance</span><span class="v">Raid</span>';
+    line.className = 'sline new';
+  }
+  pane('s6q5', false); pane('s6fin', true);
+}
+
+/* ================= slide 7 strip branch ================= */
+var sh7Empty = {
+  gen: document.getElementById('sh7-gen').innerHTML,
+  aur: document.getElementById('sh7-aur').innerHTML,
+  load: document.getElementById('sh7-load').innerHTML
+};
+function iv7Reset(){
+  pane('s7q', true); pane('s7done', false);
+  setHTML('sh7-gen', sh7Empty.gen);
+  setHTML('sh7-aur', sh7Empty.aur);
+  setHTML('sh7-load', sh7Empty.load);
+}
+function iv7Pick(which){
+  addLine('sh7-aur', 'Element', 'STRIP', {clearEmpty:true});
+  var map = {
+    dispel: { lines: [['What to Show','Dispellable by me'], ['Sort Order','Expiration'], ['Dispel Ring Colors','On']],
+              note: 'Sheet reads: STRIP · Dispellable by me · sorted by expiration, dispel-type ring colors on. One answer replaced a whole filter form.' },
+    boss:   { lines: [['What to Show','Boss debuffs'], ['Sort Order','Expiration'], ['Tooltips','On hover']],
+              note: 'Sheet reads: STRIP · Boss debuffs. A follow-up question could offer “Role-relevant boss debuffs” for the stricter filter.' },
+    mine:   { lines: [['What to Show','Only my auras'], ['Hide Permanent','On'], ['Max Duration','60s'], ['Sort Order','Expiration']],
+              note: 'Sheet reads: STRIP · Only my auras · Hide Permanent · Max Duration 60s — the “no food buff clutter” combo nobody discovers on their own.' }
+  };
+  map[which].lines.forEach(function(kv){ addLine('sh7-aur', kv[0], kv[1]); });
+  setHTML('s7donetext', map[which].note);
+  pane('s7q', false); pane('s7done', true);
+}
+
+/* ================= slide 8 recipes ================= */
+var rcState = { open:false, pending:null, applied:null };
+var rcVals = {}; // snapshot for undo
+var recipes = {
+  glow: { count:3, changes:[
+    ['Pandemic Glow', 'rv-glow', 'Off', 'On'],
+    ['Pandemic Glow Color', 'rv-glowcol', '—', '<span class="swatch"></span>#e8c15a'],
+    ['Pandemic Threshold', 'rv-glowthr', '—', '30%']
+  ], toast:'Applied “Glow when about to expire” — 3 settings changed.'},
+  big: { count:2, changes:[
+    ['Icon Size', 'rv-size', '16', '40'],
+    ['Anchor', 'rv-anchor', 'TOPLEFT', 'CENTER']
+  ], toast:'Applied “Bigger and centered” — 2 settings changed.'},
+  mine: { count:1, changes:[
+    ['Only My Auras', 'rv-mine', 'Off', 'On']
+  ], toast:'Applied “Hide other people’s auras” — 1 setting changed.'},
+  raid: { count:1, changes:[
+    ['Load Conditions → Instance', null, '(always loads)', 'Raid']
+  ], toast:'Applied “Only show in raids” — 1 setting changed (Load Conditions tab).'}
+};
+function rcToggle(){
+  rcState.open = !rcState.open;
+  document.getElementById('rcMenu').classList.toggle('on', rcState.open);
+}
+function rcPick(which){
+  rcState.open = false;
+  document.getElementById('rcMenu').classList.remove('on');
+  document.getElementById('rcExplain').classList.remove('on');
+  document.getElementById('rcToast').classList.remove('on');
+  if(which === 'announce'){
+    document.getElementById('rcDiff').classList.remove('on');
+    document.getElementById('rcExplain').classList.add('on');
+    return;
+  }
+  var r = recipes[which];
+  rcState.pending = which;
+  document.getElementById('rcCount').textContent = r.count;
+  var rows = r.changes.map(function(c){
+    return '<div class="diffrow"><span class="dk">' + c[0] + '</span><span class="old">' + c[2] +
+           '</span><span class="arr">→</span><span class="nu">' + c[3] + '</span></div>';
+  }).join('');
+  setHTML('rcDiffRows', rows);
+  document.getElementById('rcDiff').classList.add('on');
+}
+function rcApply(){
+  var r = recipes[rcState.pending];
+  rcVals = {};
+  r.changes.forEach(function(c){
+    if(!c[1]) return;
+    var el = document.getElementById(c[1]);
+    rcVals[c[1]] = { html: el.innerHTML, off: el.classList.contains('off') };
+    el.innerHTML = c[3];
+    el.classList.remove('off');
+    el.parentElement.classList.remove('flash');
+    void el.parentElement.offsetWidth; // restart animation
+    el.parentElement.classList.add('flash');
+  });
+  rcState.applied = rcState.pending;
+  rcState.pending = null;
+  document.getElementById('rcDiff').classList.remove('on');
+  document.getElementById('rcToastText').textContent = r.toast;
+  document.getElementById('rcToast').classList.add('on');
+}
+function rcCancel(){
+  rcState.pending = null;
+  document.getElementById('rcDiff').classList.remove('on');
+}
+function rcUndo(){
+  Object.keys(rcVals).forEach(function(id){
+    var el = document.getElementById(id);
+    el.innerHTML = rcVals[id].html;
+    el.classList.toggle('off', rcVals[id].off);
+  });
+  rcVals = {};
+  document.getElementById('rcToast').classList.remove('on');
+}
+function rcReset(){
+  rcUndo();
+  var defs = { 'rv-size':['16',false], 'rv-anchor':['TOPLEFT',false], 'rv-dur':['On',false],
+    'rv-glow':['Off',true], 'rv-glowcol':['—',true], 'rv-glowthr':['—',true], 'rv-mine':['Off',true] };
+  Object.keys(defs).forEach(function(id){
+    var el = document.getElementById(id);
+    el.innerHTML = defs[id][0];
+    el.classList.toggle('off', defs[id][1]);
+    el.parentElement.classList.remove('flash');
+  });
+  rcState = { open:false, pending:null, applied:null };
+  ['rcMenu','rcDiff','rcToast','rcExplain'].forEach(function(id){ document.getElementById(id).classList.remove('on'); });
+}
+document.addEventListener('click', function(e){
+  if(rcState.open && !e.target.closest('#rcMenu') && !e.target.closest('#rcBtn')){
+    rcState.open = false;
+    document.getElementById('rcMenu').classList.remove('on');
+  }
+});
+
+/* ================= slide 9 ask the panel ================= */
+function askChip(q){
+  document.getElementById('askInput').value = q;
+  askGo(q);
+}
+function askGo(v){
+  var q = v.toLowerCase();
+  var out = '';
+  if(q.trim() === ''){
+    out = '<p class="small muted" style="margin-top:14px;">Results appear here — recipes first, raw settings below.</p>';
+  } else if(q.indexOf('glow') !== -1 || q.indexOf('expire') !== -1 || q.indexOf('pandemic') !== -1){
+    out =
+      '<div class="rescard recipehit"><div class="rk">Recipe</div><div class="rt">Glow when about to expire</div>' +
+      '<div class="rb">Turns on Pandemic Glow (+ color, + threshold) on a display you pick. Changes 3 settings — you’ll see the diff first.</div></div>' +
+      '<div class="rescard"><div class="rk setk">Setting</div><div class="rt">Pandemic Glow</div><div class="rb">Auras tab → element extras · per-element toggle + color</div></div>' +
+      '<div class="rescard"><div class="rk setk">Setting</div><div class="rt">Duration Text</div><div class="rb">Auras tab → element extras · shows remaining time on the icon</div></div>';
+  } else if(q.indexOf('huge') !== -1 || q.indexOf('big') !== -1 || q.indexOf('size') !== -1 || q.indexOf('combat') !== -1 || q.indexOf('icon') !== -1){
+    out =
+      '<div class="rescard recipehit"><div class="rk">Diagnosis</div><div class="rt">Found a likely culprit: “Defensives strip”</div>' +
+      '<div class="rb">It has <b>Icon Size: 64</b> and Load Conditions scoped so it only loads in combat content — matching “huge in combat”. Jump to it, or apply the “Smaller icons” recipe.</div></div>' +
+      '<div class="rescard recipehit"><div class="rk">Recipe</div><div class="rt">Bigger and centered / Smaller icons</div><div class="rb">Intent-level resize: sets Icon Size + Anchor together, with a confirm-diff.</div></div>' +
+      '<div class="rescard"><div class="rk setk">Setting</div><div class="rt">Icon Size</div><div class="rb">Auras tab → element geometry · per-element pixel size</div></div>';
+  } else {
+    out = '<div class="rescard"><div class="rk setk">No recipe match</div><div class="rt">Plain settings search results would appear here</div><div class="rb">The intent layer degrades gracefully to today’s keyword search — try “glow expire” or “icon huge”.</div></div>';
+  }
+  setHTML('askRes', out);
+}
+</script>
+</body>
+</html>

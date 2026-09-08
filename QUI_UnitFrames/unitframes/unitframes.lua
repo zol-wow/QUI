@@ -1196,9 +1196,12 @@ local function UpdateTargetMarker(frame)
     end
 
     local index = GetRaidTargetIndex(QUI_UF.GetFrameUnit(frame))
-    if not IsSecretValue(index) and index then
-        SetRaidTargetIconTexture(frame.targetMarker, index)
-        frame.targetMarker:Show()
+    if IsSecretValue(index) or index then
+        if pcall(SetRaidTargetIconTexture, frame.targetMarker, index) then
+            frame.targetMarker:Show()
+        else
+            frame.targetMarker:Hide()
+        end
     else
         frame.targetMarker:Hide()
     end

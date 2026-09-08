@@ -38,7 +38,7 @@ local function ShowProviderUnavailable(parent, message)
     else
         label = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         label:SetText(message or ns.L["Settings are still initializing."])
-        label:SetTextColor(0.65, 0.65, 0.65, 1)
+        label:SetTextColor(1, 1, 1, 0.65)
     end
 
     label:SetPoint("TOPLEFT", 0, -8)

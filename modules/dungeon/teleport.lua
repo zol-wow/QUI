@@ -4,11 +4,29 @@ local Helpers = ns.Helpers
 local GetCore = Helpers.GetCore
 
 local iconOverlays = Helpers.CreateStateTable()
+local cooldownRefreshPending = false
 
 local function IsEnabled()
     local core = GetCore()
     local settings = core and core.db and core.db.profile and core.db.profile.general
     return settings and settings.mplusTeleportEnabled ~= false
+end
+
+local function UpdateCooldown(overlay)
+    local cooldown = overlay and overlay.cooldown
+    if not cooldown then return end
+
+    if not Helpers.CanMutateCooldown(cooldown) then
+        cooldownRefreshPending = true
+        return
+    end
+    local duration = overlay.spellID and C_Spell and C_Spell.GetSpellCooldownDuration
+        and C_Spell.GetSpellCooldownDuration(overlay.spellID, true)
+    if duration then
+        cooldown:SetCooldownFromDurationObject(duration)
+    else
+        cooldown:Clear()
+    end
 end
 
 local function CreateSecureOverlay(dungeonIcon)
@@ -51,6 +69,10 @@ local function CreateSecureOverlay(dungeonIcon)
     overlay.mapID = dungeonIcon.mapID
     overlay.dungeonIcon = dungeonIcon
 
+    overlay.cooldown = CreateFrame("Cooldown", nil, overlay, "CooldownFrameTemplate")
+    overlay.cooldown:SetAllPoints()
+    overlay.cooldown:Show()
+
     local highlight = overlay:CreateTexture(nil, "OVERLAY")
     highlight:SetAllPoints()
     highlight:SetColorTexture(0.3, 1, 0.5, 0.3)
@@ -86,8 +108,15 @@ local function HookDungeonIcons()
 
     for _, dungeonIcon in ipairs(ChallengesFrame.DungeonIcons) do
         if dungeonIcon.mapID then
-            CreateSecureOverlay(dungeonIcon)
+            UpdateCooldown(CreateSecureOverlay(dungeonIcon))
         end
+    end
+end
+
+local function UpdateCooldowns()
+    cooldownRefreshPending = false
+    for _, overlay in pairs(iconOverlays) do
+        UpdateCooldown(overlay)
     end
 end
 
@@ -100,8 +129,12 @@ local hooked = false
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
+initFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+initFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 initFrame:SetScript("OnEvent", function(self, event, arg1)
-    if event == "ADDON_LOADED" and arg1 == "Blizzard_ChallengesUI" then
+    if event == "SPELL_UPDATE_COOLDOWN" or (event == "PLAYER_REGEN_ENABLED" and cooldownRefreshPending) then
+        UpdateCooldowns()
+    elseif event == "ADDON_LOADED" and arg1 == "Blizzard_ChallengesUI" then
         if not hooked and ChallengesFrame then
             hooksecurefunc(ChallengesFrame, "Update", OnChallengesFrameUpdate)
             hooked = true

@@ -46,7 +46,7 @@ local function EnsureOutputFrame()
     bg:SetAllPoints()
     bg:SetColorTexture(0, 0, 0, 0.72)
 
-    local title = outputFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local title = outputFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     title:SetPoint("TOPLEFT", 8, -6)
     title:SetText("[QAura/QCLEU] drag to move - mouse wheel scrolls - /quiaura copy opens sanitized text")
 
@@ -192,7 +192,7 @@ local function EnsureCopyFrame()
     copyFrame:SetScript("OnDragStart", copyFrame.StartMoving)
     copyFrame:SetScript("OnDragStop", copyFrame.StopMovingOrSizing)
 
-    local title = copyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local title = copyFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     title:SetPoint("TOPLEFT", 12, -10)
     title:SetText("[QAura] Copy Log")
 

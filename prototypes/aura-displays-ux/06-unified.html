@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QUI · Aura Displays UX — Unified Design (implemented)</title>
+<style>
+  :root{
+    --bg:#0a0c10; --surface:#12151c; --panel:#1a1e28; --inset:#141822;
+    --border:#2a3040; --text:#e6e9f0; --muted:#8b93a7;
+    --gold:#e8c15a; --ok:#7ac37a; --bad:#e06c6c; --info:#6cb2e0;
+    --monk:#00FF98; --warrior:#C69B6D;
+    --r:8px;
+    --mono:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-size:15px; line-height:1.5; overflow:hidden;
+  }
+  a{color:var(--info)}
+
+  /* ---------- deck chrome ---------- */
+  .caption{
+    position:fixed; top:14px; left:18px; z-index:50;
+    font-size:12px; color:var(--muted); letter-spacing:.02em;
+  }
+  .caption b{color:var(--text); font-weight:600}
+
+  .slide{display:none; position:absolute; inset:0; overflow:auto; padding:48px 24px 84px}
+  .slide.active{display:block}
+  .wrap{
+    max-width:1140px; margin:0 auto; background:var(--surface);
+    border:1px solid var(--border); border-radius:var(--r);
+    padding:34px 44px 38px; min-height:calc(100vh - 140px);
+  }
+  .kicker{font-size:12px; color:var(--gold); text-transform:uppercase; letter-spacing:.12em; margin-bottom:8px}
+  h1{font-size:44px; line-height:1.12; font-weight:700; letter-spacing:-.01em}
+  h2{font-size:28px; line-height:1.2; font-weight:700; margin-bottom:6px}
+  h3{font-size:15px; font-weight:600}
+  .lede{color:var(--muted); font-size:17px; max-width:64ch; margin-top:10px}
+  .sub{color:var(--muted); font-size:14px; margin-bottom:20px}
+  .muted{color:var(--muted)}
+  .small{font-size:13px}
+  .mono{font-family:var(--mono); font-size:.92em}
+  .spell{color:var(--monk); font-weight:600}
+  .hint{font-size:12px; color:var(--gold); opacity:.85; margin-top:8px}
+  .cols{display:flex; gap:28px; align-items:flex-start}
+  .cols > *{flex:1; min-width:0}
+
+  .navcluster{position:fixed; right:18px; bottom:16px; z-index:60; display:flex; align-items:center; gap:12px}
+  .dots{display:flex; gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--border);border:0;cursor:pointer;padding:0}
+  .dot.on{background:var(--gold)}
+  .navbtn{
+    background:var(--panel); color:var(--text); border:1px solid var(--border);
+    border-radius:6px; width:30px; height:30px; cursor:pointer; font-size:14px;
+  }
+  .navbtn:hover{border-color:var(--gold)}
+
+  .harness{
+    position:fixed; left:50%; bottom:14px; transform:translateX(-50%); z-index:70;
+    display:flex; align-items:center; gap:10px;
+    background:#05070a; border:1px solid var(--gold); border-radius:999px;
+    padding:7px 16px; font-size:12px; font-family:var(--mono);
+    box-shadow:0 6px 24px rgba(0,0,0,.7), 0 0 0 3px rgba(232,193,90,.08);
+    white-space:nowrap;
+  }
+  .harness a{color:var(--gold); text-decoration:none}
+  .harness a:hover{text-decoration:underline}
+  .harness .hsep{color:#3a4152}
+  .harness .hlabel{color:#9aa3b8}
+
+  /* ---------- shared mock-UI primitives ---------- */
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:var(--r)}
+  .inset{background:var(--inset); border:1px solid var(--border); border-radius:6px}
+  .btn{
+    display:inline-block; background:var(--inset); color:var(--text);
+    border:1px solid var(--border); border-radius:6px; padding:6px 14px;
+    font-size:13px; cursor:pointer; font-family:inherit;
+  }
+  .btn:hover{border-color:var(--muted)}
+  .btn.gold{background:var(--gold); color:#1a1405; border-color:var(--gold); font-weight:600}
+  .btn.gold:hover{filter:brightness(1.08)}
+  .btn.sm{padding:3px 10px; font-size:12px}
+  .btn[disabled]{opacity:.4; cursor:default}
+  .badge{
+    display:inline-block; font-size:10px; font-weight:700; letter-spacing:.08em;
+    padding:1px 7px; border-radius:4px; vertical-align:1px;
+  }
+  .badge.tracked{background:rgba(108,178,224,.15); color:var(--info); border:1px solid rgba(108,178,224,.4)}
+  .badge.strip{background:rgba(232,193,90,.12); color:var(--gold); border:1px solid rgba(232,193,90,.4)}
+  .tag{display:inline-block; font-size:11px; color:var(--muted); background:var(--inset); border:1px solid var(--border); border-radius:4px; padding:1px 7px}
+
+  .field{margin-bottom:10px}
+  .field label{display:block; font-size:11px; color:var(--muted); margin-bottom:3px}
+  .tb{background:var(--inset); border:1px solid var(--border); border-radius:5px; color:var(--text); padding:5px 9px; font-size:13px; font-family:inherit; width:100%}
+  .tb:focus{outline:none; border-color:var(--gold)}
+  .dd{position:relative; background:var(--inset); border:1px solid var(--border); border-radius:5px; padding:5px 24px 5px 9px; font-size:13px; color:var(--text); display:inline-block; min-width:120px}
+  .dd::after{content:"▾"; position:absolute; right:9px; color:var(--muted)}
+
+  .pv{display:flex; gap:5px; align-items:center}
+  .ic{position:relative; width:26px; height:26px; border-radius:4px; border:1px solid #3a4152; flex:none}
+  .ic .d{position:absolute; right:1px; bottom:0; font-size:9px; font-weight:700; color:#fff; text-shadow:0 1px 2px #000}
+  .ic.big{width:40px; height:40px; border-radius:6px}
+  .ic.big .d{font-size:12px}
+  .ic.tiny{width:16px; height:16px; border-radius:3px}
+  .ic.mid{width:32px; height:32px; border-radius:5px}
+  .ic.mid .d{font-size:11px}
+  .ic-green{background:linear-gradient(135deg,#0f5c3d,#00c078)}
+  .ic-teal{background:linear-gradient(135deg,#0e4d4a,#28a396)}
+  .ic-blue{background:linear-gradient(135deg,#1d3a63,#3f8fd6)}
+  .ic-red{background:linear-gradient(135deg,#5c1b1b,#c74444)}
+  .ic-goldy{background:linear-gradient(135deg,#6b501a,#e0b23e)}
+  .ic-purple{background:linear-gradient(135deg,#3d2a5c,#8a63c9)}
+  .ic-steel{background:linear-gradient(135deg,#3a3f4d,#7a8296)}
+  .ic-brown{background:linear-gradient(135deg,#4d3517,#a3702e)}
+  .ic.glow{box-shadow:0 0 10px 3px rgba(232,193,90,.75), inset 0 0 4px rgba(255,255,255,.35); border-color:var(--gold)}
+
+  .zones{display:grid; grid-template-columns:repeat(3,34px); gap:4px}
+  .zone{width:34px;height:24px;background:var(--inset);border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:0}
+  .zone.on{background:rgba(232,193,90,.25); border-color:var(--gold)}
+
+  .toast{
+    display:flex; align-items:center; gap:10px;
+    background:rgba(122,195,122,.1); border:1px solid rgba(122,195,122,.45);
+    border-radius:6px; padding:9px 14px; font-size:13px;
+  }
+  .toast .tick{color:var(--ok); font-weight:700}
+
+  .checklist{list-style:none}
+  .checklist li{padding:7px 0 7px 26px; position:relative; font-size:14px}
+  .checklist li::before{position:absolute; left:0; font-weight:700}
+  .checklist.good li::before{content:"✓"; color:var(--ok)}
+  .checklist.badl li::before{content:"✗"; color:var(--bad)}
+  .checklist.dash li::before{content:"—"; color:var(--muted)}
+  .numlist{list-style:none; counter-reset:n}
+  .numlist li{counter-increment:n; padding:8px 0 8px 34px; position:relative; font-size:14px}
+  .numlist li::before{
+    content:counter(n); position:absolute; left:0; top:7px;
+    width:22px; height:22px; border-radius:50%; background:var(--inset);
+    border:1px solid var(--gold); color:var(--gold); font-size:12px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .code{
+    font-family:var(--mono); font-size:12.5px; line-height:1.55;
+    background:var(--inset); border:1px solid var(--border); border-radius:6px;
+    padding:14px 16px; white-space:pre; overflow-x:auto; color:#c9d1e3;
+  }
+  .code .c{color:#5d667c}
+  .code .k{color:var(--gold)}
+  .code .s{color:#7ac37a}
+  .statbig{font-size:34px; font-weight:700; color:var(--gold); line-height:1.1}
+  .statlbl{font-size:12.5px; color:var(--muted); margin-top:2px}
+  .divider{border:0; border-top:1px solid var(--border); margin:18px 0}
+  .callout{background:var(--inset); border-left:3px solid var(--gold); border-radius:0 6px 6px 0; padding:10px 14px; font-size:13.5px; margin-top:14px}
+
+  /* ---------- New Display dialog mock ---------- */
+  .dlg{width:560px; max-width:100%; background:var(--panel); border:1px solid var(--border); border-radius:var(--r); box-shadow:0 14px 44px rgba(0,0,0,.65); overflow:hidden; margin:0 auto}
+  .dlg-tb{display:flex; align-items:center; justify-content:space-between; padding:9px 14px; background:var(--inset); border-bottom:1px solid var(--border); cursor:grab; user-select:none}
+  .dlg-tb .t{font-size:13px; font-weight:600}
+  .dlg-tb .x{color:var(--muted); font-size:14px; cursor:pointer}
+  .dlg-tabs{display:flex; background:var(--inset); border-bottom:1px solid var(--border); padding:0 10px}
+  .dtab{padding:8px 16px; font-size:13px; color:var(--muted); cursor:pointer; border:0; background:none; font-family:inherit; border-bottom:2px solid transparent}
+  .dtab:hover{color:var(--text)}
+  .dtab.on{color:var(--gold); border-bottom-color:var(--gold); font-weight:600}
+  .dlg-body{height:340px; overflow-y:auto; padding:12px 14px; position:relative}
+
+  .trow{display:flex; gap:10px; align-items:center; padding:8px 8px; border-radius:6px}
+  .trow:hover{background:rgba(255,255,255,.04)}
+  .trow .tinfo{flex:1; min-width:0}
+  .trow .tn{font-size:13px; font-weight:600; line-height:1.25}
+  .trow .td{font-size:12px; color:var(--muted); line-height:1.35}
+  .trow .tm{font-size:11px; color:var(--muted); margin-top:2px; display:flex; align-items:center; gap:7px}
+  .trow.done{background:rgba(122,195,122,.07); outline:1px solid rgba(122,195,122,.35)}
+  .tgrp{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.09em; margin:8px 4px 3px}
+
+  .wtop{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px}
+  .wsteps{display:flex; gap:5px}
+  .wchip{width:20px; height:20px; border-radius:50%; background:var(--inset); border:1px solid var(--border); color:var(--muted); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center}
+  .wchip.on{border-color:var(--gold); color:var(--gold)}
+  .wchip.past{border-color:var(--ok); color:var(--ok)}
+  .wq{font-size:16px; font-weight:700; margin-bottom:10px}
+  .gcards{display:grid; grid-template-columns:1fr 1fr; gap:8px}
+  .gcard{
+    background:var(--inset); border:1px solid var(--border); border-radius:6px;
+    padding:9px 11px; cursor:pointer; text-align:left; font-family:inherit; color:var(--text);
+  }
+  .gcard:hover{border-color:var(--muted)}
+  .gcard.on{border-color:var(--gold); background:rgba(232,193,90,.09)}
+  .gcard .gt{font-size:13px; font-weight:600}
+  .gcard .gd{font-size:11.5px; color:var(--muted); margin-top:1px}
+  .wfoot{display:flex; justify-content:space-between; align-items:center; margin-top:14px}
+  .lookcards{display:flex; gap:8px}
+  .lookcard{background:var(--inset); border:1px solid var(--border); border-radius:6px; padding:10px 12px; cursor:pointer; font-family:inherit; color:var(--text); text-align:center; flex:1}
+  .lookcard.on{border-color:var(--gold); background:rgba(232,193,90,.09)}
+  .lookcard .lt{font-size:12.5px; font-weight:600; margin-top:6px}
+  .seg{display:inline-flex; border:1px solid var(--border); border-radius:6px; overflow:hidden}
+  .seg button{background:var(--inset); color:var(--muted); border:0; padding:5px 13px; font-size:12.5px; cursor:pointer; font-family:inherit; border-right:1px solid var(--border)}
+  .seg button:last-child{border-right:0}
+  .seg button.on{background:rgba(232,193,90,.16); color:var(--gold); font-weight:600}
+  .echo{font-size:12.5px; margin-top:6px; min-height:19px}
+  .mini{position:relative; height:130px; background:#0d1016; border:1px solid var(--border); border-radius:6px; overflow:hidden}
+  .mini .zl{position:absolute; font-size:10px; color:#3a4152}
+
+  /* ---------- editor mock ---------- */
+  .ed-head{display:flex; align-items:center; gap:9px; padding:10px 14px; border-bottom:1px solid var(--border)}
+  .ed-head .en{font-weight:600; font-size:14px}
+  .summary{
+    padding:9px 14px; font-size:13px; color:var(--text);
+    background:rgba(232,193,90,.06); border-bottom:1px solid var(--border); font-style:italic;
+  }
+  .erow{display:flex; justify-content:space-between; align-items:center; padding:6px 14px; font-size:13px; gap:12px}
+  .erow .el{color:var(--muted)}
+  .erow.dim .el, .erow.dim{color:#5d667c}
+  .sec{
+    display:flex; align-items:center; gap:8px; width:100%;
+    padding:7px 14px; font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--gold); background:var(--inset); border:0; border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+    cursor:pointer; font-family:inherit; text-align:left;
+  }
+  .sec .arrow{font-size:10px}
+  .sec .cnt{margin-left:auto; font-weight:400; text-transform:none; letter-spacing:0; color:var(--muted)}
+  .tog{width:34px; height:18px; border-radius:999px; background:var(--inset); border:1px solid var(--border); position:relative; cursor:pointer; flex:none}
+  .tog::after{content:""; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:var(--muted); transition:left .12s}
+  .tog.on{background:rgba(122,195,122,.25); border-color:var(--ok)}
+  .tog.on::after{left:18px; background:var(--ok)}
+  .spellrow{display:flex; align-items:center; gap:8px; padding:5px 9px; font-size:12.5px}
+  .spellrow .rm{margin-left:auto; color:var(--muted); cursor:pointer}
+
+  /* ---------- architecture diagram ---------- */
+  .arch{display:flex; align-items:stretch; gap:0; margin-top:8px}
+  .archcol{flex:1; min-width:0}
+  .archbox{background:var(--panel); border:1px solid var(--border); border-radius:var(--r); padding:14px 16px}
+  .archbox h3{margin-bottom:4px}
+  .archbox .absub{font-size:12px; color:var(--muted)}
+  .archtab{background:var(--inset); border:1px solid var(--border); border-radius:6px; padding:7px 11px; font-size:12.5px; margin-top:8px}
+  .archtab b{font-size:12.5px}
+  .archtab .at{font-size:11.5px; color:var(--muted)}
+  .archarrow{display:flex; align-items:center; justify-content:center; width:56px; color:var(--gold); font-size:22px; flex:none}
+  .doorflow{display:flex; gap:0; align-items:stretch; margin-top:10px}
+  .door{flex:1; background:var(--panel); border:1px solid var(--border); border-radius:var(--r); padding:16px 18px}
+  .door .dnum{font-size:11px; color:var(--gold); text-transform:uppercase; letter-spacing:.1em; font-weight:700}
+  .door h3{font-size:17px; margin:3px 0 6px}
+  .door p{font-size:13px; color:var(--muted)}
+  .doorarrow{display:flex; align-items:center; justify-content:center; width:48px; color:var(--gold); font-size:20px; flex:none}
+</style>
+</head>
+<body>
+
+<div class="caption"><b>QUI</b> · Aura Displays UX — Unified Design (implemented)</div>
+
+<!-- ============ SLIDE 1 · TITLE ============ -->
+<section class="slide">
+  <div class="wrap" style="display:flex;flex-direction:column;justify-content:center">
+    <div class="kicker">Unified design · shipped in the addon</div>
+    <h1>Three doors,<br>one editor.</h1>
+    <p class="lede" style="margin-top:16px">
+      Approaches 1 + 2 + 3 combined and implemented: <b style="color:var(--text)">Templates</b> for instant value,
+      a <b style="color:var(--text)">Guided wizard</b> for intent-first creation, and <b style="color:var(--text)">Simple Mode</b>
+      so the editor you land in afterwards doesn't drown you. All three produce ordinary Displays,
+      editable in the same 3-tab detail pane (General / Auras / Load Conditions).
+    </p>
+    <div class="pv" style="margin-top:34px; gap:14px">
+      <span class="ic big ic-green"><span class="d">18</span></span>
+      <span class="ic big ic-teal"><span class="d">12</span></span>
+      <span class="ic big ic-goldy glow"></span>
+      <span class="ic big ic-red"><span class="d">7</span></span>
+      <span class="ic big ic-purple"><span class="d">4</span></span>
+    </div>
+    <p class="muted small" style="margin-top:30px">← / → to navigate · mockups are clickable</p>
+  </div>
+</section>
+
+<!-- ============ SLIDE 2 · WHAT WAS COMBINED ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Recap</div>
+    <h2>What was combined — and what was deferred</h2>
+    <p class="sub">Five approaches were explored (decks 01–05). Three ship now as one design; two are deliberately deferred, not rejected.</p>
+    <div class="cols">
+      <div class="panel" style="padding:16px 18px">
+        <div class="badge strip">SHIPPED</div>
+        <h3 style="margin:8px 0 2px">01 · Guided wizard → <span style="color:var(--gold)">Guidance</span></h3>
+        <p class="small muted">Intent-first creation: "what do you want to track?" before any settings. Ships as the <b style="color:var(--text)">Guided tab</b> of the New Display dialog — 4 steps, goal → spell → look → place.</p>
+      </div>
+      <div class="panel" style="padding:16px 18px">
+        <div class="badge strip">SHIPPED</div>
+        <h3 style="margin:8px 0 2px">02 · Templates → <span style="color:var(--gold)">Discovery</span></h3>
+        <p class="small muted">Ship content, not blank forms. Ships as the <b style="color:var(--text)">Templates tab</b> (the default): ~8 curated starters, one click each, fully configured and positioned.</p>
+      </div>
+      <div class="panel" style="padding:16px 18px">
+        <div class="badge strip">SHIPPED</div>
+        <h3 style="margin:8px 0 2px">03 · Simple Mode → <span style="color:var(--gold)">Mastery</span></h3>
+        <p class="small muted">The editor stays learnable: a summary sentence per element, essentials always visible, everything else in collapsed sections. Ships as a <span class="mono">simpleMode</span> capability on the shared editor.</p>
+      </div>
+    </div>
+    <hr class="divider">
+    <ul class="checklist dash">
+      <li><b>04 · Canvas</b> — deferred: direct-manipulation editing is a large rendering investment; the 3×3 zone picker plus existing anchor records cover placement for now.</li>
+      <li><b>05 · Recipes</b> — deferred: the sentence UI shipped as <em>read-only output</em> (the Simple Mode summary sentence) rather than as an input language; per-display share strings would come with it.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ SLIDE 3 · REINFORCEMENT LOOP ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Why these three</div>
+    <h2>The doors reinforce each other</h2>
+    <p class="sub">Each door hands the user to the next one. Same data model everywhere — nothing forks.</p>
+    <div class="doorflow">
+      <div class="door">
+        <div class="dnum">Door 1 · Discovery</div>
+        <h3>Templates</h3>
+        <p>Show what the feature can do. One click installs a working display — the feature demos itself before the user configures anything.</p>
+      </div>
+      <div class="doorarrow">→</div>
+      <div class="door">
+        <div class="dnum">Door 2 · Guidance</div>
+        <h3>Guided wizard</h3>
+        <p>Teach intent → settings for the user's <em>own</em> ideas. Four questions produce a configured display and quietly show which settings encode which intent.</p>
+      </div>
+      <div class="doorarrow">→</div>
+      <div class="door">
+        <div class="dnum">Door 3 · Mastery</div>
+        <h3>Simple Mode</h3>
+        <p>Keep the editor learnable when the user tweaks the result. The summary sentence names what each setting does; the full control set is one section-header away.</p>
+      </div>
+    </div>
+    <div class="callout">
+      <b>One data model.</b> A template <em>is</em> just a serialized display. The wizard's output <em>is</em> just a display.
+      Simple Mode is a <em>rendering order</em>, not a fork — no "simple displays" vs "advanced displays", no migration, no dead end.
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 4 · ARCHITECTURE ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Architecture</div>
+    <h2>Three tabs in, one Display store, one editor out</h2>
+    <p class="sub">Every creation path converges on the same stored Display record and the same detail pane.</p>
+    <div class="arch">
+      <div class="archcol">
+        <div class="archbox">
+          <h3>New Display dialog</h3>
+          <div class="absub">560×430 · draggable · opens from the existing "New Display" button</div>
+          <div class="archtab"><b>Templates</b> <span class="badge strip" style="margin-left:4px">DEFAULT</span><div class="at">~8 curated starters · role-aware sort · 1 click</div></div>
+          <div class="archtab"><b>Guided</b><div class="at">4-step wizard · goal → spell → look → place</div></div>
+          <div class="archtab"><b>Custom</b><div class="at">the old quick-create form · power-user escape hatch</div></div>
+        </div>
+      </div>
+      <div class="archarrow">→</div>
+      <div class="archcol">
+        <div class="archbox" style="height:100%">
+          <h3>Display store</h3>
+          <div class="absub">one record shape, all paths</div>
+          <div class="archtab"><span class="mono">AD.DefaultBucket</span> defaults<div class="at">32 px icons · 12 pt duration text on · sorted</div></div>
+          <div class="archtab"><span class="mono">display.load.{classes,specs,roles}</span><div class="at">same sets the Load Conditions tab writes</div></div>
+          <div class="archtab"><span class="mono">frameAnchoring["auraDisplay_&lt;id&gt;"]</span><div class="at">screen-zone preset → real anchor record</div></div>
+        </div>
+      </div>
+      <div class="archarrow">→</div>
+      <div class="archcol">
+        <div class="archbox" style="height:100%">
+          <h3>Detail editor</h3>
+          <div class="absub">unchanged 3-tab pane</div>
+          <div class="archtab"><b>General</b> · <b>Auras</b> · <b>Load Conditions</b><div class="at">every created display lands here, selected</div></div>
+          <div class="archtab"><span class="mono">simpleMode</span> capability<div class="at">summary sentence + essentials-first rendering — Aura Displays page only</div></div>
+          <div class="archtab">Other hosts unchanged<div class="at">Group Frames / Unit Frames / Nameplates pass no capability → render exactly as before</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="callout">The dialog never invents settings: it calls the same element constructors the editor uses
+      (<span class="mono">E.NewTrackedElement</span>, <span class="mono">E.NewFilterStripElement</span>, <span class="mono">E.ApplyWhatToShow</span>)
+      and writes the same records the tabs write.</div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 5 · DIALOG: TEMPLATES TAB ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Door 1 · New Display dialog</div>
+    <h2>Templates tab — the default landing</h2>
+    <p class="sub">Templates relevant to your current role sort first. One click on <b style="color:var(--text)">Add</b> installs a fully configured display — 32 px icons, duration text on, sorted, positioned via a screen-zone preset — and selects it in the list.</p>
+    <div class="cols">
+      <div style="flex:1.35">
+        <div id="dlgTpl"></div>
+        <p class="hint">↳ click the tabs, or click "Add" on a template</p>
+      </div>
+      <div>
+        <h3 style="margin-bottom:8px">Generic by design</h3>
+        <p class="small muted" style="margin-bottom:12px">
+          Templates are built from <b style="color:var(--text)">Blizzard's aura classifications</b> — dispellable, boss,
+          loss-of-control, only-mine, stealable — not from curated per-spec spell lists. So they never rot when a patch
+          reshuffles spells.
+        </p>
+        <ul class="checklist good small">
+          <li>Row anatomy: icon · name · one-line description · meta (STRIP badge · unit · e.g. "Load: Tanks")</li>
+          <li>"Recommended for you" group keyed off current role</li>
+          <li>Installed display is an ordinary Display — edit or delete it like any other</li>
+          <li>Add is idempotent-friendly: adding twice just makes a second copy with a numbered name</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 6 · DIALOG: CUSTOM TAB ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Door 1 · New Display dialog</div>
+    <h2>Custom tab — the power-user escape hatch</h2>
+    <p class="sub">The old quick-create form survives intact as the third tab: two clicks from anywhere, zero ceremony. It now inherits the fixed defaults like every other path.</p>
+    <div class="cols">
+      <div style="flex:1.35">
+        <div id="dlgCustom"></div>
+        <p class="hint">↳ toggle Track spells / Filter strip, then click Create</p>
+      </div>
+      <div>
+        <ul class="checklist good small">
+          <li>Track spells | Filter strip segmented control</li>
+          <li>Spell ID + Browse, Name, Unit — nothing else asked</li>
+          <li>Creates with the same 32 px / duration-on defaults (the 16 px bug is dead — slide 11)</li>
+          <li>Retained as the fallback path if the dialog module ever fails to load</li>
+        </ul>
+        <div class="callout small">Power users lose nothing: the Custom tab is the exact form they already know,
+        one tab-click away from the Templates default.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 7 · WIZARD STEPS 1–2 ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Door 1 · Guided tab</div>
+    <h2>Guided wizard — goal first, spell second</h2>
+    <p class="sub">Step 1 asks <em>what</em>, not <em>how</em>: six goal cards map straight onto element configurations. Step 2 branches — tracked goals get a spell-ID input with live name echo; strip goals get a pre-selected, editable "What to Show".</p>
+    <div class="cols">
+      <div style="flex:1.35">
+        <div id="dlgWiz"></div>
+        <p class="hint">↳ pick a goal card, then Next — walk all four steps to Create</p>
+      </div>
+      <div>
+        <h3 style="margin-bottom:8px">Goal → configuration</h3>
+        <ul class="checklist dash small">
+          <li><b>A buff or proc on me</b> → tracked · Only My Cast</li>
+          <li><b>My debuff on my target</b> → tracked · HARMFUL · unit Target</li>
+          <li><b>All my short buffs</b> → filter strip · only mine</li>
+          <li><b>Debuffs I can dispel</b> → strip · dispellable</li>
+          <li><b>Boss debuffs on me</b> → strip · boss auras</li>
+          <li><b>Another player's auras</b> → unit-focused strip</li>
+        </ul>
+        <div class="callout small">The card copy names the intent; the fine print names the mechanism.
+        Users learn the intent→settings mapping just by reading the cards.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 8 · WIZARD STEPS 3–4 ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Door 1 · Guided tab</div>
+    <h2>Look, place, load — then Create</h2>
+    <p class="sub">This instance is seeded from steps 1–2 (goal: a buff on me · spell: <span class="spell">Renewing Mist</span> <span class="mono">115151</span>). Step 3 picks display type and size; step 4 names it, places it on a 3×3 screen grid, and sets load conditions.</p>
+    <div class="cols">
+      <div style="flex:1.35">
+        <div id="dlgWiz2"></div>
+        <p class="hint">↳ pick a look and size, Next, then place it and click Create Display</p>
+      </div>
+      <div>
+        <ul class="checklist good small">
+          <li>Display type cards — Icon / Bar / Colored Square (tracked goals only)</li>
+          <li>Size presets S / M / L = 24 / 32 / 40 px</li>
+          <li>Name auto-filled from the spell; unit pre-set by the goal</li>
+          <li>3×3 zone picker writes a real <span class="mono">frameAnchoring</span> record — no dead-center spawns</li>
+          <li>Load: Always / My class only / My spec only → the same <span class="mono">display.load</span> sets as the Load Conditions tab</li>
+          <li>"Create Display" lands you in the editor with everything set</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 9 · TEMPLATE CATALOG ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Door 1 · reference</div>
+    <h2>The v1 template catalog</h2>
+    <p class="sub">Eight starters, all filter strips over Blizzard classifications. Every one installs at 32 px with 12 pt duration text, sorted by expiration, positioned by zone preset.</p>
+    <div class="panel" style="overflow:hidden">
+      <table style="width:100%; border-collapse:collapse; font-size:13px">
+        <thead>
+          <tr style="background:var(--inset); text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted)">
+            <th style="padding:8px 14px">Template</th><th style="padding:8px 10px">Classification filter</th>
+            <th style="padding:8px 10px">Unit</th><th style="padding:8px 10px">Position</th><th style="padding:8px 14px">Load</th>
+          </tr>
+        </thead>
+        <tbody id="cattbl"></tbody>
+      </table>
+    </div>
+    <div class="callout small">Deliberately <b>no</b> "Mistweaver essentials"-style packs in v1: spec-curated spell lists rot with every patch
+      and multiply the maintenance surface. Classification-based templates are evergreen; spec curation is a natural follow-up (slide 13).</div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 10 · SIMPLE MODE EDITOR ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Door 2 · the editor</div>
+    <h2>Simple Mode — sentence, essentials, sections</h2>
+    <p class="sub">Every expanded element opens with a summary sentence built from its real settings — it updates live as you change them. Essentials stay visible; the rest collapses. Only the Aura Displays page opts in.</p>
+    <div class="cols">
+      <div>
+        <h3 class="small" style="margin-bottom:6px">Tracked element <span class="muted">(was a 31-row wall)</span></h3>
+        <div class="panel" style="overflow:hidden">
+          <div class="ed-head"><span class="ic ic-green" style="width:20px;height:20px"></span><span class="en">Renewing Mist</span><span class="badge tracked">TRACKED</span></div>
+          <div class="summary" id="sumTracked"></div>
+          <div style="padding:8px 14px 2px"><div class="small" style="font-size:11px;color:var(--muted);margin-bottom:3px">TRACKED SPELLS <span style="text-transform:none">— hoisted to the top</span></div>
+            <div class="inset">
+              <div class="spellrow"><span class="ic ic-green" style="width:18px;height:18px"></span><span class="spell">Renewing Mist</span><span class="mono muted">115151</span><span class="rm">×</span></div>
+            </div>
+            <button class="btn sm" style="margin:6px 0 4px">+ Add spell</button>
+          </div>
+          <div class="erow"><span class="el">Display Type</span><span class="dd">Icon</span></div>
+          <div class="erow"><span class="el">Aura Type</span><span class="dd">Buffs (HELPFUL)</span></div>
+          <div class="erow"><span class="el">Only My Cast</span><button class="tog on" id="omcTog" aria-label="Only My Cast"></button></div>
+          <div class="erow"><span class="el">Icon Size</span><span class="dd" style="min-width:70px">32</span></div>
+          <button class="sec" id="apSec"><span class="arrow">▸</span> Appearance &amp; Placement <span class="cnt">18 rows</span></button>
+          <div id="apRows" style="display:none">
+            <div class="erow dim"><span class="el">Anchor Point</span><span class="dd">CENTER</span></div>
+            <div class="erow dim"><span class="el">Grow Direction</span><span class="dd">Right</span></div>
+            <div class="erow dim"><span class="el">Offset X / Y</span><span class="mono muted">0 / -220</span></div>
+            <div class="erow dim"><span class="el">Cooldown Swipe</span><button class="tog on" style="pointer-events:none"></button></div>
+            <div class="erow dim"><span class="el">Duration Text</span><span class="dd" style="min-width:70px">12 pt</span></div>
+            <div class="erow dim"><span class="el">Stack Text · Tooltip · Dispel border …</span><span class="muted small">12 more</span></div>
+          </div>
+        </div>
+        <p class="hint">↳ toggle Only My Cast (watch the sentence) · click the section header</p>
+      </div>
+      <div>
+        <h3 class="small" style="margin-bottom:6px">Filter strip <span class="muted">(essentials hoisted above the sections)</span></h3>
+        <div class="panel" style="overflow:hidden">
+          <div class="ed-head"><span class="ic ic-goldy" style="width:20px;height:20px"></span><span class="en">My Active Buffs</span><span class="badge strip">STRIP</span></div>
+          <div class="summary" id="sumStrip"></div>
+          <div class="erow"><span class="el">Aura Type</span><span class="dd">Buffs (HELPFUL)</span></div>
+          <div class="erow"><span class="el">What to Show</span><button class="dd" id="wtsDD" style="cursor:pointer;font-family:inherit;text-align:left">Only my auras</button></div>
+          <div class="erow"><span class="el">Max Icons</span><span class="dd" style="min-width:70px">8</span></div>
+          <div class="erow"><span class="el">Icon Size</span><span class="dd" style="min-width:70px">32</span></div>
+          <button class="sec" data-sec="s1"><span class="arrow">▸</span> Placement <span class="cnt">6 rows</span></button>
+          <div data-secrows="s1" style="display:none">
+            <div class="erow dim"><span class="el">Anchor · Grow · Wrap · Spacing · Offsets</span><span class="muted small">…</span></div>
+          </div>
+          <button class="sec" data-sec="s2"><span class="arrow">▸</span> Filters <span class="cnt">9 rows</span></button>
+          <div data-secrows="s2" style="display:none">
+            <div class="erow dim"><span class="el">Duration bounds · blocklist · allowlist …</span><span class="muted small">…</span></div>
+          </div>
+          <button class="sec" data-sec="s3"><span class="arrow">▸</span> Appearance &amp; Advanced <span class="cnt">14 rows</span></button>
+          <div data-secrows="s3" style="display:none">
+            <div class="erow dim"><span class="el">Text sizes · sort · tooltip · borders …</span><span class="muted small">…</span></div>
+          </div>
+        </div>
+        <p class="hint">↳ click "What to Show" to cycle it (watch the sentence)</p>
+        <p class="small muted" style="margin-top:10px">Net effect: an expanded strip shows <b style="color:var(--text)">~5 rows + 3 headers</b> —
+        no more section-diving to find "What to Show".</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 11 · BEFORE / AFTER ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Outcome</div>
+    <h2>Before / after</h2>
+    <p class="sub">The old quick-create bug — 16 px icons with duration text off, because the well-tuned <span class="mono">AD.DefaultBucket</span> was discarded — is fixed at the root, for <b style="color:var(--text)">all</b> creation paths.</p>
+    <div class="cols">
+      <div>
+        <h3 style="color:var(--bad); margin-bottom:8px">✗ Before</h3>
+        <div class="panel" style="padding:14px 16px">
+          <div class="small muted" style="margin-bottom:6px">1 · A 300×240 popup with raw fields</div>
+          <div class="inset" style="width:190px; height:110px; display:flex; align-items:center; justify-content:center; font-size:11px; color:var(--muted)">ID · Name · Unit · Create</div>
+          <div class="small muted" style="margin:12px 0 6px">2 · 16 px icons spawn dead-center, no duration text</div>
+          <div class="mini" style="height:90px"><span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;gap:3px"><span class="ic tiny ic-green"></span><span class="ic tiny ic-teal"></span></span></div>
+          <div class="small muted" style="margin:12px 0 6px">3 · …then a 31-row wall of controls to fix it</div>
+          <div class="inset" style="padding:6px 10px">
+            <div style="height:5px;background:var(--border);border-radius:2px;margin:5px 0;width:92%"></div>
+            <div style="height:5px;background:var(--border);border-radius:2px;margin:5px 0;width:85%"></div>
+            <div style="height:5px;background:var(--border);border-radius:2px;margin:5px 0;width:95%"></div>
+            <div style="height:5px;background:var(--border);border-radius:2px;margin:5px 0;width:78%"></div>
+            <div class="small muted" style="font-size:10px">× 31</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <h3 style="color:var(--ok); margin-bottom:8px">✓ After</h3>
+        <div class="panel" style="padding:14px 16px">
+          <div class="small muted" style="margin-bottom:6px">1 · Three doors: Templates · Guided · Custom</div>
+          <div style="display:flex; gap:6px">
+            <span class="tag" style="border-color:var(--gold); color:var(--gold)">Templates</span>
+            <span class="tag">Guided</span><span class="tag">Custom</span>
+          </div>
+          <div class="small muted" style="margin:12px 0 6px">2 · 32 px icons, duration text on, positioned by zone preset</div>
+          <div class="mini" style="height:90px"><span style="position:absolute;left:50%;top:10px;transform:translateX(-50%);display:flex;gap:4px"><span class="ic mid ic-green"><span class="d">18</span></span><span class="ic mid ic-teal"><span class="d">12</span></span><span class="ic mid ic-goldy"><span class="d">7</span></span></span></div>
+          <div class="small muted" style="margin:12px 0 6px">3 · Editor opens on a sentence + essentials</div>
+          <div class="inset" style="padding:8px 10px; font-size:12px">
+            <em>"Shows an icon of <span class="spell">Renewing Mist</span> on Player — only your casts."</em>
+            <div class="muted" style="font-size:11px; margin-top:4px">4 essential rows · spells list · 1 collapsed section</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex; gap:40px; margin-top:20px">
+      <div><div class="statbig">3</div><div class="statlbl">creation paths, one record shape</div></div>
+      <div><div class="statbig">1 click</div><div class="statlbl">from "New Display" to a working, positioned display</div></div>
+      <div><div class="statbig">0</div><div class="statlbl">16 px dead-center spawns — defaults fixed for every path</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 12 · IMPLEMENTATION NOTES ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Implementation</div>
+    <h2>Where it lives</h2>
+    <p class="sub">Data and UI are split so the interesting logic is testable without a WoW client.</p>
+    <div class="cols">
+      <div style="flex:1.2">
+        <div class="code">modules/trackers/<span class="k">aura_display_templates.lua</span>   <span class="c">← NEW</span>
+  <span class="s">ns.QUI_AuraDisplayTemplates</span>
+  template list + goal list + pure builder functions
+  UI-free → unit-testable headless
+
+modules/trackers/settings/<span class="k">aura_displays_create.lua</span>  <span class="c">← NEW</span>
+  <span class="s">ns.QUI_AuraDisplaysCreate</span> — the 3-tab dialog
+  wired into the existing "New Display" button in
+  aura_displays_content.lua
+  <span class="c">old popup retained as the Custom tab / fallback</span>
+
+QUI_Options/<span class="k">aura_elements_editor.lua</span>            <span class="c">← CHANGED</span>
+  new <span class="s">simpleMode</span> capability + <span class="s">summaryUnit</span> string
+  passed only by the Aura Displays page;
+  other hosts pass neither → render exactly as before</div>
+      </div>
+      <div>
+        <ul class="checklist good">
+          <li>Element construction reuses <span class="mono">E.NewTrackedElement</span> / <span class="mono">E.NewFilterStripElement</span> / <span class="mono">E.ApplyWhatToShow</span></li>
+          <li>Load gating writes the same <span class="mono">display.load.{classes,specs,roles}</span> sets as the Load Conditions tab</li>
+          <li>Positions use existing <span class="mono">frameAnchoring</span> records + <span class="mono">QUI_ApplyFrameAnchor</span></li>
+          <li>Unit tests: template installation validity · wizard spec building · summary-sentence builder</li>
+          <li>New <span class="mono">ns.L</span> strings go through QUI's i18n regen pipeline</li>
+        </ul>
+        <div class="callout small">Capability gating means Group Frames, Unit Frames, and Nameplates — which share the
+        element editor — are untouched. Simple Mode cannot regress them because they never opt in.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 13 · NOT IN V1 ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Scope</div>
+    <h2>Deliberately not in v1</h2>
+    <p class="sub">Each cut has a natural follow-up path — nothing here is architecturally foreclosed.</p>
+    <ul class="numlist">
+      <li><b>Per-display share strings</b> — templates prove the serialization shape; export/import of that same shape is the obvious next increment.</li>
+      <li><b>Spec-curated spell suggestions in wizard step 2</b> — the spell-ID input works today; a curated suggestion list per spec can slot into the same field once there's a maintenance story for it.</li>
+      <li><b>Canvas editing (deck 04)</b> — the 3×3 zone picker + <span class="mono">frameAnchoring</span> already position displays; drag-on-screen editing can layer on top of the same anchor records later.</li>
+      <li><b>Recipes (deck 05)</b> — the summary sentence ships read-only; making it <em>editable</em> (sentence-as-input) is the follow-up once the sentence vocabulary has proven itself.</li>
+    </ul>
+    <hr class="divider">
+    <div class="cols">
+      <div>
+        <h3 style="margin-bottom:6px">The bet, restated</h3>
+        <p class="small muted">Discovery → guidance → mastery, over one data model. Templates get users to value in one click;
+        the wizard teaches the mapping from intent to settings; Simple Mode keeps the full editor approachable.
+        Everything created is an ordinary Display — so power users, sharers, and future features all meet in the same place.</p>
+      </div>
+      <div>
+        <p class="small muted" style="margin-top:2px">Compare the source decks:
+          <a href="01-wizard.html">01 · Wizard</a> · <a href="02-templates.html">02 · Templates</a> ·
+          <a href="03-simple-mode.html">03 · Simple Mode</a> · <a href="04-canvas.html">04 · Canvas</a> ·
+          <a href="05-recipes.html">05 · Recipes</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- deck nav -->
+<div class="navcluster">
+  <div class="dots" id="dots"></div>
+  <button class="navbtn" id="prev" aria-label="Previous slide">‹</button>
+  <button class="navbtn" id="next" aria-label="Next slide">›</button>
+</div>
+
+<!-- prototype harness pill -->
+<div class="harness">
+  <a href="05-recipes.html">‹ 05</a>
+  <span class="hsep">·</span>
+  <span class="hlabel">Unified Design — Wizard + Templates + Simple Mode</span>
+  <span class="hsep">·</span>
+  <a href="01-wizard.html">01 ›</a>
+  <span class="hsep">|</span>
+  <a href="index.html">☰ all</a>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- deck navigation ---------- */
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var dotsEl = document.getElementById("dots");
+  var cur = 0;
+  slides.forEach(function(_, i){
+    var d = document.createElement("button");
+    d.className = "dot"; d.setAttribute("aria-label", "Slide " + (i+1));
+    d.addEventListener("click", function(){ go(i); });
+    dotsEl.appendChild(d);
+  });
+  var dots = Array.prototype.slice.call(dotsEl.children);
+  function go(n){
+    cur = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function(s, i){ s.classList.toggle("active", i === cur); });
+    dots.forEach(function(d, i){ d.classList.toggle("on", i === cur); });
+    slides[cur].scrollTop = 0;
+  }
+  document.getElementById("prev").addEventListener("click", function(){ go(cur - 1); });
+  document.getElementById("next").addEventListener("click", function(){ go(cur + 1); });
+  document.addEventListener("keydown", function(e){
+    var t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (e.key === "ArrowRight") { go(cur + 1); e.preventDefault(); }
+    else if (e.key === "ArrowLeft") { go(cur - 1); e.preventDefault(); }
+  });
+  go(0);
+
+  /* ---------- shared data ---------- */
+  var ZONE_NAMES = ["Top Left","Top Center","Top Right","Center Left","Center","Center Right","Bottom Left","Bottom Center","Bottom Right"];
+
+  var TPLS = [
+    { id:"active",  n:"My Active Buffs",          d:"Your own short buffs; permanent auras hidden; sorted by expiration.", m:"Player · Top Center",              rec:true,  ic:"ic-green"  },
+    { id:"def",     n:"Defensives on Me",          d:"Externals and personals on you, while they last.",                    m:"Player · Center Left",             rec:true,  ic:"ic-steel"  },
+    { id:"cleanse", n:"Cleanse Helper",            d:"Debuffs on you that you can dispel.",                                 m:"Player · dispellable · Center",    rec:true,  ic:"ic-teal"   },
+    { id:"boss",    n:"Boss Debuffs on Me",        d:"Boss-flagged auras, front and center.",                               m:"Player · Top Center",              rec:false, ic:"ic-red"    },
+    { id:"cc",      n:"Crowd Control on Me",       d:"Loss-of-control effects currently on you.",                           m:"Player · Center",                  rec:false, ic:"ic-purple" },
+    { id:"dots",    n:"My Debuffs on Target",      d:"Your DoTs and debuffs on the current target.",                        m:"Target · only mine · Top Right",   rec:false, ic:"ic-goldy"  },
+    { id:"cotank",  n:"Co-Tank Defensives",        d:"Your tank partner's defensives at a glance.",                         m:"Co-Tank · Load: Tanks",            rec:false, ic:"ic-brown"  },
+    { id:"purge",   n:"Purgeable Buffs on Target", d:"Stealable and purgeable enemy buffs.",                                m:"Target · Top Right",               rec:false, ic:"ic-blue"   }
+  ];
+
+  var GOALS = [
+    { id:"buff",  t:"A buff or proc on me",     d:"Tracked icon · Only My Cast",            strip:false, unit:"Player", zone:1 },
+    { id:"dot",   t:"My debuff on my target",   d:"Tracked · HARMFUL · unit Target",         strip:false, unit:"Target", zone:2 },
+    { id:"short", t:"All my short buffs",       d:"Filter strip · only mine, no permanents", strip:true,  unit:"Player", zone:1, wts:"Only my auras" },
+    { id:"disp",  t:"Debuffs I can dispel",     d:"Filter strip · dispellable debuffs",      strip:true,  unit:"Player", zone:4, wts:"Dispellable debuffs" },
+    { id:"boss",  t:"Boss debuffs on me",       d:"Filter strip · boss auras",               strip:true,  unit:"Player", zone:1, wts:"Boss auras" },
+    { id:"other", t:"Another player's auras",   d:"Unit-focused · pick the unit in step 4",  strip:true,  unit:"Focus",  zone:5, wts:"Everything" }
+  ];
+  function goalById(id){ for (var i=0;i<GOALS.length;i++) if (GOALS[i].id===id) return GOALS[i]; return null; }
+
+  function icHtml(cls, extra, d){
+    return '<span class="ic ' + cls + (extra ? ' ' + extra : '') + '">' + (d ? '<span class="d">'+d+'</span>' : '') + '</span>';
+  }
+
+  /* ---------- dialog component ---------- */
+  function mountDialog(rootId, init){
+    var root = document.getElementById(rootId);
+    if (!root) return;
+    var st = {
+      tab: init.tab || "templates",
+      step: init.step || 1,
+      goal: init.goal || null,
+      spellText: init.spellText || "",
+      look: "icon", size: 32,
+      zone: -1, load: "always",
+      created: false,
+      installed: {},
+      customKind: "tracked", customDone: false
+    };
+    if (st.goal){ var g0 = goalById(st.goal); if (g0) st.zone = g0.zone; }
+
+    function spellMatch(){
+      var v = (st.spellText||"").toLowerCase();
+      return v.indexOf("ren") !== -1 || v.indexOf("115151") !== -1;
+    }
+    function curGoal(){ return goalById(st.goal); }
+
+    function tplRow(t){
+      var done = st.installed[t.id];
+      return '<div class="trow' + (done ? ' done' : '') + '">' +
+        icHtml(t.ic, "", "") +
+        '<div class="tinfo"><div class="tn">' + t.n + '</div><div class="td">' + t.d + '</div>' +
+        '<div class="tm"><span class="badge strip">STRIP</span><span>' + t.m + '</span></div></div>' +
+        (done
+          ? '<span class="small" style="color:var(--ok);white-space:nowrap">Added ✓</span>'
+          : '<button class="btn sm" data-add="' + t.id + '">Add</button>') +
+        '</div>';
+    }
+    function templatesBody(){
+      var h = '<div class="tgrp">Recommended for you · Healer</div>';
+      TPLS.forEach(function(t){ if (t.rec) h += tplRow(t); });
+      h += '<div class="tgrp">All templates</div>';
+      TPLS.forEach(function(t){ if (!t.rec) h += tplRow(t); });
+      var doneAny = Object.keys(st.installed).length;
+      if (doneAny){
+        h += '<div class="toast" style="margin-top:8px"><span class="tick">✓</span>' +
+          '<span>Installed &amp; selected — 32 px icons, duration text on, sorted, positioned by zone preset.</span></div>';
+      }
+      return h;
+    }
+
+    function customBody(){
+      var k = st.customKind;
+      var h = '<div class="field"><label>Type</label><span class="seg">' +
+        '<button data-ck="tracked" class="' + (k==="tracked"?"on":"") + '">Track spells</button>' +
+        '<button data-ck="strip" class="' + (k==="strip"?"on":"") + '">Filter strip</button></span></div>';
+      if (k === "tracked"){
+        h += '<div class="field"><label>Spell ID</label><div style="display:flex;gap:8px"><input class="tb" style="max-width:180px" value="115151"><button class="btn sm">Browse…</button></div></div>';
+      } else {
+        h += '<div class="field"><label>What to Show</label><span class="dd">Only my auras</span></div>';
+      }
+      h += '<div class="field"><label>Name</label><input class="tb" style="max-width:260px" value="' + (k==="tracked" ? "Renewing Mist" : "My Buffs") + '"></div>';
+      h += '<div class="field"><label>Unit</label><span class="dd">Player</span></div>';
+      h += '<div style="margin-top:14px"><button class="btn gold" data-act="customcreate"' + (st.customDone ? " disabled" : "") + '>' + (st.customDone ? "Created ✓" : "Create") + '</button></div>';
+      if (st.customDone){
+        h += '<div class="toast" style="margin-top:12px"><span class="tick">✓</span><span>Created with the fixed defaults — 32 px, 12 pt duration text on. Selected in the list.</span></div>';
+      }
+      h += '<p class="small muted" style="margin-top:12px">The old quick-create form, unchanged — two clicks from anywhere.</p>';
+      return h;
+    }
+
+    function wizChips(){
+      var h = '<div class="wsteps">';
+      for (var i=1;i<=4;i++){
+        var cls = i===st.step ? "on" : (i<st.step ? "past" : "");
+        h += '<span class="wchip ' + cls + '">' + (i<st.step ? "✓" : i) + '</span>';
+      }
+      return h + '</div>';
+    }
+    function wizFoot(nextOk, nextLabel){
+      return '<div class="wfoot">' +
+        '<button class="btn sm" data-act="back"' + (st.step===1 ? " disabled" : "") + '>‹ Back</button>' +
+        '<button class="btn sm gold" data-act="next"' + (nextOk ? "" : " disabled") + '>' + (nextLabel || "Next ›") + '</button></div>';
+    }
+    function guidedBody(){
+      var g = curGoal();
+      if (st.created){
+        var zi = st.zone, zx = zi%3, zy = Math.floor(zi/3);
+        var px = zx===0 ? "left:12px" : (zx===1 ? "left:50%;transform:translateX(-50%)" : "right:12px");
+        var py = zy===0 ? "top:10px" : (zy===1 ? "top:50%" : "bottom:10px");
+        if (zy===1) py += (zx===1 ? ";transform:translate(-50%,-50%)" : ";transform:translateY(-50%)");
+        var loadLbl = st.load==="always" ? "Always" : (st.load==="class" ? "My class only" : "My spec only");
+        return '<div class="toast"><span class="tick">✓</span><span><b>Display created &amp; selected.</b> Opens in the editor with everything set.</span></div>' +
+          '<div class="mini" style="margin-top:12px">' +
+          '<span style="position:absolute;' + px + ';' + py + ';display:flex;gap:4px">' +
+          icHtml("ic-green", "mid", "18") + '</span>' +
+          '<span class="zl" style="left:8px;bottom:6px">' + ZONE_NAMES[zi] + '</span></div>' +
+          '<p class="small muted" style="margin-top:10px">' + st.size + ' px · duration text on · anchored <b style="color:var(--text)">' +
+          ZONE_NAMES[zi] + '</b> via <span class="mono">frameAnchoring</span> · Load: ' + loadLbl + '</p>' +
+          '<div style="margin-top:12px"><button class="btn sm" data-act="wizreset">Start over</button></div>';
+      }
+      var h = '<div class="wtop"><span class="small muted">Step ' + st.step + ' of 4</span>' + wizChips() + '</div>';
+      if (st.step === 1){
+        h += '<div class="wq">What do you want to track?</div><div class="gcards">';
+        GOALS.forEach(function(gg){
+          h += '<button class="gcard' + (st.goal===gg.id ? " on" : "") + '" data-goal="' + gg.id + '">' +
+            '<div class="gt">' + gg.t + '</div><div class="gd">' + gg.d + '</div></button>';
+        });
+        h += '</div>' + wizFoot(!!st.goal);
+      } else if (st.step === 2){
+        if (g && g.strip){
+          h += '<div class="wq">What should the strip show?</div>' +
+            '<div class="field"><label>What to Show — pre-selected by your goal, editable</label><span class="dd" style="min-width:210px">' + g.wts + '</span></div>' +
+            '<p class="small muted">Built from Blizzard aura classifications — no spell list to maintain.</p>' +
+            wizFoot(true);
+        } else {
+          var ok = spellMatch();
+          h += '<div class="wq">Which spell(s)?</div>' +
+            '<div class="field"><label>Spell ID or name</label><div style="display:flex;gap:8px">' +
+            '<input class="tb" id="' + rootId + '-spell" style="max-width:200px" value="' + st.spellText.replace(/"/g,"&quot;") + '" placeholder="type &quot;ren&quot;…">' +
+            '<button class="btn sm">Browse…</button></div>' +
+            '<div class="echo">' + (ok
+              ? '✓ <span class="spell">Renewing Mist</span> <span class="mono muted">115151</span>'
+              : (st.spellText ? '<span class="muted">no match yet…</span>' : '<span class="muted">live name echo appears here</span>')) +
+            '</div></div>' + wizFoot(ok);
+        }
+      } else if (st.step === 3){
+        h += '<div class="wq">How should it look?</div>';
+        if (g && !g.strip){
+          h += '<div class="lookcards">' +
+            look1("icon",  icHtml("ic-green","mid","18"), "Icon") +
+            look1("bar",   '<span class="ic" style="width:70px;height:12px;border-radius:3px;background:linear-gradient(90deg,#0f5c3d,#00c078)"></span>', "Bar") +
+            look1("square",'<span class="ic" style="background:#00c078;border-color:#00c078"></span>', "Colored Square") +
+            '</div>';
+        } else {
+          h += '<p class="small muted" style="margin-bottom:8px">Filter strips render as icon rows — pick a size.</p>';
+        }
+        h += '<div class="field" style="margin-top:12px"><label>Icon size</label><span class="seg">' +
+          seg1(24,"S · 24") + seg1(32,"M · 32") + seg1(40,"L · 40") + '</span></div>' +
+          wizFoot(true);
+      } else {
+        var nm = (g && !g.strip && spellMatch()) ? "Renewing Mist" : (g ? g.t : "New Display");
+        h += '<div class="wq">Where and when?</div>' +
+          '<div style="display:flex; gap:22px; align-items:flex-start">' +
+          '<div style="flex:1">' +
+          '<div class="field"><label>Name — auto-filled from the spell</label><input class="tb" value="' + nm + '"></div>' +
+          '<div class="field"><label>Unit — pre-set by your goal</label><span class="dd">' + (g ? g.unit : "Player") + '</span></div>' +
+          '<div class="field"><label>Load</label><span class="seg">' +
+          loadSeg("always","Always") + loadSeg("class","My class only") + loadSeg("spec","My spec only") +
+          '</span></div></div>' +
+          '<div><label style="display:block;font-size:11px;color:var(--muted);margin-bottom:3px">Position — ' + (st.zone>=0 ? ZONE_NAMES[st.zone] : "pick a zone") + '</label>' +
+          '<div class="zones" id="' + rootId + '-zones">' + zonesHtml() + '</div></div>' +
+          '</div>' +
+          wizFoot(st.zone >= 0, "Create Display");
+      }
+      return h;
+
+      function look1(id, pv, label){
+        return '<button class="lookcard' + (st.look===id ? " on" : "") + '" data-look="' + id + '">' + pv + '<div class="lt">' + label + '</div></button>';
+      }
+      function seg1(v, label){
+        return '<button data-size="' + v + '" class="' + (st.size===v ? "on" : "") + '">' + label + '</button>';
+      }
+      function loadSeg(v, label){
+        return '<button data-load="' + v + '" class="' + (st.load===v ? "on" : "") + '">' + label + '</button>';
+      }
+      function zonesHtml(){
+        var h2 = "";
+        for (var i=0;i<9;i++) h2 += '<button class="zone' + (st.zone===i ? " on" : "") + '" data-zone="' + i + '" title="' + ZONE_NAMES[i] + '"></button>';
+        return h2;
+      }
+    }
+
+    function render(){
+      var body = st.tab==="templates" ? templatesBody() : (st.tab==="guided" ? guidedBody() : customBody());
+      root.innerHTML =
+        '<div class="dlg">' +
+        '<div class="dlg-tb"><span class="t">New Aura Display</span><span class="x">✕</span></div>' +
+        '<div class="dlg-tabs">' +
+        dtab("templates","Templates") + dtab("guided","Guided") + dtab("custom","Custom") +
+        '</div><div class="dlg-body">' + body + '</div></div>';
+      bind();
+      function dtab(id, label){
+        return '<button class="dtab' + (st.tab===id ? " on" : "") + '" data-tab="' + id + '">' + label + '</button>';
+      }
+    }
+
+    function bind(){
+      root.querySelectorAll("[data-tab]").forEach(function(b){
+        b.addEventListener("click", function(){ st.tab = b.dataset.tab; render(); });
+      });
+      root.querySelectorAll("[data-add]").forEach(function(b){
+        b.addEventListener("click", function(){ st.installed[b.dataset.add] = true; render(); });
+      });
+      root.querySelectorAll("[data-ck]").forEach(function(b){
+        b.addEventListener("click", function(){ st.customKind = b.dataset.ck; st.customDone = false; render(); });
+      });
+      var cc = root.querySelector('[data-act="customcreate"]');
+      if (cc) cc.addEventListener("click", function(){ st.customDone = true; render(); });
+      root.querySelectorAll("[data-goal]").forEach(function(b){
+        b.addEventListener("click", function(){
+          st.goal = b.dataset.goal;
+          var g = goalById(st.goal);
+          if (g){ st.zone = g.zone; }
+          render();
+        });
+      });
+      root.querySelectorAll("[data-look]").forEach(function(b){
+        b.addEventListener("click", function(){ st.look = b.dataset.look; render(); });
+      });
+      root.querySelectorAll("[data-size]").forEach(function(b){
+        b.addEventListener("click", function(){ st.size = parseInt(b.dataset.size, 10); render(); });
+      });
+      root.querySelectorAll("[data-load]").forEach(function(b){
+        b.addEventListener("click", function(){ st.load = b.dataset.load; render(); });
+      });
+      root.querySelectorAll("[data-zone]").forEach(function(b){
+        b.addEventListener("click", function(){ st.zone = parseInt(b.dataset.zone, 10); render(); });
+      });
+      var back = root.querySelector('[data-act="back"]');
+      if (back) back.addEventListener("click", function(){ if (st.step > 1){ st.step--; render(); } });
+      var next = root.querySelector('[data-act="next"]');
+      if (next) next.addEventListener("click", function(){
+        if (st.step < 4){ st.step++; render(); }
+        else { st.created = true; render(); }
+      });
+      var wr = root.querySelector('[data-act="wizreset"]');
+      if (wr) wr.addEventListener("click", function(){
+        st.created = false; st.step = 1; st.goal = null; st.spellText = ""; st.zone = -1; st.load = "always"; render();
+      });
+      var sp = document.getElementById(rootId + "-spell");
+      if (sp){
+        sp.addEventListener("input", function(){
+          st.spellText = sp.value;
+          /* re-render only the echo + Next state without stealing focus */
+          var body = root.querySelector(".dlg-body");
+          var echo = body.querySelector(".echo");
+          var ok = spellMatch();
+          if (echo) echo.innerHTML = ok
+            ? '✓ <span class="spell">Renewing Mist</span> <span class="mono muted">115151</span>'
+            : (st.spellText ? '<span class="muted">no match yet…</span>' : '<span class="muted">live name echo appears here</span>');
+          var nx = root.querySelector('[data-act="next"]');
+          if (nx){ if (ok) nx.removeAttribute("disabled"); else nx.setAttribute("disabled",""); }
+        });
+      }
+    }
+
+    render();
+  }
+
+  mountDialog("dlgTpl",    { tab:"templates" });
+  mountDialog("dlgCustom", { tab:"custom" });
+  mountDialog("dlgWiz",    { tab:"guided", step:1 });
+  mountDialog("dlgWiz2",   { tab:"guided", step:3, goal:"buff", spellText:"ren" });
+
+  /* ---------- slide 9: catalog table ---------- */
+  var CAT = [
+    ["My Active Buffs",          "Only mine · hide permanent",  "Player",  "Top Center",   "Always"],
+    ["Defensives on Me",         "Defensive buffs",             "Player",  "Center Left",  "Always"],
+    ["Cleanse Helper",           "Dispellable debuffs",         "Player",  "Center",       "Always"],
+    ["Boss Debuffs on Me",       "Boss auras",                  "Player",  "Top Center",   "Always"],
+    ["Crowd Control on Me",      "Loss of control",             "Player",  "Center",       "Always"],
+    ["My Debuffs on Target",     "Harmful · only mine (DoTs)",  "Target",  "Top Right",    "Always"],
+    ["Co-Tank Defensives",       "Defensive buffs",             "Co-Tank", "Center Right", "Tanks"],
+    ["Purgeable Buffs on Target","Stealable / purgeable",       "Target",  "Top Right",    "Always"]
+  ];
+  var tb = document.getElementById("cattbl");
+  CAT.forEach(function(r, i){
+    var tr = document.createElement("tr");
+    tr.style.borderTop = "1px solid var(--border)";
+    tr.innerHTML =
+      '<td style="padding:7px 14px; font-weight:600">' + r[0] + ' <span class="badge strip" style="margin-left:4px">STRIP</span></td>' +
+      '<td style="padding:7px 10px; color:var(--muted)">' + r[1] + '</td>' +
+      '<td style="padding:7px 10px">' + r[2] + '</td>' +
+      '<td style="padding:7px 10px; color:var(--muted)">' + r[3] + '</td>' +
+      '<td style="padding:7px 14px">' + (r[4]==="Always" ? '<span class="muted">Always</span>' : '<span style="color:var(--gold)">' + r[4] + '</span>') + '</td>';
+    tb.appendChild(tr);
+  });
+
+  /* ---------- slide 10: simple mode editor ---------- */
+  var omc = true;
+  var sumTracked = document.getElementById("sumTracked");
+  function renderTrackedSum(){
+    sumTracked.innerHTML = 'Shows an icon of <span class="spell">Renewing Mist</span> on <b>Player</b> — ' +
+      (omc ? 'only your casts.' : 'from anyone.');
+  }
+  renderTrackedSum();
+  document.getElementById("omcTog").addEventListener("click", function(){
+    omc = !omc;
+    this.classList.toggle("on", omc);
+    renderTrackedSum();
+  });
+  var apSec = document.getElementById("apSec");
+  var apRows = document.getElementById("apRows");
+  apSec.addEventListener("click", function(){
+    var open = apRows.style.display !== "none";
+    apRows.style.display = open ? "none" : "block";
+    apSec.querySelector(".arrow").textContent = open ? "▸" : "▾";
+  });
+
+  var WTS = ["Only my auras", "Everything", "Dispellable only"];
+  var wtsIdx = 0;
+  var sumStrip = document.getElementById("sumStrip");
+  var wtsDD = document.getElementById("wtsDD");
+  function renderStripSum(){
+    sumStrip.innerHTML = 'Shows up to <b>8</b> buffs on <b>Player</b> matching “' + WTS[wtsIdx] + '”, growing right.';
+    wtsDD.textContent = WTS[wtsIdx];
+  }
+  renderStripSum();
+  wtsDD.addEventListener("click", function(){ wtsIdx = (wtsIdx + 1) % WTS.length; renderStripSum(); });
+
+  document.querySelectorAll(".sec[data-sec]").forEach(function(sec){
+    sec.addEventListener("click", function(){
+      var rows = document.querySelector('[data-secrows="' + sec.dataset.sec + '"]');
+      var open = rows.style.display !== "none";
+      rows.style.display = open ? "none" : "block";
+      sec.querySelector(".arrow").textContent = open ? "▸" : "▾";
+    });
+  });
+})();
+</script>
+</body>
+</html>

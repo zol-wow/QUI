@@ -18,6 +18,7 @@ local IsSecretValue = Helpers.IsSecretValue
 local SUBSCRIBER_KEY = "personalIncomingCasts"
 local FALLBACK_ICON = "Interface\\Icons\\INV_Misc_QuestionMark"
 local PREVIEW_ICON = 136048 -- Lightning Bolt
+local MAX_NAMEPLATE_CASTERS = 150
 
 local DEFAULTS = {
     enabled = false,
@@ -25,6 +26,7 @@ local DEFAULTS = {
     maxIcons = 5,
     spacing = 4,
     growDirection = "CENTER",
+    collapseGaps = true,
     showSwipe = true,
     reverseSwipe = true,
     showCooldownText = false,
@@ -51,7 +53,7 @@ end
 local function ClampedOption(key, minValue, maxValue)
     local n = tonumber(Option(key))
     if not n then
-        return DEFAULTS[key]
+        return tonumber(DEFAULTS[key]) or minValue
     end
     if n < minValue then
         n = minValue
@@ -85,23 +87,30 @@ local function GrowthDirection()
     return grow
 end
 
+local COLLAPSED_SCALE = 0.01
+
+local function CollapseActive()
+    return Option("collapseGaps") ~= false
+end
+
 local host = CreateFrame("Frame", "QUI_IncomingCasts", UIParent)
 host:SetSize(DEFAULTS.iconSize, DEFAULTS.iconSize)
 host:SetPoint("CENTER", UIParent, "CENTER", 0, -180)
 
 -- Visibility is secret (alpha-sunk), so Lua can never tell which icons are
--- showing — capping slots at the user's maxIcons would let invisible casts
--- aimed at other players exhaust the pool and silently suppress a cast aimed
--- at us. Slots therefore grow uncapped, one per concurrently tracked cast;
--- the pool is naturally bounded by the client's visible-nameplate limit and
--- never shrinks, so growth is a one-time cost. maxIcons governs the reserved
--- layout extent and the preview; overflow slots extend past it.
+-- showing. Reserve the full Blizzard nameplate token range out of combat;
+-- maxIcons governs only the layout extent and preview count.
 local icons = {}
 local activeByCaster = {}
 local previewActive = false
 local subscribed = false
+local deferredPoolGrowth = 0
 local debugShows = 0
 local debugHides = 0
+
+for i = 1, MAX_NAMEPLATE_CASTERS do
+    activeByCaster["nameplate" .. i] = false
+end
 
 local function ApplyIconStyle(icon)
     local size = IconSize()
@@ -133,8 +142,13 @@ local function ApplyIconStyle(icon)
     cooldown:SetHideCountdownNumbers(Option("showCooldownText") ~= true)
 end
 
+local function ResetIconScale(icon)
+    icon:SetScale(CollapseActive() and COLLAPSED_SCALE or 1)
+end
+
 local function NewIcon()
     local icon = CreateFrame("Frame", nil, host)
+    icon._inUse = false
     icon:Hide()
 
     local texture = icon:CreateTexture(nil, "ARTWORK")
@@ -154,6 +168,7 @@ local function NewIcon()
     icon._border = border
 
     ApplyIconStyle(icon)
+    ResetIconScale(icon)
     return icon
 end
 
@@ -167,6 +182,10 @@ local function AcquireIcon()
         if not icons[i]._inUse then
             return icons[i]
         end
+    end
+    if InCombatLockdown() then
+        deferredPoolGrowth = deferredPoolGrowth + 1
+        return nil
     end
     local icon = NewIcon()
     icon._slot = #icons + 1
@@ -212,7 +231,60 @@ local function StartCooldown(cooldown, durationObject, startMS, endMS)
     end
 end
 
+local function ChainAnchorIcon(icon)
+    local spacing = IconSpacing()
+    local grow = GrowthDirection()
+    local slot = icon._slot or 1
+
+    icon:ClearAllPoints()
+    if grow == "CENTER" then
+        if slot == 1 then
+            icon:SetPoint("CENTER", host, "CENTER", 0, 0)
+            return
+        end
+        local prev = icons[slot == 2 and 1 or slot - 2]
+        if slot % 2 == 1 then
+            icon:SetPoint("RIGHT", prev, "LEFT", -spacing, 0)
+        else
+            icon:SetPoint("LEFT", prev, "RIGHT", spacing, 0)
+        end
+        return
+    end
+
+    local prev = icons[slot - 1]
+    if grow == "LEFT" then
+        if prev then
+            icon:SetPoint("RIGHT", prev, "LEFT", -spacing, 0)
+        else
+            icon:SetPoint("RIGHT", host, "RIGHT", 0, 0)
+        end
+    elseif grow == "UP" then
+        if prev then
+            icon:SetPoint("BOTTOM", prev, "TOP", 0, spacing)
+        else
+            icon:SetPoint("BOTTOM", host, "BOTTOM", 0, 0)
+        end
+    elseif grow == "DOWN" then
+        if prev then
+            icon:SetPoint("TOP", prev, "BOTTOM", 0, -spacing)
+        else
+            icon:SetPoint("TOP", host, "TOP", 0, 0)
+        end
+    else
+        if prev then
+            icon:SetPoint("LEFT", prev, "RIGHT", spacing, 0)
+        else
+            icon:SetPoint("LEFT", host, "LEFT", 0, 0)
+        end
+    end
+end
+
 local function PositionIcon(icon)
+    if CollapseActive() then
+        ChainAnchorIcon(icon)
+        return
+    end
+
     local stride = IconSize() + IconSpacing()
     local grow = GrowthDirection()
     local slot = icon._slot or 1
@@ -258,17 +330,25 @@ local function LayoutIcons()
 end
 
 local function ReleaseIcon(icon)
-    icon._inUse = nil
+    icon._inUse = false
     icon:Hide()
     icon:SetAlpha(1)
+    ResetIconScale(icon)
     StopCooldown(icon._cooldown)
 end
 
 local function ClearActive()
     for caster, icon in pairs(activeByCaster) do
-        activeByCaster[caster] = nil
-        ReleaseIcon(icon)
+        if icon then
+            activeByCaster[caster] = false
+            ReleaseIcon(icon)
+        end
     end
+end
+
+local function ApplyTargetScale(icon, matched)
+    icon:SetScale(CollapseActive() and not IsSecretValue(matched)
+        and matched ~= true and COLLAPSED_SCALE or 1)
 end
 
 -- The "is this cast aimed at me" verdict is a secret boolean in instances, so
@@ -279,8 +359,10 @@ local function ApplyTargetVisibility(icon, caster)
     local ok, matched = ns.SafeCall("sink-forward", UnitIsUnit, caster .. "target", "player")
     if not ok then
         icon:SetAlpha(0)
+        icon:SetScale(CollapseActive() and COLLAPSED_SCALE or 1)
         return
     end
+    ApplyTargetScale(icon, matched)
     if icon.SetAlphaFromBoolean then
         local sunk = ns.SafeCallMethod("sink-forward", icon, "SetAlphaFromBoolean", matched, 1, 0)
         if sunk then
@@ -319,6 +401,9 @@ local function OnCastShow(caster, _, cast)
     local icon = activeByCaster[caster]
     if not icon then
         icon = AcquireIcon()
+        if not icon then
+            return
+        end
         icon._inUse = true
         activeByCaster[caster] = icon
     end
@@ -341,7 +426,7 @@ local function OnCastHide(caster)
     if not icon then
         return
     end
-    activeByCaster[caster] = nil
+    activeByCaster[caster] = false
     ReleaseIcon(icon)
     debugHides = debugHides + 1
 end
@@ -372,13 +457,16 @@ local function UpdateSubscription()
     end
 end
 
--- Keep the common case allocation-free in combat: the first maxIcons slots
--- are built ahead of time; only overflow slots are still created lazily.
 local function EnsurePool()
     if InCombatLockdown() then
         return
     end
-    for i = 1, MaxIcons() do
+    local target = #icons + deferredPoolGrowth
+    if target < MAX_NAMEPLATE_CASTERS then
+        target = MAX_NAMEPLATE_CASTERS
+    end
+    deferredPoolGrowth = 0
+    for i = 1, target do
         if not icons[i] then
             local icon = NewIcon()
             icon._slot = i
@@ -394,8 +482,16 @@ local function Refresh()
     end
     for i = 1, #icons do
         ApplyIconStyle(icons[i])
+        if not icons[i]._inUse then
+            ResetIconScale(icons[i])
+        end
     end
     LayoutIcons()
+    for caster, icon in pairs(activeByCaster) do
+        if icon then
+            ApplyTargetVisibility(icon, caster)
+        end
+    end
 end
 
 -- Re-entrant: settings changes call this again while preview is showing to
@@ -414,6 +510,7 @@ local function EnablePreview()
         end
         icon._inUse = true
         ApplyIconStyle(icon)
+        icon:SetScale(1)
         icon._texture:SetTexture(PREVIEW_ICON)
         StopCooldown(icon._cooldown)
         icon:Show()
@@ -447,8 +544,13 @@ end
 -- in-flight casts via ResetSubscriber).
 local previewGuard = CreateFrame("Frame")
 previewGuard:RegisterEvent("PLAYER_REGEN_DISABLED")
-previewGuard:SetScript("OnEvent", function()
-    if previewActive then
+previewGuard:RegisterEvent("PLAYER_REGEN_ENABLED")
+previewGuard:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if subscribed then
+            EnsurePool()
+        end
+    elseif previewActive then
         DisablePreview()
     end
 end)
@@ -495,8 +597,10 @@ SlashCmdList["QUIIC"] = function(msg)
         .. " preview=" .. tostring(previewActive)
         .. " engineLoaded=" .. tostring(IC ~= nil))
     local activeIcons = 0
-    for _ in pairs(activeByCaster) do
-        activeIcons = activeIcons + 1
+    for _, icon in pairs(activeByCaster) do
+        if icon then
+            activeIcons = activeIcons + 1
+        end
     end
     print(prefix .. "display: activeIcons=" .. activeIcons
         .. " shows=" .. debugShows .. " hides=" .. debugHides

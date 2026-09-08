@@ -108,8 +108,15 @@ function Fields.Render(field, ctx, parent)
             field.variant or field.style
         )
         if widget then
-            if widget.EnableMouse then widget:EnableMouse(enabled ~= false) end
-            if widget.SetAlpha then widget:SetAlpha(enabled ~= false and 1 or 0.45) end
+            -- Disabled goes through the button's state model (hit target
+            -- kept, reason tooltip on hover) instead of EnableMouse+SetAlpha.
+            local reason = ResolveValue(field.disabledReason, ctx, field, parent)
+            if type(widget.SetEnabled) == "function" then
+                widget:SetEnabled(enabled ~= false, reason)
+            else
+                if widget.EnableMouse then widget:EnableMouse(enabled ~= false) end
+                if widget.SetAlpha then widget:SetAlpha(enabled ~= false and 1 or 0.3) end
+            end
         end
         if type(field.afterCreate) == "function" then
             field.afterCreate(ctx, widget, field)

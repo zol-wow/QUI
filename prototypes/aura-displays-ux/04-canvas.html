@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QUI · Aura Displays UX — Approach 4/5: Canvas-First</title>
+<style>
+  :root{
+    --bg:#0a0c10; --surface:#12151c; --panel:#1a1e28; --inset:#141822;
+    --border:#2a3040; --text:#e6e9f0; --muted:#8b93a7;
+    --gold:#e8c15a; --ok:#7ac37a; --bad:#e06c6c; --info:#6cb2e0;
+    --monk:#00FF98; --mage:#3FC7EB;
+    --r:8px;
+    --font:-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
+  a{color:var(--info)}
+
+  /* ---------- deck chrome ---------- */
+  .caption{position:fixed;top:14px;left:18px;font-size:12px;color:var(--muted);letter-spacing:.02em;z-index:50}
+  .caption b{color:var(--gold);font-weight:600}
+
+  .slide{position:fixed;inset:0;display:none;align-items:center;justify-content:center;padding:56px 40px 74px}
+  .slide.active{display:flex}
+  .wrap{width:min(1080px,94vw);max-height:calc(100vh - 130px);display:flex;flex-direction:column;gap:14px}
+
+  .kicker{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--gold);font-weight:600}
+  h1{font-size:clamp(30px,4.4vw,46px);line-height:1.08;font-weight:700}
+  h2{font-size:clamp(21px,2.6vw,28px);font-weight:650}
+  .lede{font-size:17px;color:var(--muted);line-height:1.5;max-width:760px}
+  .lede strong{color:var(--text);font-weight:600}
+  .cap{font-size:13px;color:var(--muted);line-height:1.5;max-width:820px}
+  .cap b{color:var(--text);font-weight:600}
+  .hintline{font-size:13px;color:var(--gold);font-weight:600}
+  .mono{font-family:var(--mono)}
+
+  /* nav */
+  .navzone{position:fixed;bottom:16px;right:18px;display:flex;align-items:center;gap:12px;z-index:60}
+  .dots{display:flex;gap:6px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#2a3040;border:none;cursor:pointer;padding:0}
+  .dot.on{background:var(--gold)}
+  .navbtn{background:var(--panel);border:1px solid var(--border);color:var(--text);width:32px;height:32px;border-radius:var(--r);cursor:pointer;font-size:15px}
+  .navbtn:hover{border-color:var(--gold)}
+
+  /* harness pill */
+  .pill{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:70;
+    background:#e6e9f0;color:#12151c;border-radius:999px;padding:8px 16px;
+    display:flex;align-items:center;gap:12px;font-size:13px;font-weight:600;
+    box-shadow:0 6px 24px rgba(0,0,0,.65),0 0 0 1px rgba(0,0,0,.4)}
+  .pill a{color:#12151c;text-decoration:none;padding:2px 4px;border-radius:6px}
+  .pill a:hover{background:rgba(0,0,0,.1)}
+  .pill .sep{width:1px;height:14px;background:rgba(0,0,0,.25)}
+  .pill .title{color:#444c5c;font-weight:600}
+
+  /* ---------- generic cards ---------- */
+  .cards{display:flex;gap:14px;flex-wrap:wrap}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--r);padding:16px 18px;flex:1;min-width:220px}
+  .card h3{font-size:14px;font-weight:650;margin-bottom:6px}
+  .card p{font-size:13px;color:var(--muted);line-height:1.5}
+  .card.goldline{border-top:2px solid var(--gold)}
+  .card.okline{border-top:2px solid var(--ok)}
+  .card.badline{border-top:2px solid var(--bad)}
+  .statrow{display:flex;gap:10px;flex-wrap:wrap}
+  .stat{background:var(--inset);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;text-align:center;flex:1;min-width:120px}
+  .stat .n{font-size:20px;font-weight:700;color:var(--bad)}
+  .stat .l{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.35}
+  ul.list{list-style:none;display:flex;flex-direction:column;gap:8px}
+  ul.list li{font-size:13.5px;color:var(--muted);line-height:1.5;padding-left:18px;position:relative}
+  ul.list li::before{content:"·";position:absolute;left:4px;color:var(--gold);font-weight:700}
+  ul.list li b{color:var(--text);font-weight:600}
+
+  /* ---------- the fake game screen ---------- */
+  .scene{position:relative;width:100%;height:clamp(300px,46vh,440px);border-radius:var(--r);
+    overflow:hidden;border:1px solid var(--border);background:#0b1520;user-select:none}
+  .scene.small{height:clamp(200px,30vh,280px)}
+  .scene-env{position:absolute;inset:0;background:linear-gradient(180deg,#0e2233 0%,#0d2b33 42%,#0e3330 68%,#0a1f1c 100%)}
+  .blob{position:absolute;border-radius:50%;filter:blur(28px);opacity:.5}
+  .blob.b1{width:34%;height:60%;left:-8%;top:32%;background:#0f3d33}
+  .blob.b2{width:28%;height:50%;right:2%;top:48%;background:#123a4a}
+  .blob.b3{width:22%;height:34%;left:38%;top:8%;background:#14465c;opacity:.35}
+  .horizon{position:absolute;left:0;right:0;top:56%;height:1px;background:linear-gradient(90deg,transparent,rgba(120,200,220,.18),transparent)}
+  .moon{position:absolute;top:11%;left:16%;width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 38% 34%,#e8ecdd,#9fae9c 70%);opacity:.5;filter:blur(1px)}
+
+  .uf{position:absolute;left:16px;bottom:14px;display:flex;gap:7px;align-items:center;z-index:1}
+  .uf-portrait{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 40% 32%,#3d4b5e,#1a222d 75%);border:2px solid #3a4356}
+  .uf-bars{display:flex;flex-direction:column;gap:3px}
+  .uf-hp{width:120px;height:11px;border-radius:3px;background:#141a12;border:1px solid #2a3628;overflow:hidden}
+  .uf-hp i{display:block;height:100%;width:82%;background:linear-gradient(180deg,#39b558,#237a38)}
+  .uf-mp{width:120px;height:7px;border-radius:3px;background:#101722;border:1px solid #26314a;overflow:hidden}
+  .uf-mp i{display:block;height:100%;width:64%;background:linear-gradient(180deg,#3f7ecb,#2a5591)}
+  .abar{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;gap:4px;z-index:1}
+  .abar i{width:26px;height:26px;border-radius:5px;background:linear-gradient(180deg,#222a38,#161c26);border:1px solid #303a4e}
+  .abar i:nth-child(3){box-shadow:inset 0 0 8px rgba(232,193,90,.25)}
+  .mmap{position:absolute;top:12px;right:14px;width:64px;height:64px;border-radius:50%;z-index:1;
+    background:radial-gradient(circle at 44% 40%,#1d3a37,#0e1e22 78%);border:2px solid #3a4356;box-shadow:0 2px 10px rgba(0,0,0,.5)}
+
+  /* edit-mode overlay layers */
+  .dim{position:absolute;inset:0;background:rgba(4,6,10,.44);opacity:0;transition:opacity .25s;z-index:2;pointer-events:none}
+  .gridlay{position:absolute;inset:0;z-index:2;opacity:0;transition:opacity .25s;pointer-events:none;
+    background-image:repeating-linear-gradient(0deg,rgba(140,170,220,.10) 0 1px,transparent 1px 24px),
+                     repeating-linear-gradient(90deg,rgba(140,170,220,.10) 0 1px,transparent 1px 24px)}
+  .scene.editing .dim{opacity:1}
+  .scene.editing.gridon .gridlay{opacity:1}
+
+  /* toolbar */
+  .toolbar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:6;display:flex;gap:6px;
+    background:rgba(18,21,28,.94);border:1px solid var(--border);border-radius:999px;padding:5px 8px;
+    box-shadow:0 4px 18px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .25s}
+  .scene.editing .toolbar{opacity:1;pointer-events:auto}
+  .tb{background:transparent;border:1px solid transparent;color:var(--text);font-size:12px;font-weight:600;
+    padding:4px 10px;border-radius:999px;cursor:pointer;font-family:var(--font);white-space:nowrap}
+  .tb:hover{border-color:var(--border);background:var(--inset)}
+  .tb.primary{background:var(--gold);color:#12151c}
+  .tb.primary:hover{background:#f0cd72}
+  .tb.quiet{color:var(--muted)}
+
+  /* display outlines */
+  .disp{position:absolute;z-index:4}
+  .dframe{position:relative;border:1px dashed rgba(232,193,90,.55);border-radius:6px;padding:6px;min-width:38px;min-height:26px}
+  .disp.selected .dframe{border:1px solid var(--gold);box-shadow:0 0 0 1px rgba(232,193,90,.25),0 0 18px rgba(232,193,90,.18)}
+  .dlabel{position:absolute;top:-19px;left:0;font-size:10.5px;font-weight:600;color:var(--gold);
+    background:rgba(10,12,16,.85);padding:1px 7px;border-radius:4px;white-space:nowrap;letter-spacing:.02em}
+  .handle{position:absolute;width:6px;height:6px;background:var(--gold);border-radius:1px;display:none}
+  .disp.selected .handle{display:block}
+  .handle.tl{top:-3px;left:-3px}.handle.tr{top:-3px;right:-3px}.handle.bl{bottom:-3px;left:-3px}.handle.br{bottom:-3px;right:-3px}
+  .scene:not(.editing) .disp .dframe{border-color:transparent}
+  .scene:not(.editing) .disp .dlabel{opacity:0}
+
+  /* aura icons */
+  .iconflow{display:flex;gap:var(--gap,4px)}
+  .iconflow.col{flex-direction:column}
+  .iconflow.rev{flex-direction:row-reverse}
+  .iconflow.col.rev{flex-direction:column-reverse}
+  .aicon{width:var(--sz,32px);height:var(--sz,32px);border-radius:6px;position:relative;flex:none;
+    border:1px solid rgba(0,255,152,.45);box-shadow:inset 0 0 10px rgba(0,0,0,.55);
+    background:radial-gradient(circle at 35% 30%,#2e8f63,#0d2c1e 74%)}
+  .aicon.teal{background:radial-gradient(circle at 35% 30%,#2a7d8a,#0c242b 74%);border-color:rgba(108,178,224,.5)}
+  .aicon.amber{background:radial-gradient(circle at 35% 30%,#a4762c,#33230b 74%);border-color:rgba(232,193,90,.55)}
+  .aicon.blue{background:radial-gradient(circle at 35% 30%,#2f7fa8,#0d2331 74%);border-color:rgba(63,199,235,.55)}
+  .aicon.grey{background:radial-gradient(circle at 35% 30%,#4a5468,#1b202b 74%);border-color:rgba(139,147,167,.4)}
+  .aicon .dur{position:absolute;right:0;bottom:0;left:0;text-align:right;padding:0 3px 1px 0;
+    font-size:calc(var(--sz,32px)*.34);font-weight:700;color:#fff;text-shadow:0 1px 2px #000;font-family:var(--font)}
+  .glowing .aicon{box-shadow:0 0 10px 2px rgba(232,193,90,.75),inset 0 0 10px rgba(0,0,0,.55);border-color:var(--gold)}
+  .ghosticons .aicon{opacity:.35;filter:saturate(.3)}
+
+  /* mock bar + squares */
+  .mockbar{position:relative;width:150px;height:16px;border-radius:4px;background:#101722;border:1px solid #2a3446;overflow:hidden}
+  .mockbar i{position:absolute;inset:0;width:62%;background:linear-gradient(180deg,#28c08a,#137a55)}
+  .mockbar .bn{position:absolute;left:5px;top:1px;font-size:9.5px;font-weight:600;color:#fff;text-shadow:0 1px 1px #000;z-index:1}
+  .mockbar .bt{position:absolute;right:5px;top:1px;font-size:9.5px;font-weight:700;color:#fff;text-shadow:0 1px 1px #000;z-index:1}
+  .sqrow{display:flex;gap:3px}
+  .sqrow i{width:14px;height:14px;border-radius:3px;background:var(--mage);opacity:.9}
+  .sqrow i.off{background:#242c3c;opacity:1}
+
+  /* inspector popover */
+  .inspector{position:absolute;z-index:8;width:236px;background:rgba(18,21,28,.97);border:1px solid var(--border);
+    border-radius:var(--r);padding:12px;box-shadow:0 10px 34px rgba(0,0,0,.6);font-size:12px}
+  .inspector::before{content:"";position:absolute;left:-6px;top:26px;width:10px;height:10px;background:rgba(18,21,28,.97);
+    border-left:1px solid var(--border);border-bottom:1px solid var(--border);transform:rotate(45deg)}
+  .iname{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+  .iname b{font-size:13px}
+  .badge{font-size:9px;letter-spacing:.1em;font-weight:700;color:#12151c;background:var(--monk);border-radius:4px;padding:2px 5px}
+  .chip{display:inline-block;background:var(--inset);border:1px solid var(--border);color:var(--text);
+    border-radius:999px;padding:3px 10px;font-size:11.5px;cursor:pointer;font-family:var(--font);margin-bottom:9px}
+  .chip:hover{border-color:var(--info)}
+  .ctl{margin-bottom:9px}
+  .ctl label{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-bottom:4px;font-weight:600}
+  .ctl label span{color:var(--text)}
+  .ctl input[type=range]{width:100%;accent-color:var(--gold)}
+  .ctl.row{display:flex;align-items:center;justify-content:space-between}
+  .ctl.row label{margin:0}
+  .stepper{display:flex;align-items:center;gap:6px}
+  .stepper button{width:20px;height:20px;border-radius:5px;background:var(--inset);border:1px solid var(--border);
+    color:var(--text);cursor:pointer;font-size:12px;line-height:1}
+  .stepper button:hover{border-color:var(--gold)}
+  .stepper span{min-width:26px;text-align:center;font-family:var(--mono);font-size:11.5px}
+  .compass{display:grid;grid-template-columns:repeat(3,26px);grid-auto-rows:24px;gap:3px;justify-content:start}
+  .compass button{background:var(--inset);border:1px solid var(--border);color:var(--muted);border-radius:5px;cursor:pointer;font-size:11px}
+  .compass button:hover{border-color:var(--gold);color:var(--text)}
+  .compass button.on{background:var(--gold);color:#12151c;border-color:var(--gold);font-weight:700}
+  .toggle{width:32px;height:17px;border-radius:999px;background:var(--inset);border:1px solid var(--border);cursor:pointer;position:relative}
+  .toggle::after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:var(--muted);transition:all .15s}
+  .toggle.on{background:var(--gold);border-color:var(--gold)}
+  .toggle.on::after{left:17px;background:#12151c}
+  .alllink{font-size:12px;font-weight:600;color:var(--info);text-decoration:none}
+  .ifoot{font-size:10px;color:var(--muted);margin-top:2px}
+
+  /* guides + toast */
+  .guide{position:absolute;z-index:5;opacity:0;transition:opacity .12s;pointer-events:none}
+  .guide.gv{top:0;bottom:0;left:50%;width:1px;background:var(--gold);box-shadow:0 0 8px rgba(232,193,90,.8)}
+  .guide.gh{left:0;right:0;top:50%;height:1px;background:var(--gold);box-shadow:0 0 8px rgba(232,193,90,.8)}
+  .guide.show{opacity:1}
+  .toast{position:absolute;left:50%;bottom:52px;transform:translateX(-50%) translateY(6px);z-index:9;
+    background:rgba(18,21,28,.97);border:1px solid var(--gold);color:var(--text);font-size:12px;font-weight:600;
+    padding:6px 14px;border-radius:999px;opacity:0;transition:all .2s;pointer-events:none;white-space:nowrap}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* scene hint */
+  .shint{position:absolute;z-index:7;top:12px;left:12px;background:rgba(232,193,90,.14);border:1px solid rgba(232,193,90,.5);
+    color:var(--gold);font-size:12px;font-weight:600;padding:5px 11px;border-radius:999px;pointer-events:none;transition:opacity .2s}
+  .shint.gone{opacity:0}
+
+  /* creator popover */
+  .creator{position:absolute;z-index:9;width:248px;background:rgba(18,21,28,.97);border:1px solid var(--border);
+    border-radius:var(--r);padding:12px;box-shadow:0 10px 34px rgba(0,0,0,.6)}
+  .creator input{width:100%;background:var(--inset);border:1px solid var(--border);border-radius:6px;color:var(--text);
+    font-size:12.5px;padding:7px 10px;font-family:var(--font);outline:none;margin-bottom:8px}
+  .creator input:focus{border-color:var(--gold)}
+  .sugg{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+  .sugg button{display:flex;justify-content:space-between;align-items:center;background:var(--inset);border:1px solid var(--border);
+    border-radius:6px;color:var(--text);font-size:12px;padding:7px 10px;cursor:pointer;font-family:var(--font);text-align:left}
+  .sugg button:hover{border-color:var(--gold)}
+  .sugg .sid{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .cchips{display:flex;flex-wrap:wrap;gap:5px}
+  .cchips .chip{margin:0}
+  .cdiv{font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px;font-weight:700}
+  .ghost{position:absolute;z-index:8;width:152px;height:46px;border:1.5px dashed var(--gold);border-radius:6px;
+    background:rgba(232,193,90,.07);pointer-events:none;display:flex;align-items:center;justify-content:center;
+    font-size:11px;color:var(--gold);font-weight:600}
+
+  /* multiselect */
+  .marquee{position:absolute;border:1px solid var(--info);background:rgba(108,178,224,.10);z-index:5;border-radius:3px;
+    transition:all .55s ease;pointer-events:none;opacity:0}
+  .aligntb{position:absolute;z-index:8;right:12px;top:56px;display:flex;flex-direction:column;gap:5px;
+    background:rgba(18,21,28,.97);border:1px solid var(--border);border-radius:var(--r);padding:8px;
+    box-shadow:0 8px 26px rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .2s}
+  .aligntb.show{opacity:1;pointer-events:auto}
+  .aligntb button{background:var(--inset);border:1px solid var(--border);color:var(--text);font-size:11.5px;font-weight:600;
+    border-radius:6px;padding:5px 10px;cursor:pointer;font-family:var(--font);text-align:left;white-space:nowrap}
+  .aligntb button:hover{border-color:var(--gold)}
+  .aligntb button.done{border-color:var(--ok);color:var(--ok)}
+  .groupbox{position:absolute;z-index:3;border:1px solid rgba(232,193,90,.6);border-radius:10px;
+    background:rgba(232,193,90,.05);opacity:0;transition:opacity .3s;pointer-events:none}
+  .groupbox.show{opacity:1}
+  .groupbox .dlabel{top:-20px}
+  .disp{transition:left .45s ease,top .45s ease}
+
+  /* slide 2 form mock */
+  .formmock{background:var(--inset);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;min-width:250px}
+  .frow{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12.5px}
+  .frow .fl{color:var(--muted)}
+  .fval{background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:2px 9px;font-family:var(--mono);font-size:11.5px;min-width:86px;text-align:right}
+  .fval.dd::after{content:" ▾";color:var(--muted);font-size:9px}
+  .renderdemo{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+  .rd-box{position:relative;width:210px;height:96px;background:var(--inset);border:1px solid var(--border);border-radius:var(--r)}
+  .rd-anchor{position:absolute;top:14px;left:14px;width:7px;height:7px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px rgba(232,193,90,.8)}
+  .rd-icons{position:absolute;top:10px;left:24px;display:flex;gap:3px}
+  .rd-icons i{width:15px;height:15px;border-radius:3px;background:radial-gradient(circle at 35% 30%,#2e8f63,#0d2c1e 74%);border:1px solid rgba(0,255,152,.4)}
+  .rd-arrow{position:absolute;top:14px;left:118px;color:var(--gold);font-size:12px;font-weight:700}
+  .bigq{font-size:34px;color:var(--bad);font-weight:800;align-self:center}
+
+  .split{display:flex;gap:16px;align-items:stretch;flex-wrap:wrap}
+  .split>*{flex:1;min-width:260px}
+  .vs{align-self:center;flex:none;min-width:0;color:var(--bad);font-weight:800;font-size:16px}
+
+  .verdict{font-size:clamp(26px,3.4vw,38px);font-weight:700;line-height:1.2;max-width:860px}
+  .verdict em{color:var(--gold);font-style:normal}
+  .safety{display:flex;gap:10px;flex-wrap:wrap;margin-top:2px}
+  .safety span{font-size:12px;color:var(--muted);background:var(--inset);border:1px solid var(--border);border-radius:999px;padding:5px 12px}
+  .safety b{color:var(--text)}
+</style>
+</head>
+<body>
+
+<div class="caption">QUI · Aura Displays UX — <b>Approach 4/5: Canvas-First</b></div>
+
+<!-- ============ 1 · TITLE ============ -->
+<section class="slide active">
+  <div class="wrap">
+    <div class="kicker">Approach 4 of 5 · Canvas-First</div>
+    <h1>Stop describing geometry with numbers — just grab it.</h1>
+    <p class="lede">The screen <strong>is</strong> the editor. Enter <strong>Edit Displays</strong> — an extension of the Layout Mode QUI already has — and build, place, and shape Aura Displays exactly where they'll live. The options panel stays for the deep dive.</p>
+    <div class="scene small" id="scn1">
+      <div class="disp" style="left:40%;top:46%">
+        <div class="dframe"><div class="dlabel">Renewing Mist</div>
+          <div class="iconflow" style="--sz:26px">
+            <div class="aicon"><span class="dur">12</span></div>
+            <div class="aicon"><span class="dur">8</span></div>
+            <div class="aicon"><span class="dur">4</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="disp" style="left:14%;top:30%">
+        <div class="dframe ghosticons"><div class="dlabel">Defensives strip</div>
+          <div class="iconflow" style="--sz:22px"><div class="aicon teal"></div><div class="aicon teal"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 2 · PROBLEM ============ -->
+<section class="slide">
+  <div class="wrap">
+    <h2>Today: configure here, position over there</h2>
+    <div class="split">
+      <div class="card">
+        <h3>Options panel — Auras tab → sub-tab 6</h3>
+        <p>Every setting a display has: Name, Group, Unit, elements (STRIP filters, TRACKED spells), Load Conditions… <b style="color:var(--text)">everything except where it goes.</b></p>
+      </div>
+      <div class="vs">↔</div>
+      <div class="card">
+        <h3>Layout Mode — a separate mode</h3>
+        <p>The only place a display can be positioned. New displays spawn at <b style="color:var(--text)">screen center</b> and must be dragged from there — after you've left the panel.</p>
+      </div>
+    </div>
+    <div class="split">
+      <div class="formmock">
+        <div class="frow"><span class="fl">Anchor</span><span class="fval dd">TOPLEFT</span></div>
+        <div class="frow"><span class="fl">Grow Direction</span><span class="fval dd">RIGHT</span></div>
+        <div class="frow"><span class="fl">Icons Per Row</span><span class="fval">8</span></div>
+        <div class="frow"><span class="fl">X Offset</span><span class="fval">-212</span></div>
+        <div class="frow"><span class="fl">Y Offset</span><span class="fval">148</span></div>
+        <div class="frow"><span class="fl">Spacing</span><span class="fval">4</span></div>
+      </div>
+      <div class="bigq">= ?</div>
+      <div class="renderdemo">
+        <div class="rd-box">
+          <span class="rd-anchor"></span>
+          <div class="rd-icons"><i></i><i></i><i></i><i></i><i></i></div>
+          <span class="rd-arrow">→</span>
+        </div>
+        <p class="cap">You can't see what it means until you close the panel. Geometry-by-numeric-field is the least learnable part of the whole feature.</p>
+      </div>
+    </div>
+    <div class="statrow">
+      <div class="stat"><div class="n">35–40</div><div class="l">controls fronting a minimal new display</div></div>
+      <div class="stat"><div class="n">80–120</div><div class="l">widgets for a two-element display</div></div>
+      <div class="stat"><div class="n">~46</div><div class="l">form rows for one filter strip</div></div>
+      <div class="stat"><div class="n">16px</div><div class="l">quick-create icon default — invisible in practice</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 3 · CORE IDEA ============ -->
+<section class="slide">
+  <div class="wrap">
+    <h2>Invert the surfaces: the screen is the editor</h2>
+    <p class="lede">Direct manipulation for everything spatial. A compact inspector for the next tier. The panel for the rest.</p>
+    <div class="cards">
+      <div class="card goldline">
+        <h3>1 · The game screen</h3>
+        <p>Position, size, grow direction, spacing — grabbed, dragged, and seen live. Labeled outlines, snap guides, preview data. Nothing spatial is a number anymore.</p>
+      </div>
+      <div class="card goldline">
+        <h3>2 · Contextual inspector</h3>
+        <p>Click a display, get a popover with <b style="color:var(--text)">~8 controls</b>: name, unit, size, grow, spacing, icon count, glow. The highest-value settings, right where you're looking.</p>
+      </div>
+      <div class="card">
+        <h3>3 · Options panel</h3>
+        <p>Still the deep editor — STRIP filters ("What to Show"), Load Conditions, text styling, bar Thickness/Length/Orientation. Reached via <b style="color:var(--info)">All settings…</b> on any display.</p>
+      </div>
+    </div>
+    <p class="cap"><b>Two views, one data model.</b> The inspector and the panel write to the same store — and Aura Displays already register anchors in Layout Mode, with a per-display Preview toggle that fakes icons. The foundation exists; this deck extends it.</p>
+  </div>
+</section>
+
+<!-- ============ 4 · EDIT OVERLAY ============ -->
+<section class="slide">
+  <div class="wrap">
+    <h2>Enter Edit Displays</h2>
+    <p class="hintline" id="hint4">↳ click the scene to enter Edit Displays</p>
+    <div class="scene gridon" id="scn4">
+      <div class="toolbar">
+        <button class="tb primary">+ New Display</button>
+        <button class="tb" id="tbGrid4">Grid: 8px</button>
+        <button class="tb" id="tbPrev4">Preview data: On</button>
+        <button class="tb quiet" id="tbExit4">Exit</button>
+      </div>
+      <div class="disp" style="left:38%;top:58%">
+        <div class="dframe"><div class="dlabel">Renewing Mist</div>
+          <div class="iconflow prevdata" style="--sz:32px">
+            <div class="aicon"><span class="dur">12</span></div>
+            <div class="aicon"><span class="dur">9</span></div>
+            <div class="aicon"><span class="dur">6</span></div>
+            <div class="aicon"><span class="dur">3</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="disp" style="left:13%;top:32%">
+        <div class="dframe ghosticons"><div class="dlabel">Defensives strip</div>
+          <div class="iconflow prevdata" style="--sz:26px"><div class="aicon teal"></div><div class="aicon teal"></div><div class="aicon teal"></div></div>
+        </div>
+      </div>
+      <div class="disp" style="left:42%;top:14%">
+        <div class="dframe ghosticons"><div class="dlabel">Boss debuffs · Target</div>
+          <div class="iconflow prevdata" style="--sz:26px"><div class="aicon amber"></div><div class="aicon amber"></div></div>
+        </div>
+      </div>
+    </div>
+    <p class="cap">Scene dims, an 8px grid fades in, and <b>every registered display gets a labeled outline</b> — the same anchors Layout Mode already tracks under its "Aura Displays" group. <b>Preview data</b> (today's per-display Preview: On/Off) fakes icons so empty displays are visible and editable. Try the Grid and Preview toggles in the toolbar.</p>
+  </div>
+</section>
+
+<!-- ============ 5 · INSPECTOR ============ -->
+<section class="slide">
+  <div class="wrap">
+    <h2>Select a display — the inspector comes to you</h2>
+    <p class="hintline" id="hint5">↳ click the Renewing Mist display, then drag the size slider and hit the grow arrows</p>
+    <div class="scene editing gridon" id="scn5">
+      <div class="toolbar">
+        <button class="tb primary">+ New Display</button>
+        <button class="tb">Grid: 8px</button>
+        <button class="tb">Preview data: On</button>
+        <button class="tb quiet">Exit</button>
+      </div>
+      <div class="disp" id="disp5" style="left:26%;top:44%">
+        <div class="dframe">
+          <div class="dlabel">Renewing Mist</div>
+          <span class="handle tl"></span><span class="handle tr"></span><span class="handle bl"></span><span class="handle br"></span>
+          <div class="iconflow" id="flow5" style="--sz:32px;--gap:4px"></div>
+        </div>
+      </div>
+      <div class="inspector" id="insp5" style="display:none">
+        <div class="iname"><b>Renewing Mist</b><span class="badge">TRACKED</span></div>
+        <button class="chip" id="unit5">Unit: Player</button>
+        <div class="ctl">
+          <label>Icon Size <span id="szv5">32</span></label>
+          <input type="range" min="16" max="48" value="32" id="szs5">
+        </div>
+        <div class="ctl">
+          <label>Grow Direction</label>
+          <div class="compass" id="comp5">
+            <span></span><button data-g="up">▲</button><span></span>
+            <button data-g="left">◀</button><button data-g="center" class="on">⦿</button><button data-g="right">▶</button>
+            <span></span><button data-g="down">▼</button><span></span>
+          </div>
+        </div>
+        <div class="ctl row"><label>Spacing</label>
+          <div class="stepper"><button id="gapm5">−</button><span id="gapv5">4</span><button id="gapp5">+</button></div>
+        </div>
+        <div class="ctl row"><label>Icons</label>
+          <div class="stepper"><button id="cntm5">−</button><span id="cntv5">4</span><button id="cntp5">+</button></div>
+        </div>
+        <div class="ctl row"><label>Glow</label><button class="toggle" id="glow5"></button></div>
+        <a class="alllink" href="#" onclick="return false">All settings…</a>
+        <div class="ifoot">opens the full editor (filters, Load Conditions, text…)</div>
+      </div>
+    </div>
+    <p class="cap"><b>Eight controls, not eighty.</b> Icon Size and Grow Direction respond live — the two settings hardest to read as numbers become impossible to misunderstand. Everything else defers to <b>All settings…</b></p>
+  </div>
+</section>
+
+<!-- ============ 6 · DRAG / SNAP ============ -->
+<section class="slide">
+  <div class="wrap">
+    <h2>Position is a drag, not a coordinate pair</h2>
+    <p class="hintline" id="hint6">↳ grab the Defensives strip and drag it — watch the guides light up near screen center</p>
+    <div class="scene editing gridon" id="scn6">
+      <div class="toolbar">
+        <button class="tb primary">+ New Display</button>
+        <button class="tb">Grid: 8px</button>
+        <button class="tb">Preview data: On</button>
+        <button class="tb quiet">Exit</button>
+      </div>
+      <div class="guide gv" id="gv6"></div>
+      <div class="guide gh" id="gh6"></div>
+      <div class="disp" id="disp6" style="left:14%;top:26%;cursor:grab;transition:none">
+        <div class="dframe"><div class="dlabel">Defensives strip</div>
+          <div class="iconflow" style="--sz:30px">
+            <div class="aicon teal"><span class="dur">8</span></div>
+            <div class="aicon teal"><span class="dur">5</span></div>
+            <div class="aicon teal"><span class="dur">2</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="toast" id="toast6">snapped: screen center</div>
+    </div>
+    <p class="cap">Snap guides for <b>screen center and frame edges</b>, with a toast naming the snap. "X Offset: −212" becomes something you feel instead of compute. The same numbers still exist in the panel — they just stop being the primary interface.</p>
+  </div>
+</section>
+
+<!-- ============ 7 · NEW DISPLAY ON CANVAS ============ -->
+<section class="slide">
+  <div class="wrap">
+    <h2>New displays are born where they'll live</h2>
+    <p class="hintline" id="hint7">↳ click “+ New Display”, then click a spot on the screen</p>
+    <div class="scene editing gridon" id="scn7">
+      <div class="toolbar">
+        <button class="tb primary" id="new7">+ New Display</button>
+        <button class="tb">Grid: 8px</button>
+        <button class="tb">Preview data: On</button>
+        <button class="tb quiet" id="reset7">Reset demo</button>
+      </div>
+      <div class="ghost" id="ghost7" style="display:none">click to place</div>
+      <div class="creator" id="creator7" style="display:none">
+        <div class="cdiv">New display · here</div>
+        <input type="text" placeholder="Track a spell…" id="search7">
+        <div class="sugg">
+          <button data-name="Renewing Mist" data-id="115151"><span>Renewing Mist</span><span class="sid">115151</span></button>
+          <button data-name="Thunder Focus Tea" data-id="116680"><span>Thunder Focus Tea</span><span class="sid">116680</span></button>
+        </div>
+        <div class="cdiv">or a strip</div>
+        <div class="cchips">
+          <button class="chip" data-strip="My buffs strip">My buffs strip</button>
+          <button class="chip" data-strip="Dispel helper">Dispel helper</button>
+          <button class="chip" data-strip="Boss debuffs">Boss debuffs</button>
+        </div>
+      </div>
+      <div class="toast" id="toast7">Display created</div>
+    </div>
+    <p class="cap"><b>No trip to the options panel.</b> Search a spell (TRACKED) or pick a starter strip (STRIP) and a live-looking display materializes at the drop point — sane 32px defaults, preview data on. Quick-create plumbing already exists; this moves its doorway onto the screen.</p>
+  </div>
+</section>
+
+<!-- ============ 8 · MULTI-SELECT / GROUPS ============ -->
+<section class="slide">
+  <div class="wrap">
+    <h2>Groups become spatial</h2>
+    <p class="hintline" id="hint8">↳ click the scene to band-select, then try Align left · Equal spacing · Group</p>
+    <div class="scene editing gridon" id="scn8">
+      <div class="toolbar">
+        <button class="tb primary">+ New Display</button>
+        <button class="tb">Grid: 8px</button>
+        <button class="tb">Preview data: On</button>
+        <button class="tb quiet">Exit</button>
+      </div>
+      <div class="marquee" id="marq8"></div>
+      <div class="groupbox" id="gbox8"><div class="dlabel">Group: Healing</div></div>
+      <div class="disp d8" id="d8a" style="left:20%;top:20%">
+        <div class="dframe"><div class="dlabel">Renewing Mist</div>
+          <div class="iconflow" style="--sz:26px">
+            <div class="aicon"><span class="dur">12</span></div>
+            <div class="aicon"><span class="dur">7</span></div>
+            <div class="aicon"><span class="dur">3</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="disp d8" id="d8b" style="left:31%;top:41%">
+        <div class="dframe"><div class="dlabel">Thunder Focus Tea</div>
+          <div class="sqrow"><i></i><i></i><i class="off"></i><i class="off"></i></div>
+        </div>
+      </div>
+      <div class="disp d8" id="d8c" style="left:25%;top:70%">
+        <div class="dframe"><div class="dlabel">Essence Font</div>
+          <div class="mockbar"><i></i><span class="bn">Essence Font</span><span class="bt">4.2</span></div>
+        </div>
+      </div>
+      <div class="aligntb" id="atb8">
+        <button id="alignL8">⟸ &nbsp;Align left</button>
+        <button id="distr8">⇕ &nbsp;Equal spacing</button>
+        <button id="group8">Group ▸ New group “Healing”</button>
+      </div>
+      <div class="toast" id="toast8">3 displays → Group “Healing”</div>
+    </div>
+    <p class="cap">Band-select, align, distribute. Today a Group is <b>just a dropdown value</b> on the display form — on the canvas it earns a spatial meaning: things that move, align, and read together.</p>
+  </div>
+</section>
+
+<!-- ============ 9 · FIXES / DOESN'T ============ -->
+<section class="slide">
+  <div class="wrap">
+    <h2>What it fixes — and what it honestly doesn't</h2>
+    <div class="cards">
+      <div class="card okline">
+        <h3>Fixes</h3>
+        <ul class="list">
+          <li><b>Geometry becomes self-evident.</b> Anchor / Grow / Offsets — the least learnable ~third of the form — stops being a form at all.</li>
+          <li><b>Creation friction near zero.</b> Place, name a spell, done. No 35–40-control page for a first display.</li>
+          <li><b>The split-brain is gone</b> for everything spatial: no more panel ↔ Layout Mode round-trips.</li>
+          <li><b>Bad defaults die on contact.</b> A 16px quick-create icon is instantly visible as too small — and one slider-drag fixes it.</li>
+        </ul>
+      </div>
+      <div class="card badline">
+        <h3>Doesn't fix</h3>
+        <ul class="list">
+          <li><b>Non-spatial config still needs the panel:</b> STRIP filters ("What to Show"), Load Conditions (Roles/Classes/Specs/Encounters), text styling, bar orientation details.</li>
+          <li><b>A robust on-screen inspector in WoW's UI toolkit is significant work</b> — popover layout, clamping, input focus, scaling.</li>
+          <li><b>Discoverability of the mode itself</b> becomes the new problem: users must learn Edit Displays exists.</li>
+          <li><b>Combat lockdown:</b> secure-frame restrictions mean editing is out-of-combat only.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="safety">
+      <span><b>Out of combat only</b> — WoW restriction, mode refuses to open in combat</span>
+      <span><b>Esc exits</b> cleanly, like Layout Mode today</span>
+      <span><b>One data model</b> — canvas edits mirror to the same store the panel edits</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 10 · IMPLEMENTATION ============ -->
+<section class="slide">
+  <div class="wrap">
+    <h2>Implementation notes</h2>
+    <p class="lede">This is an extension of machinery QUI already ships, not a new subsystem.</p>
+    <div class="cards">
+      <div class="card">
+        <h3>Builds on Layout Mode</h3>
+        <p>Aura Displays already register per-display anchors under the "Aura Displays" mover group. Edit Displays = Layout Mode + selection + inspector. The per-display <b style="color:var(--text)">Preview: On/Off</b> becomes the toolbar's "Preview data".</p>
+      </div>
+      <div class="card">
+        <h3>Inspector stays small</h3>
+        <p>~8 highest-value settings only — name, unit, size, grow, spacing, count, glow — writing straight to the existing store. Everything else defers to the panel via <b style="color:var(--info)">All settings…</b>. Resist scope creep here.</p>
+      </div>
+      <div class="card">
+        <h3>New but self-contained</h3>
+        <p>Snap guides (center/edges + toast) are net-new but isolated. The inline creator reuses quick-create plumbing — and is the moment to fix the 16px default to 32px.</p>
+      </div>
+    </div>
+    <ul class="list">
+      <li><b>Multi-select/align is v2.</b> Ship select-one + inspector + drag/snap + on-canvas create first; align/distribute/group can follow.</li>
+      <li><b>Entry points:</b> a button in the Aura Displays tab ("Edit on screen…"), the existing Layout Mode, and optionally a slash command.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 11 · VERDICT ============ -->
+<section class="slide">
+  <div class="wrap">
+    <div class="kicker">Verdict</div>
+    <p class="verdict">Steal this if <em>the geometry gap</em> is the main wall.</p>
+    <p class="lede">Canvas-First attacks exactly the part users can't learn from a form — where things go and how they grow — and leaves the rest of the form alone. That makes it <strong>pair well with any of the other four approaches</strong>: the canvas handles space; whatever wins elsewhere handles filters, conditions, and styling.</p>
+    <p class="cap">Cost center: building a solid in-game inspector and snap system. Cheapest credible slice: selection outlines + drag/snap + the 8-control inspector, with creation still in the panel.</p>
+  </div>
+</section>
+
+<!-- nav + harness -->
+<div class="navzone">
+  <div class="dots" id="dots"></div>
+  <button class="navbtn" id="prevB" aria-label="Previous slide">←</button>
+  <button class="navbtn" id="nextB" aria-label="Next slide">→</button>
+</div>
+<div class="pill">
+  <a href="03-simple-mode.html">‹ 03</a>
+  <span class="sep"></span>
+  <span class="title">Approach 4/5 — Canvas-First</span>
+  <span class="sep"></span>
+  <a href="05-recipes.html">05 ›</a>
+  <span class="sep"></span>
+  <a href="index.html">☰ all</a>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- scene chrome injection ---------- */
+  var chromeHTML =
+    '<div class="scene-env"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>'+
+    '<div class="horizon"></div><div class="moon"></div></div>'+
+    '<div class="uf"><div class="uf-portrait"></div><div class="uf-bars">'+
+    '<div class="uf-hp"><i></i></div><div class="uf-mp"><i></i></div></div></div>'+
+    '<div class="abar">'+Array(12).fill('<i></i>').join('')+'</div>'+
+    '<div class="mmap"></div>'+
+    '<div class="dim"></div><div class="gridlay"></div>';
+  document.querySelectorAll('.scene').forEach(function(s){
+    var d=document.createElement('div');
+    d.innerHTML=chromeHTML;
+    while(d.firstChild) s.insertBefore(d.firstChild, s.firstChild);
+  });
+  document.getElementById('scn1').classList.add('editing');
+
+  /* ---------- deck nav ---------- */
+  var slides=[].slice.call(document.querySelectorAll('.slide')), cur=0;
+  var dots=document.getElementById('dots');
+  slides.forEach(function(_,i){
+    var b=document.createElement('button');
+    b.className='dot'+(i===0?' on':'');
+    b.addEventListener('click',function(){go(i)});
+    dots.appendChild(b);
+  });
+  function go(i){
+    if(i<0||i>=slides.length) return;
+    slides[cur].classList.remove('active');
+    dots.children[cur].classList.remove('on');
+    cur=i;
+    slides[cur].classList.add('active');
+    dots.children[cur].classList.add('on');
+  }
+  document.getElementById('prevB').addEventListener('click',function(){go(cur-1)});
+  document.getElementById('nextB').addEventListener('click',function(){go(cur+1)});
+  document.addEventListener('keydown',function(e){
+    var t=document.activeElement;
+    if(t&&/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    if(e.key==='ArrowRight'){go(cur+1);e.preventDefault();}
+    if(e.key==='ArrowLeft'){go(cur-1);e.preventDefault();}
+  });
+
+  function toast(el,msg,ms){
+    if(msg) el.textContent=msg;
+    el.classList.add('show');
+    clearTimeout(el._t);
+    el._t=setTimeout(function(){el.classList.remove('show')},ms||1400);
+  }
+
+  /* ---------- slide 4: edit overlay ---------- */
+  var scn4=document.getElementById('scn4'), hint4=document.getElementById('hint4');
+  scn4.addEventListener('click',function(e){
+    if(e.target.closest('.toolbar')) return;
+    if(!scn4.classList.contains('editing')){
+      scn4.classList.add('editing');
+      hint4.textContent='Edit Displays active — try the Grid / Preview toggles, or Exit';
+    }
+  });
+  document.getElementById('tbExit4').addEventListener('click',function(e){
+    e.stopPropagation();
+    scn4.classList.remove('editing');
+    hint4.textContent='↳ click the scene to enter Edit Displays';
+  });
+  document.getElementById('tbGrid4').addEventListener('click',function(e){
+    e.stopPropagation();
+    var on=scn4.classList.toggle('gridon');
+    this.textContent='Grid: '+(on?'8px':'off');
+  });
+  document.getElementById('tbPrev4').addEventListener('click',function(e){
+    e.stopPropagation();
+    var flows=scn4.querySelectorAll('.prevdata');
+    var hidden=flows[0].style.visibility==='hidden';
+    flows.forEach(function(f){f.style.visibility=hidden?'':'hidden'});
+    this.textContent='Preview data: '+(hidden?'On':'Off');
+  });
+
+  /* ---------- slide 5: inspector (money interaction) ---------- */
+  var disp5=document.getElementById('disp5'), flow5=document.getElementById('flow5'),
+      insp5=document.getElementById('insp5'), hint5=document.getElementById('hint5');
+  var s5={size:32,gap:4,count:4,grow:'center',glow:false,unit:0};
+  var units=['Player','Target','Focus','Party 1'];
+  var durs=['12','9.1','6','3.4','1.8','15','7'];
+  function renderFlow5(){
+    flow5.innerHTML='';
+    for(var i=0;i<s5.count;i++){
+      var ic=document.createElement('div');
+      ic.className='aicon';
+      ic.innerHTML='<span class="dur">'+durs[i%durs.length]+'</span>';
+      flow5.appendChild(ic);
+    }
+    flow5.style.setProperty('--sz',s5.size+'px');
+    flow5.style.setProperty('--gap',s5.gap+'px');
+    flow5.classList.toggle('col',s5.grow==='up'||s5.grow==='down');
+    flow5.classList.toggle('rev',s5.grow==='left'||s5.grow==='up');
+    flow5.parentElement.classList.toggle('glowing',s5.glow);
+    /* keep anchor point stable-ish: shift for left/up growth + center */
+    var d=disp5;
+    if(s5.grow==='left') d.style.transform='translateX(-60%)';
+    else if(s5.grow==='center') d.style.transform='translateX(-30%)';
+    else if(s5.grow==='up') d.style.transform='translateY(-70%)';
+    else d.style.transform='';
+  }
+  renderFlow5();
+  disp5.addEventListener('click',function(){
+    disp5.classList.add('selected');
+    if(insp5.style.display==='none'){
+      insp5.style.display='block';
+      positionInsp5();
+      hint5.textContent='Size slider and grow arrows are live — the strip re-flows as you click';
+    }
+  });
+  function positionInsp5(){
+    var sr=document.getElementById('scn5').getBoundingClientRect(),
+        dr=disp5.getBoundingClientRect();
+    var x=dr.right-sr.left+18, y=dr.top-sr.top-10;
+    if(x+246>sr.width) x=sr.width-246;
+    y=Math.max(8,Math.min(y,sr.height-320));
+    insp5.style.left=x+'px'; insp5.style.top=y+'px';
+  }
+  document.getElementById('szs5').addEventListener('input',function(){
+    s5.size=+this.value;
+    document.getElementById('szv5').textContent=this.value;
+    renderFlow5();
+  });
+  document.getElementById('comp5').addEventListener('click',function(e){
+    var b=e.target.closest('button'); if(!b) return;
+    this.querySelectorAll('button').forEach(function(x){x.classList.remove('on')});
+    b.classList.add('on');
+    s5.grow=b.dataset.g;
+    renderFlow5();
+  });
+  function step(id,fn){document.getElementById(id).addEventListener('click',fn)}
+  step('gapm5',function(){s5.gap=Math.max(0,s5.gap-2);document.getElementById('gapv5').textContent=s5.gap;renderFlow5()});
+  step('gapp5',function(){s5.gap=Math.min(16,s5.gap+2);document.getElementById('gapv5').textContent=s5.gap;renderFlow5()});
+  step('cntm5',function(){s5.count=Math.max(1,s5.count-1);document.getElementById('cntv5').textContent=s5.count;renderFlow5()});
+  step('cntp5',function(){s5.count=Math.min(7,s5.count+1);document.getElementById('cntv5').textContent=s5.count;renderFlow5()});
+  step('glow5',function(){s5.glow=!s5.glow;this.classList.toggle('on',s5.glow);renderFlow5()});
+  step('unit5',function(){s5.unit=(s5.unit+1)%units.length;this.textContent='Unit: '+units[s5.unit]});
+
+  /* ---------- slide 6: drag + snap ---------- */
+  var scn6=document.getElementById('scn6'), disp6=document.getElementById('disp6'),
+      gv6=document.getElementById('gv6'), gh6=document.getElementById('gh6'),
+      toast6=document.getElementById('toast6'), hint6=document.getElementById('hint6');
+  var drag6=null, snapped6=false;
+  disp6.addEventListener('pointerdown',function(e){
+    var sr=scn6.getBoundingClientRect(), dr=disp6.getBoundingClientRect();
+    drag6={dx:e.clientX-dr.left, dy:e.clientY-dr.top, sr:sr, w:dr.width, h:dr.height};
+    disp6.setPointerCapture(e.pointerId);
+    disp6.style.cursor='grabbing';
+    disp6.classList.add('selected');
+    e.preventDefault();
+  });
+  disp6.addEventListener('pointermove',function(e){
+    if(!drag6) return;
+    var sr=drag6.sr;
+    var x=e.clientX-sr.left-drag6.dx, y=e.clientY-sr.top-drag6.dy;
+    x=Math.max(4,Math.min(x,sr.width-drag6.w-4));
+    y=Math.max(26,Math.min(y,sr.height-drag6.h-4));
+    var cx=x+drag6.w/2, cy=y+drag6.h/2;
+    var snapX=Math.abs(cx-sr.width/2)<12, snapY=Math.abs(cy-sr.height/2)<12;
+    if(snapX) x=sr.width/2-drag6.w/2;
+    if(snapY) y=sr.height/2-drag6.h/2;
+    gv6.classList.toggle('show',snapX);
+    gh6.classList.toggle('show',snapY);
+    if((snapX||snapY)&&!snapped6){
+      snapped6=true;
+      toast(toast6, snapX&&snapY?'snapped: screen center':(snapX?'snapped: center (vertical axis)':'snapped: center (horizontal axis)'));
+    }
+    if(!snapX&&!snapY) snapped6=false;
+    disp6.style.left=x+'px'; disp6.style.top=y+'px';
+  });
+  function endDrag6(){
+    if(!drag6) return;
+    drag6=null;
+    disp6.style.cursor='grab';
+    gv6.classList.remove('show'); gh6.classList.remove('show');
+    hint6.textContent='Dropped. Position saved to the same store the panel’s X/Y Offset fields edit.';
+  }
+  disp6.addEventListener('pointerup',endDrag6);
+  disp6.addEventListener('pointercancel',endDrag6);
+
+  /* ---------- slide 7: on-canvas creation ---------- */
+  var scn7=document.getElementById('scn7'), ghost7=document.getElementById('ghost7'),
+      creator7=document.getElementById('creator7'), toast7=document.getElementById('toast7'),
+      hint7=document.getElementById('hint7');
+  var st7=0, drop7={x:0,y:0}, made7=[];
+  document.getElementById('new7').addEventListener('click',function(e){
+    e.stopPropagation();
+    st7=1;
+    ghost7.style.display='flex';
+    ghost7.style.left='40%'; ghost7.style.top='40%';
+    hint7.textContent='↳ a ghost follows your cursor — click a spot to place the new display';
+  });
+  scn7.addEventListener('pointermove',function(e){
+    if(st7!==1) return;
+    var sr=scn7.getBoundingClientRect();
+    var x=Math.max(6,Math.min(e.clientX-sr.left-76,sr.width-160)),
+        y=Math.max(40,Math.min(e.clientY-sr.top-23,sr.height-56));
+    ghost7.style.left=x+'px'; ghost7.style.top=y+'px';
+  });
+  scn7.addEventListener('click',function(e){
+    if(st7!==1) return;
+    if(e.target.closest('.toolbar')||e.target.closest('.creator')) return;
+    st7=2;
+    var sr=scn7.getBoundingClientRect();
+    drop7.x=parseFloat(ghost7.style.left); drop7.y=parseFloat(ghost7.style.top);
+    ghost7.style.display='none';
+    var cx=Math.min(drop7.x, sr.width-260), cy=Math.max(8,Math.min(drop7.y, sr.height-215));
+    creator7.style.left=cx+'px'; creator7.style.top=cy+'px';
+    creator7.style.display='block';
+    hint7.textContent='↳ search a spell or pick a starter chip';
+  });
+  function make7(html,label){
+    creator7.style.display='none';
+    st7=0;
+    var d=document.createElement('div');
+    d.className='disp';
+    d.style.left=drop7.x+'px'; d.style.top=(drop7.y+20)+'px';
+    d.innerHTML='<div class="dframe"><div class="dlabel">'+label+'</div>'+html+'</div>';
+    scn7.appendChild(d);
+    made7.push(d);
+  }
+  creator7.querySelectorAll('.sugg button').forEach(function(b){
+    b.addEventListener('click',function(e){
+      e.stopPropagation();
+      var n=this.dataset.name;
+      make7('<div class="iconflow" style="--sz:32px"><div class="aicon"><span class="dur">12</span></div>'+
+            '<div class="aicon"><span class="dur">8</span></div><div class="aicon"><span class="dur">4</span></div></div>', n);
+      toast(toast7,'Display created — tracked: '+n+' ('+this.dataset.id+')',1900);
+      hint7.textContent='Done — a TRACKED display, live where you dropped it. Reset demo to run it again.';
+    });
+  });
+  creator7.querySelectorAll('.cchips .chip').forEach(function(b){
+    b.addEventListener('click',function(e){
+      e.stopPropagation();
+      var n=this.dataset.strip;
+      make7('<div class="iconflow" style="--sz:28px"><div class="aicon grey"></div><div class="aicon grey"></div>'+
+            '<div class="aicon grey"></div><div class="aicon grey"></div><div class="aicon grey"></div></div>', n);
+      toast(toast7,'Display created — STRIP: '+n,1900);
+      hint7.textContent='Done — a filter STRIP, live where you dropped it. Reset demo to run it again.';
+    });
+  });
+  document.getElementById('reset7').addEventListener('click',function(e){
+    e.stopPropagation();
+    st7=0;
+    ghost7.style.display='none'; creator7.style.display='none';
+    made7.forEach(function(d){d.remove()}); made7=[];
+    hint7.textContent='↳ click “+ New Display”, then click a spot on the screen';
+  });
+
+  /* ---------- slide 8: multi-select + group ---------- */
+  var scn8=document.getElementById('scn8'), marq8=document.getElementById('marq8'),
+      atb8=document.getElementById('atb8'), gbox8=document.getElementById('gbox8'),
+      toast8=document.getElementById('toast8'), hint8=document.getElementById('hint8');
+  var d8a=document.getElementById('d8a'), d8b=document.getElementById('d8b'), d8c=document.getElementById('d8c');
+  var st8=0;
+  scn8.addEventListener('click',function(e){
+    if(st8!==0) return;
+    if(e.target.closest('.toolbar')||e.target.closest('.aligntb')) return;
+    st8=1;
+    marq8.style.opacity='1';
+    marq8.style.left='16%'; marq8.style.top='14%'; marq8.style.width='30px'; marq8.style.height='24px';
+    requestAnimationFrame(function(){requestAnimationFrame(function(){
+      marq8.style.width='38%'; marq8.style.height='76%';
+    })});
+    setTimeout(function(){
+      marq8.style.opacity='0';
+      [d8a,d8b,d8c].forEach(function(d){d.classList.add('selected')});
+      atb8.classList.add('show');
+      hint8.textContent='3 displays selected — align, distribute, or group them';
+    },720);
+  });
+  document.getElementById('alignL8').addEventListener('click',function(){
+    d8b.style.left='20%'; d8c.style.left='20%';
+    this.classList.add('done');
+  });
+  document.getElementById('distr8').addEventListener('click',function(){
+    d8b.style.top='45%';
+    this.classList.add('done');
+  });
+  document.getElementById('group8').addEventListener('click',function(){
+    this.classList.add('done');
+    setTimeout(function(){
+      var sr=scn8.getBoundingClientRect();
+      var rects=[d8a,d8b,d8c].map(function(d){return d.getBoundingClientRect()});
+      var l=Math.min.apply(null,rects.map(function(r){return r.left}))-sr.left-12,
+          t=Math.min.apply(null,rects.map(function(r){return r.top}))-sr.top-12,
+          r=Math.max.apply(null,rects.map(function(r){return r.right}))-sr.left+12,
+          b=Math.max.apply(null,rects.map(function(r){return r.bottom}))-sr.top+12;
+      gbox8.style.left=l+'px'; gbox8.style.top=t+'px';
+      gbox8.style.width=(r-l)+'px'; gbox8.style.height=(b-t)+'px';
+      gbox8.classList.add('show');
+      toast(toast8,'3 displays → Group “Healing”',1900);
+      hint8.textContent='Grouped — the Group field in the panel now means something you can see.';
+    },500);
+  });
+})();
+</script>
+</body>
+</html>

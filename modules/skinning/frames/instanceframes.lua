@@ -142,7 +142,7 @@ local function SkinPVEFrame()
         local tab = _G["PVEFrameTab" .. i]
         if tab then pveTabs[#pveTabs + 1] = tab end
     end
-    SkinBase.SkinTabGroup(pveTabs, PVEFrame)
+    SkinBase.SkinTabGroup(pveTabs, PVEFrame, { resizeToText = true })
 
     local pveTab1, pveTab2, pveTab3 = _G.PVEFrameTab1, _G.PVEFrameTab2, _G.PVEFrameTab3
     if pveTab1 then

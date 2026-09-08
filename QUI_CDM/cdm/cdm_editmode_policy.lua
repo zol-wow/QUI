@@ -3,80 +3,39 @@ local _, ns = ...
 local CDMEditModePolicy = {}
 ns.CDMEditModePolicy = CDMEditModePolicy
 
-local function UpsertSetting(settings, settingEnum, desiredValue, defaultValue)
+local function SettingNeedsChange(settings, settingEnum, desiredValue, defaultValue)
     for _, s in ipairs(settings) do
         if s.setting == settingEnum then
-            if s.value ~= desiredValue then
-                s.value = desiredValue
-                return true
-            end
-            return false
+            return s.value ~= desiredValue
         end
     end
-    if desiredValue == defaultValue then
-        return false
-    end
-    settings[#settings + 1] = { setting = settingEnum, value = desiredValue }
-    return true
+    return desiredValue ~= defaultValue
 end
 
-function CDMEditModePolicy.ApplyToSystems(systems, enums)
-    local changed = false
+function CDMEditModePolicy.NeedsManualSetup(systems, enums)
     for _, sysInfo in ipairs(systems) do
         if sysInfo.system == enums.cooldownSystem and type(sysInfo.settings) == "table" then
-            if UpsertSetting(sysInfo.settings, enums.visSetting, enums.visAlways, enums.visAlways) then
-                changed = true
+            if SettingNeedsChange(sysInfo.settings, enums.visSetting, enums.visAlways, enums.visAlways) then
+                return true
             end
             if sysInfo.systemIndex == enums.buffIconIdx or sysInfo.systemIndex == enums.buffBarIdx then
-                if UpsertSetting(sysInfo.settings, enums.hideEnum, 1, 1) then
-                    changed = true
+                if SettingNeedsChange(sysInfo.settings, enums.hideEnum, 1, 1) then
+                    return true
                 end
             end
         end
     end
-    return changed
+    return false
 end
 
 local _applied = false
-
-local function RequireReload()
-    local function reloadUI()
-        if _G.ReloadUI then _G.ReloadUI() end
-    end
-    local function showPopup()
-        if not (_G.StaticPopupDialogs and _G.StaticPopup_Show) then
-            reloadUI()
-            return
-        end
-        _G.StaticPopupDialogs["QUI_CDM_EDITMODE_RELOAD"] = {
-            text = "QUI has updated your Cooldown Manager Edit Mode settings"
-                .. " (viewers must be Always visible with Hide When Inactive on"
-                .. " for cooldown tracking to work).\n\nA UI reload is required"
-                .. " to apply them.",
-            button1 = "Reload UI",
-            OnAccept = reloadUI,
-            timeout = 0,
-            whileDead = 1,
-            hideOnEscape = false,
-            preferredIndex = 3,
-        }
-        if not _G.StaticPopup_Show("QUI_CDM_EDITMODE_RELOAD") then
-            reloadUI()
-        end
-    end
-    if _G.C_Timer and _G.C_Timer.After then
-        _G.C_Timer.After(0, showPopup)
-    else
-        showPopup()
-    end
-end
 
 function CDMEditModePolicy.Enforce()
     if _applied then return end
     if _G.QUI_IsCDMMasterEnabled and not _G.QUI_IsCDMMasterEnabled() then return end
     local C_EditMode = _G.C_EditMode
     local Enum = _G.Enum
-    if not (C_EditMode and C_EditMode.GetLayouts and C_EditMode.SaveLayouts
+    if not (C_EditMode and C_EditMode.GetLayouts
             and Enum and Enum.EditModeSystem and Enum.EditModeSystem.CooldownViewer
             and Enum.EditModeCooldownViewerSetting and Enum.CooldownViewerVisibleSetting
             and Enum.EditModeCooldownViewerSystemIndices) then
@@ -86,35 +45,19 @@ function CDMEditModePolicy.Enforce()
     local layoutInfo = C_EditMode.GetLayouts()
     if type(layoutInfo) ~= "table" or type(layoutInfo.layouts) ~= "table" then return end
 
-    local numPresets = 0
     local presetMgr = _G.EditModePresetLayoutManager
-    if presetMgr and presetMgr.GetCopyOfPresetLayouts then
-        local presets = presetMgr:GetCopyOfPresetLayouts()
-        if type(presets) == "table" then
-            numPresets = #presets
-            if _G.tAppendAll then
-                _G.tAppendAll(presets, layoutInfo.layouts)
-            else
-                for i = 1, #layoutInfo.layouts do
-                    presets[#presets + 1] = layoutInfo.layouts[i]
-                end
-            end
-            layoutInfo.layouts = presets
-        end
-    end
-    if numPresets == 0 then return end
-
-    local activeLayout = type(layoutInfo.activeLayout) == "number"
-        and layoutInfo.layouts[layoutInfo.activeLayout]
-    if not activeLayout or type(activeLayout.systems) ~= "table" then return end
-
-    if numPresets > 0 and type(layoutInfo.activeLayout) == "number"
-        and layoutInfo.activeLayout <= numPresets then
+    if not (presetMgr and presetMgr.GetCopyOfPresetLayouts) then return end
+    local presets = presetMgr:GetCopyOfPresetLayouts()
+    if type(presets) ~= "table" or #presets == 0 then return end
+    if type(layoutInfo.activeLayout) ~= "number" then return end
+    if layoutInfo.activeLayout <= #presets then
         _applied = true
         return
     end
+    local activeLayout = layoutInfo.layouts[layoutInfo.activeLayout - #presets]
+    if not activeLayout or type(activeLayout.systems) ~= "table" then return end
 
-    local changed = CDMEditModePolicy.ApplyToSystems(activeLayout.systems, {
+    local needsSetup = CDMEditModePolicy.NeedsManualSetup(activeLayout.systems, {
         cooldownSystem = Enum.EditModeSystem.CooldownViewer,
         visSetting = Enum.EditModeCooldownViewerSetting.VisibleSetting,
         visAlways = Enum.CooldownViewerVisibleSetting.Always,
@@ -124,37 +67,24 @@ function CDMEditModePolicy.Enforce()
     })
 
     _applied = true
-    local db = _G.QUIDB
-    if not changed then
-        if db then db.cdmEditModeSavePending = nil end
-        return
-    end
-
-    if db and db.cdmEditModeSavePending then
-        if not (_G.StaticPopupDialogs and _G.StaticPopup_Show) then return end
-        _G.StaticPopupDialogs["QUI_CDM_EDITMODE_MANUAL"] = {
-            text = "QUI could not save the Cooldown Manager Edit Mode settings,"
-                .. " so they must be set by hand:\n\n"
-                .. "1. Disable the Cooldown Manager in QUI options and reload.\n"
-                .. "2. Open Edit Mode and set each Cooldown Manager viewer's"
-                .. " Visibility to Always.\n"
-                .. "3. On Tracked Buffs and Tracked Bars, enable Hide When Inactive.\n"
-                .. "4. Save the layout, leave Edit Mode, and re-enable the"
-                .. " Cooldown Manager.\n\n"
-                .. "This notice repeats each login until the layout is correct.",
-            button1 = _G.OKAY or "Okay",
-            timeout = 0,
-            whileDead = 1,
-            hideOnEscape = 1,
-            preferredIndex = 3,
-        }
-        _G.StaticPopup_Show("QUI_CDM_EDITMODE_MANUAL")
-        return
-    end
-
-    C_EditMode.SaveLayouts(layoutInfo)
-    if db then db.cdmEditModeSavePending = true end
-    RequireReload()
+    if not needsSetup or not (_G.StaticPopupDialogs and _G.StaticPopup_Show) then return end
+    _G.StaticPopupDialogs["QUI_CDM_EDITMODE_MANUAL"] = {
+        text = "QUI detected a Blizzard Cooldown Manager layout mismatch."
+            .. " QUI did not change Blizzard's Edit Mode layout.\n\n"
+            .. "1. Open /qui > Module Addons, disable Cooldown Manager, and reload.\n"
+            .. "2. Open Edit Mode and set each Cooldown Manager viewer's"
+            .. " Visibility to Always.\n"
+            .. "3. On Tracked Buffs and Tracked Bars, enable Hide When Inactive.\n"
+            .. "4. Save the layout, leave Edit Mode, re-enable Cooldown Manager,"
+            .. " and reload.\n\n"
+            .. "This notice repeats each login until the layout is correct.",
+        button1 = _G.OKAY or "Okay",
+        timeout = 0,
+        whileDead = 1,
+        hideOnEscape = 1,
+        preferredIndex = 3,
+    }
+    _G.StaticPopup_Show("QUI_CDM_EDITMODE_MANUAL")
 end
 
 local enforceFrame = CreateFrame("Frame")

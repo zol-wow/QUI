@@ -386,17 +386,10 @@ function HideManagedBlizzardBarFrame(frame, clearEvents)
     PurgeShownExternalTaint(frame)
 
     frame:SetParent(hiddenBarParent)
-    if frame.HideBase then
-        frame:HideBase()
-    else
-        frame:Hide()
-    end
 end
 
 function SuppressBlizzardButton(btn)
-    btn:Hide()
     btn:UnregisterAllEvents()
-    btn:SetAttribute("statehidden", true)
 end
 
 env.__declared.LayoutNativeButtons = true

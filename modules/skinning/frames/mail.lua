@@ -295,7 +295,7 @@ local function SkinMail()
     local frame = _G.MailFrame
     if frame and not SkinBase.IsSkinned(frame) then
         SkinBase.SkinButtonFrameTemplate(frame)
-        SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("MailFrame", 2), frame)
+        SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("MailFrame", 2), frame, { resizeToText = true })
         SkinBase.MarkSkinned(frame)
     end
     if frame then
