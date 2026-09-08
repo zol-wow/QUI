@@ -4,6 +4,17 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3-beta13 - 2026-09-08
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Possession abilities stay visible and retain their usual key bindings**
+  when vehicles without a dedicated action-bar skin use Action Bar 1,
+  including after fade timers expire.
+
 ## v5.3-beta12 - 2026-09-07
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
