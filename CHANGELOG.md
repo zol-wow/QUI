@@ -4,6 +4,51 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3 - 2026-09-08
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+QUI 5.3 brings the 5.3 beta improvements to the stable release: expanded Aura
+Displays, a richer Damage Meter workspace, combat alerts, and UI refinements.
+
+### Added
+
+- **Aura Displays support guided setup, templates, nested groups, share strings,
+  draggable previews, gap collapsing, and Blizzard-native sound alerts.**
+- **Damage Meter rows open a resizable five-pane detail workspace**, with richer
+  historical-session controls and target-to-spell drilldowns.
+- **Combat alerts include killing-blow details for Group Death Alert and
+  per-entry sound and text-to-speech alerts for Cooldown Manager.**
+- **Auto Accept Summons has Always and Out of Combat modes**, while dungeon
+  teleports show cooldowns in the Mythic+ window, world map, and Info Bar.
+- **Cooldown Manager buff icons have growth and anchor controls**, and minimap
+  settings include Blizzard's native Rotate Minimap toggle.
+
+### Improved
+
+- **Settings and Blizzard-window skins have more consistent styling**, including
+  the Character window, Social, talents, and Crafting Orders.
+- **Alt equipment supports filtering, sorting, dedicated tooltips, and a guild
+  column**, while weekly progress shows lockouts and compact Great Vault summaries.
+- **Incoming Casts can collapse readable hidden icons**, and Battle Res Counter
+  can hide when charge information is unavailable.
+
+### Fixed
+
+- **Cooldown Manager preserves native layouts, buff anchors, visibility, and
+  unusable-spell tint** across loading, combat, and cooldown transitions.
+- **Action bars preserve secure button state and possession key bindings**,
+  recover cooldown animations after fades, and refresh layouts after minimap changes.
+- **Unit-frame castbars defer restricted layout changes**, raid markers handle
+  restricted indices, and dimmed group frames retain tooltips.
+- **Damage Meter retains spell names and healing rows during combat.**
+- **Bank money dialogs and guild-bank transfers work reliably**, including the
+  combined All view and reopening the bank.
+- **QUI Chat preserves literal messages, other addons retain their `/pull`
+  commands, and weapon-oil timers refresh after zone changes.**
+- **The Info Bar Shop button is restored.**
+
 ## v5.3-beta15 - 2026-09-08
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
