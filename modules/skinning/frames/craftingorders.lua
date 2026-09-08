@@ -50,7 +50,7 @@ end
 local function SkinTabs(frame)
     if not frame then return end
     local tabs = { frame.BrowseTab, frame.OrdersTab }
-    SkinBase.SkinTabGroup(tabs, frame, { font = true })
+    SkinBase.SkinTabGroup(tabs, frame, { font = true, resizeToText = true })
     if tabs[1] then
         tabs[1]:ClearAllPoints()
         tabs[1]:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", -3, -30)
@@ -81,9 +81,6 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         if searchBar.FilterDropdown then
             local dropdown = searchBar.FilterDropdown
             SkinBase.SkinDropdown(dropdown, { belowChildren = true })
-            if dropdown.ValidateResetState then
-                C_Timer.After(0, function() ns.SafeCallMethod("best-effort-style", dropdown, "ValidateResetState") end)
-            end
         end
     end
 

@@ -131,7 +131,15 @@ end
 local _viewerAlphaProxy = CreateFrame and CreateFrame("Frame") or nil
 local _rawViewerSetAlpha = _viewerAlphaProxy and _viewerAlphaProxy.SetAlpha or nil
 local _securecall = securecallfunction or function(fn, ...) return fn(...) end
-local REANCHOR_VIEWER_KEYS = { "essential", "utility", "buff", "trackedBar" }
+local REANCHOR_VIEWER_KEYS = { "essential", "utility", "buff" }
+local _viewerAlphaStates = setmetatable({}, { __mode = "k" })
+
+local function ReassertViewerAlpha(viewer)
+    local state = _viewerAlphaStates[viewer]
+    if not state or not ns._cdmBoot or not IsCDMMasterEnabled()
+        or (viewer.IsForbidden and viewer:IsForbidden()) then return end
+    _securecall(_rawViewerSetAlpha, viewer, state.alpha)
+end
 
 local function ApplyReanchorViewerAlpha(alpha)
     if not _rawViewerSetAlpha then return end
@@ -142,6 +150,15 @@ local function ApplyReanchorViewerAlpha(alpha)
     for i = 1, #REANCHOR_VIEWER_KEYS do
         local viewer = wiring:GetViewerForKey(REANCHOR_VIEWER_KEYS[i])
         if viewer and (not viewer.IsForbidden or not viewer:IsForbidden()) then
+            local state = _viewerAlphaStates[viewer]
+            if not state then
+                state = {}
+                _viewerAlphaStates[viewer] = state
+                if hooksecurefunc then
+                    hooksecurefunc(viewer, "SetAlpha", function(...) _securecall(ReassertViewerAlpha, ...) end)
+                end
+            end
+            state.alpha = alpha
             _securecall(_rawViewerSetAlpha, viewer, alpha)
         end
     end
@@ -841,6 +858,9 @@ local function ApplyActionBarListAlpha(frames, alpha)
 end
 
 local function GetActionBarEntryAlpha(entry)
+    local states = ns.ActionBarsOwned and ns.ActionBarsOwned.fadeState
+    local state = states and states[entry.barKey]
+    if state and state.requestedAlpha ~= nil then return state.requestedAlpha end
     return entry.container:GetAlpha()
 end
 
@@ -850,6 +870,7 @@ local ActionBarsVisibility = CreateVisibilityController({
     applyAlpha = ApplyActionBarListAlpha,
     getAlpha = GetActionBarEntryAlpha,
     includeVehicle = true,
+    instantApply = true,
     leaveDelay = 0.3,
     update = function() UpdateActionBarsVisibility() end,
 })
@@ -1030,6 +1051,8 @@ visibilityEventFrame:RegisterEvent("PLAYER_IMPULSE_APPLIED")
 visibilityEventFrame:RegisterEvent("UNIT_ENTERED_VEHICLE")
 visibilityEventFrame:RegisterEvent("UNIT_EXITED_VEHICLE")
 visibilityEventFrame:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR")
+visibilityEventFrame:RegisterEvent("UPDATE_POSSESS_BAR")
+visibilityEventFrame:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
 visibilityEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 visibilityEventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
 visibilityEventFrame:RegisterEvent("PLAYER_IS_GLIDING_CHANGED")

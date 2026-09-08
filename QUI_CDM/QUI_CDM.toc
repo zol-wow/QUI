@@ -2,7 +2,7 @@
 ## Title: |cFF30D1FFQUI|r Cooldown Manager
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol and Drew
-## Version: 5.2.3
+## Version: 5.3-beta13
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
@@ -16,6 +16,7 @@ cdm\cdm_catalog.lua
 cdm\hud_visibility.lua
 cdm\cdm_scheduler.lua
 cdm\cdm_sources.lua
+cdm\cdm_alerts.lua
 cdm\cdm_runtime_store.lua
 cdm\cdm_runtime_queries.lua
 cdm\cdm_resolvers.lua

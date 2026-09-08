@@ -24,7 +24,7 @@ local function EnsurePanel()
     local bg = panel:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetColorTexture(0.05, 0.05, 0.05, 0.9)
-    titleText = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    titleText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     titleText:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD, -PAD)
     panel:Hide()
 end

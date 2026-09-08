@@ -549,15 +549,19 @@ local function CreateMonitorFrame()
     title:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
     title:SetText("QUI Performance")
 
-    local closeBtn = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 2)
-    closeBtn:SetScript("OnClick", function()
-        f:Hide()
-        isTracking = false
-        f:SetScript("OnUpdate", nil)
-        StopEventSniffer()
-        StopModuleProfiler()
-    end)
+    ns.UIKit.CreateCloseButton(f, {
+        size = 24,
+        point = "TOPRIGHT",
+        x = 2,
+        y = 2,
+        onClick = function()
+            f:Hide()
+            isTracking = false
+            f:SetScript("OnUpdate", nil)
+            StopEventSniffer()
+            StopModuleProfiler()
+        end,
+    })
 
     local sep = f:CreateTexture(nil, "ARTWORK")
     sep:SetPoint("TOPLEFT", f, "TOPLEFT", 8, -24)

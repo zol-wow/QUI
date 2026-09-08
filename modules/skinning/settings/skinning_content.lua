@@ -604,7 +604,7 @@ local function BuildSkinningTab(tabContent)
         {key="skinPVPMatch",          label=ns.L["PvP Scoreboard (Req. Reload)"],          dbT=general,         desc=ns.L["Skin the post-match PvP scoreboard / results frames (QUI backdrop + fonts). Requires a reload."]},
         {key="skinQuest",             label=ns.L["Quest Dialog (Req. Reload)"],            dbT=general,         desc=ns.L["Skin the NPC quest detail / progress / reward dialog window. Requires a reload."]},
         {key="skinReadyCheck",        label=ns.L["Ready Check Dialog (Req. Reload)"],      dbT=general,         desc=ns.L["Skin the ready check popup. Requires a reload."]},
-        {key="skinCharacterFrame",    label=ns.L["Reputation/Currency (Req. Reload)"],     dbT=general,         desc=ns.L["Skin the reputation and currency tabs of the character pane. Requires a reload."]},
+        {key="skinCharacterFrame",    label=ns.L["Character Frame Chrome (Req. Reload)"],  dbT=general,         desc=ns.L["Skin the Character window shell: frame backdrop, bottom tabs, equipment/title popouts, and the Reputation and Currency panes. Requires a reload."]},
         {key="skinSpellBook",         label=ns.L["Spellbook / Talents (Req. Reload)"],     dbT=general,         desc=ns.L["Skin the combined Spellbook and Talents window (PlayerSpellsFrame). Requires a reload."]},
         {key="skinStaticPopups",      label=ns.L["Static Dialogs (Req. Reload)"],          dbT=general,         desc=ns.L["Skin StaticPopup confirmation dialogs. Requires a reload."]},
         {key="skinStatusTrackingBars",label=ns.L["Status Tracking Bars (Req. Reload)"],    dbT=general,         desc=ns.L["Skin the experience, reputation, and honor bars above the action bar. Requires a reload."]},

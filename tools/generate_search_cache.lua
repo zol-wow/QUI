@@ -158,6 +158,7 @@ local function should_load_script(path)
     end
 
     if path == "core/utils.lua"
+        or path == "core/theme.lua"
         or path == "core/infobar_shared.lua"
         or path == "core/settings_layout_shared.lua"
         or path == "core/border_registry.lua"
@@ -769,6 +770,9 @@ _G.GetCVarBool = function()
     return false
 end
 _G.C_CVar = {
+    GetCVarBool = function(cvar)
+        return _G.GetCVarBool(cvar)
+    end,
     GetCVar = function(cvar)
         return _G.GetCVar(cvar)
     end,
@@ -844,6 +848,7 @@ _G.C_Timer = {
 _G.QUI_SEARCH_HARVEST = true
 
 local profile_db = make_auto_table()
+profile_db.damageMeter.native.windows[1] = {}
 profile_db.general.showOptionTooltips = true
 profile_db.quiGroupFrames = {
     testMode = {},
@@ -885,41 +890,9 @@ _G.QUI = {
             },
         },
     },
-    GUI = {
-        Colors = {
-            bg = { 0.051, 0.067, 0.09, 0.97 },
-            bgLight = { 0.094, 0.11, 0.14, 1 },
-            bgDark = { 0.03, 0.04, 0.06, 1 },
-            bgContent = { 1, 1, 1, 0.02 },
-            bgSidebar = { 0, 0, 0, 0.25 },
-            bgFooter = { 0, 0, 0, 0.15 },
-            accent = { 0.204, 0.827, 0.6, 1 },
-            accentLight = { 0.431, 0.906, 0.718, 1 },
-            accentDark = { 0.1, 0.5, 0.35, 1 },
-            accentHover = { 0.3, 0.9, 0.65, 1 },
-            accentFaint = { 0.204, 0.827, 0.6, 0.07 },
-            accentGlow = { 0.204, 0.827, 0.6, 0.06 },
-            tabSelected = { 0.204, 0.827, 0.6, 1 },
-            tabSelectedText = { 1, 1, 1, 1 },
-            tabNormal = { 1, 1, 1, 0.55 },
-            tabHover = { 1, 1, 1, 0.85 },
-            text = { 1, 1, 1, 1 },
-            textBright = { 1, 1, 1, 1 },
-            textMuted = { 1, 1, 1, 0.45 },
-            textDim = { 1, 1, 1, 0.6 },
-            sectionLabel = { 1, 1, 1, 0.42 },
-            border = { 1, 1, 1, 0.06 },
-            borderStrong = { 1, 1, 1, 0.1 },
-            borderAccent = { 0.204, 0.827, 0.6, 1 },
-            sectionHeader = { 0.431, 0.906, 0.718, 1 },
-            sliderTrack = { 1, 1, 1, 0.12 },
-            sliderThumb = { 1, 1, 1, 1 },
-            sliderThumbBorder = { 0, 0, 0, 0.2 },
-            toggleOff = { 1, 1, 1, 0.12 },
-            toggleThumb = { 1, 1, 1, 1 },
-            warning = { 0.961, 0.620, 0.043, 1 },
-        },
-    },
+    -- Palette comes from core/theme.lua (loaded by should_load_script before
+    -- framework.lua); theme.lua fills QUI.GUI.Colors when it is absent.
+    GUI = {},
     QUICore = {
         db = {
             profile = profile_db,
@@ -1589,7 +1562,8 @@ local function register_manual_static_setting(context, label, widget_type, db_pa
         surfaceUnitKey = context.surfaceUnitKey,
         surfaceTypeKey = resolve_surface_type_key(descriptor, context),
         widgetDescriptor = descriptor,
-        keywords = context.keywords,
+        keywords = extra and extra.keywords or context.keywords,
+        description = extra and extra.description or nil,
     })
 end
 
@@ -2485,6 +2459,7 @@ local function capture_aura_displays_elements()
         return {
             elementTypes        = { filterStrip = true, tracked = true },
             trackedDisplayTypes = { icon = true, square = true, bar = true },
+            dynamicTrackedLayout = true,
             allowSpecOverride   = true,
             roleGate            = false,
             cancelEligible      = false,
@@ -2515,7 +2490,8 @@ local function capture_aura_displays_elements()
     end
 
     if type(Page) == "table" and type(Page._BuildGeneralTab) == "function"
-        and type(Page._BuildLoadTab) == "function" then
+        and type(Page._BuildLoadTab) == "function"
+        and type(Page._BuildAlertsTab) == "function" then
         for _, unit in ipairs({ "player", "target" }) do
             local display = {
                 id = "d1",
@@ -2532,7 +2508,27 @@ local function capture_aura_displays_elements()
             render("load:" .. unit, function(host)
                 Page._BuildLoadTab(host, nil, display)
             end)
+            local tracked = E.NewTrackedElement({ 12345 }, "icon")
+            display.auras = { enabled = true, elements = { ["*"] = { tracked } } }
+            render("alerts:" .. unit, function(host)
+                Page._BuildAlertsTab(host, nil, display)
+            end)
         end
+        local alertDescription = "Blizzard plays this sound when the aura event occurs. None disables this event."
+        for _, label in ipairs({ "Aura Applied", "Stacks Increased", "Aura Removed" }) do
+            register_manual_static_setting(AURA_DISPLAYS_SEARCH_CONTEXT, label, "dropdown", nil, nil, {
+                keywords = { "Alerts", "Aura Displays", "sound" },
+                description = alertDescription,
+            })
+        end
+    end
+    if type(Page) == "table" and type(Page._BuildGroupTab) == "function"
+        and type(AD.GetGroup) == "function" then
+        local searchGroup = AD.GetGroup("Search Group", true)
+        if searchGroup then searchGroup._quiTransientOptionsProxy = true end
+        render("group", function(host)
+            Page._BuildGroupTab(host, nil, "Search Group")
+        end)
     end
 
     local function buildVariants()

@@ -192,9 +192,6 @@ function SuppressOriginalStandardBar(barFrame, barKey)
     end
     local origButtons = GetOriginalBlizzButtons(barKey)
     for _, blizzBtn in ipairs(origButtons) do
-        if barKey == "bar1" then
-            blizzBtn:SetParent(hiddenBarParent)
-        end
         SuppressBlizzardButton(blizzBtn)
     end
     if barKey == "bar1" then

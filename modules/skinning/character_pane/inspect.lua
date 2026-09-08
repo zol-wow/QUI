@@ -1128,7 +1128,7 @@ local function UpdateInspectILvlDisplay()
         local equipped = CalculateInspectAverageILvl(unit)
 
         if equipped > 0 and shared.GetILvlColor then
-            local eR, eG, eB = shared.GetILvlColor(equipped)
+            local eR, eG, eB = shared.GetILvlColor(equipped, unit)
             local equippedHex = string.format("%02x%02x%02x", math.floor(eR*255), math.floor(eG*255), math.floor(eB*255))
             local equippedStr = string.format("%.1f", equipped)
             centerFrame.text:SetText(string.format("|cff%s%s|r", equippedHex, equippedStr))
@@ -1239,129 +1239,9 @@ local function CreateInspectSettingsButton()
         charDB.inspectLiteOverallOffsetY = -8
     end
 
-    local C = GetColors()
     local shared = GetShared()
-
-    local gearBtn = CreateFrame("Button", "QUI_InspectSettingsBtn", InspectFrame, "BackdropTemplate")
-    gearBtn:SetSize(70, 20)
-    gearBtn:SetPoint("TOPRIGHT", InspectFrame, "TOPRIGHT", -5, -28)
-    ApplyOnePixelBorder(gearBtn, true, { C.border[1], C.border[2], C.border[3], 1 }, { 0.1, 0.1, 0.1, 0.8 })
-    gearBtn:SetFrameStrata("HIGH")
-    gearBtn:SetFrameLevel(100)
-
-    local gearIcon = gearBtn:CreateTexture(nil, "ARTWORK")
-    gearIcon:SetSize(14, 14)
-    gearIcon:SetPoint("LEFT", gearBtn, "LEFT", 5, 0)
-    gearIcon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
-
-    local gearLabel = gearBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    gearLabel:SetPoint("LEFT", gearIcon, "RIGHT", 4, 0)
-    CJKFont(gearLabel, GeneralFontFace(), 12, "")
-    gearLabel:SetText(ns.L["Settings"])
-    gearLabel:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-
-    gearBtn:SetScript("OnEnter", function(self)
-        SetOnePixelBorderColors(self, { C.accent[1], C.accent[2], C.accent[3], 1 })
-    end)
-    gearBtn:SetScript("OnLeave", function(self)
-        SetOnePixelBorderColors(self, { C.border[1], C.border[2], C.border[3], 1 })
-    end)
-
-    GetState(InspectFrame).gearBtn = gearBtn
-
-    inspectSettingsPanel = CreateFrame("Frame", "QUI_InspectSettingsPanel", InspectFrame, "BackdropTemplate")
-    inspectSettingsPanel:SetSize(450, 600)
-    inspectSettingsPanel:SetPoint("TOPLEFT", InspectFrame, "TOPRIGHT", 5, 0)
-    ApplyOnePixelBorder(inspectSettingsPanel, true, { C.border[1], C.border[2], C.border[3], 1 }, { 0.051, 0.067, 0.09, 0.97 })
-    inspectSettingsPanel:SetFrameStrata("DIALOG")
-    inspectSettingsPanel:SetFrameLevel(200)
-    inspectSettingsPanel:EnableMouse(true)
-    inspectSettingsPanel:Hide()
-    GetState(InspectFrame).settingsPanel = inspectSettingsPanel
-
-    local panelContentBg = inspectSettingsPanel:CreateTexture(nil, "BACKGROUND", nil, 1)
-    SetInsetPixelPoints(panelContentBg, inspectSettingsPanel, 1)
-    panelContentBg:SetColorTexture(1, 1, 1, 0.02)
-    DisablePixelSnap(panelContentBg)
-
-    local panelGlow = inspectSettingsPanel:CreateTexture(nil, "BACKGROUND", nil, 2)
-    SetInsetPixelPoints(panelGlow, inspectSettingsPanel, 1)
-    panelGlow:SetTexture("Interface\\BUTTONS\\WHITE8x8")
-    local function ApplyPanelGlow()
-        local gr, gg, gb = C.accent[1], C.accent[2], C.accent[3]
-        local globalQUI = _G.QUI
-        if globalQUI and globalQUI.GetSkinColor then
-            local r, g, b = globalQUI:GetSkinColor()
-            if r and g and b then gr, gg, gb = r, g, b end
-        end
-        if panelGlow.SetGradient and CreateColor then
-            local ok = pcall(function()
-                panelGlow:SetGradient("HORIZONTAL",
-                    CreateColor(gr, gg, gb, 0.06),
-                    CreateColor(gr, gg, gb, 0))
-            end)
-            if not ok then
-                panelGlow:SetColorTexture(gr, gg, gb, 0.04)
-            end
-        else
-            panelGlow:SetColorTexture(gr, gg, gb, 0.04)
-        end
-    end
-    ApplyPanelGlow()
-    inspectSettingsPanel._accentGlow = panelGlow
-    inspectSettingsPanel:HookScript("OnShow", ApplyPanelGlow)
-
-    local title = inspectSettingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOP", inspectSettingsPanel, "TOP", 0, -8)
-    CJKFont(title, GeneralFontFace(), 14, "")
-    title:SetText(ns.L["QUI Inspect Panel"])
-    title:SetTextColor(C.accent[1], C.accent[2], C.accent[3], 1)
-
-    local closeBtn = CreateFrame("Button", nil, inspectSettingsPanel, "UIPanelCloseButton")
-    closeBtn:SetPoint("TOPRIGHT", -3, -3)
-    closeBtn:SetScript("OnClick", function() inspectSettingsPanel:Hide() end)
-    do
-        local skinBase = GetSkinBase()
-        if skinBase and skinBase.SkinCloseButton then skinBase.SkinCloseButton(closeBtn) end
-    end
-
-    local scrollFrame = CreateFrame("ScrollFrame", nil, inspectSettingsPanel, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", inspectSettingsPanel, "TOPLEFT", 5, -28)
-    scrollFrame:SetPoint("BOTTOMRIGHT", inspectSettingsPanel, "BOTTOMRIGHT", -26, 40)
-
-    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetWidth(419)
-    scrollChild:SetHeight(1)
-    scrollFrame:SetScrollChild(scrollChild)
-
-    local scrollBar = scrollFrame.ScrollBar
-    if scrollBar then
-        scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT", 2, -16)
-        scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT", 2, 16)
-        local skinBase = GetSkinBase()
-        if skinBase and skinBase.SkinTrimScrollBar then skinBase.SkinTrimScrollBar(scrollBar) end
-    end
-
-    local PAD = 8
-    local FORM_ROW = 28
-    local y = -5
-
-    local _rowIdx = 0
-    local function ResetRows() _rowIdx = 0 end
-    local function PlaceRow(widget, currentY)
-        widget:SetPoint("TOPLEFT", PAD, currentY)
-        widget:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
-        _rowIdx = _rowIdx + 1
-        if (_rowIdx % 2) == 0 then
-            local rowBg = scrollChild:CreateTexture(nil, "BACKGROUND")
-            rowBg:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", PAD, currentY)
-            rowBg:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
-            rowBg:SetHeight(FORM_ROW)
-            rowBg:SetColorTexture(1, 1, 1, 0.02)
-            DisablePixelSnap(rowBg)
-        end
-        return currentY - FORM_ROW
-    end
+    local chrome = ns.CharacterChrome
+    if not (chrome and chrome.CreateSettingsFlyout) then return end
 
     local function RefreshInspect()
         if InspectFrame and InspectFrame:IsShown() and shared.ScheduleUpdate then
@@ -1392,19 +1272,19 @@ local function CreateInspectSettingsButton()
         RefreshInspect()
     end
 
-    local panelContentBuilt = false
-    local function BuildPanelContent()
-        if panelContentBuilt then return true end
-
-        local GUI = _G.QUI and _G.QUI.GUI
-        if GUI and type(GUI.EnsureWidgetAPI) == "function" then
-            GUI = GUI:EnsureWidgetAPI()
-        end
-        if not (GUI and type(GUI.HasWidgetAPI) == "function" and GUI:HasWidgetAPI()) then
-            return false
-        end
-
-        panelContentBuilt = true
+    -- Same builder as the Character flyout: trigger width, offset, close and
+    -- scrolling are the chrome owner's; only title and content differ.
+    local flyout = chrome.CreateSettingsFlyout(InspectFrame, {
+        title = ns.L["QUI Inspect Panel"],
+        name = "QUI_InspectSettingsPanel",
+        triggerName = "QUI_InspectSettingsBtn",
+        triggerPoint = { "TOPRIGHT", InspectFrame, "TOPRIGHT", -5, -28 },
+        extension = 0,
+        provider = function(ctx)
+        local GUI = ctx.GUI
+        local scrollChild = ctx.scrollChild
+        local PlaceRow, ResetRows, PAD = ctx.PlaceRow, ctx.ResetRows, ctx.PAD
+        local y = ctx.y
 
     local appearHeader = GUI:CreateSectionHeader(scrollChild, ns.L["Appearance"])
     appearHeader:SetPoint("TOPLEFT", PAD, y)
@@ -1432,7 +1312,7 @@ local function CreateInspectSettingsButton()
             { description = ns.L["Background color applied to the inspect panel. Shared with the global skinning background so character and inspect panels match."] })
         y = PlaceRow(bgColorPicker, y)
 
-        inspectSettingsPanel:HookScript("OnShow", function()
+        ctx.HookShow(function()
             if bgColorPicker and bgColorPicker.swatch and generalDB and generalDB.skinBgColor then
                 local col = generalDB.skinBgColor
                 bgColorPicker.swatch:SetBackdropColor(col[1], col[2], col[3], col[4] or 1)
@@ -1508,9 +1388,7 @@ local function CreateInspectSettingsButton()
 
     y = y - 10
 
-    scrollChild:SetHeight(math.abs(y) + 20)
-
-    local resetBtn = GUI:CreateButton(inspectSettingsPanel, ns.L["Reset"], 80, 24, function()
+    local resetBtn = GUI:CreateButton(ctx.panel, ns.L["Reset"], 80, 24, function()
         charDB.inspectPanelScale = 1.0
         charDB.showInspectItemName = true
         charDB.showInspectItemLevel = true
@@ -1525,23 +1403,18 @@ local function CreateInspectSettingsButton()
         SetInspectScaleDeferred(INSPECT_CONFIG.BASE_SCALE)
 
         RefreshInspectFonts()
-        inspectSettingsPanel:Hide()
-        BuildPanelContent()
-        inspectSettingsPanel:Show()
+        ctx.Reopen()
     end)
-    resetBtn:SetPoint("BOTTOM", inspectSettingsPanel, "BOTTOM", 0, 10)
+    resetBtn:SetPoint("BOTTOM", ctx.panel, "BOTTOM", 0, 10)
 
-        return true
-    end
+        return y
+        end,
+    })
 
-    gearBtn:SetScript("OnClick", function()
-        if inspectSettingsPanel:IsShown() then
-            inspectSettingsPanel:Hide()
-            return
-        end
-        BuildPanelContent()
-        inspectSettingsPanel:Show()
-    end)
+    if not flyout then return end
+    inspectSettingsPanel = flyout.panel
+    GetState(InspectFrame).gearBtn = flyout.trigger
+    GetState(InspectFrame).settingsPanel = inspectSettingsPanel
 end
 
 ApplyInspectPaneLayout = function(force)

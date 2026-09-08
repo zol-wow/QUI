@@ -1120,9 +1120,8 @@ Datatexts:Register("gold", {
 
         local function Update()
             local money = GetMoney() or 0
-            local r, g, b = GetValueColor()
             local label = GetLabel(ns.L["Gold: "], ns.L["G: "], slotFrame.shortLabel, slotFrame.noLabel)
-            text:SetFormattedText(label .. "|cff%02x%02x%02x%s|r", r, g, b, FormatGold(money))
+            text:SetFormattedText(label .. "|cffffd100%s|r", FormatGold(money))
         end
 
         frame.Update = Update

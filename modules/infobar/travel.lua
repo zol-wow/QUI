@@ -104,6 +104,23 @@ local function ScheduleFlyoutHide(frame)
     end)
 end
 
+local function UpdateFlyoutCooldowns(frame)
+    if InCombatLockdown() then return end
+    local getDuration = C_Spell and C_Spell.GetSpellCooldownDuration
+    if not getDuration then return end
+
+    for _, row in ipairs(frame._flyoutButtons or {}) do
+        if ns.Helpers.CanMutateCooldown(row._cooldown) then
+            local duration = getDuration(row._spellID, true)
+            if duration then
+                row._cooldown:SetCooldownFromDurationObject(duration)
+            else
+                row._cooldown:Clear()
+            end
+        end
+    end
+end
+
 local function BuildFlyout(frame, slotFrame)
     local flyout = CreateFrame("Frame", nil, frame, "SecureHandlerStateTemplate")
     frame._flyout = flyout
@@ -125,6 +142,7 @@ local function BuildFlyout(frame, slotFrame)
     bg:SetColorTexture(0, 0, 0, 0.9)
 
     local rows = 0
+    frame._flyoutButtons = {}
     for _, entry in ipairs(GetTeleportEntries()) do
         local spellID, label = entry[1], entry[2]
         if IsSpellKnown(spellID) then
@@ -135,6 +153,7 @@ local function BuildFlyout(frame, slotFrame)
             row:RegisterForClicks("AnyUp", "AnyDown")
             row:SetAttribute("type", "spell")
             row:SetAttribute("spell", spellID)
+            row._spellID = spellID
 
             local hl = row:CreateTexture(nil, "HIGHLIGHT")
             hl:SetAllPoints()
@@ -146,6 +165,18 @@ local function BuildFlyout(frame, slotFrame)
             text:SetJustifyH("LEFT")
             text:SetWordWrap(false)
             text:SetText(label or name or (ns.L["Spell "] .. spellID))
+
+            local cooldown = CreateFrame("Cooldown", nil, row, "CooldownFrameTemplate")
+            cooldown:ClearAllPoints()
+            cooldown:SetSize(ROW_HEIGHT, ROW_HEIGHT)
+            cooldown:SetPoint("RIGHT", row, "RIGHT")
+            cooldown:SetDrawSwipe(false)
+            cooldown:SetDrawEdge(false)
+            cooldown:SetHideCountdownNumbers(false)
+            cooldown:Show()
+            row._cooldown = cooldown
+            frame._flyoutButtons[#frame._flyoutButtons + 1] = row
+            text:SetPoint("RIGHT", cooldown, "LEFT", -4, 0)
 
             row:SetScript("OnLeave", function() ScheduleFlyoutHide(frame) end)
         end
@@ -177,6 +208,7 @@ local function ShowFlyout(frame)
         flyout = frame._flyout
     end
     if frame._flyoutRows == 0 then return end
+    UpdateFlyoutCooldowns(frame)
     flyout:Show()
 end
 
@@ -267,9 +299,14 @@ Datatexts:Register("travel", {
 
         frame:RegisterEvent("LEARNED_SPELL_IN_SKILL_LINE")
         frame:RegisterEvent("CHALLENGE_MODE_MAPS_UPDATE")
+        frame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
         frame:SetScript("OnEvent", function(self, event)
             if event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "CHALLENGE_MODE_MAPS_UPDATE" then
                 self._flyoutDirty = true
+            elseif event == "SPELL_UPDATE_COOLDOWN" then
+                if self._flyout and self._flyout:IsShown() then
+                    UpdateFlyoutCooldowns(self)
+                end
             elseif event == "PLAYER_REGEN_ENABLED" then
                 self:UnregisterEvent("PLAYER_REGEN_ENABLED")
                 if not self._hearth then

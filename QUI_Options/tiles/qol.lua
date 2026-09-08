@@ -51,6 +51,7 @@ function V2.Register(frame)
             SubPage("extendedIgnore",   ns.L["Ignore"],      "extendedIgnore",   12, ns.L["Ignore"]),
             SubPage("eventSounds",      ns.L["Sounds"],      "eventSounds",      13, ns.L["Sounds"]),
             SubPage("soundMute",        ns.L["Sound Mute"],  "soundMute",        14, ns.L["Sound Mute"]),
+            SubPage("notifications",    ns.L["Notifications"], "notifications",  15, ns.L["Notifications"]),
         },
     })
 end

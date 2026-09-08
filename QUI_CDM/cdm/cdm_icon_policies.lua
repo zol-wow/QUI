@@ -1088,7 +1088,7 @@ function CDMIconRangePolicy.Create(callbacks)
             and callbacks.resolveSettings(viewerType, cachedDB)
             or nil
         if not settings then
-            if icon._rangeTinted or icon._usabilityTinted then
+            if icon._lastVisualState or icon._rangeTinted or icon._usabilityTinted then
                 icon._lastVisualState = nil
                 resetIconVisuals(icon)
             end
@@ -1099,7 +1099,7 @@ function CDMIconRangePolicy.Create(callbacks)
         local usabilityEnabled = settings.usabilityIndicator
 
         if not rangeEnabled and not usabilityEnabled then
-            if icon._rangeTinted or icon._usabilityTinted then
+            if icon._lastVisualState or icon._rangeTinted or icon._usabilityTinted then
                 icon._lastVisualState = nil
                 resetIconVisuals(icon)
             end
@@ -1154,11 +1154,13 @@ function CDMIconRangePolicy.Create(callbacks)
             if cooldownVisualPriority and icon._usabilityTinted then
                 icon.Icon:SetVertexColor(1, 1, 1, 1)
                 icon._usabilityTinted = nil
-                icon._lastVisualState = nil
             end
         end
 
-        if newVisualState == "normal" and usabilityEnabled and not cooldownVisualPriority then
+        -- Keep usability current while cooldown styling suppresses its tint.
+        -- The renderer needs this state as soon as the cooldown/GCD clears,
+        -- before the next (possibly queued) SPELL_UPDATE_USABLE refresh.
+        if newVisualState == "normal" and usabilityEnabled then
             local usabilityID = spellID
             local usabilityQuery = callbacks.querySpellUsable
             local usabilityCache = controller.usableCycleCache
@@ -1220,8 +1222,10 @@ function CDMIconRangePolicy.Create(callbacks)
         end
 
         if newVisualState == "unusable" then
-            icon.Icon:SetVertexColor(0.4, 0.4, 0.4, 1)
-            icon._usabilityTinted = true
+            if not cooldownVisualPriority then
+                icon.Icon:SetVertexColor(0.4, 0.4, 0.4, 1)
+                icon._usabilityTinted = true
+            end
             return
         end
 

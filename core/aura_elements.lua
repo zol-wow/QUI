@@ -185,6 +185,7 @@ function E.NewTrackedElement(spells, displayType)
         applyToRoles = "all",
         anchor = "TOPLEFT", offsetX = 0, offsetY = 0,
         growDirection = "RIGHT", spacing = 2, iconSize = 16, iconsPerRow = 0,
+        dynamicLayout = false,
         hideSwipe = false, reverseSwipe = false,
         swipeStyle = "radial",
         duration = { show = false, fontSize = 9, anchor = "CENTER", offsetX = 0, offsetY = 0,
@@ -295,6 +296,7 @@ function E.NormalizeElement(e)
         if e.filterMode == "classification" then e.filterMode = "classify" end
     elseif e.mode == "tracked" then
         if e.auraType == nil then e.auraType = "HELPFUL" end
+        if e.dynamicLayout ~= true then e.dynamicLayout = false end
         if type(e.border) ~= "table" then e.border = { thickness = 2 } end
         if type(e.spells) == "table" then
             for i, spellID in ipairs(e.spells) do
@@ -322,6 +324,23 @@ function E.NormalizeElement(e)
     end
     if e.applyToRoles == nil then e.applyToRoles = "all" end
     return e
+end
+
+function E.NormalizeAuraSounds(e)
+    if type(e.auraSounds) ~= "table" then return nil end
+    local trackedSpellIDs = {}
+    for _, spellID in ipairs(e.spells or {}) do
+        if type(spellID) == "number" then trackedSpellIDs[spellID] = true end
+    end
+    local normalizedAuraSounds = {}
+    for spellID, sounds in pairs(e.auraSounds) do
+        local resolvedID = E.ResolveTrackedSpellID(tonumber(spellID) or spellID)
+        if trackedSpellIDs[resolvedID] and type(sounds) == "table" then
+            normalizedAuraSounds[resolvedID] = sounds
+        end
+    end
+    e.auraSounds = next(normalizedAuraSounds) and normalizedAuraSounds or nil
+    return e.auraSounds
 end
 
 local ROLE_GATE_TO_ASSIGNED = { tank = "TANK", healer = "HEALER", dps = "DAMAGER" }

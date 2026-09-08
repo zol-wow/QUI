@@ -16,7 +16,7 @@ function CreateEditOverlay(container, barKey)
     overlay:SetFrameStrata("HIGH")
     overlay:Hide()
 
-    local text = overlay:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local text = overlay:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     text:SetPoint("CENTER")
     local displayName = barKey:gsub("bar", "Bar ")
     text:SetText(displayName)
@@ -94,9 +94,7 @@ function OnEditModeExit()
 end
 
 function IsVehicleBarActive()
-    return (HasVehicleActionBar and HasVehicleActionBar())
-        or (HasOverrideActionBar and HasOverrideActionBar())
-        or (UnitInVehicle and UnitInVehicle("player"))
+    return SecureCmdOptionParse("[overridebar][vehicleui] hide; show") == "hide"
 end
 
 function IsPetBattleActive()

@@ -3,7 +3,7 @@ local Helpers = ns.Helpers
 
 local CreateFrame = CreateFrame
 local C_NamePlate = C_NamePlate
-local C_Timer = C_Timer
+local GetTime = GetTime
 local UnitCanAttack = UnitCanAttack
 local UnitCastingDuration = UnitCastingDuration
 local UnitCastingInfo = UnitCastingInfo
@@ -54,6 +54,8 @@ local TIMING = {
     targetChangeRead = 0.05,
 }
 
+local MAX_NAMEPLATE_CASTERS = 150
+
 local subscribers = {}
 local shownTargets = {}
 local plateUnits = {}
@@ -61,7 +63,34 @@ local watchedCaster = {}
 local serialByCaster = {}
 local castRecords = {}
 local clearQueue = {}
+local resolveFirstAt = {}
+local resolveSecondAt = {}
+local resolveSerial = {}
+local pendingResolveCount = 0
 local running = false
+
+local function NewCastRecord()
+    return {
+        spellName = false,
+        texture = false,
+        isChannel = false,
+        startMS = false,
+        endMS = false,
+        durationObj = false,
+        evidence = false,
+    }
+end
+
+for i = 1, MAX_NAMEPLATE_CASTERS do
+    local caster = "nameplate" .. i
+    plateUnits[caster] = false
+    watchedCaster[caster] = false
+    serialByCaster[caster] = 0
+    castRecords[caster] = NewCastRecord()
+    resolveFirstAt[caster] = false
+    resolveSecondAt[caster] = false
+    resolveSerial[caster] = false
+end
 
 local eventFrame = CreateFrame("Frame")
 
@@ -164,8 +193,8 @@ end
 local function NotifyHide(caster)
     for key, subscriber in pairs(subscribers) do
         local shown = shownTargets[key]
-        if shown and shown[caster] ~= nil then
-            shown[caster] = nil
+        if shown and shown[caster] then
+            shown[caster] = false
             SubStats(key).hides = SubStats(key).hides + 1
             DebugPrint("hide ", caster, " [", key, "]")
             subscriber.onHide(caster)
@@ -173,20 +202,37 @@ local function NotifyHide(caster)
     end
 end
 
+local function CancelResolve(caster)
+    if resolveSerial[caster] then
+        pendingResolveCount = pendingResolveCount - 1
+    end
+    resolveFirstAt[caster] = false
+    resolveSecondAt[caster] = false
+    resolveSerial[caster] = false
+    if pendingResolveCount == 0 then
+        eventFrame:SetScript("OnUpdate", nil)
+    end
+end
+
 local function ClearCaster(caster)
+    CancelResolve(caster)
     NextSerial(caster)
-    watchedCaster[caster] = nil
+    watchedCaster[caster] = false
     NotifyHide(caster)
 end
 
 local function ClearAllCasts()
     wipe(clearQueue)
-    for caster in pairs(watchedCaster) do
-        clearQueue[#clearQueue + 1] = caster
+    for caster, watched in pairs(watchedCaster) do
+        if watched then
+            clearQueue[#clearQueue + 1] = caster
+        end
     end
     for key in pairs(shownTargets) do
-        for caster in pairs(shownTargets[key]) do
-            clearQueue[#clearQueue + 1] = caster
+        for caster, shown in pairs(shownTargets[key]) do
+            if shown then
+                clearQueue[#clearQueue + 1] = caster
+            end
         end
     end
 
@@ -194,7 +240,8 @@ local function ClearAllCasts()
         ClearCaster(clearQueue[i])
     end
     wipe(clearQueue)
-    wipe(watchedCaster)
+    pendingResolveCount = 0
+    eventFrame:SetScript("OnUpdate", nil)
 end
 
 local function ResolveCaster(caster, expectedSerial)
@@ -231,7 +278,7 @@ local function ResolveCaster(caster, expectedSerial)
     -- two-read verify pass and target-change rechecks allocate nothing.
     local cast = castRecords[caster]
     if not cast then
-        cast = {}
+        cast = NewCastRecord()
         castRecords[caster] = cast
     end
     cast.spellName = spellName
@@ -248,7 +295,7 @@ local function ResolveCaster(caster, expectedSerial)
         local subStats = SubStats(key)
 
         if subscriber.allCasts then
-            if shown[caster] == nil then
+            if not shown[caster] then
                 shown[caster] = true
                 subStats.shows = subStats.shows + 1
                 DebugPrint("show ", caster, " [", evidence, "] ", key)
@@ -272,8 +319,8 @@ local function ResolveCaster(caster, expectedSerial)
                     subStats.hit = subStats.hit + 1
                     DebugPrint("resolve ", caster, " [", evidence, "] ", key, " -> ", target)
                     if shown[caster] ~= target then
-                        if shown[caster] ~= nil then
-                            shown[caster] = nil
+                        if shown[caster] then
+                            shown[caster] = false
                             subStats.hides = subStats.hides + 1
                             subscriber.onHide(caster)
                         end
@@ -284,8 +331,8 @@ local function ResolveCaster(caster, expectedSerial)
                 elseif target == false then
                     subStats.miss = subStats.miss + 1
                     DebugPrint("resolve ", caster, " [", evidence, "] ", key, " -> not-my-target")
-                    if shown[caster] ~= nil then
-                        shown[caster] = nil
+                    if shown[caster] then
+                        shown[caster] = false
                         subStats.hides = subStats.hides + 1
                         subscriber.onHide(caster)
                     end
@@ -298,10 +345,39 @@ local function ResolveCaster(caster, expectedSerial)
     end
 end
 
-local function QueueResolve(caster, serial, delay)
-    C_Timer.After(delay, function()
-        ResolveCaster(caster, serial)
-    end)
+local function ProcessResolveQueue()
+    local now = GetTime()
+    for caster, serial in pairs(resolveSerial) do
+        if serial then
+            local firstAt = resolveFirstAt[caster]
+            if firstAt and now >= firstAt then
+                resolveFirstAt[caster] = false
+                ResolveCaster(caster, serial)
+            end
+
+            local secondAt = resolveSecondAt[caster]
+            if resolveSerial[caster] == serial and secondAt and now >= secondAt then
+                resolveSecondAt[caster] = false
+                resolveSerial[caster] = false
+                pendingResolveCount = pendingResolveCount - 1
+                ResolveCaster(caster, serial)
+            end
+        end
+    end
+    if pendingResolveCount == 0 then
+        eventFrame:SetScript("OnUpdate", nil)
+    end
+end
+
+local function QueueResolves(caster, serial, firstDelay)
+    local now = GetTime()
+    if not resolveSerial[caster] then
+        pendingResolveCount = pendingResolveCount + 1
+    end
+    resolveSerial[caster] = serial
+    resolveFirstAt[caster] = now + firstDelay
+    resolveSecondAt[caster] = now + firstDelay + TIMING.verifyRead
+    eventFrame:SetScript("OnUpdate", ProcessResolveQueue)
 end
 
 local function BeginCastWatch(caster)
@@ -318,8 +394,7 @@ local function BeginCastWatch(caster)
     DebugPrint("watch ", caster)
     watchedCaster[caster] = true
     local serial = serialByCaster[caster] or 0
-    QueueResolve(caster, serial, TIMING.firstRead)
-    QueueResolve(caster, serial, TIMING.firstRead + TIMING.verifyRead)
+    QueueResolves(caster, serial, TIMING.firstRead)
 end
 
 local function RecheckCasterTarget(caster)
@@ -328,8 +403,7 @@ local function RecheckCasterTarget(caster)
     end
 
     local serial = NextSerial(caster)
-    QueueResolve(caster, serial, TIMING.targetChangeRead)
-    QueueResolve(caster, serial, TIMING.targetChangeRead + TIMING.verifyRead)
+    QueueResolves(caster, serial, TIMING.targetChangeRead)
 end
 
 local function AdoptLiveCast(unit)
@@ -355,6 +429,12 @@ local function SeedVisibleNameplates()
             plateUnits[unit] = true
             AdoptLiveCast(unit)
         end
+    end
+end
+
+local function ResetPlateUnits()
+    for unit in pairs(plateUnits) do
+        plateUnits[unit] = false
     end
 end
 
@@ -393,6 +473,10 @@ local WATCHED_EVENTS = {
     "PLAYER_REGEN_ENABLED",
 }
 
+for i = 1, #WATCHED_EVENTS do
+    stats.events[WATCHED_EVENTS[i]] = 0
+end
+
 local function SetRunning(enabled)
     if enabled == running then
         return
@@ -412,19 +496,21 @@ local function SetRunning(enabled)
         SeedVisibleNameplates()
     else
         ClearAllCasts()
-        wipe(plateUnits)
+        ResetPlateUnits()
     end
 end
 
 eventFrame:SetScript("OnEvent", function(_, event, unit)
     if event == "PLAYER_ENTERING_WORLD" then
         ClearAllCasts()
-        wipe(plateUnits)
+        ResetPlateUnits()
         SeedVisibleNameplates()
         return
     end
     if event == "PLAYER_REGEN_ENABLED" then
         ClearAllCasts()
+        ResetPlateUnits()
+        SeedVisibleNameplates()
         return
     end
     if event == "NAME_PLATE_UNIT_ADDED" then
@@ -435,7 +521,7 @@ eventFrame:SetScript("OnEvent", function(_, event, unit)
         return
     end
     if event == "NAME_PLATE_UNIT_REMOVED" then
-        plateUnits[unit] = nil
+        plateUnits[unit] = false
         DebugPrint("plate removed ", unit)
         ClearCaster(unit)
         return
@@ -470,7 +556,15 @@ function IncomingCasts.Subscribe(key, subscriber)
     end
 
     subscribers[key] = subscriber
-    shownTargets[key] = shownTargets[key] or {}
+    local shown = shownTargets[key]
+    if not shown then
+        shown = {}
+        shownTargets[key] = shown
+        for i = 1, MAX_NAMEPLATE_CASTERS do
+            shown["nameplate" .. i] = false
+        end
+    end
+    SubStats(key)
     SetRunning(true)
     return true
 end
@@ -484,9 +578,13 @@ function IncomingCasts.ResetSubscriber(key)
     if not shown then
         return
     end
-    wipe(shown)
-    for caster in pairs(watchedCaster) do
-        RecheckCasterTarget(caster)
+    for caster in pairs(shown) do
+        shown[caster] = false
+    end
+    for caster, watched in pairs(watchedCaster) do
+        if watched then
+            RecheckCasterTarget(caster)
+        end
     end
 end
 
@@ -514,12 +612,16 @@ function IncomingCasts.DebugDump(out)
     out(prefix .. "engine running: " .. tostring(running) .. "  verbose log: " .. tostring(debugLog))
 
     local plates = {}
-    for unit in pairs(plateUnits) do
-        plates[#plates + 1] = unit
+    for unit, tracked in pairs(plateUnits) do
+        if tracked then
+            plates[#plates + 1] = unit
+        end
     end
     local watched = {}
-    for caster in pairs(watchedCaster) do
-        watched[#watched + 1] = caster
+    for caster, active in pairs(watchedCaster) do
+        if active then
+            watched[#watched + 1] = caster
+        end
     end
     out(prefix .. "plates tracked: " .. #plates .. " (" .. table.concat(plates, " ") .. ")  seen total: " .. stats.platesSeen)
     if running and #plates == 0 then
@@ -529,7 +631,9 @@ function IncomingCasts.DebugDump(out)
 
     local eventBits = {}
     for event, count in pairs(stats.events) do
-        eventBits[#eventBits + 1] = event .. "=" .. count
+        if count > 0 then
+            eventBits[#eventBits + 1] = event .. "=" .. count
+        end
     end
     out(prefix .. "plate events: " .. (#eventBits > 0 and table.concat(eventBits, " ") or "none")
         .. "  untracked-unit events: " .. stats.eventsUntracked)
@@ -547,8 +651,10 @@ function IncomingCasts.DebugDump(out)
         local shownCount = 0
         local shown = shownTargets[key]
         if shown then
-            for _ in pairs(shown) do
-                shownCount = shownCount + 1
+            for _, target in pairs(shown) do
+                if target then
+                    shownCount = shownCount + 1
+                end
             end
         end
         out(prefix .. "subscriber " .. key .. (subscribers[key] and "" or " (inactive)")

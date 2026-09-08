@@ -21,10 +21,10 @@ function CDMReanchorDecorate.New(deps)
     return setmetatable(self, InstanceMT)
 end
 
-function CDMReanchorDecorate:Decorate(frame, rowConfig)
+function CDMReanchorDecorate:Decorate(frame, rowConfig, spellOverride)
     local deps = self._deps
     if self._done[frame] then
-        if deps.applyChrome then deps.applyChrome(frame, rowConfig, false) end
+        if deps.applyChrome then deps.applyChrome(frame, rowConfig, false, spellOverride) end
         return false
     end
     self._done[frame] = true
@@ -33,7 +33,7 @@ function CDMReanchorDecorate:Decorate(frame, rowConfig)
             deps.hideRegion(frame, HIDDEN_REGIONS[i])
         end
     end
-    if deps.applyChrome then deps.applyChrome(frame, rowConfig, true) end
+    if deps.applyChrome then deps.applyChrome(frame, rowConfig, true, spellOverride) end
     return true
 end
 

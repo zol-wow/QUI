@@ -646,6 +646,65 @@ function S.HideInactiveIcons(container)
     for i = 1, #pool do HideInactiveIcon(pool[i]) end
 end
 
+-- Dynamic layout: instead of one fixed slot per tracked spell, the element
+-- registers one single-frame aura GROUP per spell. Blizzard's flow layout
+-- (AnchorUtil.ApplyFlowLayout) skips empty groups and only charges
+-- groupSpacing before a non-empty one, so icons pack together as auras come
+-- and go — with Lua never observing aura presence (secrets-safe by
+-- construction, same as the slot path). Configured spell order is kept via
+-- the group order; per-spell only-mine lands on each group's filter string.
+function S.UsesDynamicGroups(element)
+    return type(element) == "table" and element.mode == "tracked"
+        and element.dynamicLayout == true
+        and (element.displayType == nil or element.displayType == "icon")
+end
+
+function S.DynamicGroups(container, element, profile)
+    local groups = {}
+    if not Deps() then return groups end
+    container._quiAssistApplied = nil
+    local spells = (element.enabled ~= false) and element.spells or nil
+    local parkAll = false
+    if spells then
+        local base = element.auraType or "HELPFUL"
+        local enforceable, liveGoverned, live = IdentityFilterEnforceable(container, base)
+        if liveGoverned then
+            container._quiAssistApplied = live
+        end
+        if not enforceable then
+            if liveGoverned then
+                parkAll = true
+            else
+                spells = nil
+            end
+        end
+    end
+    if not spells then return groups end
+    local spacing = tonumber(profile and profile.spacing) or tonumber(element.spacing) or 0
+    if spacing < 0 then spacing = 0 end
+    for i = 1, #spells do
+        local spellID = spells[i]
+        if type(spellID) == "number" then
+            local parkThis = parkAll and not SpellNeverSecret(spellID)
+            local cf = SlotCandidateFilters(element, spellID)
+            if parkThis or not (cf.includeSpellIDs and next(cf.includeSpellIDs)) then
+                cf = PARK_FILTER
+            end
+            groups[#groups + 1] = {
+                key = "d" .. tostring(#groups + 1),
+                filter = SlotFilterString(element, spellID),
+                maxFrameCount = 1,
+                candidateFilters = cf,
+                -- One frame per group: the gap between icons is groupSpacing,
+                -- so element spacing must not add a trailing gap of its own.
+                elementSpacing = 0,
+                groupSpacing = spacing,
+            }
+        end
+    end
+    return groups
+end
+
 function S.Park(container)
     container._quiAssistApplied = nil
     local pool = container._quiSlots

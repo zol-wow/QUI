@@ -40,7 +40,7 @@ License: MIT
 -- @class file
 -- @name LibRangeCheck-3.0
 local MAJOR_VERSION = "LibRangeCheck-3.0"
-local MINOR_VERSION = 35
+local MINOR_VERSION = 36
 
 ---@class lib
 local lib, oldminor = LibStub:NewLibrary(MAJOR_VERSION, MINOR_VERSION)
@@ -58,15 +58,7 @@ local isCata = WOW_PROJECT_ID == WOW_PROJECT_CATACLYSM_CLASSIC
 local isMists = WOW_PROJECT_ID == WOW_PROJECT_MISTS_CLASSIC
 local isMidnight = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE and interfaceVersion >= 120000
 
---QUI patch (12.1): UnitCanAttack is secret-capable under restriction — probe
---before the `not` truth-test. A secret verdict counts as restricted (picks
---the conservative in-combat checker list; action policy, not a state claim).
-local InCombatLockdownRestriction = function(unit)
-  if not InCombatLockdown() then return false end
-  local canAttack = UnitCanAttack("player", unit)
-  if isMidnight and issecretvalue(canAttack) then return true end
-  return not canAttack
-end
+local InCombatLockdownRestriction = function(unit) return InCombatLockdown() and not UnitCanAttack("player", unit) end
 
 local _G = _G
 local next = next
@@ -114,7 +106,13 @@ local UnitClass = UnitClass
 local UnitRace = UnitRace
 local GetInventoryItemLink = GetInventoryItemLink
 local GetTime = GetTime
-local HandSlotId = GetInventorySlotInfo("HANDSSLOT")
+
+local HandSlotId
+if C_PaperDollInfo and C_PaperDollInfo.GetInventorySlotInfo then
+  HandSlotId = C_PaperDollInfo.GetInventorySlotInfo("HANDSSLOT")
+else
+  HandSlotId = GetInventorySlotInfo("HANDSSLOT")
+end
 local math_floor = math.floor
 local UnitIsVisible = UnitIsVisible
 
@@ -4032,17 +4030,8 @@ local function getRangeWithCheckerList(unit, checkerList)
 end
 
 local function getRange(unit, noItems)
-  --QUI patch (12.1): UnitCanAssist/UnitIsDeadOrGhost/UnitCanAttack/UnitIsUnit
-  --are secret-capable under restriction (SecretWhen*Restricted) and their raw
-  --returns were truth-tested below, throwing out of the whole range query.
-  --Probe each verdict at its decision point (same isMidnight-gated
-  --issecretvalue idiom the cache key uses); a secret verdict is
-  --indeterminate, so return nil ("no result") and let callers fall back.
   local canAssist = UnitCanAssist("player", unit)
-  if isMidnight and issecretvalue(canAssist) then return nil end
-  local deadOrGhost = UnitIsDeadOrGhost(unit)
-  if isMidnight and issecretvalue(deadOrGhost) then return nil end
-  if deadOrGhost then
+  if UnitIsDeadOrGhost(unit) then
     if canAssist then
       return getRangeWithCheckerList(unit, InCombatLockdownRestriction(unit) and lib.resRCInCombat or lib.resRC)
     else
@@ -4051,7 +4040,6 @@ local function getRange(unit, noItems)
   end
 
   local canAttack = UnitCanAttack("player", unit)
-  if isMidnight and issecretvalue(canAttack) then return nil end
   local isPet
   if not canAttack then
     isPet = UnitIsUnit("pet", unit)
