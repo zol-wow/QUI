@@ -3030,6 +3030,7 @@ local defaults = {
                     sortByRole = true,
                     groupBy = "GROUP",
                     limitGroupsByRaidSize = false,
+                    hideBenchGroupsInMythic = false,
                     unitsPerFlat = 5,
                 },
                 health = {

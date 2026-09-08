@@ -373,7 +373,7 @@ local function UseRaidSectionHeaders(db)
     local layout = raidVdb and raidVdb.layout
     return IsMultiHeaderMode()
         or GetRaidSelfFirst(db)
-        or (layout and layout.limitGroupsByRaidSize == true)
+        or _state.IsRaidGroupLimitEnabled(layout)
         -- Hidden players need computed nameLists in every raid mode, so the
         -- single groupFilter-driven raid header can't be used.
         or _state.GetHiddenPlayerSet(db) ~= nil
@@ -394,8 +394,7 @@ _state.UseRaidNameListSections = function(db, layout)
     if _state.GetHiddenPlayerSet(db) ~= nil then
         return true
     end
-    return layout
-        and layout.limitGroupsByRaidSize == true
+    return _state.IsRaidGroupLimitEnabled(layout)
         and (layout.groupBy or "GROUP") ~= "GROUP"
 end
 
@@ -415,13 +414,31 @@ local function GetLayoutGrowDirection(layout, fallback)
     return fallback or "DOWN"
 end
 
+-- Raid group limits. Two independent layout toggles cap which subgroups the
+-- raid headers show:
+--   limitGroupsByRaidSize  -> groups 1-4 in Mythic (difficulty 16), 1-6 elsewhere
+--   hideBenchGroupsInMythic -> groups 1-6 in Mythic only (7-8 are the bench),
+--                             no cap outside Mythic
+-- When both are on the stricter cap wins. Either toggle forces the
+-- section-header / nameList paths (see UseRaidSectionHeaders) so the cap
+-- applies in every Group By mode, including flat layouts.
+_state.IsRaidGroupLimitEnabled = function(layout)
+    if not layout then return false end
+    return layout.limitGroupsByRaidSize == true
+        or layout.hideBenchGroupsInMythic == true
+end
+
 _state.GetRaidGroupLimit = function(layout)
-    if not layout or layout.limitGroupsByRaidSize ~= true then
+    if not _state.IsRaidGroupLimitEnabled(layout) then
         return 8
     end
 
     local difficultyID = _G.GetInstanceInfo and select(3, _G.GetInstanceInfo())
-    return difficultyID == 16 and 4 or 6
+    local isMythic = (difficultyID == 16)
+    if layout.limitGroupsByRaidSize == true then
+        return isMythic and 4 or 6
+    end
+    return isMythic and 6 or 8
 end
 
 _state.GetRaidGroupFilterString = function(layout)
