@@ -107,8 +107,14 @@ local function ReadableGUID(source)
     return guid
 end
 
-local function SameSource(left, right)
+local function SameSource(left, right, matchDeathRecap)
     if not (left and right) then return false end
+    if left == right then return true end
+    if matchDeathRecap then
+        local leftID, rightID = left.deathRecapID, right.deathRecapID
+        return not IsSecret(leftID) and not IsSecret(rightID)
+            and type(leftID) == "number" and leftID > 0 and leftID == rightID
+    end
     if left.isLocalPlayer == true and right.isLocalPlayer == true then return true end
     local leftGUID = ReadableGUID(left)
     local rightGUID = ReadableGUID(right)
@@ -125,13 +131,13 @@ local function SameTarget(left, right)
     return not IsSecret(leftID) and leftID ~= nil and leftID == rightID
 end
 
-local function FindMatchingSource(selected, sources, fallbackToFirst)
+local function FindMatchingSource(selected, sources, fallbackToFirst, matchDeathRecap)
     if not selected then return fallbackToFirst ~= false and sources and sources[1] or nil end
     for _, source in ipairs(sources or {}) do
-        if source == selected or SameSource(selected, source) then return source end
+        if SameSource(selected, source, matchDeathRecap) then return source end
     end
     local specIconID = selected.specIconID
-    if type(specIconID) ~= "number" or specIconID <= 0 then
+    if matchDeathRecap or type(specIconID) ~= "number" or specIconID <= 0 then
         return fallbackToFirst ~= false and sources and sources[1] or nil
     end
     local match
@@ -400,8 +406,9 @@ end
 
 function Breakout:_ResolveSelectedSource(view)
     local previousSource = self.source
-    self.source = FindMatchingSource(previousSource, view.sources)
-    if previousSource and not SameSource(previousSource, self.source) then
+    local matchDeathRecap = self.damageMeterType == (Enum and Enum.DamageMeterType and Enum.DamageMeterType.Deaths)
+    self.source = FindMatchingSource(previousSource, view.sources, true, matchDeathRecap)
+    if previousSource and not SameSource(previousSource, self.source, matchDeathRecap) then
         self.selectedTarget = nil
     end
     local inCombat = IsCombatDataRestricted()
@@ -416,6 +423,7 @@ function Breakout:_RefreshPlayers(view)
     local section = self.sections.players
     local rowHeight, rowGap = self:_RowMetrics()
     local count = math.min(#(view.sources or {}), #section.rows)
+    local matchDeathRecap = self.damageMeterType == (Enum and Enum.DamageMeterType and Enum.DamageMeterType.Deaths)
     if count == 0 then
         SetSectionEmpty(section)
         return
@@ -425,7 +433,7 @@ function Breakout:_RefreshPlayers(view)
         row.Icon:Show()
         self.sourceRenderer:_SetRowSource(row, view.sources[i], view.maxAmount)
         row._source = view.sources[i]
-        row.Bar:SetAlpha(SameSource(self.source, view.sources[i]) and 1 or 0.72)
+        row.Bar:SetAlpha(SameSource(self.source, view.sources[i], matchDeathRecap) and 1 or 0.72)
         row:Show()
     end
     ShowSectionRows(section, count, rowHeight, rowGap)

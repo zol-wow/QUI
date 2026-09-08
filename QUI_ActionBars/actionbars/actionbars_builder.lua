@@ -443,6 +443,9 @@ function BuildBar(barKey)
 
         local microMenuParent = MicroMenu and MicroMenu:GetParent()
         if microMenuParent and microMenuParent ~= UIParent and microMenuParent ~= MicroMenuContainer then
+            if not ActionBarsOwned.nativeButtons.microbar then
+                ActionBarsOwned.pendingMicroBuild = true
+            end
             return
         end
         if microMenuParent == MicroMenuContainer then
@@ -745,6 +748,9 @@ function BuildBar(barKey)
     end
 
     ActionBarsOwned.nativeButtons[barKey] = buttons
+    if barKey == "microbar" then
+        ActionBarsOwned.pendingMicroBuild = nil
+    end
     if barKey ~= "pet" and barKey ~= "stance" and barKey ~= "microbar" and barKey ~= "bags" then
         FinalizeStandardOwnedActionButtons(container, barKey, buttons)
         if EnsureOwnedFlyoutFrame then

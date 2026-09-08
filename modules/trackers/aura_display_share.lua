@@ -403,7 +403,12 @@ local function ValidElement(element)
     local E = ns.AuraElements
     if E and type(E.NormalizeElement) == "function" and type(E.Validate) == "function" then
         local function Probe()
-            return E.Validate(E.NormalizeElement(CopyData(element)))
+            local normalized = E.NormalizeElement(CopyData(element))
+            return E.Validate(normalized)
+                and ValidRecord(normalized.duration, TEXT_FIELD_TYPES, TEXT_FIELD_ENUMS, TEXT_FIELD_RANGES)
+                and ValidColor(normalized.duration and normalized.duration.color)
+                and ValidRecord(normalized.pandemicGlow, PANDEMIC_FIELD_TYPES)
+                and ValidColor(normalized.pandemicGlow and normalized.pandemicGlow.color)
         end
         local ok, valid
         if type(ns.SafeCall) == "function" then

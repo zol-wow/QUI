@@ -396,6 +396,10 @@ env.__declared.LayoutNativeButtons = true
 
 function ReclaimBarButtons(barKey)
     local btns = ActionBarsOwned.nativeButtons[barKey]
+    if barKey == "microbar" and ActionBarsOwned.pendingMicroBuild and not btns then
+        BuildBar(barKey)
+        return
+    end
     local cont = ActionBarsOwned.containers[barKey]
     if not btns or not cont then return end
     for _, btn in ipairs(btns) do
