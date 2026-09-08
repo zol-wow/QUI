@@ -915,8 +915,9 @@ local function ReconcileAuraSounds(store)
                 for _, element in ipairs(elements) do
                     if element.mode == "tracked" and type(element.spells) == "table"
                         and type(element.auraSounds) == "table" then
+                        local auraSounds = E.NormalizeAuraSounds(element)
                         for _, spellID in ipairs(element.spells) do
-                            local sounds = element.auraSounds[spellID]
+                            local sounds = auraSounds and auraSounds[spellID]
                             if type(spellID) == "number" and type(sounds) == "table"
                                 and not E.EffectiveOnlyMine(element, spellID) then
                                 for eventKey, trigger in pairs(AURA_SOUND_TRIGGERS) do
