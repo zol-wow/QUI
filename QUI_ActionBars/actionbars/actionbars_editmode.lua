@@ -94,9 +94,7 @@ function OnEditModeExit()
 end
 
 function IsVehicleBarActive()
-    return (HasVehicleActionBar and HasVehicleActionBar())
-        or (HasOverrideActionBar and HasOverrideActionBar())
-        or (UnitInVehicle and UnitInVehicle("player"))
+    return SecureCmdOptionParse("[overridebar][vehicleui] hide; show") == "hide"
 end
 
 function IsPetBattleActive()
