@@ -4,6 +4,41 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-ptr-alpha2 - 2026-09-08
+
+> ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
+> not load on the live 12.1 client.
+
+Includes the beta catch-ups and PTR improvements since alpha1.
+
+### Added
+
+- **Aura Displays offer templates, guided creation, nested groups, share strings,
+  and compact layouts**, with improved encounter-based preparation and imports.
+- **Aura icons support optional caster labels and pandemic pulse/flash styles.**
+  Settings and bag searches use native Unicode case folding on the PTR client.
+- **Cooldown Manager buff icons have growth-direction and anchor controls**,
+  with clearer setup guidance when Blizzard's native viewers are disabled.
+- **Alt equipment supports filtering, sorting, scrolling, and item tooltips**;
+  weekly progress includes inline lockouts and compact Great Vault summaries.
+- **Quality-of-life controls include summon automation, teleport cooldowns,
+  a dedicated Notifications tab, and the native Rotate Minimap setting.**
+
+### Fixed
+
+- **Possession abilities stay visible with their usual action keys**, including
+  after fade timers expire; deferred microbar construction recovers correctly.
+- **Raid markers display when WoW restricts their indices**, and boss castbar
+  retries are consolidated and cleaned up when no longer needed.
+- **Cooldown Manager preserves unusable tint and native frame ownership**,
+  defers settings updates, and avoids writes to Blizzard's layout serializer.
+- **Aura Displays retain sound configuration and validate imported settings**;
+  weapon-oil timers recover after zoning, and grouped displays handle previews
+  and encounter load conditions more reliably.
+- **Damage Meter retains the selected death recap**, dimmed group frames keep
+  their tooltips, and the info bar no longer overlaps foreground UI. The unsafe
+  info-bar Shop shortcut has been removed; bundled libraries include API fixes.
+
 ## v5.5.0-ptr-alpha1 - 2026-09-03
 
 > ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets PTR build 12.1.5.69594
