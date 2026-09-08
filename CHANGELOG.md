@@ -4,6 +4,16 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-ptr-alpha3 - 2026-09-08
+
+> ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
+> not load on the live 12.1 client.
+
+### Fixed
+
+- **Restored the Info Bar Shop button**, preserving its existing settings and
+  combat, kiosk, and shop-toggle guards.
+
 ## v5.5.0-ptr-alpha2 - 2026-09-08
 
 > ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
