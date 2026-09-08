@@ -3032,11 +3032,34 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     function anchorFrame:Cast(fromCastStart)
         local check = _G.C_RestrictedActions and _G.C_RestrictedActions.CheckAllowProtectedFunctions
         if check and not check(self, true) then
-            C_Timer.After(0, function()
-                if not self._quiDestroyed then self:Cast(fromCastStart) end
+            local active, readable = ReadCastActivity(self.unit)
+            if not fromCastStart and readable and not active then
+                CancelPendingCastRetry(self)
+                return
+            end
+            local pending = self._quiPendingCastRetry
+            if pending then
+                pending.fromCastStart = fromCastStart
+                return
+            end
+            pending = {fromCastStart = fromCastStart}
+            self._quiPendingCastRetry = pending
+            pending.ticker = C_Timer.NewTicker(0.05, function(ticker)
+                if self._quiPendingCastRetry ~= pending then
+                    ticker:Cancel()
+                    return
+                end
+                if self._quiDestroyed then
+                    CancelPendingCastRetry(self)
+                    return
+                end
+                if not check(self, true) then return end
+                CancelPendingCastRetry(self)
+                self:Cast(pending.fromCastStart)
             end)
             return
         end
+        CancelPendingCastRetry(self)
 
         local spellName, text, texture, startTimeMS, endTimeMS, notInterruptible, unitSpellID, isChanneled, _, durationObj, hasSecretTiming, castKnown = GetCastInfo(self, self.unit, fromCastStart)
 
