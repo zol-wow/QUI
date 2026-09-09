@@ -7885,7 +7885,10 @@ function GUI:_findWidgetByLabel(root, label)
     for i = 1, r do
         local region = select(i, root:GetRegions())
         if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-            if region.GetText and region:GetText() == label then return root end
+            if region.GetText then
+                local text = region:GetText()
+                if not (issecretvalue and issecretvalue(text)) and text == label then return root end
+            end
         end
     end
     return nil
