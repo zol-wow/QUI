@@ -4,7 +4,10 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## Unreleased
+## v5.3.1-beta3 - 2026-09-09
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
 
 ### Added
 
@@ -16,8 +19,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   Manager icon. Bosses and abilities are read from your own Dungeon Journal;
   tank specs only get called when the boss is on them, and a defensive that is
   already active keeps it quiet. `/qui reminders test` previews the pick.
-- **Shared announce seam** (`ns.Announce`) for sounds, text-to-speech and chat
-  lines. The Cooldown Manager alerts now route through it.
+
+### Fixed
+
+- **Danders party and raid anchors no longer restrict castbar visibility in
+  combat**, while keeping movement and scale updates working.
+- **Settings searches skip secret preview text**, preventing errors while
+  keeping matching controls reachable.
+- **Rotation Helper updates its suggested-spell highlight reliably** and clears
+  stale highlights when the suggestion resets or becomes unavailable.
 
 ## v5.3.1-beta2 - 2026-09-09
 
