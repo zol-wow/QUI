@@ -422,6 +422,7 @@ local function BuildPrioritySection(content, db, onResize)
     manualLabel:SetPoint("LEFT", manualBox, "RIGHT", 8, 0)
 
     local Repaint
+    local shownSpecID
 
     local addBtn = GUI:CreateButton(manual, ns.L["Add"], 60, 22, function()
         local id = tonumber(manualState.spellID)
@@ -444,7 +445,6 @@ local function BuildPrioritySection(content, db, onResize)
     end
 
     local function PaintChosen(r, entry, index)
-        local list = CurrentPriorityList(db, true)
         BindTooltip(r, entry)
         r.icon:SetTexture(entry.icon or FALLBACK_ICON)
         r.name:SetText(("%d. %s"):format(index, entry.name or "?"))
@@ -453,24 +453,30 @@ local function BuildPrioritySection(content, db, onResize)
         elseif entry.kind == "item" then
             r.note:SetText(ns.L["(trinket)"])
         end
-        chosen.Button(r, 1, ns.L["Remove"], function()
-            table.remove(list, index)
+        -- Each click resolves the list of the spec shown NOW, so a spec switch
+        -- between paint and click can never edit the wrong spec's order.
+        local function Mutate(fn)
+            local list, specID = CurrentPriorityList(db, true)
+            if not list or specID ~= shownSpecID or list[index] ~= entry.id then
+                Repaint()
+                return
+            end
+            fn(list)
             Refresh()
             Repaint()
+        end
+        chosen.Button(r, 1, ns.L["Remove"], function()
+            Mutate(function(list) table.remove(list, index) end)
         end, "danger")
         chosen.Button(r, 2, "v", function()
-            if index < #list then
-                list[index], list[index + 1] = list[index + 1], list[index]
-                Refresh()
-                Repaint()
-            end
+            Mutate(function(list)
+                if index < #list then list[index], list[index + 1] = list[index + 1], list[index] end
+            end)
         end)
         chosen.Button(r, 3, "^", function()
-            if index > 1 then
-                list[index], list[index - 1] = list[index - 1], list[index]
-                Refresh()
-                Repaint()
-            end
+            Mutate(function(list)
+                if index > 1 then list[index], list[index - 1] = list[index - 1], list[index] end
+            end)
         end)
     end
 
@@ -496,7 +502,9 @@ local function BuildPrioritySection(content, db, onResize)
 
     Repaint = function()
         specLabel:SetText(SpecName())
-        local list = CurrentPriorityList(db, false) or {}
+        local list, specID = CurrentPriorityList(db, false)
+        list = list or {}
+        shownSpecID = specID
         local chosenItems = {}
         for i = 1, #list do
             local entry = D and D.Describe(list[i])
@@ -538,6 +546,12 @@ local function BuildPrioritySection(content, db, onResize)
     end
 
     frame.Repaint = Repaint
+    -- The page shows one spec's list; follow the player when they switch.
+    frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    frame:SetScript("OnEvent", function(self)
+        if self:IsVisible() then Repaint() end
+    end)
+    frame:SetScript("OnShow", Repaint)
     Repaint()
     return frame
 end

@@ -33,6 +33,7 @@ local lastFired = {}    -- ability key -> GetTime()
 local landings = {}     -- barID -> { spellID, endsAt }: the countdown owns its spell until it lands
 local optedCache, optedDirty = nil, true
 local activeEncounter
+local activeSource      -- source whose bars own the pending timers and claims
 local subscribed = false
 local eventFrame
 local glowedIcon, glowTimer
@@ -372,9 +373,20 @@ local function ShouldHandle(evt)
 end
 R.ShouldHandle = ShouldHandle
 
+-- Timers and landing claims belong to one source. When the active source
+-- changes (a user pick, or a boss mod appearing), the old source's leftovers
+-- must not suppress the new one's messages.
+local function TrackSource(source)
+    if source ~= activeSource then
+        activeSource = source
+        ResetState()
+    end
+end
+
 local function OnTimer(evt)
     RecordSeen(evt)
     if not ShouldHandle(evt) then return end
+    TrackSource(evt.source)
     Cancel(evt.barID)
     local lead = tonumber(GetDB().leadTime) or 3
     local delay = (tonumber(evt.duration) or 0) - lead
@@ -421,6 +433,7 @@ end
 local function OnMessage(evt)
     RecordSeen(evt)
     if not ShouldHandle(evt) then return end
+    TrackSource(evt.source)
     if GetDB().fireOnMessages == false then return end
     if HasPendingForSpell(evt.spellID) then return end
     Fire(evt)
@@ -483,6 +496,7 @@ function R.Refresh()
     if bus and bus.SetPreferredSource then
         bus.SetPreferredSource(db and db.source or "auto")
     end
+    if bus and bus.ActiveSource then TrackSource(bus.ActiveSource()) end
     if db and db.enabled == true then
         EnsureEventFrame()
         if bus and not subscribed then
