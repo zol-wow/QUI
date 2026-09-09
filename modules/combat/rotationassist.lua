@@ -216,8 +216,23 @@ UpdateIconDisplay = function(spellID)
     local isEmpty = (spellID == nil) or
         (not IsSecretValue(spellID) and spellID == 0)
     if isEmpty then
-        if not iconFrame:IsShown() then
-            UpdateVisibility()
+        -- No suggestion. Never leave the previous spell on screen: mirror
+        -- Blizzard's single button, which falls back to the Assisted Combat
+        -- action icon, dimmed, with no keybind.
+        UpdateVisibility()
+        local fallback = nil
+        if C_AssistedCombat and C_AssistedCombat.GetActionSpell then
+            local okAct, actionSpellID = ns.SafeCall("best-effort-style", C_AssistedCombat.GetActionSpell)
+            if okAct and actionSpellID and not IsSecretValue(actionSpellID) and actionSpellID ~= 0 then
+                local okTex, tex = ns.SafeCall("best-effort-style", C_Spell.GetSpellTexture, actionSpellID)
+                if okTex then fallback = tex end
+            end
+        end
+        iconFrame.icon:SetTexture(fallback)
+        iconFrame.icon:SetVertexColor(COLOR_UNUSABLE[1], COLOR_UNUSABLE[2], COLOR_UNUSABLE[3], 1)
+        iconFrame.keybindText:SetText("")
+        if iconFrame.cooldown then
+            iconFrame.cooldown:Clear()
         end
         return
     end
@@ -360,6 +375,14 @@ local function DoUpdate(overrideSpellID)
         lastSpellID = spellID
         UpdateIconDisplay(spellID)
     end
+end
+
+-- Explicit "no suggestion" from the poller: do not re-query (the API may
+-- still answer with a stale spell after Assisted Combat went away).
+local function ClearIconDisplay()
+    if lastSpellID == nil then return end
+    lastSpellID = nil
+    UpdateIconDisplay(nil)
 end
 
 RefreshIconFrame = function()
@@ -509,7 +532,10 @@ local function SyncNextCastPoll()
         poll.Subscribe(POLL_KEY, function(spellID)
             local cur = GetDB()
             if not cur or not cur.enabled then return end
-            -- nil means "no suggestion"; DoUpdate re-queries and clears
+            if spellID == nil then
+                ClearIconDisplay()
+                return
+            end
             DoUpdate(spellID)
         end)
     else

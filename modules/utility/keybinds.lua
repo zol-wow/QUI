@@ -1852,6 +1852,16 @@ local function UpdateAllRotationHelpers(overrideSpellID, baseSpellID)
     UpdateViewerRotationHelper("utility", nextSpellID, nextBaseSpellID)
 end
 
+-- Explicit "no suggestion": drop the cached spell and hide every overlay
+-- without asking GetNextCastSpell again (it may still answer with a stale
+-- spell after Assisted Combat went away).
+local function ClearAllRotationHelpers()
+    currentRotationSpellID = nil
+    currentRotationBaseSpellID = nil
+    UpdateViewerRotationHelper("essential", nil)
+    UpdateViewerRotationHelper("utility", nil)
+end
+
 local function ShouldRunRotationHelper()
     local core = GetCore()
     if not core or not core.db or not core.db.profile then return false end
@@ -2068,8 +2078,12 @@ local ROTATION_HELPER_POLL_KEY = "QUI_CDMRotationHelper"
 
 SyncRotationHelperPoll = function()
     if rotationHelperEnabled then
-        AssistedCombatNext.Subscribe(ROTATION_HELPER_POLL_KEY, function()
+        AssistedCombatNext.Subscribe(ROTATION_HELPER_POLL_KEY, function(spellID)
             if not rotationHelperEnabled then return end
+            if spellID == nil then
+                ClearAllRotationHelpers()
+                return
+            end
             UpdateAllRotationHelpers()
         end)
     else
