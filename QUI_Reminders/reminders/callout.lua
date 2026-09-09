@@ -83,17 +83,32 @@ local function Register()
     end
     local um = ns.QUI_LayoutMode
     if um and type(um.RegisterElement) == "function" then
+        -- Registered directly, so this speaks Layout Mode's own contract
+        -- (getFrame/isEnabled/setEnabled/onOpen/onClose) rather than the
+        -- shorthand its built-in QoL table is translated from.
         um:RegisterElement({
             key = ANCHOR_KEY,
             label = ns.L["Reminder Callout"],
             group = ns.L["QoL"],
             order = 9.5,
-            frame = FRAME_NAME,
-            dbGetter = function() return GetDB() end,
-            enabledField = "enabled",
-            refresh = function() if ns.Reminders and ns.Reminders.Refresh then ns.Reminders.Refresh() end end,
-            previewOn = function() Callout.SetPreview(true) end,
-            previewOff = function() Callout.SetPreview(false) end,
+            isOwned = true,
+            isEnabled = function()
+                local db = GetDB()
+                return db ~= nil and db.enabled == true
+            end,
+            setEnabled = function(val)
+                local db = GetDB()
+                if db then db.enabled = val and true or false end
+                if ns.Reminders and ns.Reminders.Refresh then ns.Reminders.Refresh() end
+            end,
+            setGameplayHidden = function(hide)
+                local f = _G[FRAME_NAME]
+                if not f then return end
+                if hide then f:Hide() else f:Show() end
+            end,
+            getFrame = function() return _G[FRAME_NAME] end,
+            onOpen = function() Callout.SetPreview(true) end,
+            onClose = function() Callout.SetPreview(false) end,
         })
     end
 end
@@ -167,6 +182,15 @@ function Callout.Refresh()
     f.iconFrame:ClearAllPoints()
     f.text:ClearAllPoints()
     f.text:SetWidth(TEXT_WIDTH)
+    if not showIcon then
+        -- Text-only: the hidden icon must not shape the frame or anchor the text.
+        f.iconFrame:SetPoint("CENTER", f, "CENTER", 0, 0)
+        f.text:SetPoint("CENTER", f, "CENTER", 0, 0)
+        f.text:SetJustifyH("CENTER")
+        f:SetSize(math.max(textW, 1), math.max(textH, 1))
+        Position()
+        return
+    end
     if side == "LEFT" or side == "RIGHT" then
         width = iconW + (showText and (TEXT_GAP + textW) or 0)
         height = math.max(iconW, textH, 1)

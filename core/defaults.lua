@@ -631,7 +631,6 @@ local defaults = {
                 autoSwapChallengeSessions = false,
                 appearance = {
                     global = {
-        reminders = { seen = {} },
                         barHeight        = 18,
                         barSpacing       = 2,
                         headerHeight     = 22,
@@ -4459,6 +4458,7 @@ local defaults = {
         },
     },
     global = {
+        reminders = { seen = {} },
         bonusRoll = {
             seenDifficulties = {},
             seenEncounters = {},

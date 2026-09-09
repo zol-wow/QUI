@@ -216,6 +216,55 @@ end
 -------------------------------------------------------------------------------
 -- Readiness
 -------------------------------------------------------------------------------
+-- SpellCooldownInfo.isOnGCD is documented as trustworthy only while responding
+-- to SPELL_UPDATE_COOLDOWN, so it is snapshotted there for the spells the
+-- engine is watching and never read live at decision time.
+local GCD_SPELL_ID = 61304
+local watchedSpells = {}
+local gcdSnapshot = {}
+local snapshotFrame
+
+local function SnapshotGCD()
+    local api = _G.C_Spell
+    if not (api and api.GetSpellCooldown) then return end
+    for spellID in pairs(watchedSpells) do
+        local ok, info = ns.SafeCall("secret-probe", api.GetSpellCooldown, spellID)
+        local onGCD
+        if ok and type(info) == "table" then onGCD = Readable(info.isOnGCD) end
+        if type(onGCD) == "boolean" then
+            gcdSnapshot[spellID] = onGCD
+        else
+            gcdSnapshot[spellID] = nil
+        end
+    end
+end
+D.SnapshotGCD = SnapshotGCD
+
+-- list: priority entries (spell ids or "slot:N"); trinket use-spells count too.
+function D.SetWatchedSpells(list)
+    watchedSpells = {}
+    for i = 1, #(list or {}) do
+        local entry = D.Describe(list[i])
+        if entry and type(entry.spellID) == "number" then watchedSpells[entry.spellID] = true end
+    end
+    if not snapshotFrame and type(CreateFrame) == "function" then
+        snapshotFrame = CreateFrame("Frame")
+        snapshotFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+        snapshotFrame:SetScript("OnEvent", SnapshotGCD)
+    end
+    SnapshotGCD()
+end
+
+local function GlobalCooldownActive()
+    local api = _G.C_Spell
+    if not (api and api.GetSpellCooldown) then return nil end
+    local ok, info = ns.SafeCall("secret-probe", api.GetSpellCooldown, GCD_SPELL_ID)
+    if not ok or type(info) ~= "table" then return nil end
+    local active = Readable(info.isActive)
+    if type(active) == "boolean" then return active end
+    return nil
+end
+
 local function SpellReady(spellID)
     local api = _G.C_Spell
     if not (api and api.GetSpellCooldown) then return nil end
@@ -230,11 +279,6 @@ local function SpellReady(spellID)
     end
     if not isActive then return true end
 
-    -- Active but only the global cooldown: still ready to press.
-    if Readable(info.isOnGCD) == true then return true end
-    local duration = Readable(info.duration)
-    if type(duration) == "number" and duration > 0 and duration <= GCD_MAX then return true end
-
     -- A charge spell reports its recharge here only once every charge is spent,
     -- but a readable charge count is the more direct answer when we have one.
     if api.GetSpellCharges then
@@ -244,7 +288,18 @@ local function SpellReady(spellID)
             if type(current) == "number" then return current > 0 end
         end
     end
-    return false
+
+    -- Active but only the global cooldown: still ready to press. The trusted
+    -- answer is the SPELL_UPDATE_COOLDOWN snapshot; a readable duration is the
+    -- next best; with neither, a global cooldown that is NOT running proves
+    -- the spell's own cooldown is real, and anything else is unknowable.
+    local onGCD = gcdSnapshot[spellID]
+    if onGCD == true then return true end
+    if onGCD == false then return false end
+    local duration = Readable(info.duration)
+    if type(duration) == "number" and duration > 0 then return duration <= GCD_MAX end
+    if GlobalCooldownActive() == false then return false end
+    return nil
 end
 
 local function ItemReady(itemID)

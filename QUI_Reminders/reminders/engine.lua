@@ -149,10 +149,10 @@ local function RecordSeen(evt)
     local seen = SeenStore()
     if not seen then return end
     local rec = seen[spellID]
-    if type(rec) ~= "table" then
+    local isNew = type(rec) ~= "table"
+    if isNew then
         rec = { count = 0 }
         seen[spellID] = rec
-        PruneSeen(seen)
     end
     rec.count = (tonumber(rec.count) or 0) + 1
     if type(evt.text) == "string" then rec.text = evt.text end
@@ -160,6 +160,9 @@ local function RecordSeen(evt)
     if activeEncounter then rec.encounter = activeEncounter end
     rec.source = evt.source
     rec.last = type(time) == "function" and time() or 0
+    -- Prune only after the newcomer carries its timestamp, so the oldest
+    -- existing record is the one evicted, never the record just added.
+    if isNew then PruneSeen(seen) end
 end
 R.RecordSeen = RecordSeen
 
@@ -296,6 +299,12 @@ local function Cancel(barID)
     pending[barID] = nil
 end
 
+local function SourceStillActive(evt)
+    local bus = ns.BossMods
+    if not (bus and bus.ActiveSource) then return true end
+    return bus.ActiveSource() == evt.source
+end
+
 local function CancelAll()
     for barID in pairs(pending) do Cancel(barID) end
 end
@@ -325,13 +334,27 @@ local function OnTimer(evt)
     if C_Timer and C_Timer.NewTimer then
         handle = C_Timer.NewTimer(delay, function()
             pending[evt.barID] = nil
-            Fire(evt)
+            -- Settings, source or profile may have moved while armed.
+            if ShouldHandle(evt) and SourceStillActive(evt) then Fire(evt) end
         end)
     end
-    pending[evt.barID] = { handle = handle, evt = evt, fireAt = Now() + delay }
+    local now = Now()
+    pending[evt.barID] = {
+        handle = handle, evt = evt,
+        fireAt = now + delay,
+        endsAt = now + (tonumber(evt.duration) or 0),
+    }
 end
 
+-- A bar reaching its own end also reports as a stop on some sources. A callout
+-- armed for AFTER the landing (negative warning time) must survive that; only a
+-- stop before the bar's natural end is a real cancellation.
+local NATURAL_END_SLACK = 0.5
 local function OnTimerStop(evt)
+    local entry = pending[evt.barID]
+    if entry and entry.fireAt > entry.endsAt and Now() >= entry.endsAt - NATURAL_END_SLACK then
+        return
+    end
     Cancel(evt.barID)
 end
 
@@ -372,6 +395,8 @@ local function OnGameEvent(_, event, arg1)
         StopCDMGlow()
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         lastFired = {}
+        local D = Defensives()
+        if D and D.SetWatchedSpells then D.SetWatchedSpells((R.CurrentList())) end
     end
 end
 
@@ -396,6 +421,8 @@ function R.Refresh()
         if bus and not subscribed then
             subscribed = bus.Subscribe(SUBSCRIBER_KEY, HANDLERS) == true
         end
+        local D = Defensives()
+        if D and D.SetWatchedSpells then D.SetWatchedSpells((R.CurrentList())) end
     else
         if bus and subscribed then
             bus.Unsubscribe(SUBSCRIBER_KEY)
