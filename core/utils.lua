@@ -108,7 +108,10 @@ function Helpers.PinFrameToTargetAbsolute(frame, sourcePoint, target, targetPoin
     if not tS or tS == 0 then return false end
     local uiS = UIParent and ReadGeom(UIParent:GetEffectiveScale())
     if not uiS or uiS == 0 then return false end
+    local fS = ReadGeom(frame:GetEffectiveScale())
+    if not fS or fS <= 0 then return false end
     local k = tS / uiS
+    local frameToUI = fS / uiS
 
     tL, tR, tB, tT = tL * k, tR * k, tB * k, tT * k
     local px = tL + (tR - tL) * frac[1] + (offsetX or 0)
@@ -118,14 +121,14 @@ function Helpers.PinFrameToTargetAbsolute(frame, sourcePoint, target, targetPoin
         local ok2, p, rel, relP, cx, cy = pcall(frame.GetPoint, frame, 1)
         if ok2 and p == srcPt and rel == UIParent and relP == "BOTTOMLEFT" then
             local nx, ny = ReadGeom(cx), ReadGeom(cy)
-            if nx and ny and math.abs(nx - px) <= 0.5 and math.abs(ny - py) <= 0.5 then
+            if nx and ny and math.abs(nx * frameToUI - px) <= 0.5 and math.abs(ny * frameToUI - py) <= 0.5 then
                 return true, px, py
             end
         end
     end
 
     Helpers.BaseClearAllPoints(frame)
-    Helpers.BaseSetPoint(frame, srcPt, UIParent, "BOTTOMLEFT", px, py)
+    Helpers.BaseSetPoint(frame, srcPt, UIParent, "BOTTOMLEFT", px / frameToUI, py / frameToUI)
     return true, px, py
 end
 
