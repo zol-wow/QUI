@@ -296,6 +296,18 @@ function QUI:SlashCommandOpen(input)
     elseif input and input:match("^bonusroll%s+show%s*$") then
         if ns.BonusRoll then ns.BonusRoll.ShowPendingRoll() end
         return
+    elseif input and input:match("^reminders%s+test%s*$") then
+        if ns.Reminders and ns.Reminders.Test then
+            local pick, reason = ns.Reminders.Test()
+            if pick then
+                print("|cff60A5FAQUI:|r " .. ns.L["Reminders test: calling %s."]:format(pick.name or "?"))
+            else
+                print("|cff60A5FAQUI:|r " .. ns.L["Reminders test: nothing to call (%s)."]:format(tostring(reason)))
+            end
+        else
+            print("|cff60A5FAQUI:|r " .. ns.L["Reminders module is not loaded."])
+        end
+        return
     elseif input and input == "debug" then
         self.db.char.debug.reload = true
         QUI:SafeReload()

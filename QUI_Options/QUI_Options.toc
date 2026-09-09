@@ -80,6 +80,7 @@ tiles\help_content.lua
 ..\QUI_Chat\chat\settings\chat_frame1_provider.lua
 ..\QUI\modules\combat\settings\rotation_assist.lua
 ..\QUI_DamageMeter\damage_meter\settings\damage_meter_content.lua
+..\QUI_Reminders\reminders\settings\reminders_content.lua
 ..\QUI\modules\dungeon\settings\mplus_timer.lua
 ..\QUI\modules\dungeon\settings\mplus_timer_provider.lua
 ..\QUI\modules\dungeon\settings\mplus_progress.lua

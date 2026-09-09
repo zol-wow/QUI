@@ -4,6 +4,21 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Unreleased
+
+### Added
+
+- **Reminders module** (`QUI_Reminders`, off by default under Module Addons).
+  When BigWigs, DBM, or the Blizzard encounter timeline says a boss ability is
+  coming, QUI names the first defensive on your per-spec priority list that is
+  ready to press: a movable icon-and-text callout, optional sound or
+  text-to-speech, an optional chat line, and a glow on the matching Cooldown
+  Manager icon. Bosses and abilities are read from your own Dungeon Journal;
+  tank specs only get called when the boss is on them, and a defensive that is
+  already active keeps it quiet. `/qui reminders test` previews the pick.
+- **Shared announce seam** (`ns.Announce`) for sounds, text-to-speech and chat
+  lines. The Cooldown Manager alerts now route through it.
+
 ## v5.3.1-beta2 - 2026-09-09
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and

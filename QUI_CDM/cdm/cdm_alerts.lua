@@ -54,19 +54,33 @@ function Alerts.GetSoundKitOptions()
     return options
 end
 
+local function PlaySoundKit(soundEnum)
+    if not soundKitByEnum[soundEnum] then RefreshSoundKits() end
+    local soundKitID = soundKitByEnum[soundEnum]
+    if not (soundKitID and SoundAPI and SoundAPI.PlaySoundWithOptions) then return false end
+    return ns.SafeCall("best-effort-style", SoundAPI.PlaySoundWithOptions, {
+        soundKitID = soundKitID,
+        uiSoundSubType = "Gameplay SFX",
+    })
+end
+
+-- "kit:<enum>" keys resolve through the Cooldown Manager sound table; every
+-- other key is a media name or path that ns.Announce plays directly.
+if ns.Announce and ns.Announce.RegisterSoundResolver then
+    ns.Announce.RegisterSoundResolver(function(key)
+        local soundEnum = tonumber(key:match("^kit:(%d+)$"))
+        if not soundEnum then return false end
+        return PlaySoundKit(soundEnum) == true
+    end)
+end
+
 local function PlaySoundKey(soundKey)
     if type(soundKey) ~= "string" or soundKey == "" or soundKey == "None" then return false end
-    local soundEnum = tonumber(soundKey:match("^kit:(%d+)$"))
-    if soundEnum then
-        if not soundKitByEnum[soundEnum] then RefreshSoundKits() end
-        local soundKitID = soundKitByEnum[soundEnum]
-        if not (soundKitID and SoundAPI and SoundAPI.PlaySoundWithOptions) then return false end
-        return ns.SafeCall("best-effort-style", SoundAPI.PlaySoundWithOptions, {
-            soundKitID = soundKitID,
-            uiSoundSubType = "Gameplay SFX",
-        })
+    if ns.Announce and ns.Announce.PlaySound then
+        return ns.Announce.PlaySound(soundKey)
     end
-
+    local soundEnum = tonumber(soundKey:match("^kit:(%d+)$"))
+    if soundEnum then return PlaySoundKit(soundEnum) end
     local sound = ns.LSM and ns.LSM:Fetch("sound", soundKey, true)
     if not sound and soundKey:find("[\\/]") then sound = soundKey end
     if not sound or type(PlaySoundFile) ~= "function" then return false end
@@ -74,6 +88,9 @@ local function PlaySoundKey(soundKey)
 end
 
 local function Speak(text)
+    if ns.Announce and ns.Announce.Speak then
+        return ns.Announce.Speak(text)
+    end
     if type(text) ~= "string" or text == "" then return false end
     if ns.Helpers and ns.Helpers.IsSecretValue and ns.Helpers.IsSecretValue(text) then return false end
     if not (VoiceChat and VoiceChat.SpeakText and TTSSettings) then return false end

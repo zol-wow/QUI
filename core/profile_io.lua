@@ -1303,6 +1303,13 @@ local PROFILE_IMPORT_CATEGORIES = {
         topLevelKeys = { "damageMeter" },
     },
     {
+        id = "reminders",
+        label = "Reminders",
+        description = "Defensive callouts: boss ability picks, priority lists, and callout display.",
+        recommended = true,
+        topLevelKeys = { "reminders" },
+    },
+    {
         id = "chat",
         label = "Chat",
         description = "Chat frame skinning, formatting, and utility options.",

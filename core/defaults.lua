@@ -578,6 +578,33 @@ local defaults = {
             equipmentSort = "name",
         },
 
+        reminders = {
+            enabled = false,
+            source = "auto",
+            inDungeons = true,
+            inRaids = true,
+            elsewhere = false,
+            leadTime = 3,
+            linger = 4,
+            onlyWhenTanking = true,
+            skipWhenCovered = true,
+            fireOnMessages = true,
+            timelineAllEvents = true,
+            cdmGlow = true,
+            display = {
+                showIcon = true,
+                iconSize = 56,
+                showText = true,
+                textSize = 18,
+                textSide = "BOTTOM",
+                glow = true,
+            },
+            sound = { mode = "off", sound = "None" },
+            chat = { enabled = false, channel = "SAY" },
+            priorities = {},
+            abilities = {},
+        },
+
         damageMeter = {
             native = {
                 enabled              = true,
@@ -604,6 +631,7 @@ local defaults = {
                 autoSwapChallengeSessions = false,
                 appearance = {
                     global = {
+        reminders = { seen = {} },
                         barHeight        = 18,
                         barSpacing       = 2,
                         headerHeight     = 22,
@@ -4352,6 +4380,13 @@ local defaults = {
             incomingCasts = {
                 point = "CENTER", parent = "screen", relative = "CENTER",
                 offsetX = 0, offsetY = -180,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = true,
+                widthAdjust = 0, heightAdjust = 0,
+            },
+            remindersCallout = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = 120,
                 sizeStable = true, autoWidth = false, autoHeight = false,
                 hideWithParent = false, keepInPlace = true,
                 widthAdjust = 0, heightAdjust = 0,
