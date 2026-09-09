@@ -277,12 +277,25 @@ function R.Decide()
     return pick
 end
 
+local function DedupeWindow(db)
+    return math.max(tonumber(db.linger) or 4, 2)
+end
+
+-- Drop dedupe entries whose window has passed, so timeline bar ids (unique per
+-- event) never accumulate across a session.
+local function PruneLastFired(now, window)
+    for key, at in pairs(lastFired) do
+        if (now - at) >= window then lastFired[key] = nil end
+    end
+end
+
 local function Fire(evt)
     local db = GetDB()
     if not db then return end
     local key = evt.spellID or evt.barID
     local now = Now()
-    local window = math.max(tonumber(db.linger) or 4, 2)
+    local window = DedupeWindow(db)
+    PruneLastFired(now, window)
     if key and lastFired[key] and (now - lastFired[key]) < window then return end
 
     local pick = R.Decide()
@@ -308,6 +321,20 @@ end
 local function CancelAll()
     for barID in pairs(pending) do Cancel(barID) end
 end
+
+local function ResetState()
+    CancelAll()
+    lastFired = {}
+end
+
+local function HasPendingForSpell(spellID)
+    if type(spellID) ~= "number" then return false end
+    for _, entry in pairs(pending) do
+        if entry.evt and entry.evt.spellID == spellID then return true end
+    end
+    return false
+end
+R.HasPendingForSpell = HasPendingForSpell
 
 local function ShouldHandle(evt)
     if not R.IsEnabled() or not ContextAllowed() then return false end
@@ -358,15 +385,19 @@ local function OnTimerStop(evt)
     Cancel(evt.barID)
 end
 
+-- A warning message is the fallback for abilities with no countdown. When a
+-- countdown for the same ability is already armed, the scheduled call is the
+-- one that honours the warning time, so the message must not pre-empt it.
 local function OnMessage(evt)
     RecordSeen(evt)
     if not ShouldHandle(evt) then return end
     if GetDB().fireOnMessages == false then return end
+    if HasPendingForSpell(evt.spellID) then return end
     Fire(evt)
 end
 
 local function OnReset()
-    CancelAll()
+    ResetState()
 end
 
 local HANDLERS = {
@@ -383,6 +414,12 @@ function R.PendingCount()
     return n
 end
 
+function R.LastFiredCount()
+    local n = 0
+    for _ in pairs(lastFired) do n = n + 1 end
+    return n
+end
+
 -------------------------------------------------------------------------------
 -- Lifecycle
 -------------------------------------------------------------------------------
@@ -391,7 +428,7 @@ local function OnGameEvent(_, event, arg1)
         activeEncounter = tonumber(Readable(arg1))
     elseif event == "ENCOUNTER_END" then
         activeEncounter = nil
-        CancelAll()
+        ResetState()
         StopCDMGlow()
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         lastFired = {}
@@ -428,7 +465,7 @@ function R.Refresh()
             bus.Unsubscribe(SUBSCRIBER_KEY)
             subscribed = false
         end
-        CancelAll()
+        ResetState()
         StopCDMGlow()
         local D = Defensives()
         if D and D.SetWatchedSpells then D.SetWatchedSpells({}) end
