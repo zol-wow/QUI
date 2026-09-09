@@ -144,17 +144,30 @@ end
 local function BuildUnsafe()
     local numTiers = _G.EJ_GetNumTiers()
     if type(numTiers) ~= "number" or numTiers < 1 then return nil end
-    local previousTier = _G.EJ_GetCurrentTier and _G.EJ_GetCurrentTier()
     _G.EJ_SelectTier(numTiers)
 
     local instances = {}
     for _, inst in ipairs(CollectInstances(false)) do instances[#instances + 1] = inst end
     for _, inst in ipairs(CollectInstances(true)) do instances[#instances + 1] = inst end
-
-    if type(previousTier) == "number" and previousTier ~= numTiers then
-        _G.EJ_SelectTier(previousTier)
-    end
     return { tier = numTiers, instances = instances }
+end
+
+-- The walk moves the journal's shared tier/instance/encounter selection. Put
+-- all three back the way Blizzard's frame remembers them, success or not, so
+-- reopening the journal does not show one instance's UI over another's data.
+local function CaptureSelection()
+    local ej = _G.EncounterJournal
+    return {
+        tier = _G.EJ_GetCurrentTier and _G.EJ_GetCurrentTier() or nil,
+        instanceID = ej and tonumber(ej.instanceID) or nil,
+        encounterID = ej and tonumber(ej.encounterID) or nil,
+    }
+end
+
+local function RestoreSelection(sel)
+    if type(sel.tier) == "number" and _G.EJ_SelectTier then _G.EJ_SelectTier(sel.tier) end
+    if sel.instanceID and _G.EJ_SelectInstance then _G.EJ_SelectInstance(sel.instanceID) end
+    if sel.encounterID and _G.EJ_SelectEncounter then _G.EJ_SelectEncounter(sel.encounterID) end
 end
 
 -- Returns the cached catalog, building it on first use. Refuses to run while
@@ -165,7 +178,9 @@ function Journal.Get(force)
     if not EnsureJournalLoaded() then return nil end
     local ej = _G.EncounterJournal
     if ej and ej.IsShown and ej:IsShown() then return nil end
+    local selection = CaptureSelection()
     local ok, built = ns.SafeCall("best-effort-style", BuildUnsafe)
+    ns.SafeCall("best-effort-style", RestoreSelection, selection)
     if ok and type(built) == "table" then
         cache = built
         return cache

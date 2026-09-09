@@ -30,6 +30,7 @@ local GetDB = Helpers.CreateDBGetter("reminders")
 
 local pending = {}      -- barID -> { handle, evt }
 local lastFired = {}    -- ability key -> GetTime()
+local landings = {}     -- spellID -> GetTime() when its armed countdown lands
 local optedCache, optedDirty = nil, true
 local activeEncounter
 local subscribed = false
@@ -325,12 +326,21 @@ end
 local function ResetState()
     CancelAll()
     lastFired = {}
+    landings = {}
 end
 
+-- The countdown owns the ability until it lands, whether or not its early
+-- callout has already fired, so a message at landing never doubles it.
+local LANDING_SLACK = 2
 local function HasPendingForSpell(spellID)
     if type(spellID) ~= "number" then return false end
     for _, entry in pairs(pending) do
         if entry.evt and entry.evt.spellID == spellID then return true end
+    end
+    local landsAt = landings[spellID]
+    if landsAt then
+        if Now() <= landsAt + LANDING_SLACK then return true end
+        landings[spellID] = nil
     end
     return false
 end
@@ -354,6 +364,7 @@ local function OnTimer(evt)
     local lead = tonumber(GetDB().leadTime) or 3
     local delay = (tonumber(evt.duration) or 0) - lead
     if delay <= 0 then
+        if type(evt.spellID) == "number" then landings[evt.spellID] = Now() + (tonumber(evt.duration) or 0) end
         Fire(evt)
         return
     end
@@ -366,11 +377,13 @@ local function OnTimer(evt)
         end)
     end
     local now = Now()
+    local endsAt = now + (tonumber(evt.duration) or 0)
     pending[evt.barID] = {
         handle = handle, evt = evt,
         fireAt = now + delay,
-        endsAt = now + (tonumber(evt.duration) or 0),
+        endsAt = endsAt,
     }
+    if type(evt.spellID) == "number" then landings[evt.spellID] = endsAt end
 end
 
 -- A bar that ran to its end reports a stop with reason "finished" on sources

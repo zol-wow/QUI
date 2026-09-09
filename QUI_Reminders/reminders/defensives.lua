@@ -103,14 +103,17 @@ local function SpecMatches(specs, specID)
     return false
 end
 
+-- Spellbook MEMBERSHIP is not knowledge: IsSpellInSpellBook is documented to
+-- answer true for talent-linked override spells the player cannot cast, so
+-- only the knowledge functions count here.
 function D.SpellKnown(spellID)
     local known = SafeCall(_G.IsPlayerSpell, spellID)
     if known == true then return true end
     known = SafeCall(_G.IsSpellKnown, spellID)
     if known == true then return true end
     local book = _G.C_SpellBook
-    if book and book.IsSpellInSpellBook then
-        known = SafeCall(book.IsSpellInSpellBook, spellID)
+    if book and book.IsSpellKnown then
+        known = SafeCall(book.IsSpellKnown, spellID)
         if known == true then return true end
     end
     return false
