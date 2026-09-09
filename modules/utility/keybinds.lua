@@ -1920,6 +1920,10 @@ do
     local tickerRate = nil
     local lastRaw = nil
     local lastWasSecret = false
+    -- nil is a valid "no suggestion" answer, so "nothing delivered yet" needs
+    -- its own flag; otherwise the first tick after Reset() could be swallowed.
+    local delivered = false
+    local lastDispatchWasClear = false
     local available = nil
 
     local function PollRate()
@@ -1956,17 +1960,33 @@ do
         if not ok then return end
         if Helpers.IsSecretValue(sid) then
             -- can't compare secrets; notify once on the transition into secrecy
-            if not lastWasSecret then
+            if not lastWasSecret or not delivered then
                 lastWasSecret = true
                 lastRaw = nil
+                delivered = true
+                lastDispatchWasClear = false
                 Dispatch(sid)
             end
             return
         end
         lastWasSecret = false
-        if sid == lastRaw then return end
+        if delivered and sid == lastRaw then return end
         lastRaw = sid
+        delivered = true
+        lastDispatchWasClear = false
         Dispatch(sid)
+    end
+
+    -- Assisted Combat went away (spec without it, API missing): tell consumers
+    -- to drop whatever they last showed, once.
+    local function ClearConsumers()
+        if subscriberCount == 0 then return end
+        if lastDispatchWasClear then return end
+        lastRaw = nil
+        lastWasSecret = false
+        delivered = true
+        lastDispatchWasClear = true
+        Dispatch(nil)
     end
 
     local function Stop()
@@ -1980,7 +2000,11 @@ do
     local function Start()
         if subscriberCount == 0 then Stop() return end
         if available == nil then RefreshAvailability() end
-        if not available then Stop() return end
+        if not available then
+            Stop()
+            ClearConsumers()
+            return
+        end
         if not (C_Timer and C_Timer.NewTicker) then return end
         local rate = PollRate()
         if ticker and tickerRate == rate then return end
@@ -2007,6 +2031,7 @@ do
     function AssistedCombatNext.Reset()
         lastRaw = nil
         lastWasSecret = false
+        delivered = false
         RefreshAvailability()
         Start()
     end
