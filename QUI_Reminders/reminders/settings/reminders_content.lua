@@ -110,6 +110,29 @@ local function NewList(parent)
         r.note:SetPoint("LEFT", r.name, "RIGHT", 8, 0)
         r.note:SetJustifyH("LEFT")
         r.buttons = {}
+        -- The real spell tooltip is how you tell same-name abilities apart.
+        -- Only the icon is a hover target, and the tooltip sits at the cursor.
+        -- Painters set tooltipSpellID (a spell) or tooltipSlot (an equipped
+        -- trinket) on the row; Paint clears both before every repaint.
+        local hit = CreateFrame("Frame", nil, r)
+        hit:SetAllPoints(r.icon)
+        hit:EnableMouse(true)
+        hit:SetScript("OnEnter", function()
+            if not GameTooltip then return end
+            local ok = false
+            if r.tooltipSlot then
+                GameTooltip:SetOwner(hit, "ANCHOR_CURSOR")
+                ok = ns.SafeCall("best-effort-style", GameTooltip.SetInventoryItem, GameTooltip, "player", r.tooltipSlot)
+            elseif r.tooltipSpellID then
+                GameTooltip:SetOwner(hit, "ANCHOR_CURSOR")
+                ok = ns.SafeCall("best-effort-style", GameTooltip.SetSpellByID, GameTooltip, r.tooltipSpellID)
+            end
+            if ok then GameTooltip:Show() else GameTooltip:Hide() end
+        end)
+        hit:SetScript("OnLeave", function()
+            if GameTooltip then GameTooltip:Hide() end
+        end)
+        r.iconHit = hit
         list.rows[index] = r
         return r
     end
@@ -124,6 +147,8 @@ local function NewList(parent)
             r:SetPoint("RIGHT", list.frame, "RIGHT", 0, 0)
             for _, b in ipairs(r.buttons) do b:Hide() end
             if r.check then r.check:Hide() end
+            r.tooltipSpellID = nil
+            r.tooltipSlot = nil
             r.icon:SetTexture(FALLBACK_ICON)
             r.name:SetText("")
             r.note:SetText("")
@@ -290,6 +315,18 @@ local function BuildCallout(L, db)
     end, { description = ns.L["Sound to play when a defensive is called."] })
     a.AddRow(row(a.frame, ns.L["Audio"], modeW), row(a.frame, ns.L["Sound"], soundW))
 
+    local ttsModeOptions = {
+        { value = "name", text = ns.L["Defensive Name"] },
+        { value = "custom", text = ns.L["Custom Phrase"] },
+    }
+    local ttsModeW = GUI:CreateFormDropdown(a.frame, nil, ttsModeOptions, "ttsMode", sound, Refresh,
+        { description = ns.L["What text-to-speech says: the called defensive's name, or one phrase of your own."] })
+    local ttsTextW = GUI:CreateFormEditBox(a.frame, nil, "ttsText", sound, function()
+        Refresh()
+        if sound.ttsMode == "custom" and ns.Announce and ns.Announce.Speak then ns.Announce.Speak(sound.ttsText) end
+    end, { description = ns.L["Phrase spoken instead of the defensive's name, for example \"defensive\"."], width = 160 })
+    a.AddRow(row(a.frame, ns.L["Spoken Text"], ttsModeW), row(a.frame, ns.L["Custom Phrase"], ttsTextW))
+
     local chatOnW = GUI:CreateFormCheckbox(a.frame, nil, "enabled", chat, Refresh,
         { description = ns.L["Post a chat line naming the ability and the defensive you are using."] })
     local channelOptions = {
@@ -394,8 +431,17 @@ local function BuildPrioritySection(content, db, onResize)
     end, "primary")
     addBtn:SetPoint("LEFT", manualLabel, "RIGHT", 8, 0)
 
+    local function BindTooltip(r, entry)
+        if entry.kind == "item" and entry.slot then
+            r.tooltipSlot = entry.slot
+        elseif type(entry.spellID) == "number" then
+            r.tooltipSpellID = entry.spellID
+        end
+    end
+
     local function PaintChosen(r, entry, index)
         local list = CurrentPriorityList(db, true)
+        BindTooltip(r, entry)
         r.icon:SetTexture(entry.icon or FALLBACK_ICON)
         r.name:SetText(("%d. %s"):format(index, entry.name or "?"))
         if entry.known == false then
@@ -425,6 +471,7 @@ local function BuildPrioritySection(content, db, onResize)
     end
 
     local function PaintAvailable(r, entry)
+        BindTooltip(r, entry)
         r.icon:SetTexture(entry.icon or FALLBACK_ICON)
         r.name:SetText(entry.name or "?")
         if entry.known == false then
@@ -621,6 +668,7 @@ local function BuildBossSection(content, db, onResize)
 
     local function PaintAbility(encounterID)
         return function(r, ability)
+            r.tooltipSpellID = ability.spellID
             r.icon:SetTexture(ability.icon or FALLBACK_ICON)
             r.name:SetText(ability.name or ("#" .. ability.spellID))
             r.note:SetText(FlagsText(ability.flags))
@@ -631,6 +679,7 @@ local function BuildBossSection(content, db, onResize)
     end
 
     local function PaintSeen(r, entry)
+        r.tooltipSpellID = entry.spellID
         r.icon:SetTexture(entry.icon or FALLBACK_ICON)
         r.name:SetText(entry.name)
         r.note:SetText(("x%d"):format(entry.count))

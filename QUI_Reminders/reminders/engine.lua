@@ -206,6 +206,16 @@ local function AbilityName(evt)
     return ns.L["Boss ability"]
 end
 
+-- What text-to-speech says: the defensive's name, or one phrase the user
+-- chose ("defensive") when they would rather not hear a spell name every time.
+function R.SpokenText(pick, sound)
+    if type(sound) == "table" and sound.ttsMode == "custom" then
+        local phrase = sound.ttsText
+        if type(phrase) == "string" and phrase:match("%S") then return phrase end
+    end
+    return pick and pick.name or ""
+end
+
 local function Dispatch(pick, evt)
     local db = GetDB()
     local linger = tonumber(db.linger) or 4
@@ -220,7 +230,7 @@ local function Dispatch(pick, evt)
     local sound = db.sound
     if A and type(sound) == "table" then
         if sound.mode == "tts" and A.Speak then
-            out.sound = A.Speak(pick.name) == true
+            out.sound = A.Speak(R.SpokenText(pick, sound)) == true
         elseif sound.mode == "sound" and A.PlaySound then
             out.sound = A.PlaySound(sound.sound) == true
         end

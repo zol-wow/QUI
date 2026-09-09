@@ -599,7 +599,7 @@ local defaults = {
                 textSide = "BOTTOM",
                 glow = true,
             },
-            sound = { mode = "off", sound = "None" },
+            sound = { mode = "off", sound = "None", ttsMode = "name", ttsText = "" },
             chat = { enabled = false, channel = "SAY" },
             priorities = {},
             abilities = {},
