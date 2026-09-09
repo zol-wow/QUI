@@ -30,7 +30,7 @@ local GetDB = Helpers.CreateDBGetter("reminders")
 
 local pending = {}      -- barID -> { handle, evt }
 local lastFired = {}    -- ability key -> GetTime()
-local landings = {}     -- spellID -> GetTime() when its armed countdown lands
+local landings = {}     -- barID -> { spellID, endsAt }: the countdown owns its spell until it lands
 local optedCache, optedDirty = nil, true
 local activeEncounter
 local subscribed = false
@@ -329,18 +329,33 @@ local function ResetState()
     landings = {}
 end
 
--- The countdown owns the ability until it lands, whether or not its early
--- callout has already fired, so a message at landing never doubles it.
+-- A countdown owns its ability until it lands, whether or not its early
+-- callout has already fired, so a message at landing never doubles it. The
+-- claim is per bar: an explicit stop or pause releases it, a completed bar
+-- keeps it through the landing slack.
 local LANDING_SLACK = 2
+local function ClaimLanding(evt, endsAt)
+    if type(evt.spellID) == "number" then
+        landings[evt.barID] = { spellID = evt.spellID, endsAt = endsAt }
+    end
+end
+
+local function ReleaseLanding(barID)
+    landings[barID] = nil
+end
+
 local function HasPendingForSpell(spellID)
     if type(spellID) ~= "number" then return false end
     for _, entry in pairs(pending) do
         if entry.evt and entry.evt.spellID == spellID then return true end
     end
-    local landsAt = landings[spellID]
-    if landsAt then
-        if Now() <= landsAt + LANDING_SLACK then return true end
-        landings[spellID] = nil
+    local now = Now()
+    for barID, claim in pairs(landings) do
+        if now > claim.endsAt + LANDING_SLACK then
+            landings[barID] = nil
+        elseif claim.spellID == spellID then
+            return true
+        end
     end
     return false
 end
@@ -364,7 +379,7 @@ local function OnTimer(evt)
     local lead = tonumber(GetDB().leadTime) or 3
     local delay = (tonumber(evt.duration) or 0) - lead
     if delay <= 0 then
-        if type(evt.spellID) == "number" then landings[evt.spellID] = Now() + (tonumber(evt.duration) or 0) end
+        ClaimLanding(evt, Now() + (tonumber(evt.duration) or 0))
         Fire(evt)
         return
     end
@@ -383,7 +398,7 @@ local function OnTimer(evt)
         fireAt = now + delay,
         endsAt = endsAt,
     }
-    if type(evt.spellID) == "number" then landings[evt.spellID] = endsAt end
+    ClaimLanding(evt, endsAt)
 end
 
 -- A bar that ran to its end reports a stop with reason "finished" on sources
@@ -392,8 +407,10 @@ end
 -- disarms.
 local function OnTimerStop(evt)
     local entry = pending[evt.barID]
-    if entry and evt.reason == "finished" and entry.fireAt > entry.endsAt then
-        return
+    if evt.reason == "finished" then
+        if entry and entry.fireAt > entry.endsAt then return end
+    else
+        ReleaseLanding(evt.barID)
     end
     Cancel(evt.barID)
 end
