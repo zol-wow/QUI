@@ -31,6 +31,7 @@ local GetDB = Helpers.CreateDBGetter("reminders")
 local pending = {}      -- barID -> { handle, evt }
 local lastFired = {}    -- ability key -> GetTime()
 local landings = {}     -- barID -> { spellID, endsAt }: the countdown owns its spell until it lands
+local paused = {}       -- barID -> { evt, remaining }: what a paused bar had left, for resume
 local optedCache, optedDirty = nil, true
 local activeEncounter
 local activeSource      -- source whose bars own the pending timers and claims
@@ -328,6 +329,7 @@ local function ResetState()
     CancelAll()
     lastFired = {}
     landings = {}
+    paused = {}
 end
 
 -- A countdown owns its ability until it lands, whether or not its early
@@ -423,8 +425,24 @@ local function OnTimerStop(evt)
         if entry and entry.fireAt > entry.endsAt then return end
     else
         ReleaseLanding(evt.barID)
+        if evt.reason == "pause" and entry then
+            -- Keep what is left of the countdown so a resume can re-arm it.
+            paused[evt.barID] = { evt = entry.evt, remaining = math.max(entry.endsAt - Now(), 0) }
+        else
+            paused[evt.barID] = nil
+        end
     end
     Cancel(evt.barID)
+end
+
+local function OnTimerResume(evt)
+    local held = paused[evt.barID]
+    if not held then return end
+    paused[evt.barID] = nil
+    local resumed = {}
+    for k, v in pairs(held.evt) do resumed[k] = v end
+    resumed.duration = held.remaining
+    OnTimer(resumed)
 end
 
 -- A warning message is the fallback for abilities with no countdown. When a
@@ -446,6 +464,7 @@ end
 local HANDLERS = {
     onTimer = OnTimer,
     onTimerStop = OnTimerStop,
+    onTimerResume = OnTimerResume,
     onMessage = OnMessage,
     onReset = OnReset,
 }

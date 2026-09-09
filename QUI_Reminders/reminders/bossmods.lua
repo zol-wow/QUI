@@ -19,6 +19,8 @@
 --                 barID, approximate?, eventID?, secretIdentity? }
 --   onTimerStop { source, barID, reason }   reason: "stop" (explicit), "pause",
 --                                            "finished" (ran to its end)
+--   onTimerResume { source, barID }         a paused bar is running again; the
+--                                            consumer re-arms from what it kept
 --   onMessage   { source, spellID?, key, text?, icon?, emphasized? }
 --   onStage     { source, stage }
 --   onReset     { source, reason }
@@ -172,6 +174,12 @@ function BW.BigWigs_PauseBar(_, _, text)
     Emit("onTimerStop", { source = "bigwigs", barID = "bigwigs:" .. readable, reason = "pause" })
 end
 
+function BW.BigWigs_ResumeBar(_, _, text)
+    local readable = ReadableString(text)
+    if not readable then return end
+    Emit("onTimerResume", { source = "bigwigs", barID = "bigwigs:" .. readable })
+end
+
 function BW.BigWigs_Message(_, _, key, text, _, icon, isEmphasized)
     Emit("onMessage", {
         source = "bigwigs",
@@ -244,6 +252,12 @@ function DB.DBM_TimerPause(_, id)
     local barID = Readable(id)
     if barID == nil then return end
     Emit("onTimerStop", { source = "dbm", barID = "dbm:" .. tostring(barID), reason = "pause" })
+end
+
+function DB.DBM_TimerResume(_, id)
+    local barID = Readable(id)
+    if barID == nil then return end
+    Emit("onTimerResume", { source = "dbm", barID = "dbm:" .. tostring(barID) })
 end
 
 function DB.DBM_Announce(_, message, icon, announceType, spellId)

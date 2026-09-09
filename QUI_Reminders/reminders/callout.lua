@@ -113,8 +113,16 @@ local function Register()
                 if not f then return end
                 if gameplayHidden then
                     f:Hide()
-                elseif previewActive or hideAt then
+                elseif previewActive then
                     f:Show()
+                elseif hideAt then
+                    -- Hidden frames do not tick OnUpdate, so an expired callout
+                    -- still carries its deadline: drop it rather than show it.
+                    if GetTime() >= hideAt then
+                        Callout.Hide()
+                    else
+                        f:Show()
+                    end
                 end
             end,
             getFrame = function() return _G[FRAME_NAME] end,

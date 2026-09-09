@@ -326,8 +326,11 @@ end
 local function ItemReady(itemID)
     local api = _G.C_Item
     if not (api and api.GetItemCooldown) then return nil end
-    local ok, start, duration = ns.SafeCall("secret-probe", api.GetItemCooldown, itemID)
+    local ok, start, duration, enable = ns.SafeCall("secret-probe", api.GetItemCooldown, itemID)
     if not ok then return nil end
+    -- An item cooldown that is on hold cannot be used, whatever its timing says.
+    enable = Readable(enable)
+    if enable == false or enable == 0 then return false end
     start, duration = Readable(start), Readable(duration)
     if type(start) ~= "number" or type(duration) ~= "number" then return nil end
     if start == 0 or duration <= GCD_MAX then return true end
