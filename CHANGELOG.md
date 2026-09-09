@@ -4,6 +4,29 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.1-beta2 - 2026-09-09
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Bonus Roll filters** under Quality of Life let you hide prompts by raid
+  difficulty, boss, dungeon or Delve, or set a Mythic+ minimum key level.
+  Filtering is off by default and saved per profile. Recover an unexpired
+  hidden offer through its chat link, the settings page, or `/qui bonusroll show`.
+- **Group Frames can hide raid groups 7 and 8 in Mythic raids**, while keeping
+  those groups visible outside Mythic.
+- **Group Frames can hide unit tooltips during combat.**
+
+### Fixed
+
+- **Pinning settings and unpinning unchanged values avoid unnecessary full
+  addon refreshes.** Restoring a changed active value still applies it correctly.
+- **Castbar anchor chains no longer let protected followers restrict castbar
+  resizing.** Follower positions refresh as targets change, protected followers
+  reconcile after combat, and absolute anchors account for frame scale.
+
 ## v5.3.1-beta1 - 2026-09-08
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
