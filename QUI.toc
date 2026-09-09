@@ -300,6 +300,7 @@ modules\qol\event_sounds.lua
 modules\qol\sound_mute_catalog.lua
 modules\qol\sound_mute.lua
 modules\qol\collection_fanfare.lua
+modules\qol\bonus_roll.lua
 modules\dungeon\keystone.lua
 modules\dungeon\mplus_timer.lua
 modules\dungeon\mplus_progress.lua

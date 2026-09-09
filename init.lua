@@ -293,6 +293,9 @@ function QUI:SlashCommandOpen(input)
             print("|cff60A5FAQUI:|r UI smoke runner did not initialize.")
         end
         return
+    elseif input and input:match("^bonusroll%s+show%s*$") then
+        if ns.BonusRoll then ns.BonusRoll.ShowPendingRoll() end
+        return
     elseif input and input == "debug" then
         self.db.char.debug.reload = true
         QUI:SafeReload()
