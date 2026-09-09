@@ -27,11 +27,8 @@ end
 
 local function BestEffort(fn, ...)
     if type(fn) ~= "function" then return false end
-    if ns.SafeCall then
-        local ok = ns.SafeCall("best-effort-style", fn, ...)
-        return ok == true
-    end
-    return pcall(fn, ...) == true
+    local ok = ns.SafeCall("best-effort-style", fn, ...)
+    return ok == true
 end
 
 -- fn(key) -> true when it played the sound, false/nil to fall through.
@@ -44,7 +41,7 @@ end
 function Announce.PlaySound(key)
     if type(key) ~= "string" or key == "" or key == "None" then return false end
     for i = 1, #resolvers do
-        local ok, handled = pcall(resolvers[i], key)
+        local ok, handled = ns.SafeCall("bulkhead", resolvers[i], key)
         if ok and handled == true then return true end
     end
     local path = ns.LSM and ns.LSM:Fetch("sound", key, true)
@@ -58,11 +55,12 @@ function Announce.Speak(text)
     if IsSecret(text) then return false end -- @secret-policy: reject-secret-value
     local VoiceChat = _G.C_VoiceChat
     local TTS = _G.C_TTSSettings
-    if not (VoiceChat and VoiceChat.SpeakText and TTS) then return false end
+    if not (VoiceChat and VoiceChat.SpeakText and TTS
+        and TTS.GetVoiceOptionID and TTS.GetSpeechRate and TTS.GetSpeechVolume) then return false end
     local voiceType = _G.Enum and _G.Enum.TtsVoiceType and _G.Enum.TtsVoiceType.Standard or 0
-    local okVoice, voiceID = pcall(TTS.GetVoiceOptionID, voiceType)
-    local okRate, rate = pcall(TTS.GetSpeechRate)
-    local okVolume, volume = pcall(TTS.GetSpeechVolume)
+    local okVoice, voiceID = ns.SafeCall("best-effort-style", TTS.GetVoiceOptionID, voiceType)
+    local okRate, rate = ns.SafeCall("best-effort-style", TTS.GetSpeechRate)
+    local okVolume, volume = ns.SafeCall("best-effort-style", TTS.GetSpeechVolume)
     if not (okVoice and okRate and okVolume and type(voiceID) == "number") then return false end
     return BestEffort(VoiceChat.SpeakText, voiceID, text, rate, volume, true)
 end

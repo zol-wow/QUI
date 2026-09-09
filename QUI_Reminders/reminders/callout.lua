@@ -91,7 +91,7 @@ local function Register()
             frame = FRAME_NAME,
             dbGetter = function() return GetDB() end,
             enabledField = "enabled",
-            refresh = "QUI_RefreshReminders",
+            refresh = function() if ns.Reminders and ns.Reminders.Refresh then ns.Reminders.Refresh() end end,
             previewOn = function() Callout.SetPreview(true) end,
             previewOff = function() Callout.SetPreview(false) end,
         })

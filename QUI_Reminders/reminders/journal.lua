@@ -53,7 +53,7 @@ Journal.FlagIndexNames = FlagIndexNames
 local function SectionFlags(sectionID)
     local api = _G.C_EncounterJournal
     if not (api and api.GetSectionIconFlags) then return {} end
-    local ok, indices = pcall(api.GetSectionIconFlags, sectionID)
+    local ok, indices = ns.SafeCall("best-effort-style", api.GetSectionIconFlags, sectionID)
     if not ok or type(indices) ~= "table" then return {} end
     local names = FlagIndexNames()
     local flags = {}
@@ -71,7 +71,7 @@ local function EnsureJournalLoaded()
     local addons = _G.C_AddOns
     if addons and addons.LoadAddOn then
         local loaded = addons.IsAddOnLoaded and addons.IsAddOnLoaded("Blizzard_EncounterJournal")
-        if not loaded then pcall(addons.LoadAddOn, "Blizzard_EncounterJournal") end
+        if not loaded then ns.SafeCall("compat", addons.LoadAddOn, "Blizzard_EncounterJournal") end
     end
     return true
 end
@@ -83,7 +83,7 @@ local function CollectSections(sectionID, out, seen, budget)
     local api = _G.C_EncounterJournal
     while sectionID and sectionID > 0 and budget.left > 0 do
         budget.left = budget.left - 1
-        local ok, info = pcall(api.GetSectionInfo, sectionID)
+        local ok, info = ns.SafeCall("best-effort-style", api.GetSectionInfo, sectionID)
         if not ok or type(info) ~= "table" then return end
         local spellID = tonumber(info.spellID)
         if spellID and spellID > 0 and not seen[spellID] then
@@ -165,7 +165,7 @@ function Journal.Get(force)
     if not EnsureJournalLoaded() then return nil end
     local ej = _G.EncounterJournal
     if ej and ej.IsShown and ej:IsShown() then return nil end
-    local ok, built = pcall(BuildUnsafe)
+    local ok, built = ns.SafeCall("best-effort-style", BuildUnsafe)
     if ok and type(built) == "table" then
         cache = built
         return cache

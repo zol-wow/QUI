@@ -45,7 +45,11 @@ local function GetDB()
 end
 
 local function Refresh()
-    if _G.QUI_RefreshReminders then _G.QUI_RefreshReminders() end
+    if ns.Reminders and ns.Reminders.Refresh then
+        ns.Reminders.Refresh()
+    elseif ns.RemindersCallout and ns.RemindersCallout.Refresh then
+        ns.RemindersCallout.Refresh()
+    end
 end
 
 local function MarkAbilitiesDirty()
@@ -343,7 +347,7 @@ local function BuildCallout(L, db)
 
     local actions = CreateFrame("Frame", nil, L.content or nil)
     local previewBtn = GUI:CreateButton(actions, ns.L["Toggle Preview"], 140, 28, function()
-        if _G.QUI_ToggleRemindersPreview then _G.QUI_ToggleRemindersPreview() end
+        if ns.RemindersCallout and ns.RemindersCallout.TogglePreview then ns.RemindersCallout.TogglePreview() end
     end)
     previewBtn:SetPoint("TOPLEFT", 0, -6)
     local testBtn = GUI:CreateButton(actions, ns.L["Test Callout"], 140, 28, function()
@@ -605,7 +609,7 @@ local function SeenEntries(db)
         if id and type(rec) == "table" and not (J and J.IsCached() and J.FindAbility(id)) then
             local name
             if _G.C_Spell and _G.C_Spell.GetSpellName then
-                local ok, n = pcall(_G.C_Spell.GetSpellName, id)
+                local ok, n = ns.SafeCall("secret-probe", _G.C_Spell.GetSpellName, id)
                 if ok and type(n) == "string" then name = n end
             end
             out[#out + 1] = {

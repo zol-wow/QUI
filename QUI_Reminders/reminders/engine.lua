@@ -68,7 +68,7 @@ local function ContextAllowed()
     if not db then return false end
     local instanceType
     if type(GetInstanceInfo) == "function" then
-        local ok, _, kind = pcall(GetInstanceInfo)
+        local ok, _, kind = ns.SafeCall("secret-probe", GetInstanceInfo)
         if ok then instanceType = Readable(kind) end
     end
     if instanceType == "party" then return db.inDungeons ~= false end
@@ -171,7 +171,7 @@ local function StopCDMGlow()
     glowTimer = nil
     local OG = ns._OwnedGlows
     if glowedIcon and OG and OG.StopGlowWithKey then
-        pcall(OG.StopGlowWithKey, glowedIcon, GLOW_KEY)
+        ns.SafeCall("best-effort-style", OG.StopGlowWithKey, glowedIcon, GLOW_KEY)
     end
     glowedIcon = nil
 end
@@ -187,7 +187,7 @@ local function GlowCDM(pick, duration)
     if type(settings) ~= "table" then
         settings = { glowType = "Pixel Glow", color = { 1, 0.85, 0.2, 1 }, lines = 8, frequency = 0.25, thickness = 2 }
     end
-    local ok = pcall(OG.ApplyGlowWithKey, icon, settings, GLOW_KEY)
+    local ok = ns.SafeCall("best-effort-style", OG.ApplyGlowWithKey, icon, settings, GLOW_KEY)
     if not ok then return false end
     glowedIcon = icon
     if C_Timer and C_Timer.NewTimer then
@@ -198,7 +198,7 @@ end
 
 local function AbilityName(evt)
     if type(evt.spellID) == "number" and _G.C_Spell and _G.C_Spell.GetSpellName then
-        local ok, name = pcall(_G.C_Spell.GetSpellName, evt.spellID)
+        local ok, name = ns.SafeCall("secret-probe", _G.C_Spell.GetSpellName, evt.spellID)
         name = ok and Readable(name) or nil
         if type(name) == "string" and name ~= "" then return name end
     end
@@ -431,7 +431,15 @@ function R.Test()
     return pick
 end
 
-_G.QUI_RefreshReminders = R.Refresh
+-- Layout Mode, the settings page and other suite files reach these through
+-- ns.Reminders; nothing is exported on _G.
+function R.TogglePreview(on)
+    local C = Callout()
+    if not C then return nil end
+    if on == nil then return C.TogglePreview() end
+    C.SetPreview(on)
+    return on
+end
 
 -- Profile switches and selective imports re-run every registered refresh.
 if ns.Registry and type(ns.Registry.Register) == "function" then
@@ -442,14 +450,6 @@ if ns.Registry and type(ns.Registry.Register) == "function" then
         importCategories = { "reminders" },
     })
 end
-_G.QUI_ToggleRemindersPreview = function(on)
-    local C = Callout()
-    if not C then return end
-    if on == nil then return C.TogglePreview() end
-    C.SetPreview(on)
-    return on
-end
-
 if ns.WhenLoggedIn then
     ns.WhenLoggedIn(function()
         local C = Callout()

@@ -38,9 +38,10 @@ local function Readable(value)
     return value
 end
 
+-- Every read here may come back secret, so the probe policy is the default.
 local function SafeCall(fn, ...)
     if type(fn) ~= "function" then return nil end
-    local ok, a, b, c = pcall(fn, ...)
+    local ok, a, b, c = ns.SafeCall("secret-probe", fn, ...)
     if not ok then return nil end
     return a, b, c
 end
@@ -86,7 +87,7 @@ local function Dataset()
     local lib = _G.LibStub and _G.LibStub("LibOpenRaid-1.0", true)
     local manager = lib and lib.CooldownManager
     if manager and manager.GetAllRegisteredCooldowns then
-        local ok, result = pcall(manager.GetAllRegisteredCooldowns)
+        local ok, result = ns.SafeCall("best-effort-style", manager.GetAllRegisteredCooldowns)
         if ok and type(result) == "table" then return result end
     end
     return nil
@@ -218,7 +219,7 @@ end
 local function SpellReady(spellID)
     local api = _G.C_Spell
     if not (api and api.GetSpellCooldown) then return nil end
-    local ok, info = pcall(api.GetSpellCooldown, spellID)
+    local ok, info = ns.SafeCall("secret-probe", api.GetSpellCooldown, spellID)
     if not ok or type(info) ~= "table" then return nil end
 
     local isActive = Readable(info.isActive)
@@ -237,7 +238,7 @@ local function SpellReady(spellID)
     -- A charge spell reports its recharge here only once every charge is spent,
     -- but a readable charge count is the more direct answer when we have one.
     if api.GetSpellCharges then
-        local okCharges, charges = pcall(api.GetSpellCharges, spellID)
+        local okCharges, charges = ns.SafeCall("secret-probe", api.GetSpellCharges, spellID)
         if okCharges and type(charges) == "table" then
             local current = Readable(charges.currentCharges)
             if type(current) == "number" then return current > 0 end
@@ -249,7 +250,7 @@ end
 local function ItemReady(itemID)
     local api = _G.C_Item
     if not (api and api.GetItemCooldown) then return nil end
-    local ok, start, duration = pcall(api.GetItemCooldown, itemID)
+    local ok, start, duration = ns.SafeCall("secret-probe", api.GetItemCooldown, itemID)
     if not ok then return nil end
     start, duration = Readable(start), Readable(duration)
     if type(start) ~= "number" or type(duration) ~= "number" then return nil end
@@ -294,7 +295,7 @@ function D.IsCovered(list)
         local entry = D.Describe(list[i])
         local spellID = entry and entry.spellID
         if spellID then
-            local ok, aura = pcall(api.GetPlayerAuraBySpellID, spellID)
+            local ok, aura = ns.SafeCall("secret-probe", api.GetPlayerAuraBySpellID, spellID)
             if ok then
                 if IsSecret(aura) then return nil end
                 sawReadable = true

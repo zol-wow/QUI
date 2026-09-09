@@ -73,7 +73,7 @@ function BossMods.IsAvailable(source)
     elseif source == "timeline" then
         local tl = _G.C_EncounterTimeline
         if not (type(tl) == "table" and type(tl.IsFeatureAvailable) == "function") then return false end
-        local ok, available = pcall(tl.IsFeatureAvailable)
+        local ok, available = ns.SafeCall("best-effort-style", tl.IsFeatureAvailable)
         return ok and available == true
     end
     return false
@@ -111,11 +111,7 @@ local function Emit(kind, evt)
     for _, handlers in pairs(subscribers) do
         local fn = handlers[kind]
         if type(fn) == "function" then
-            if ns.SafeCall then
-                ns.SafeCall("bulkhead", fn, evt)
-            else
-                pcall(fn, evt)
-            end
+            ns.SafeCall("bulkhead", fn, evt)
         end
     end
 end
@@ -201,7 +197,7 @@ local function HookBigWigs()
     local loader = _G.BigWigsLoader
     local ok = true
     for message, fn in pairs(BW) do
-        local success = pcall(loader.RegisterMessage, BossMods, message, fn)
+        local success = ns.SafeCall("compat", loader.RegisterMessage, BossMods, message, fn)
         ok = ok and success
     end
     hooked.bigwigs = ok
@@ -269,7 +265,7 @@ local function HookDBM()
     local dbm = _G.DBM
     local ok = true
     for event, fn in pairs(DB) do
-        local success = pcall(dbm.RegisterCallback, dbm, event, fn)
+        local success = ns.SafeCall("compat", dbm.RegisterCallback, dbm, event, fn)
         ok = ok and success
     end
     hooked.dbm = ok
@@ -326,14 +322,20 @@ function TL.ENCOUNTER_TIMELINE_EVENT_STATE_CHANGED(eventID)
     local tl = _G.C_EncounterTimeline
     local states = _G.Enum and _G.Enum.EncounterTimelineEventState
     if not (tl and tl.GetEventState and states) then return end
-    local ok, state = pcall(tl.GetEventState, eventID)
+    local ok, state = ns.SafeCall("secret-probe", tl.GetEventState, eventID)
     if not ok then return end
     state = Readable(state)
     if state == states.Active then
         -- Resumed after a pause: re-arm with what is left of the countdown.
-        local okInfo, info = pcall(tl.GetEventInfo, eventID)
-        local okRem, remaining = pcall(tl.GetEventTimeRemaining, eventID)
-        remaining = okRem and ReadableNumber(remaining) or nil
+        local okInfo, info = false, nil
+        if type(tl.GetEventInfo) == "function" then
+            okInfo, info = ns.SafeCall("secret-probe", tl.GetEventInfo, eventID)
+        end
+        local remaining
+        if type(tl.GetEventTimeRemaining) == "function" then
+            local okRem, value = ns.SafeCall("secret-probe", tl.GetEventTimeRemaining, eventID)
+            remaining = okRem and ReadableNumber(value) or nil
+        end
         if remaining then
             EmitTimelineTimer(eventID, okInfo and info or nil, remaining)
         end
@@ -348,7 +350,7 @@ local function HookTimeline()
     if type(_G.C_EncounterTimeline) ~= "table" or type(CreateFrame) ~= "function" then return false end
     timelineFrame = CreateFrame("Frame")
     for event in pairs(TL) do
-        pcall(timelineFrame.RegisterEvent, timelineFrame, event)
+        ns.SafeCall("compat", timelineFrame.RegisterEvent, timelineFrame, event)
     end
     timelineFrame:SetScript("OnEvent", function(_, event, ...)
         local fn = TL[event]
