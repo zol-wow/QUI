@@ -26,6 +26,7 @@ local frame
 local hideAt
 local fading = false
 local previewActive = false
+local gameplayHidden = false
 
 local function DisplaySettings()
     local db = GetDB()
@@ -50,7 +51,10 @@ end
 local function StartIconGlow()
     if not (frame and ns.IconGlow and ns.IconGlow.Start) then return end
     local d = DisplaySettings()
-    if d.glow == false then return end
+    if d.glow == false then
+        StopIconGlow()
+        return
+    end
     local color = d.glowColor
     if type(color) ~= "table" then color = { 1, 0.85, 0.2, 1 } end
     ns.IconGlow.Start(frame.iconFrame, {
@@ -102,9 +106,16 @@ local function Register()
                 if ns.Reminders and ns.Reminders.Refresh then ns.Reminders.Refresh() end
             end,
             setGameplayHidden = function(hide)
+                -- Remembered, not just applied once: a later Show must respect
+                -- it, and unhiding only brings back a callout that is still live.
+                gameplayHidden = hide and true or false
                 local f = _G[FRAME_NAME]
                 if not f then return end
-                if hide then f:Hide() else f:Show() end
+                if gameplayHidden then
+                    f:Hide()
+                elseif previewActive or hideAt then
+                    f:Show()
+                end
             end,
             getFrame = function() return _G[FRAME_NAME] end,
             onOpen = function() Callout.SetPreview(true) end,
@@ -189,6 +200,7 @@ function Callout.Refresh()
         f.text:SetJustifyH("CENTER")
         f:SetSize(math.max(textW, 1), math.max(textH, 1))
         Position()
+        if f:IsShown() then StartIconGlow() end
         return
     end
     if side == "LEFT" or side == "RIGHT" then
@@ -217,6 +229,8 @@ function Callout.Refresh()
     end
     f:SetSize(math.max(width, 1), math.max(height, 1))
     Position()
+    -- Settings can change while a callout or preview is up: the glow follows.
+    if f:IsShown() then StartIconGlow() end
 end
 
 -- entry = { name, icon } as produced by RemindersDefensives.Describe.
@@ -228,10 +242,11 @@ function Callout.Show(entry, opts)
     f.iconTex:SetTexture(entry.icon or FALLBACK_ICON)
     f.text:SetText((opts and opts.text) or entry.name or "")
     f:SetAlpha(1)
-    f:Show()
     fading = false
     local linger = tonumber(opts and opts.duration) or 4
     hideAt = GetTime() + math.max(linger, 0.5)
+    if gameplayHidden then return false end
+    f:Show()
     StartIconGlow()
     return true
 end
@@ -278,9 +293,10 @@ function Callout.SetPreview(on)
         f.iconTex:SetTexture(entry.icon or FALLBACK_ICON)
         f.text:SetText(entry.name or "")
         f:SetAlpha(1)
-        f:Show()
         hideAt = nil
         fading = false
+        if gameplayHidden then return end
+        f:Show()
         StartIconGlow()
     else
         Callout.Hide()

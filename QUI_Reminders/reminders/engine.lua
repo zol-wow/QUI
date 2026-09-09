@@ -430,6 +430,8 @@ function R.Refresh()
         end
         CancelAll()
         StopCDMGlow()
+        local D = Defensives()
+        if D and D.SetWatchedSpells then D.SetWatchedSpells({}) end
         local C = Callout()
         if C and C.Hide and not (C.IsPreviewActive and C.IsPreviewActive()) then C.Hide() end
     end

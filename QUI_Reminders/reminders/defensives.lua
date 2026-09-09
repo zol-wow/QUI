@@ -253,11 +253,22 @@ function D.SetWatchedSpells(list)
         if not next_[spellID] then gcdSnapshot[spellID] = nil end
     end
     watchedSpells = next_
-    if not snapshotFrame and type(CreateFrame) == "function" then
+    local wantEvents = next(next_) ~= nil
+    if wantEvents and not snapshotFrame and type(CreateFrame) == "function" then
         snapshotFrame = CreateFrame("Frame")
-        snapshotFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
         snapshotFrame:SetScript("OnEvent", SnapshotGCD)
     end
+    if not snapshotFrame then return end
+    -- Nothing to watch means nothing to pay for on every cooldown event.
+    if wantEvents then
+        snapshotFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
+    else
+        snapshotFrame:UnregisterEvent("SPELL_UPDATE_COOLDOWN")
+    end
+end
+
+function D.IsWatching()
+    return next(watchedSpells) ~= nil
 end
 
 local function GlobalCooldownActive()
