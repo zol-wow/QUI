@@ -346,13 +346,13 @@ local function OnTimer(evt)
     }
 end
 
--- A bar reaching its own end also reports as a stop on some sources. A callout
--- armed for AFTER the landing (negative warning time) must survive that; only a
--- stop before the bar's natural end is a real cancellation.
-local NATURAL_END_SLACK = 0.5
+-- A bar that ran to its end reports a stop with reason "finished" on sources
+-- that announce completion. A callout armed for AFTER the landing (negative
+-- warning time) survives exactly that; an explicit stop, pause or cancel always
+-- disarms.
 local function OnTimerStop(evt)
     local entry = pending[evt.barID]
-    if entry and entry.fireAt > entry.endsAt and Now() >= entry.endsAt - NATURAL_END_SLACK then
+    if entry and evt.reason == "finished" and entry.fireAt > entry.endsAt then
         return
     end
     Cancel(evt.barID)

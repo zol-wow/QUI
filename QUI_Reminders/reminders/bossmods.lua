@@ -17,7 +17,8 @@
 -- Event shapes (all fields readable):
 --   onTimer     { source, spellID?, key, text?, duration, maxDuration?, icon?,
 --                 barID, approximate?, eventID?, secretIdentity? }
---   onTimerStop { source, barID }
+--   onTimerStop { source, barID, reason }   reason: "stop" (explicit), "pause",
+--                                            "finished" (ran to its end)
 --   onMessage   { source, spellID?, key, text?, icon?, emphasized? }
 --   onStage     { source, stage }
 --   onReset     { source, reason }
@@ -163,9 +164,13 @@ end
 function BW.BigWigs_StopBar(_, _, text)
     local readable = ReadableString(text)
     if not readable then return end
-    Emit("onTimerStop", { source = "bigwigs", barID = "bigwigs:" .. readable })
+    Emit("onTimerStop", { source = "bigwigs", barID = "bigwigs:" .. readable, reason = "stop" })
 end
-BW.BigWigs_PauseBar = BW.BigWigs_StopBar
+function BW.BigWigs_PauseBar(_, _, text)
+    local readable = ReadableString(text)
+    if not readable then return end
+    Emit("onTimerStop", { source = "bigwigs", barID = "bigwigs:" .. readable, reason = "pause" })
+end
 
 function BW.BigWigs_Message(_, _, key, text, _, icon, isEmphasized)
     Emit("onMessage", {
@@ -233,9 +238,13 @@ DB.DBM_TimerBegin = DB.DBM_TimerStart
 function DB.DBM_TimerStop(_, id)
     local barID = Readable(id)
     if barID == nil then return end
-    Emit("onTimerStop", { source = "dbm", barID = "dbm:" .. tostring(barID) })
+    Emit("onTimerStop", { source = "dbm", barID = "dbm:" .. tostring(barID), reason = "stop" })
 end
-DB.DBM_TimerPause = DB.DBM_TimerStop
+function DB.DBM_TimerPause(_, id)
+    local barID = Readable(id)
+    if barID == nil then return end
+    Emit("onTimerStop", { source = "dbm", barID = "dbm:" .. tostring(barID), reason = "pause" })
+end
 
 function DB.DBM_Announce(_, message, icon, announceType, spellId)
     Emit("onMessage", {
@@ -285,6 +294,10 @@ local function TimelineBarID(eventID)
     return "timeline:" .. tostring(eventID)
 end
 
+-- Removal follows a terminal state; remember which events ran to completion so
+-- their removal is reported as "finished" rather than as a cancellation.
+local finishedEvents = {}
+
 local function EmitTimelineTimer(eventID, info, duration)
     local spellID = ReadableNumber(info and info.spellID)
     local sourceType = ReadableNumber(info and info.source)
@@ -313,7 +326,9 @@ end
 function TL.ENCOUNTER_TIMELINE_EVENT_REMOVED(eventID)
     eventID = Readable(eventID)
     if eventID == nil then return end
-    Emit("onTimerStop", { source = "timeline", barID = TimelineBarID(eventID) })
+    local reason = finishedEvents[eventID] and "finished" or "stop"
+    finishedEvents[eventID] = nil
+    Emit("onTimerStop", { source = "timeline", barID = TimelineBarID(eventID), reason = reason })
 end
 
 function TL.ENCOUNTER_TIMELINE_EVENT_STATE_CHANGED(eventID)
@@ -339,8 +354,14 @@ function TL.ENCOUNTER_TIMELINE_EVENT_STATE_CHANGED(eventID)
         if remaining then
             EmitTimelineTimer(eventID, okInfo and info or nil, remaining)
         end
-    elseif state == states.Paused or state == states.Canceled or state == states.Finished then
-        Emit("onTimerStop", { source = "timeline", barID = TimelineBarID(eventID) })
+    elseif state == states.Finished then
+        finishedEvents[eventID] = true
+        Emit("onTimerStop", { source = "timeline", barID = TimelineBarID(eventID), reason = "finished" })
+    elseif state == states.Paused then
+        Emit("onTimerStop", { source = "timeline", barID = TimelineBarID(eventID), reason = "pause" })
+    elseif state == states.Canceled then
+        finishedEvents[eventID] = nil
+        Emit("onTimerStop", { source = "timeline", barID = TimelineBarID(eventID), reason = "stop" })
     end
 end
 

@@ -241,18 +241,23 @@ end
 D.SnapshotGCD = SnapshotGCD
 
 -- list: priority entries (spell ids or "slot:N"); trinket use-spells count too.
+-- No snapshot is taken here: outside the event the flag is not trustworthy, so
+-- a newly watched spell stays "unknown" until the next SPELL_UPDATE_COOLDOWN.
 function D.SetWatchedSpells(list)
-    watchedSpells = {}
+    local next_ = {}
     for i = 1, #(list or {}) do
         local entry = D.Describe(list[i])
-        if entry and type(entry.spellID) == "number" then watchedSpells[entry.spellID] = true end
+        if entry and type(entry.spellID) == "number" then next_[entry.spellID] = true end
     end
+    for spellID in pairs(gcdSnapshot) do
+        if not next_[spellID] then gcdSnapshot[spellID] = nil end
+    end
+    watchedSpells = next_
     if not snapshotFrame and type(CreateFrame) == "function" then
         snapshotFrame = CreateFrame("Frame")
         snapshotFrame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
         snapshotFrame:SetScript("OnEvent", SnapshotGCD)
     end
-    SnapshotGCD()
 end
 
 local function GlobalCooldownActive()
@@ -271,6 +276,8 @@ local function SpellReady(spellID)
     local ok, info = ns.SafeCall("secret-probe", api.GetSpellCooldown, spellID)
     if not ok or type(info) ~= "table" then return nil end
 
+    -- On hold (isEnabled false) reads as inactive but cannot be pressed.
+    if Readable(info.isEnabled) == false then return false end
     local isActive = Readable(info.isActive)
     if type(isActive) ~= "boolean" then
         local start, duration = Readable(info.startTime), Readable(info.duration)
@@ -369,7 +376,7 @@ end
 -- every boss unit readably says otherwise, nil when there is no boss unit or
 -- the threat state is secret.
 function D.IsTankingBoss()
-    local sawUnit, sawReadable = false, false
+    local sawUnit, sawUnknown = false, false
     for i = 1, 5 do
         local unit = "boss" .. i
         local exists = Readable(SafeCall(_G.UnitExists, unit))
@@ -377,12 +384,12 @@ function D.IsTankingBoss()
             sawUnit = true
             local status = Readable(SafeCall(_G.UnitThreatSituation, "player", unit))
             if type(status) == "number" then
-                sawReadable = true
                 if status >= 2 then return true end
+            else
+                sawUnknown = true
             end
         end
     end
-    if not sawUnit then return nil end
-    if sawReadable then return false end
-    return nil
+    if not sawUnit or sawUnknown then return nil end
+    return false
 end
