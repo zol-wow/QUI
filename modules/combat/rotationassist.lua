@@ -496,6 +496,27 @@ if AssistedCombatManager and AssistedCombatManager.UpdateAllAssistedHighlightFra
     end)
 end
 
+local POLL_KEY = "QUI_RotationAssistIcon"
+
+-- The EventRegistry/hooksecurefunc paths above only fire while Blizzard's
+-- own highlight poll is running (assistedCombatHighlight CVar on). The shared
+-- poller in keybinds.lua keeps the icon moving regardless.
+local function SyncNextCastPoll()
+    local poll = QUI.AssistedCombatNext
+    if not poll then return end
+    local db = GetDB()
+    if db and db.enabled then
+        poll.Subscribe(POLL_KEY, function(spellID)
+            local cur = GetDB()
+            if not cur or not cur.enabled then return end
+            -- nil means "no suggestion"; DoUpdate re-queries and clears
+            DoUpdate(spellID)
+        end)
+    else
+        poll.Unsubscribe(POLL_KEY)
+    end
+end
+
 local function InitOrCatchUp()
     C_Timer.After(0.5, function()
         if not isInitialized then
@@ -508,6 +529,7 @@ local function InitOrCatchUp()
             RefreshIconFrame()
             DoUpdate()
         end
+        SyncNextCastPoll()
     end)
 end
 
@@ -564,6 +586,7 @@ end
 
 local function RefreshRotationAssistIcon()
     RefreshIconFrame()
+    SyncNextCastPoll()
 end
 
 _G.QUI_RefreshRotationAssistIcon = RefreshRotationAssistIcon
