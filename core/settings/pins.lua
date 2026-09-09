@@ -119,6 +119,14 @@ local function IsSupportedPinnedValue(value)
     return IsColorValue(value)
 end
 
+local function PinnedValuesEqual(a, b)
+    if a == b then
+        return true
+    end
+    return IsColorValue(a) and IsColorValue(b)
+        and a[1] == b[1] and a[2] == b[2] and a[3] == b[3] and a[4] == b[4]
+end
+
 local function IsPathExactOrNested(path, candidate)
     if type(path) ~= "string" or path == "" or type(candidate) ~= "string" or candidate == "" then
         return false
@@ -1780,11 +1788,16 @@ function Pins:Unpin(path, db, options)
         return false, "pin not found"
     end
 
+    local currentProfile = self:GetCurrentProfileName(db)
+    local activeValue = ReadPath(db.profile, path)
+    local activeChanged = false
     if type(entry.shadowed) == "table" then
         for profileName, value in pairs(entry.shadowed) do
             local ok, reason = self:RestoreProfileValue(profileName, path, value, db)
             if not ok then
                 DebugLog("Pinned setting restore failed:", tostring(path), tostring(profileName), tostring(reason))
+            elseif profileName == currentProfile then
+                activeChanged = not PinnedValuesEqual(activeValue, value)
             end
         end
     end
@@ -1793,11 +1806,11 @@ function Pins:Unpin(path, db, options)
     TouchStore(store)
     self:Broadcast(path)
 
-    if not (options and options.skipRefresh) then
+    if activeChanged and not (options and options.skipRefresh) then
         self:RefreshRuntime()
     end
 
-    return true
+    return true, nil, activeChanged
 end
 
 function Pins:UnpinAll(db)
@@ -1812,12 +1825,16 @@ function Pins:UnpinAll(db)
         keys[#keys + 1] = path
     end
 
+    local activeChanged = false
     for _, path in ipairs(keys) do
-        self:Unpin(path, db, { skipRefresh = true })
+        local _, _, changed = self:Unpin(path, db, { skipRefresh = true })
+        activeChanged = activeChanged or changed
     end
 
-    if #keys > 0 then
+    if activeChanged then
         self:RefreshRuntime()
+    end
+    if #keys > 0 then
         self:Broadcast("*")
     end
 

@@ -438,6 +438,7 @@ local PROFILE_QOL_GENERAL_KEYS = {
     "autoConfirmHighCost",
     "merchantKnownPetMark",
     "lootToastFilter",
+    "bonusRoll",
     "cursorTrail",
     "ejLootSpecIcons",
     "communitiesPrivacy",

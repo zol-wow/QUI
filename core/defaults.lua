@@ -290,6 +290,20 @@ local defaults = {
             merchantKnownPetMark = false,
             ejLootSpecIcons = false,
             worldMapTeleports = false,
+            bonusRoll = {
+                enabled = false,
+                announce = true,
+                mythicPlus = {
+                    mode = "show",
+                    minLevel = 10,
+                },
+                difficulty = {
+                    ["*"] = {
+                        hide = false,
+                        encounters = { ["*"] = false },
+                    },
+                },
+            },
             deathAlert = {
                 enabled = false,
                 sound = "None",
@@ -4410,6 +4424,10 @@ local defaults = {
         },
     },
     global = {
+        bonusRoll = {
+            seenDifficulties = {},
+            seenEncounters = {},
+        },
         setupWizard = {
             completedAt = false,
             noticeShown = false,
