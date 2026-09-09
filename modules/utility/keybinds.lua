@@ -2027,7 +2027,15 @@ do
         if not key or type(fn) ~= "function" then return end
         if not subscribers[key] then subscriberCount = subscriberCount + 1 end
         subscribers[key] = fn
+        local clearedBefore = lastDispatchWasClear
         Start()
+        -- Consumers typically query the API themselves right before
+        -- subscribing and may have painted a stale suggestion. If Assisted
+        -- Combat is unavailable, tell this consumer directly: the shared
+        -- latch only covers subscribers that were present at the last clear.
+        if not available and clearedBefore then
+            QUI.SafeCall("bulkhead", fn, nil)
+        end
     end
 
     function AssistedCombatNext.Unsubscribe(key)
