@@ -96,6 +96,7 @@ core\debug_gate.lua
 core\utils.lua
 core\pack.lua
 core\safecall.lua
+core\announce.lua
 core\theme.lua
 core\ns_export_guard.lua
 core\infobar_shared.lua

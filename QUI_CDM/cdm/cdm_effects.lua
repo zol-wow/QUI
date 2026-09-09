@@ -1299,6 +1299,12 @@ local function FindIconBySpellID(castSpellID)
     return found
 end
 
+-- Published for other suite addons (QUI_Reminders glows the defensive it calls).
+-- Defined here, after the locals exist; the ns._OwnedGlows table itself is
+-- created earlier in this file.
+ns._OwnedGlows.FindIconBySpellID = FindIconBySpellID
+ns._OwnedGlows.ForEachIconBySpellID = ForEachIconBySpellID
+
 local function GetPressedMode(viewerType)
     local container = Shared and Shared.GetContainerDB and Shared.GetContainerDB(viewerType)
     local mode = container and container.pressedEffect
