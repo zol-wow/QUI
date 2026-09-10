@@ -4,6 +4,21 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.1-beta5 - 2026-09-10
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Combat whispers keep their native recipient and reply routing** while
+  displaying the input inside QUI, including Reply, character links, and
+  Battle.net whisper initiation. Restricted identities use a shared Whispers tab.
+- **Chat input follows the active QUI window**, including when switching or
+  deleting windows.
+- **Whisper preferences are preserved**, and duplicate Blizzard whisper sounds
+  are suppressed while QUI chat is active.
+
 ## v5.3.1-beta4 - 2026-09-10
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
