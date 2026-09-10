@@ -7,20 +7,18 @@ local I = assert(ns.QUI.Chat and ns.QUI.Chat._internals,
 ns.QUI.Chat.EditBoxBasics = ns.QUI.Chat.EditBoxBasics or {}
 local EditBoxBasics = ns.QUI.Chat.EditBoxBasics
 
-local function GetAnchorFrame(chatFrame, frameID)
-    if frameID == 1 then
-        local settings = I.GetSettings and I.GetSettings()
-        if I.IsChatEnabled and I.IsChatEnabled(settings) then
-            local Display = ns.QUI.Chat.DisplayLayer
-            if Display and Display.GetContainer then
-                local active = Display.GetActiveWindow and Display.GetActiveWindow() or 1
-                local c = Display.GetContainer(active)
-                if not (c and c.IsShown and c:IsShown()) then
-                    c = Display.GetContainer(1)
-                end
-                if c and c.IsShown and c:IsShown() then
-                    return c
-                end
+local function GetAnchorFrame(chatFrame)
+    local settings = I.GetSettings and I.GetSettings()
+    if I.IsChatEnabled and I.IsChatEnabled(settings) then
+        local Display = ns.QUI.Chat.DisplayLayer
+        if Display and Display.GetContainer then
+            local active = Display.GetActiveWindow and Display.GetActiveWindow() or 1
+            local c = Display.GetContainer(active)
+            if not (c and c.IsShown and c:IsShown()) then
+                c = Display.GetContainer(1)
+            end
+            if c and c.IsShown and c:IsShown() then
+                return c
             end
         end
     end
@@ -88,6 +86,9 @@ local function EnsureGeometryHooks(chatFrame, editBox, state)
         editBox:HookScript("OnShow", function()
             QueueStyleEditBox(chatFrame)
         end)
+        editBox:HookScript("OnHide", function()
+            QueueStyleEditBox(chatFrame)
+        end)
     end
 end
 
@@ -151,8 +152,6 @@ local function StyleEditBox(chatFrame)
     local frameName = chatFrame:GetName()
     if not frameName then return end
 
-    local frameID = tonumber(frameName:match("ChatFrame(%d+)"))
-
     local editBox = chatFrame.editBox or _G[frameName .. "EditBox"]
     if not editBox then return end
 
@@ -201,7 +200,7 @@ local function StyleEditBox(chatFrame)
     local backdrop = I.editBoxBackdrops[chatFrame]
     local positionTop = settings.editBox.positionTop
 
-    local anchor = GetAnchorFrame(chatFrame, frameID)
+    local anchor = GetAnchorFrame(chatFrame)
 
     if backdrop:GetParent() ~= anchor then
         backdrop:SetParent(anchor)
@@ -275,7 +274,16 @@ local function StyleEditBox(chatFrame)
 
         ebState.backdropRef = backdrop
 
-        backdrop:Show()
+        local util = _G.ChatFrameUtil
+        local active = util and util.GetActiveWindow and util.GetActiveWindow()
+        for frame, bg in pairs(I.editBoxBackdrops) do
+            local input = frame.editBox or _G[frame:GetName() .. "EditBox"]
+            if active == input or (not active and frame:GetName() == "ChatFrame1") then
+                bg:Show()
+            else
+                bg:Hide()
+            end
+        end
         editBox:EnableMouse(true)
         SetEditBoxVisualShown(editBox, true)
     end

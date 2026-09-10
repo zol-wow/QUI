@@ -27,6 +27,9 @@ local function ReanchorEditBoxToActiveWindow()
     local EditBox = ns.QUI.Chat.EditBoxBasics
     if EditBox and EditBox.StyleEditBox and _G.ChatFrame1 then
         EditBox.StyleEditBox(_G.ChatFrame1)
+        for frame in pairs(I.editBoxBackdrops or {}) do
+            if frame ~= _G.ChatFrame1 then EditBox.StyleEditBox(frame) end
+        end
     end
 end
 
