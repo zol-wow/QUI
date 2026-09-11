@@ -318,7 +318,7 @@ function Runs.StyleNativeEffects(frame, profile, key)
     if not glow or not frame.CreateTexture then return effects end
     local host = frame._quiCDMNativeEffectHost
     if not host then
-        host = CreateFrame("Frame", nil, frame, "AnimateWhileShownTemplate")
+        host = CreateFrame("Frame", nil, frame)
         host:SetAllPoints(frame)
         frame._quiCDMNativeEffectHost = host
     end
