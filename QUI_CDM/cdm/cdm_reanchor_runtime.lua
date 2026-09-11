@@ -231,19 +231,10 @@ function CDMReanchorRuntime:AssembleEntries(containerKey, frameMap, settings, pr
         end
     end
 
-    local auraLive = IsBuffIconKey(containerKey) and filterInactive
-        and deps.entryAuraIsPresent or nil
-    local function ownedAuraFallback(e)
-        if not auraLive then return false end
-        if IsBlizzardCDMEntry(e) then return false end
-        return auraLive(e) and true or false
-    end
-
     local diag = self:_NextDiag(containerKey, {
         displayMode = displayMode,
         filterInactive = filterInactive and true or false,
         editing = editing and true or false,
-        auraProbe = auraLive ~= nil,
         curated = #curated,
         matched = 0, frameless = 0, additional = 0,
         nativeClaimed = 0, staleNative = 0, hiddenPreview = 0,
@@ -265,23 +256,40 @@ function CDMReanchorRuntime:AssembleEntries(containerKey, frameMap, settings, pr
             nativeUsable = deps.frameIsActive(m.frame, containerKey, e) and true or false
         end
         local assignment = assignmentByEntry and assignmentByEntry[e] or nil
-        if m and filterInactive and nativeUsable == false then
+        if IsBuffIconKey(containerKey) and not IsBlizzardCDMEntry(e)
+            and not e._isTotemInstance and deps.acquireAuraMirror
+            and (not m or (filterInactive and nativeUsable == false)) then
+            if m then
+                diag.staleNative = diag.staleNative + 1
+                claimedFrames[m.frame] = nil
+            end
+            local icon = deps.mintOwned and deps.mintOwned(e, containerKey) or nil
+            if icon then
+                local planner = deps.placementPlanner or ns.CDMPlacementPlanner
+                local placementKey = assignment and assignment.placementKey
+                    or (planner and planner.BuildPlacementKey(containerKey, i, e))
+                    or (containerKey .. ":" .. tostring(i))
+                local auraMirrorOptions = {
+                    dynamic = displayMode == "active" and not editing, order = i, source = icon,
+                }
+                local auraMirror = not auraMirrorOptions.dynamic
+                    and deps.acquireAuraMirror(e, containerKey, placementKey, auraMirrorOptions) or nil
+                diag.minted = diag.minted + 1
+                diag.mirrored = diag.mirrored + 1
+                self:_TrackMintedOwned(containerKey, icon)
+                entries[#entries + 1] = {
+                    src = e, frame = icon, reanchored = false,
+                    mirrorKind = "auraMirror", auraMirror = auraMirror,
+                    auraMirrorOptions = auraMirrorOptions.dynamic and auraMirrorOptions or nil,
+                    hideAuraBase = displayMode == "active" and not editing,
+                    placementKey = placementKey, _assignedRow = e._assignedRow,
+                }
+            else
+                diag.mintFailed = diag.mintFailed + 1
+            end
+        elseif m and filterInactive and nativeUsable == false then
             diag.staleNative = diag.staleNative + 1
             claimedFrames[m.frame] = nil
-            if ownedAuraFallback(e) then
-                diag.fallbackLive = diag.fallbackLive + 1
-                local icon = deps.mintOwned and deps.mintOwned(e, containerKey) or nil
-                if icon then
-                    diag.minted = diag.minted + 1
-                    self:_TrackMintedOwned(containerKey, icon)
-                    entries[#entries + 1] = {
-                        src = e, frame = icon, reanchored = false,
-                        _assignedRow = e._assignedRow,
-                    }
-                else
-                    diag.mintFailed = diag.mintFailed + 1
-                end
-            end
         elseif m and assignment and assignment.renderKind ~= "native" then
             claimedFrames[m.frame] = nil
             if assignment.renderKind == "unsupportedMirror" then
@@ -361,19 +369,6 @@ function CDMReanchorRuntime:AssembleEntries(containerKey, frameMap, settings, pr
                     _assignedRow = e._assignedRow,
                 }
             end
-        elseif framelessByEntry[e] and ownedAuraFallback(e) then
-            diag.fallbackLive = diag.fallbackLive + 1
-            local icon = deps.mintOwned and deps.mintOwned(e, containerKey) or nil
-            if icon then
-                diag.minted = diag.minted + 1
-                self:_TrackMintedOwned(containerKey, icon)
-                entries[#entries + 1] = {
-                    src = e, frame = icon, reanchored = false,
-                    _assignedRow = e._assignedRow,
-                }
-            else
-                diag.mintFailed = diag.mintFailed + 1
-            end
         elseif framelessByEntry[e] and ShouldMintFramelessOwned(e, containerKey, displayMode, editing) then
             local icon = deps.mintOwned and deps.mintOwned(e, containerKey) or nil
             if icon then
@@ -397,8 +392,24 @@ function CDMReanchorRuntime:AssembleEntries(containerKey, frameMap, settings, pr
         if icon then
             diag.minted = diag.minted + 1
             self:_TrackMintedOwned(containerKey, icon)
+            local auraMirror, auraMirrorOptions
+            local nativeAura = IsBuffIconKey(containerKey) and not IsBlizzardCDMEntry(e)
+                and not e._isTotemInstance and deps.acquireAuraMirror
+            if nativeAura then
+                auraMirrorOptions = {
+                        dynamic = displayMode == "active" and not editing, order = #curated + i, source = icon,
+                    }
+                if not auraMirrorOptions.dynamic then
+                    auraMirror = deps.acquireAuraMirror(e, containerKey,
+                        containerKey .. ":additional:" .. tostring(i), auraMirrorOptions)
+                end
+            end
             entries[#entries + 1] = {
                 src = e, frame = icon, reanchored = false,
+                auraMirror = auraMirror,
+                auraMirrorOptions = auraMirrorOptions and auraMirrorOptions.dynamic and auraMirrorOptions or nil,
+                placementKey = nativeAura and (containerKey .. ":additional:" .. tostring(i)) or nil,
+                hideAuraBase = nativeAura and displayMode == "active" and not editing,
                 _assignedRow = e._assignedRow,
             }
         else
@@ -414,10 +425,20 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
     if not (plan and plan.placements) then return 0 end
     local deps, bridge = self._deps, self._bridge
     local n = 0
-    for _, placement in ipairs(plan.placements) do
+    local hasDynamic = false
+    for index, placement in ipairs(plan.placements) do
         local wrapper = placement.icon
         local frame = wrapper and wrapper.frame
         if frame then
+            local options = wrapper.auraMirrorOptions
+            if options then
+                options.order = index
+                options.rowConfig = placement.rowConfig
+                wrapper.auraMirror = deps.acquireAuraMirror(wrapper.src, containerKey,
+                    wrapper.placementKey or (containerKey .. ":layout:" .. index), options)
+            end
+            local record = wrapper.auraMirror
+            if record and record.dynamic and not record.reserved then hasDynamic = true end
             local x, y = placement.x, placement.y
             local w, h = PlacementRect(placement)
             x, y, w, h = SnapPlacementRect(deps, container, x, y, w, h)
@@ -453,10 +474,98 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
                 if not positionedByAuraMirror then
                     deps.positionOwned(frame, container, "CENTER", "CENTER", x, y, placement.rowConfig)
                 end
+                if wrapper.hideAuraBase and frame.Hide then frame:Hide() end
                 n = n + 1
             end
         end
     end
+    if not hasDynamic then return n end
+    local scratch = self._nativeFlowScratch
+    if not scratch then
+        scratch = { rows = {}, rowOrder = {}, positionedFrames = {} }
+        self._nativeFlowScratch = scratch
+    end
+    local rows, rowOrder, positionedFrames = scratch.rows, scratch.rowOrder, scratch.positionedFrames
+    for _, placement in ipairs(plan.placements) do
+        local wrapper = placement.icon
+        local record = wrapper and wrapper.auraMirror
+        local frame = record and record.dynamic and not record.reserved and record.host or wrapper and wrapper.frame
+        local row = placement.rowConfig and placement.rowConfig.rowNum or 1
+        local segments = rows[row]
+        if not segments then segments = { count = 0 }; rows[row] = segments end
+        if not segments.active then
+            segments.active = true
+            rowOrder[#rowOrder + 1] = row
+        end
+        if frame and not positionedFrames[frame] then
+            positionedFrames[frame] = true
+            segments.count = segments.count + 1
+            local segment = segments[segments.count]
+            if not segment then segment = {}; segments[segments.count] = segment end
+            segment.frame, segment.record, segment.placement, segment.wrapper = frame, record, placement, wrapper
+            if record and record.dynamic then
+                segments.direction = segments.direction or record.run
+                if not record.reserved then segments.hasDynamic = true end
+            end
+        end
+    end
+    for rowIndex, row in ipairs(rowOrder) do
+        local segments = rows[row]
+        if segments.hasDynamic then
+            local previous, previousDynamic
+            local direction = segments.direction
+            local vertical, forward = direction.vertical, direction.forward
+            local anchor = vertical and (forward and "BOTTOM" or "TOP") or (forward and "LEFT" or "RIGHT")
+            local opposite = vertical and (forward and "TOP" or "BOTTOM") or (forward and "RIGHT" or "LEFT")
+            for index = 1, segments.count do
+                local segment = segments[index]
+                local record, frame = segment.record, segment.frame
+                local dynamic = record and record.dynamic and not record.reserved
+                local placement = segment.placement
+                local padding = placement.rowConfig and placement.rowConfig.padding or 0
+                local w, h = PlacementRect(placement)
+                if not dynamic then
+                    container._quiBuffFlowProxies = container._quiBuffFlowProxies or {}
+                    local proxyRows = container._quiBuffFlowProxies
+                    proxyRows[row] = proxyRows[row] or {}
+                    local proxies = proxyRows[row]
+                    proxies[index] = proxies[index] or CreateFrame("Frame", nil, container,
+                        "DisableUntrustedLayoutScriptsTemplate")
+                    frame = proxies[index]
+                    frame:SetSize(w, h)
+                    if segment.wrapper.reanchored then
+                        bridge:OverlayRect(segment.frame, frame, "TOPLEFT", 0, 0, "BOTTOMRIGHT", 0, 0)
+                    else
+                        segment.frame:ClearAllPoints()
+                        segment.frame:SetPoint("CENTER", frame, "CENTER", 0, 0)
+                    end
+                end
+                frame:ClearAllPoints()
+                if segments.count == 1 then
+                    local offset = (padding + 1) / 2 * (forward and 1 or -1)
+                    local rc = placement.rowConfig
+                    frame:SetPoint("CENTER", container, "CENTER",
+                        vertical and placement.x or ((rc and rc.xOffset or 0) + offset),
+                        vertical and ((rc and rc.yOffset or 0) + offset) or placement.y)
+                elseif previous then
+                    local offset = (previousDynamic and -1 or padding) * (forward and 1 or -1)
+                    frame:SetPoint(anchor, previous, opposite, vertical and 0 or offset, vertical and offset or 0)
+                else
+                    local offset = (vertical and h or w) / 2 * (forward and -1 or 1)
+                    frame:SetPoint(anchor, container, "CENTER", placement.x + (vertical and 0 or offset),
+                        placement.y + (vertical and offset or 0))
+                end
+                previous, previousDynamic = frame, dynamic
+            end
+        end
+        for index = 1, segments.count do
+            local segment = segments[index]
+            segment.frame, segment.record, segment.placement, segment.wrapper = nil, nil, nil, nil
+        end
+        segments.count, segments.active, segments.direction, segments.hasDynamic = 0, nil, nil, nil
+        rowOrder[rowIndex] = nil
+    end
+    for frame in pairs(positionedFrames) do positionedFrames[frame] = nil end
     return n
 end
 

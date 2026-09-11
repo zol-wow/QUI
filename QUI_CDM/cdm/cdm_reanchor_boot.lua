@@ -334,7 +334,6 @@ function CDMReanchorBoot.BuildRuntime(env)
         buildLayout = env.buildLayout,
         buildBuffLayout = env.buildBuffLayout,
         frameIsActive = env.frameIsActive,
-        entryAuraIsPresent = env.entryAuraIsPresent,
         inCombat = env.inCombat,
         canMutate = env.canMutate,
         isEditMode = env.isEditMode,
