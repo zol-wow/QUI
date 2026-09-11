@@ -77,8 +77,6 @@ local CDMAuraRuntime = {}
 ns.CDMAuraRuntime = CDMAuraRuntime
 
 local resolveState
-local getApplications
-local getCapturedAura
 local resolveAbilityAuraSpellID
 
 function CDMAuraRuntime.SetResolver(callback)
@@ -88,28 +86,6 @@ end
 function CDMAuraRuntime.ResolveState(params)
     if resolveState then
         return resolveState(params)
-    end
-    return nil
-end
-
-function CDMAuraRuntime.SetApplicationsGetter(callback)
-    getApplications = callback
-end
-
-function CDMAuraRuntime.GetApplications(unit, auraInstanceID)
-    if getApplications then
-        return getApplications(unit, auraInstanceID)
-    end
-    return nil
-end
-
-function CDMAuraRuntime.SetCapturedAuraGetter(callback)
-    getCapturedAura = callback
-end
-
-function CDMAuraRuntime.GetCapturedAuraForLookup(...)
-    if getCapturedAura then
-        return getCapturedAura(...)
     end
     return nil
 end

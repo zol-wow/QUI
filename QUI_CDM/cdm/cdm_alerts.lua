@@ -35,15 +35,7 @@ local function RefreshSoundKits()
     return soundKitsLoaded
 end
 
-if not RefreshSoundKits() and type(CreateFrame) == "function" then
-    local soundKitFrame = CreateFrame("Frame")
-    soundKitFrame:RegisterEvent("ADDON_LOADED")
-    soundKitFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-    soundKitFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-    soundKitFrame:SetScript("OnEvent", function(self)
-        if RefreshSoundKits() then self:UnregisterAllEvents() end
-    end)
-end
+RefreshSoundKits()
 
 function Alerts.GetSoundKitOptions()
     if not soundKitsLoaded then RefreshSoundKits() end
@@ -120,6 +112,7 @@ end
 local function PlayAlert(entry, eventKey)
     local config = entry and entry.quiAlerts and entry.quiAlerts[eventKey]
     if type(config) ~= "table" or config.enabled ~= true then return false end
+    if Alerts.IsNativeSoundRegistered(entry, eventKey) then return false end
     if config.mode == "tts" then
         local text = type(config.text) == "string" and config.text ~= ""
             and config.text or FallbackText(entry, eventKey)
@@ -186,4 +179,308 @@ function Alerts.OnStateChanged(frame, state)
     previous.key = state.key
     previous.unavailable = unavailable
     previous.auraActive = auraActive
+end
+
+local nativeRegistrations = {}
+local nativeEvents = {}
+local nativeStatuses = {}
+local recoveredOwnership = setmetatable({}, { __mode = "k" })
+local refreshPending = false
+local nativeDisabled = false
+local reconciling = false
+local auraEvents = { auraApplied = "OnAuraApplied", auraRemoved = "OnAuraRemoved" }
+
+local function NativeSignature(record)
+    if record.kind == "file" then
+        return table.concat({ "file", record.unit, record.spellID, record.trigger, record.sound }, ":")
+    end
+    return table.concat({ "viewer", tostring(record.layout), record.cooldownID, record.event, record.payload }, ":")
+end
+
+local function NativeOwnership()
+    local db = ns.Addon and ns.Addon.db
+    if not db then return nil end
+    db.char = db.char or {}
+    db.char.cdmNativeSoundAlerts = db.char.cdmNativeSoundAlerts or {}
+    return db.char.cdmNativeSoundAlerts
+end
+
+local function FindNativeAlert(alerts, event, payload)
+    for _, alert in ipairs(alerts or {}) do
+        if alert[1] == Enum.CooldownViewerAlertType.Sound and alert[2] == event and alert[3] == payload then
+            return alert
+        end
+    end
+end
+
+local function RecoverNativeOwnership(manager)
+    local ownership = NativeOwnership()
+    if not (ownership and manager and manager.GetLayout) then return end
+    if manager.IsLoaded and not manager:IsLoaded() then return end
+    for key, saved in pairs(ownership) do
+        local layout = manager:GetLayout(saved.layoutID)
+        local alerts = layout and manager:GetAlertsForLayout(layout, saved.cooldownID, Enum.CDMLayoutMode.AccessOnly)
+        local alert = FindNativeAlert(alerts, saved.event, saved.payload)
+        if alert then
+            local record = { kind = "viewer", manager = manager, layout = layout, alert = alert, owned = true,
+                cooldownID = saved.cooldownID, event = saved.event, payload = saved.payload,
+                ownership = ownership }
+            local signature = NativeSignature(record)
+            local existing = nativeRegistrations[signature]
+            if not recoveredOwnership[ownership] then
+                nativeRegistrations[signature] = existing or record
+            elseif not existing or existing.alert ~= alert then
+                ownership[key] = nil
+            end
+        elseif not recoveredOwnership[ownership] then
+            ownership[key] = nil
+        end
+    end
+    recoveredOwnership[ownership] = true
+end
+
+local function EventKey(entry, eventKey)
+    local config = entry.quiAlerts and entry.quiAlerts[eventKey] or {}
+    return table.concat({ entry.type or "spell", entry.id or entry.spellID or "", entry.auraUnit or "",
+        eventKey, config.mode or "sound", config.sound or "", config.text or "" }, ":")
+end
+
+function Alerts.IsNativeSoundRegistered(entry, eventKey)
+    return entry and auraEvents[eventKey] and nativeEvents[EventKey(entry, eventKey)] == true or false
+end
+
+local function ResolveNativeSelection(entry, eventKey)
+    local config = entry and entry.quiAlerts and entry.quiAlerts[eventKey]
+    if not (auraEvents[eventKey] and type(config) == "table" and config.enabled == true) then return nil end
+    local runs = ns.CDMCustomAuraRuns
+    local auraConfig = runs and runs.ResolveAuraConfig and runs.ResolveAuraConfig(entry)
+    if not auraConfig then return nil, ns.L["This entry has no aura spell IDs for sound registration."] end
+    local payload
+    if config.mode == "tts" then
+        payload = Enum and Enum.CooldownViewerSound and Enum.CooldownViewerSound.TextToSpeech
+    elseif type(config.sound) == "string" then
+        payload = tonumber(config.sound:match("^kit:(%d+)$"))
+    end
+    if config.mode == "tts" or payload then
+        local cooldownID = entry.cooldownID
+        if not cooldownID then
+            local index = ns.CDMIndex
+            for spellID in pairs(auraConfig.includeSpellIDs) do
+                local record = index and index.Get and index.Get(spellID)
+                if record and record.cooldownID then cooldownID = record.cooldownID; break end
+            end
+        end
+        if not cooldownID then
+            return nil, ns.L["This aura needs a Blizzard cooldown entry for sound kits or text to speech. Sound files work with custom aura entries."]
+        end
+        local event = Enum and Enum.CooldownViewerAlertEventType
+            and Enum.CooldownViewerAlertEventType[auraEvents[eventKey]]
+        if payload == nil or event == nil then return nil, ns.L["Blizzard cooldown sound alerts are not loaded yet."] end
+        local api = _G.C_CooldownViewer
+        if api and api.GetValidAlertTypes then
+            local ok, valid = ns.SafeCall("best-effort-style", api.GetValidAlertTypes, cooldownID)
+            local found = false
+            if ok and type(valid) == "table" then
+                for _, candidate in ipairs(valid) do
+                    if candidate == event then found = true; break end
+                end
+            end
+            if not found then return nil, ns.L["Blizzard does not support this aura alert event for the selected cooldown entry."] end
+        end
+        return { kind = "viewer", cooldownID = cooldownID, event = event, payload = payload },
+            config.mode == "tts" and ns.L["Blizzard aura text to speech reads the spell name; custom alert text is used only for previews and cooldown alerts."] or nil
+    end
+    local sound = config.sound
+    if sound == nil or sound == "" or sound == "None" then return nil end
+    if ("|" .. (auraConfig.filter or "") .. "|"):find("|PLAYER|", 1, true) then
+        return nil, ns.L["Native aura sound files cannot restrict alerts to your own casts. Use a supported Blizzard sound kit or text to speech for this aura."]
+    end
+    if type(sound) == "string" then sound = ns.LSM and ns.LSM:Fetch("sound", sound, true) or sound end
+    if type(sound) ~= "string" and type(sound) ~= "number" then return nil, ns.L["The selected aura sound file could not be resolved."] end
+    return { kind = "file", auraConfig = auraConfig, sound = sound,
+        trigger = Enum and Enum.UnitAuraSoundTrigger
+            and Enum.UnitAuraSoundTrigger[eventKey == "auraApplied" and "Added" or "Removed"]
+            or (eventKey == "auraApplied" and 0 or 2) }
+end
+
+function Alerts.GetNativeSoundStatus(containerKey, entry, eventKey)
+    if not entry then return nil end
+    local statuses = nativeStatuses[containerKey]
+    local status = statuses and statuses[EventKey(entry, eventKey)]
+    if status then return status end
+    local _, reason = ResolveNativeSelection(entry, eventKey)
+    return reason
+end
+
+local function RemoveNativeRegistration(record)
+    if record.kind == "file" then
+        local api = _G.C_UnitAuras
+        if not (api and api.RemoveAuraSound) then return false end
+        return ns.SafeCall("best-effort-style", api.RemoveAuraSound, record.id)
+    end
+    if not record.owned then return true end
+    local alerts = record.manager:GetAlertsForLayout(record.layout, record.cooldownID,
+        Enum.CDMLayoutMode.AccessOnly)
+    for i, alert in ipairs(alerts or {}) do
+        if alert == record.alert and alert[1] == Enum.CooldownViewerAlertType.Sound
+            and alert[2] == record.event and alert[3] == record.payload then
+            table.remove(alerts, i)
+            record.manager:SetHasPendingChanges(true, true)
+            break
+        end
+    end
+    return true
+end
+
+local function RegisterNativeSound(record)
+    if record.kind == "file" then
+        local api = _G.C_UnitAuras
+        if not (api and api.AddAuraSound and api.RemoveAuraSound) then
+            return false, ns.L["Native aura sound registration is not available yet."]
+        end
+        local info = { unitToken = record.unit, spellID = record.spellID, outputChannel = "Master" }
+        if type(record.sound) == "number" then info.soundFileID = record.sound else info.soundFileName = record.sound end
+        local ok, id = ns.SafeCall("best-effort-style", api.AddAuraSound, record.trigger, info)
+        if not ok or not id then return false, ns.L["Blizzard could not register this aura sound. It will retry after combat or a configuration refresh."] end
+        record.id = id
+        return true
+    end
+    local manager = record.manager
+    record.layout = manager:GetActiveLayout(Enum.CDMLayoutMode.AccessOnly)
+    local alerts = manager:GetAlerts(record.cooldownID, Enum.CDMLayoutMode.AccessOnly)
+    record.alert = FindNativeAlert(alerts, record.event, record.payload)
+    if record.alert then return true end
+    local alert = { Enum.CooldownViewerAlertType.Sound, record.event, record.payload }
+    local ok, status = ns.SafeCall("best-effort-style", manager.AddAlert, manager, record.cooldownID, alert)
+    if not ok or status ~= Enum.CooldownViewerAddAlertStatus.Success then
+        return false, ns.L["Blizzard could not add this sound alert. Each cooldown entry supports at most three native alerts."]
+    end
+    record.alert, record.owned = alert, true
+    record.layout = manager:GetActiveLayout(Enum.CDMLayoutMode.AccessOnly)
+    local ownership = NativeOwnership()
+    local layoutID = record.layout and record.layout.layoutID
+    if ownership and layoutID then
+        record.ownership = ownership
+        local ownershipKey = table.concat({ layoutID, record.cooldownID, record.event, record.payload }, ":")
+        ownership[ownershipKey] = { layoutID = layoutID, cooldownID = record.cooldownID,
+            event = record.event, payload = record.payload }
+    end
+    return true
+end
+
+function Alerts.ReconcileNativeSounds(disabled)
+    if disabled ~= nil then nativeDisabled = disabled == true end
+    if reconciling then return end
+    if InCombatLockdown and InCombatLockdown() then return end
+    if C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret() then return end
+    reconciling = true
+    local desired = {}
+    nativeEvents, nativeStatuses = {}, {}
+    local settingsFrame = _G.CooldownViewerSettings
+    local manager = settingsFrame and settingsFrame.GetLayoutManager and settingsFrame:GetLayoutManager()
+    if manager and manager.IsLoaded and not manager:IsLoaded() then manager = nil end
+    local layout = manager and manager:GetActiveLayout(Enum.CDMLayoutMode.AccessOnly)
+    RecoverNativeOwnership(manager)
+    local ownership = NativeOwnership()
+    local containers = ns.CDMContainers
+    local enabled = not nativeDisabled and (not ns.CDMShared or ns.CDMShared.IsRuntimeEnabled())
+    local all = enabled and containers and containers.GetContainers and containers:GetContainers() or {}
+    for _, container in ipairs(all) do
+        local settings, containerKey = container.settings, container.key
+        if settings and settings.enabled ~= false then
+            local entries
+            if settings.specSpecific and ns.CDMSpellData and ns.CDMSpellData.GetSpecEntries then
+                entries = ns.CDMSpellData:GetSpecEntries(containerKey)
+            end
+            entries = entries or (settings.containerType == "customBar" and settings.entries or settings.ownedSpells) or {}
+            for _, entry in ipairs(entries) do
+                if entry.enabled ~= false then
+                    for eventKey in pairs(auraEvents) do
+                        local selection, reason = ResolveNativeSelection(entry, eventKey)
+                        local key = EventKey(entry, eventKey)
+                        nativeStatuses[containerKey] = nativeStatuses[containerKey] or {}
+                        nativeStatuses[containerKey][key] = reason
+                        if selection then
+                            local records = {}
+                            if selection.kind == "file" then
+                                for spellID in pairs(selection.auraConfig.includeSpellIDs) do
+                                    records[#records + 1] = { kind = "file", unit = selection.auraConfig.unit,
+                                        spellID = spellID, sound = selection.sound, trigger = selection.trigger }
+                                end
+                            elseif manager then
+                                selection.manager, selection.layout = manager, layout
+                                records[1] = selection
+                            else
+                                nativeStatuses[containerKey][key] = ns.L["Blizzard cooldown alert settings are not loaded yet."]
+                            end
+                            for _, record in ipairs(records) do
+                                local signature = NativeSignature(record)
+                                local existing = desired[signature]
+                                if not existing then record.users = {}; desired[signature] = record; existing = record end
+                                existing.users[#existing.users + 1] = { container = containerKey, key = key }
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for signature, record in pairs(nativeRegistrations) do
+        local nextRecord = desired[signature]
+        local missing = false
+        if record.kind == "viewer" then
+            local alerts = record.manager:GetAlertsForLayout(record.layout, record.cooldownID, Enum.CDMLayoutMode.AccessOnly)
+            missing = FindNativeAlert(alerts, record.event, record.payload) ~= record.alert
+        end
+        if not nextRecord or missing or (record.kind == "viewer" and (record.layout ~= layout or record.manager ~= manager
+            or (record.owned and record.ownership ~= ownership))) then
+            if RemoveNativeRegistration(record) then nativeRegistrations[signature] = nil end
+        end
+    end
+    for signature, record in pairs(desired) do
+        local existing = nativeRegistrations[signature]
+        local ok, reason = existing ~= nil, nil
+        if not existing then
+            ok, reason = RegisterNativeSound(record)
+            if ok then nativeRegistrations[NativeSignature(record)] = record end
+        end
+        for _, user in ipairs(record.users) do
+            if ok then nativeEvents[user.key] = true else nativeStatuses[user.container][user.key] = reason end
+        end
+    end
+    reconciling = false
+end
+
+function Alerts.RequestNativeSoundRefresh(disabled)
+    nativeDisabled = disabled == true
+    if refreshPending then return end
+    if C_Timer and C_Timer.After then
+        refreshPending = true
+        C_Timer.After(0, function()
+            refreshPending = false
+            Alerts.ReconcileNativeSounds()
+        end)
+    else
+        Alerts.ReconcileNativeSounds()
+    end
+end
+
+if EventRegistry and EventRegistry.RegisterCallback then
+    EventRegistry:RegisterCallback("CooldownViewerSettings.OnDataChanged", function()
+        if not refreshPending and not reconciling then Alerts.RequestNativeSoundRefresh(nativeDisabled) end
+    end, Alerts)
+end
+
+if type(CreateFrame) == "function" then
+    local soundKitFrame = CreateFrame("Frame")
+    for _, event in ipairs({ "ADDON_LOADED", "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED",
+        "PLAYER_SPECIALIZATION_CHANGED", "PLAYER_EQUIPMENT_CHANGED", "COOLDOWN_VIEWER_DATA_LOADED" }) do
+        soundKitFrame:RegisterEvent(event)
+    end
+    soundKitFrame:SetScript("OnEvent", function(self, event)
+        if not soundKitsLoaded then RefreshSoundKits() end
+        if soundKitsLoaded and self.UnregisterEvent then self:UnregisterEvent("ADDON_LOADED") end
+        if event == "PLAYER_REGEN_ENABLED" then Alerts.ReconcileNativeSounds()
+        else Alerts.RequestNativeSoundRefresh(nativeDisabled) end
+    end)
 end

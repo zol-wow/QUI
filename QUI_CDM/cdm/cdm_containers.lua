@@ -1151,6 +1151,10 @@ local function ShouldDeferContainerLayoutInCombat(trackerKey, settings, runtimeV
         return false
     end
 
+    local bars = ns.CDMBars and ns.CDMBars.GetActiveBars
+        and ns.CDMBars:GetActiveBars(trackerKey)
+    if bars and #bars > 0 and not BUILTIN_NAMES[trackerKey] then return true end
+
     local auraRuns = ns.CDMCustomAuraRuns
     local owner = containers[trackerKey]
     local hasActiveOverlays = auraRuns and auraRuns.HasAuraOverlays
@@ -1452,11 +1456,16 @@ function CDMContainers_API:DeleteContainer(containerKey)
 
     db.containers[containerKey] = nil
     db[containerKey] = nil
+    if ns.CDMAlerts and ns.CDMAlerts.RequestNativeSoundRefresh then
+        ns.CDMAlerts.RequestNativeSoundRefresh()
+    end
 
     local profile = QUICore and QUICore.db and QUICore.db.profile
     if profile then
         PurgeContainerSatellites(profile, containerKey)
     end
+
+    if ns.CDMBars then ns.CDMBars:DeleteContainer(containerKey) end
 
     local frame = containers[containerKey]
     if frame then
@@ -2200,7 +2209,7 @@ local function SyncContainerBarsForVisibility(container)
         return
     end
 
-    local bars = ns.CDMBars:GetActiveBars() or {}
+    local bars = ns.CDMBars:GetActiveBars(container._quiCdmKey) or {}
     for _, bar in ipairs(bars) do
         if bar and bar.GetParent and bar:GetParent() == container then
             SetFrameMouseDisabled(bar)
@@ -2355,11 +2364,15 @@ local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)
         if BUILTIN_NAMES[trackerKey] then
             settings = { enabled = true }
         else
+            if ns.CDMBars then ns.CDMBars:ClearPool(trackerKey) end
             container:Hide()
             return
         end
     end
     if settings.enabled == false then
+        if not BUILTIN_NAMES[trackerKey] and ns.CDMBars then
+            ns.CDMBars:ClearPool(trackerKey)
+        end
         container:Hide()
         return
     end
@@ -2531,6 +2544,27 @@ local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)
             end)
         end
         return
+    end
+
+    if IsBarShape(trackerKey) and not BUILTIN_NAMES[trackerKey] then
+        if InCombatLockdown() then
+            specTrackingPendingRefresh = true
+        elseif ns.CDMBars and ns.CDMIcons.ResolveCustomContainerEntries then
+            if ns.CDMCustomAuraRuns then
+                ns.CDMCustomAuraRuns.Apply(container, nil, nil, nil, false, trackerKey)
+            end
+            local factory = ns.CDMIconFactory
+            local icons = factory and factory:GetIconPool(trackerKey)
+            if icons and #icons > 0 then factory:ClearPool(trackerKey) end
+            ns.CDMBars:Refresh(container, settings, settings.barWidth, trackerKey, nil,
+                ns.CDMIcons.ResolveCustomContainerEntries(trackerKey))
+        end
+        applying[trackerKey] = false
+        return
+    end
+    if not BUILTIN_NAMES[trackerKey] and ns.CDMBars then
+        local bars = ns.CDMBars:GetActiveBars(trackerKey)
+        if bars and #bars > 0 then ns.CDMBars:ClearPool(trackerKey) end
     end
 
     local reuseOnly = runtimeVisibilityRelayout and InCombatLockdown()
@@ -2733,6 +2767,9 @@ local function RunPostLayoutRefresh()
 end
 
 RefreshAll = function(forceSync)
+    if ns.CDMAlerts and ns.CDMAlerts.RequestNativeSoundRefresh then
+        ns.CDMAlerts.RequestNativeSoundRefresh()
+    end
     if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("RefreshAll entry") end
     if not initialized then
         return
@@ -3018,8 +3055,8 @@ local function DisableMouseForEditMode(viewerType)
             icon.clickButton:Hide()
         end
     end
-    if viewerType == "trackedBar" and ns.CDMBars then
-        local bars = ns.CDMBars:GetActiveBars()
+    if IsBarShape(viewerType) and ns.CDMBars then
+        local bars = ns.CDMBars:GetActiveBars(viewerType)
         for _, bar in ipairs(bars) do
             bar:EnableMouse(false)
             _disabledMouseFrames[bar] = "bar"
