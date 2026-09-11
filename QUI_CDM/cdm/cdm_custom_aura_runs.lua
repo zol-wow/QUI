@@ -310,31 +310,47 @@ function Runs.StyleNativeEffects(frame, profile, key)
         effects = {}
         frame[key] = effects
     end
+    local width = profile.iconWidth or profile.iconSize or 39
+    local height = profile.iconHeight or width
+    local style = glow and glow.glowType or "Pixel Glow"
+    local lines = math.max(1, math.floor(glow and glow.lines or 8))
+    local thickness = math.max(1, glow and glow.thickness or 2)
+    local frequency = glow and glow.frequency or 0.25
+    local scale = glow and glow.scale or 1
+    local color = glow and glow.color
+    local r, g, b, a = color and color[1] or 1, color and (color[2] or 1) or 0.85,
+        color and (color[3] or 1) or 0.3, color and color[4] or 1
+    local config = effects.config
+    if not glow and config == false then return effects end
+    if glow and config and config.width == width and config.height == height
+        and config.style == style and config.lines == lines and config.thickness == thickness
+        and config.frequency == frequency and config.scale == scale
+        and config.r == r and config.g == g and config.b == b and config.a == a then
+        return effects
+    end
+    effects.config = nil
     for _, effect in ipairs(effects) do
         effect.group:Stop()
         effect.playing = false
         effect.texture:SetAlpha(0)
         effect.enabled = false
     end
-    if not glow or not frame.CreateTexture then return effects end
+    if not glow or not frame.CreateTexture then
+        effects.config = false
+        return effects
+    end
     local host = frame._quiCDMNativeEffectHost
     if not host then
         host = CreateFrame("Frame", nil, frame)
         host:SetAllPoints(frame)
         frame._quiCDMNativeEffectHost = host
     end
-    local color = glow.color or { 1, 0.85, 0.3, 1 }
-    local width = profile.iconWidth or profile.iconSize or 39
-    local height = profile.iconHeight or width
-    local style = glow.glowType or "Pixel Glow"
     local flipbook = style == "Proc Glow" or style == "Button Glow"
-    local lines = math.max(1, math.floor(glow.lines or 8))
-    local thickness = math.max(1, glow.thickness or 2)
     local length = math.max(thickness, math.min(width, height, math.floor((width + height) * (2 / lines - 0.1))))
     local segments = style == "Pixel Glow" and math.ceil(length / thickness) or 1
     local layers = style == "Autocast Shine" and 4 or 1
     local count = flipbook and 1 or lines * segments * layers
-    local period = 1 / math.max(0.01, math.abs(glow.frequency or 0.25))
+    local period = 1 / math.max(0.01, math.abs(frequency))
     local perimeter = (width + height) * 2
     for i = 1, count do
         local effect = effects[i]
@@ -346,12 +362,26 @@ function Runs.StyleNativeEffects(frame, profile, key)
         effect.enabled = true
         local texture, group = effect.texture, effect.group
         texture:ClearAllPoints()
-        texture:SetVertexColor(color[1] or 1, color[2] or 1, color[3] or 1, color[4] or 1)
+        texture:SetVertexColor(r, g, b, a)
         texture:SetAlpha(1)
         texture:SetTexCoord(0, 1, 0, 1)
         texture:SetBlendMode("BLEND")
-        group:RemoveAnimations()
-        group:SetLooping("REPEAT")
+        local animationKind = flipbook and "FlipBook" or "Path"
+        if effect.animationKind ~= animationKind then
+            group:RemoveAnimations()
+            effect.animationKind = nil
+            effect.animation = group:CreateAnimation(animationKind)
+            effect.animation:SetTarget(texture)
+            effect.points = nil
+            if not flipbook then
+                effect.points = {}
+                for order = 1, 5 do
+                    effect.points[order] = effect.animation:CreateControlPoint(nil, nil, order)
+                end
+            end
+            group:SetLooping("REPEAT")
+            effect.animationKind = animationKind
+        end
         if flipbook then
             texture:SetPoint("CENTER", frame, "CENTER", 0, 0)
             texture:SetSize(width * 1.4, height * 1.4)
@@ -360,8 +390,7 @@ function Runs.StyleNativeEffects(frame, profile, key)
             else
                 texture:SetTexture("Interface\\SpellActivationOverlay\\IconAlertAnts")
             end
-            local animation = group:CreateAnimation("FlipBook")
-            animation:SetTarget(texture)
+            local animation = effect.animation
             animation:SetDuration(math.max(0.5, math.min(2, period * 0.25)))
             animation:SetFlipBookRows(style == "Proc Glow" and 6 or 5)
             animation:SetFlipBookColumns(5)
@@ -370,7 +399,7 @@ function Runs.StyleNativeEffects(frame, profile, key)
             animation:SetFlipBookFrameHeight(style == "Proc Glow" and 0 or 48 / 256)
         else
             local layer = math.floor((i - 1) / lines) + 1
-            local size = style == "Autocast Shine" and (8 - layer) * (glow.scale or 1) or thickness
+            local size = style == "Autocast Shine" and (8 - layer) * scale or thickness
             texture:SetSize(size, size)
             if style == "Autocast Shine" then
                 texture:SetTexture("Interface\\Artifacts\\Artifacts")
@@ -399,20 +428,23 @@ function Runs.StyleNativeEffects(frame, profile, key)
                 corners[#corners + 1] = distance
             end
             table.sort(corners)
-            local path = group:CreateAnimation("Path")
-            path:SetTarget(texture)
+            local path = effect.animation
             path:SetDuration(period * (style == "Autocast Shine" and layer or 1))
             path:SetCurveType("NONE")
             for order = 1, #corners do
-                local corner = (glow.frequency or 0.25) < 0 and #corners + 1 - order or order
+                local corner = frequency < 0 and #corners + 1 - order or order
                 local cx, cy = Point(corners[corner])
-                path:CreateControlPoint(nil, nil, order):SetOffset(cx - x, cy - y)
+                effect.points[order]:SetOffset(cx - x, cy - y)
             end
-            path:CreateControlPoint(nil, nil, #corners + 1):SetOffset(0, 0)
+            effect.points[5]:SetOffset(0, 0)
         end
         group:Play()
         effect.playing = true
     end
+    effects.config = {
+        width = width, height = height, style = style, lines = lines, thickness = thickness,
+        frequency = frequency, scale = scale, r = r, g = g, b = b, a = a,
+    }
     return effects
 end
 
