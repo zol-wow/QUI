@@ -312,6 +312,7 @@ function Runs.StyleNativeEffects(frame, profile, key)
     end
     for _, effect in ipairs(effects) do
         effect.group:Stop()
+        effect.playing = false
         effect.texture:SetAlpha(0)
         effect.enabled = false
     end
@@ -410,6 +411,7 @@ function Runs.StyleNativeEffects(frame, profile, key)
             path:CreateControlPoint(nil, nil, #corners + 1):SetOffset(0, 0)
         end
         group:Play()
+        effect.playing = true
     end
     return effects
 end
@@ -420,7 +422,12 @@ function Runs.SetNativeProcGlow(icon, active)
     if not icon._quiNativeProcGlows then return end
     for effects in pairs(icon._quiNativeProcGlows) do
         for _, effect in ipairs(effects) do
-            effect.texture:SetAlpha(active and effect.enabled and 1 or 0)
+            local playing = active == true and effect.enabled == true
+            if effect.playing ~= playing then
+                if playing then effect.group:Play() else effect.group:Stop() end
+                effect.playing = playing
+            end
+            effect.texture:SetAlpha(playing and 1 or 0)
         end
     end
 end

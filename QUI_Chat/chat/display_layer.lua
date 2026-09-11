@@ -418,7 +418,7 @@ local function CreateWindow(id)
 
     local cd = GetCustomDisplaySettings()
     local linkHandler = CreateFrame(
-        "ScrollingMessageFrame", smfName .. "LinkHandler", container, "ChatFrameTemplate")
+        "ScrollingMessageFrame", smfName .. "LinkHandler", container, "ChatFrameTemplate,InlineHyperlinkFrameTemplate")
     win.linkHandler = linkHandler
     linkHandler:SetAllPoints(container)
     linkHandler:UnregisterAllEvents()
@@ -428,7 +428,8 @@ local function CreateWindow(id)
     linkHandler:EnableMouseWheel(false)
     if linkHandler.SetToplevel then linkHandler:SetToplevel(false) end
     if linkHandler.ScrollBar then linkHandler.ScrollBar:Hide() end
-    linkHandler.editBox = _G.ChatFrame1EditBox
+    linkHandler:SetScript("OnHyperlinkEnter", _G.ChatFrameMixin.OnHyperlinkEnter)
+    linkHandler:SetScript("OnHyperlinkLeave", _G.ChatFrameMixin.OnHyperlinkLeave)
     linkHandler:SetHyperlinksEnabled(true)
     linkHandler:Show()
 
