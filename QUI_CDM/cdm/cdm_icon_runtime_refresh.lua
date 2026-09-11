@@ -274,6 +274,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         catalogScopeOptionsScratch = { includeItems = false },
         spellScopeRefreshOptionsScratch = { refreshRuntime = true },
         itemScopeRefreshOptionsScratch = { refreshRuntime = true },
+        barQueue = { scheduled = false },
         spellQueue = {
             ids = {},
             frame = nil,
@@ -311,11 +312,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         return InCombatLockdown and InCombatLockdown() or false
     end
 
-    local function refreshBars()
-        if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
-        if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
-    end
-
     local function armQueue(state, onUpdate)
         state.scheduled = true
         state.elapsed = 0
@@ -333,6 +329,24 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         if state.frame then
             state.frame:SetScript("OnUpdate", nil)
             if state.frame.Hide then state.frame:Hide() end
+        end
+    end
+
+    local function drainBarQueue()
+        disarmQueue(controller.barQueue)
+        if not isRuntimeEnabled(callbacks) then
+            if callbacks.setBarsDirty then callbacks.setBarsDirty(false) end
+            return
+        end
+        if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
+    end
+
+    local function refreshBars(immediate)
+        if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
+        if immediate or not inCombat() then
+            drainBarQueue()
+        elseif not controller.barQueue.scheduled then
+            armQueue(controller.barQueue, drainBarQueue)
         end
     end
 
@@ -1013,11 +1027,11 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             return
         end
         if event == "PLAYER_REGEN_DISABLED" then
-            refreshBars()
+            refreshBars(true)
             return
         end
         if event == "PLAYER_REGEN_ENABLED" then
-            refreshBars()
+            refreshBars(true)
             controller:DrainDeferredFullRefresh()
             if callbacks.refreshPendingSecureAttributes then
                 callbacks.refreshPendingSecureAttributes()

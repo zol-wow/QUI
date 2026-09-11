@@ -524,7 +524,7 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
                 local placement = segment.placement
                 local padding = placement.rowConfig and placement.rowConfig.padding or 0
                 local w, h = PlacementRect(placement)
-                if not dynamic then
+                if not dynamic and not segment.wrapper.reanchored then
                     container._quiBuffFlowProxies = container._quiBuffFlowProxies or {}
                     local proxyRows = container._quiBuffFlowProxies
                     proxyRows[row] = proxyRows[row] or {}
@@ -533,27 +533,25 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
                         "DisableUntrustedLayoutScriptsTemplate")
                     frame = proxies[index]
                     frame:SetSize(w, h)
-                    if segment.wrapper.reanchored then
-                        bridge:OverlayRect(segment.frame, frame, "TOPLEFT", 0, 0, "BOTTOMRIGHT", 0, 0)
-                    else
-                        segment.frame:ClearAllPoints()
-                        segment.frame:SetPoint("CENTER", frame, "CENTER", 0, 0)
-                    end
+                    segment.frame:ClearAllPoints()
+                    segment.frame:SetPoint("CENTER", frame, "CENTER", 0, 0)
                 end
-                frame:ClearAllPoints()
-                if segments.count == 1 then
-                    local offset = (padding + 1) / 2 * (forward and 1 or -1)
-                    local rc = placement.rowConfig
-                    frame:SetPoint("CENTER", container, "CENTER",
-                        vertical and placement.x or ((rc and rc.xOffset or 0) + offset),
-                        vertical and ((rc and rc.yOffset or 0) + offset) or placement.y)
-                elseif previous then
-                    local offset = (previousDynamic and -1 or padding) * (forward and 1 or -1)
-                    frame:SetPoint(anchor, previous, opposite, vertical and 0 or offset, vertical and offset or 0)
-                else
-                    local offset = (vertical and h or w) / 2 * (forward and -1 or 1)
-                    frame:SetPoint(anchor, container, "CENTER", placement.x + (vertical and 0 or offset),
-                        placement.y + (vertical and offset or 0))
+                if not segment.wrapper.reanchored then
+                    frame:ClearAllPoints()
+                    if segments.count == 1 then
+                        local offset = (padding + 1) / 2 * (forward and 1 or -1)
+                        local rc = placement.rowConfig
+                        frame:SetPoint("CENTER", container, "CENTER",
+                            vertical and placement.x or ((rc and rc.xOffset or 0) + offset),
+                            vertical and ((rc and rc.yOffset or 0) + offset) or placement.y)
+                    elseif previous then
+                        local offset = (previousDynamic and -1 or padding) * (forward and 1 or -1)
+                        frame:SetPoint(anchor, previous, opposite, vertical and 0 or offset, vertical and offset or 0)
+                    else
+                        local offset = (vertical and h or w) / 2 * (forward and -1 or 1)
+                        frame:SetPoint(anchor, container, "CENTER", placement.x + (vertical and 0 or offset),
+                            placement.y + (vertical and offset or 0))
+                    end
                 end
                 previous, previousDynamic = frame, dynamic
             end
