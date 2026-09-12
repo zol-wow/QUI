@@ -43,6 +43,11 @@ local function Apply()
             if sm[key] then want[key] = true end
         end
     end
+    local chat = ns.QUI and ns.QUI.Chat
+    local suppress = chat and chat.BlizzardSuppress
+    if suppress and suppress.IsActive and suppress.IsActive() then
+        want.iface_whisper = true
+    end
 
     local toUnmute, toMute = ComputeMuteDelta(applied, want)
     for _, key in ipairs(toUnmute) do

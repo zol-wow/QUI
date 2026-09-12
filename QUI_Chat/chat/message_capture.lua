@@ -336,6 +336,8 @@ end
 local WHISPER_POPOUT_KEYS = I.WHISPER_TYPE_KEYS
 
 local function GetWhisperMode()
+    local Suppress = ns.QUI.Chat.BlizzardSuppress
+    if Suppress and Suppress.GetWhisperMode then return Suppress.GetWhisperMode() end
     if type(_G.GetCVar) ~= "function" then return nil end
     local ok, value = ns.SafeCall("chain-next", _G.GetCVar, "whisperMode")
     if ok then return value end
@@ -383,13 +385,6 @@ local function OnCaptureEvent(_, event, ...)
 
     MaybeAutoAddChannel(event, p)
 
-    if (event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER") and p.sender then
-        local CFU = _G.ChatFrameUtil
-        if CFU and CFU.SetLastTellTarget then
-            ns.SafeCall("sink-forward", CFU.SetLastTellTarget, p.sender, typeKey)
-        end
-    end
-
     local colorKey = typeKey
     if (typeKey == "CHANNEL" or typeKey == "CHANNEL_NOTICE") and p.chNum and p.chNum > 0 then
         colorKey = "CHANNEL" .. p.chNum
@@ -400,9 +395,14 @@ local function OnCaptureEvent(_, event, ...)
     do
         local Conv = ns.QUI.Chat.ConversationManager
         local info = Conv and Conv.WHISPER_EVENTS and Conv.WHISPER_EVENTS[event]
-        if info and p.sender then
-            convKey = Conv.DeriveKey(info.chatType, p.sender)
+        if info then
             convName = p.sender
+            if IsSecret(p.rawSender) then convName = p.rawSender end
+            if IsSecret(convName) then
+                convKey = "WHISPERS"
+            elseif convName then
+                convKey = Conv.DeriveKey(info.chatType, convName)
+            end
         end
     end
     local whisperPopoutOnly = IsWhisperPopoutOnly(typeKey, convKey)

@@ -46,6 +46,8 @@ local function WhisperSettings()
 end
 
 local function GetWhisperMode()
+    local Suppress = ns.QUI.Chat.BlizzardSuppress
+    if Suppress and Suppress.GetWhisperMode then return Suppress.GetWhisperMode() end
     if type(_G.GetCVar) ~= "function" then return nil end
     local ok, value = pcall(_G.GetCVar, "whisperMode")
     if ok then return value end
@@ -88,7 +90,8 @@ local function RefreshAfterChange()
 end
 
 function Conv.Open(chatType, target, windowID, activate)
-    local key = Conv.DeriveKey(chatType, target)
+    local shared = IsSecret(target)
+    local key = shared and "WHISPERS" or Conv.DeriveKey(chatType, target)
     if not key then return nil end
     local existing = conversations[key]
     if existing then
@@ -101,14 +104,15 @@ function Conv.Open(chatType, target, windowID, activate)
         return key
     end
     windowID = ClampWindowID(windowID)
-    local name = target
-    if chatType == "WHISPER" and _G.Ambiguate then
+    local name = shared and (_G.WHISPERS or "Whispers") or target
+    if not shared and chatType == "WHISPER" and _G.Ambiguate then
         name = _G.Ambiguate(target, "short")
     end
     conversations[key] = {
         key      = key,
         chatType = chatType,
-        target   = target,
+        target   = not shared and target or nil,
+        shared   = shared or nil,
         name     = name,
         windowID = windowID,
     }
@@ -127,12 +131,12 @@ end
 
 function Conv.Close(key)
     if not conversations[key] then return end
+    if key == Conv.GetPreTargetedKey() then
+        Conv.ClearPreTarget()
+    end
     conversations[key] = nil
     for i = #order, 1, -1 do
         if order[i] == key then table.remove(order, i) end
-    end
-    if key == Conv.GetPreTargetedKey() then
-        Conv.ClearPreTarget()
     end
     RefreshAfterChange()
 end
@@ -151,7 +155,12 @@ local preTargetedKey
 
 function Conv.PreTargetEditBox(key)
     local c = conversations[key]
-    local eb = _G.ChatFrame1EditBox
+    if c and c.shared then
+        Conv.ClearPreTarget()
+        return
+    end
+    local util = _G.ChatFrameUtil
+    local eb = util and util.ChooseBoxForSend and util.ChooseBoxForSend() or _G.ChatFrame1EditBox
     if not (c and eb) then return end
     if eb.HasFocus and eb:HasFocus() then
         if eb.HasText then
@@ -174,9 +183,18 @@ end
 
 function Conv.ClearPreTarget()
     if not preTargetedKey then return end
+    local c = conversations[preTargetedKey]
     preTargetedKey = nil
-    local eb = _G.ChatFrame1EditBox
+    local util = _G.ChatFrameUtil
+    local eb = util and util.ChooseBoxForSend and util.ChooseBoxForSend() or _G.ChatFrame1EditBox
     if not eb then return end
+    local chatType, target
+    if eb.GetChatType then chatType = eb:GetChatType()
+    else chatType = eb:GetAttribute("chatType") end
+    if eb.GetTellTarget then target = eb:GetTellTarget()
+    else target = eb:GetAttribute("tellTarget") end
+    if IsSecret(chatType) or IsSecret(target) or not c
+        or chatType ~= c.chatType or target ~= c.target then return end
     if eb.HasFocus and eb:HasFocus() then
         if eb.HasText then
             if eb:HasText() then return end
@@ -193,14 +211,14 @@ function Conv.OnBlizzardPopout(chatType, chatTarget)
     local wt = WhisperSettings()
     if not (wt and wt.translatePopout) then return end
     if chatType ~= "WHISPER" and chatType ~= "BN_WHISPER" then return end
-    if IsSecret(chatTarget) or type(chatTarget) ~= "string" or chatTarget == "" then return end
+    if not IsSecret(chatTarget) and (type(chatTarget) ~= "string" or chatTarget == "") then return end
     local Display = ns.QUI.Chat.DisplayLayer
     local windowID = (Display and Display.GetActiveWindow and Display.GetActiveWindow()) or 1
-    Conv.Open(chatType, chatTarget, windowID, true)
+    return Conv.Open(chatType, chatTarget, windowID, true)
 end
 
 Store.OnAppend(function(entry)
-    if not entry.w or conversations[entry.w] then return end
+    if entry.w and conversations[entry.w] then return end
     local info = WHISPER_EVENTS[entry.e]
     if not info then return end
     local wt = WhisperSettings()
@@ -209,6 +227,7 @@ Store.OnAppend(function(entry)
         if info.incoming then want = wt.autoIncoming else want = wt.autoOutgoing end
     end
     if not want then return end
-    if IsSecret(entry.wn) or type(entry.wn) ~= "string" or entry.wn == "" then return end
-    Conv.Open(info.chatType, entry.wn, wt and wt.targetWindow or 1, false)
+    local target = entry.wn
+    if not IsSecret(target) and (type(target) ~= "string" or target == "") then return end
+    Conv.Open(info.chatType, target, wt and wt.targetWindow or 1, false)
 end)

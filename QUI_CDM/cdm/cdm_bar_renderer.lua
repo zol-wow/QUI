@@ -1,4 +1,7 @@
 local _, ns = ...
+
+local SetGroupCandidateFilters = ns.AuraSkin and ns.AuraSkin.SetGroupCandidateFilters
+    or function(container, key, filters) container:SetAuraGroupCandidateFilters(key, filters) end
 local Helpers = ns.Helpers
 local QUICore = ns.Addon
 local LSM = ns.LSM
@@ -117,47 +120,41 @@ local function RearmVisibleDurationBarTimer(bar, deferOneFrame)
     return ok
 end
 
-local function AuraInstanceListContains(list, auraInstanceID)
-    if type(list) ~= "table" or auraInstanceID == nil then return false end
-    for _, listedAuraInstanceID in ipairs(list) do
-        if listedAuraInstanceID == auraInstanceID then
-            return true
+local poolsByKey = { trackedBar = { bars = {}, runs = {}, key = "trackedBar" } }
+local statesByContainer = {}
+
+local function GetBarState(container, containerKey)
+    local state = statesByContainer[container]
+    if not state then
+        containerKey = containerKey or "trackedBar"
+        state = poolsByKey[containerKey]
+        if not state then
+            state = { bars = {}, runs = {}, key = containerKey }
+            poolsByKey[containerKey] = state
         end
+        state.container = container
+        statesByContainer[container] = state
     end
-    return false
+    return state
 end
 
-local function BarAuraUnitMatches(bar, unit)
-    if not unit then return true end
-    local barUnit = bar and (bar._auraUnit or bar._auraDataUnit)
-    return barUnit == nil or barUnit == unit
+local function NextBar(pools, previous)
+    local state = previous and previous._barState
+    local key = state and state.key
+    local index = previous and previous._barIndex or 0
+    if not state then key, state = next(pools) end
+    while state do
+        index = index + 1
+        if state.bars[index] then return state.bars[index] end
+        key, state = next(pools, key)
+        index = 0
+    end
 end
 
-function CDMBars.MarkBarAuraRefresh(bar, unit, updateInfo)
-    if not (bar and bar._active and BarAuraUnitMatches(bar, unit)) then
-        return false
-    end
-
-    local auraInstanceID = bar._auraInstanceID
-    if updateInfo == nil or updateInfo.isFullUpdate == true then
-        if auraInstanceID ~= nil or bar._durObj ~= nil then
-            bar._forceTimerDurationRebind = true
-            return true
-        end
-        return false
-    end
-
-    if auraInstanceID == nil then return false end
-    if AuraInstanceListContains(updateInfo.updatedAuraInstanceIDs, auraInstanceID)
-        or AuraInstanceListContains(updateInfo.removedAuraInstanceIDs, auraInstanceID) then
-        bar._forceTimerDurationRebind = true
-        return true
-    end
-
-    return false
+local function EnumerateBars()
+    return NextBar, poolsByKey
 end
 
-local barPool = {}
 local recyclePool = {}
 local barTimerFrame = CreateFrame("Frame")
 local barTimerGroup = barTimerFrame:CreateAnimationGroup()
@@ -167,7 +164,7 @@ barTimerGroup:SetLooping("REPEAT")
 
 local function SetupDebugInstrumentation()
     local mp = ns._memprobes or {}; ns._memprobes = mp
-    mp[#mp + 1] = { name = "CDM_barPool",      tbl = barPool }
+    mp[#mp + 1] = { name = "CDM_barPool",      tbl = poolsByKey }
     mp[#mp + 1] = { name = "CDM_barRecycle",   tbl = recyclePool }
 end
 if ns.DebugRegister then
@@ -175,9 +172,6 @@ if ns.DebugRegister then
 else
     SetupDebugInstrumentation()
 end
-
-local _lastContainer = nil
-local _lastSettings = nil
 
 local _pendingResize = nil
 
@@ -226,11 +220,12 @@ end
 
 -- C_CurveUtil.EvaluateColorValueFromBoolean is a C-side helper that
 
-local function CreateBar(parent)
-    local bar = CreateFrame("Frame", nil, parent)
+local function CreateBar(parent, nativeButton)
+    local template = "DisableUntrustedLayoutScriptsTemplate"
+    local bar = nativeButton or CreateFrame("Frame", nil, parent, template)
     bar:SetSize(200, 25)
 
-    local statusBar = CreateFrame("StatusBar", nil, bar)
+    local statusBar = CreateFrame("StatusBar", nil, bar, template)
     ClearStatusBar(statusBar)
     bar.StatusBar = statusBar
 
@@ -243,7 +238,7 @@ local function CreateBar(parent)
     bg:SetColorTexture(0, 0, 0, 1)
     bar.Background = bg
 
-    local iconContainer = CreateFrame("Frame", nil, bar)
+    local iconContainer = CreateFrame("Frame", nil, bar, template)
     iconContainer:SetSize(25, 25)
     bar.IconContainer = iconContainer
 
@@ -252,7 +247,7 @@ local function CreateBar(parent)
     iconTex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
     bar.IconTexture = iconTex
 
-    local borderFrame = CreateFrame("Frame", nil, bar)
+    local borderFrame = CreateFrame("Frame", nil, bar, template)
     borderFrame:SetFrameLevel((bar.GetFrameLevel and bar:GetFrameLevel() or 1) + 5)
     borderFrame._top = borderFrame:CreateTexture(nil, "OVERLAY", nil, 7)
     borderFrame._top:SetColorTexture(0, 0, 0, 1)
@@ -264,7 +259,7 @@ local function CreateBar(parent)
     borderFrame._right:SetColorTexture(0, 0, 0, 1)
     bar.BorderContainer = borderFrame
 
-    local textOverlay = CreateFrame("Frame", nil, statusBar)
+    local textOverlay = CreateFrame("Frame", nil, statusBar, template)
     textOverlay:SetAllPoints(statusBar)
     textOverlay:SetFrameLevel((statusBar.GetFrameLevel and statusBar:GetFrameLevel() or 1) + 2)
     bar.TextOverlay = textOverlay
@@ -293,7 +288,7 @@ local function CreateBar(parent)
     bar._cSideFill = nil
     bar._preferDurObjFill = nil
 
-    bar:Hide()
+    if not nativeButton then bar:Hide() end
     return bar
 end
 
@@ -316,16 +311,24 @@ local function GetBarSpellData(bar)
     }
 end
 
-local function GetBarSpellHideDurationOverride(bar)
+local function GetBarSpellOverride(bar)
     local entry = bar and bar._spellEntry
     if not entry then return nil end
     local CDMSpellData = ns.CDMSpellData
     if not CDMSpellData or not entry.viewerType then return nil end
     local spellID = entry.spellID or entry.id
     if not spellID then return nil end
-    local ov = CDMSpellData:GetSpellOverride(entry.viewerType, spellID)
-    if ov and ov.hideDurationText == true then return true end
-    return nil
+    return CDMSpellData:GetSpellOverride(entry.viewerType, spellID)
+end
+
+local function GetBarSpellHideDurationOverride(bar)
+    local ov = GetBarSpellOverride(bar)
+    return ov and ov.hideDurationText == true or nil
+end
+
+local function IsBarHidden(bar)
+    local ov = GetBarSpellOverride(bar)
+    return ov and ov.hidden == true or false
 end
 
 ---@type fun(...)
@@ -335,14 +338,6 @@ local function ReadBoolean(value)
     if issecretvalue and issecretvalue(value) then return nil end -- @secret-policy: reject-secret-value
     if type(value) == "boolean" then return value end
     return nil
-end
-
-local function ReadNumber(value, fallback)
-    if issecretvalue and issecretvalue(value) then return fallback end
-    local valueType = type(value)
-    if valueType == "number" then return value end
-    if valueType == "string" then return tonumber(value) end
-    return fallback
 end
 
 local function WrapStackSuffix(stackValue)
@@ -589,14 +584,7 @@ local function ShouldHideAuraDurationText(r)
     if not r or not r.isActive then return false end
     if r.isTotemInstance then return false end
     if r.hideDurationText or r.hasExpirationTime == false then return true end
-    if not r.auraData then return false end
-    if InCombatLockdown() then return false end
-
-    local duration = ReadNumber(r.auraData.duration, nil)
-    if duration == nil then
-        return true
-    end
-    return duration <= 0
+    return false
 end
 
 local function EnsureBarTimerRunning()
@@ -980,6 +968,231 @@ function CDMBars.CreateForPreview(parent)
     return CreateBar(parent)
 end
 
+local function IsNativeAuraEntry(entry)
+    if not entry or entry._isTotemInstance or entry._blzFrame then return false end
+    if entry.kind == "aura" or entry.isAura == true then return true end
+    if entry.displayMode ~= "auraOnly" or (entry.type ~= "item" and entry.type ~= "trinket"
+        and entry.type ~= "slot" and entry.type ~= "consumable") then return false end
+    local shared = ns.CDMShared
+    local db = shared and shared.GetContainerDB and shared.GetContainerDB(entry.viewerType)
+    return shared and shared.IsCustomBarContainer and shared.IsCustomBarContainer(db) or false
+end
+
+local function NativeAuraConfig(entry)
+    local runs = ns.CDMCustomAuraRuns
+    if runs and runs.ResolveAuraConfig then
+        return runs.ResolveAuraConfig(entry)
+    end
+    return nil
+end
+
+local function StyleNativeBar(button, entry, settings)
+    if not button.StatusBar then
+        CreateBar(button:GetParent(), button)
+        local count = button.TextOverlay:CreateFontString(nil, "OVERLAY", nil, 7)
+        count:SetPoint("LEFT", button.NameText, "RIGHT", 3, 0)
+        button.CountText = count
+    end
+    button:EnableMouse(false)
+    button._spellEntry = entry
+    button._spellID = entry.overrideSpellID or entry.spellID or entry.id
+    CDMBars.ConfigureBar(button, settings, settings.barWidth, true)
+    CJKFont(button.CountText, GetGeneralFont(), settings.textSize or 14, GetGeneralFontOutline())
+    button.CountText:SetAlpha(button._durationTextBaseAlpha or 0)
+    button:SetIcon(button.IconTexture)
+    button:SetSpellName(button.NameText)
+    button:SetApplicationCount(button.CountText, {})
+    button:SetDurationBar(button.StatusBar, {
+        direction = STATUS_BAR_TIMER_REMAINING,
+        interpolation = STATUS_BAR_INTERPOLATION_IMMEDIATE,
+    })
+    if GetBarSpellHideDurationOverride(button) then
+        button:ClearDurationText()
+        button.DurationText:SetText("")
+    else
+        local formatter = GetBarDurationFormatter()
+        button:SetDurationText(button.DurationText, formatter and { textFormatter = formatter } or {})
+    end
+end
+
+local function NativeAuraConfigurationBlocked()
+    return InCombatLockdown() or (C_Secrets and C_Secrets.ShouldAurasBeSecret
+        and C_Secrets.ShouldAurasBeSecret())
+end
+
+local function ConfigureNativeRuns(state, settings)
+    if NativeAuraConfigurationBlocked() then return end
+    local vertical = settings.orientation == "vertical"
+    local grow = settings.growUp ~= false
+    local spacing = settings.spacing or 2
+    local width = vertical and (settings.barHeight or 25) or (settings.barWidth or 215)
+    local height = vertical and (settings.barWidth or 215) or (settings.barHeight or 25)
+    local count = 0
+    for _, bar in ipairs(state.bars) do
+        bar._nativeAuraRun = nil
+        if not IsBarHidden(bar) and not bar._blzCooldownID and IsNativeAuraEntry(bar._spellEntry) then
+            local config = NativeAuraConfig(bar._spellEntry)
+            if config then
+                count = count + 1
+                local run = state.runs[count]
+                if not run then
+                    run = { container = CreateFrame("AuraContainer", nil, state.container, "CustomAuraContainerTemplate"), frames = { bar1 = {} } }
+                    state.runs[count] = run
+                end
+                run.entry = bar._spellEntry
+                run.container:SetUnit(config.unit)
+                local filters = { includeSpellIDs = config.includeSpellIDs }
+                if not next(config.includeSpellIDs or {}) then filters = { maxDuration = 0 } end
+                if not run.allocated then
+                    run.allocated = true
+                    run.container:AddAuraGroup("bar1", config.filter, {
+                        maxFrameCount = 1,
+                        candidateFilters = filters,
+                        initializeFrame = function(button)
+                            run.frames.bar1[#run.frames.bar1 + 1] = button
+                            StyleNativeBar(button, run.entry, state.settings)
+                        end,
+                    })
+                else
+                    run.container:SetAuraGroupFilterString("bar1", config.filter)
+                    SetGroupCandidateFilters(run.container, "bar1", filters)
+                    for _, button in ipairs(run.frames.bar1) do StyleNativeBar(button, run.entry, settings) end
+                end
+                run.container:SetFlowLayoutAxis(vertical
+                    and AnchorUtil.FlowLayoutAxis.Horizontal or AnchorUtil.FlowLayoutAxis.Vertical)
+                run.container:SetFlowLayoutAnchorPoint(vertical
+                    and (grow and "LEFT" or "RIGHT") or (grow and "BOTTOM" or "TOP"))
+                run.container:SetFlowLayoutGrowthDirection(
+                    grow and AnchorUtil.FlowDirection.Right or AnchorUtil.FlowDirection.Left,
+                    grow and AnchorUtil.FlowDirection.Up or AnchorUtil.FlowDirection.Down)
+                run.container:SetFlowLayoutMaximumLineSize(math.huge)
+                run.container:SetAuraGroupLayout("bar1", {
+                    elementWidth = width + (vertical and spacing + 1 or 0),
+                    elementHeight = height + (vertical and 0 or spacing + 1),
+                    elementSpacing = -1,
+                })
+                run.container:SetEnabled(true)
+                run.container:Show()
+                bar._nativeAuraRun = run
+            end
+        end
+    end
+    for i = count + 1, #state.runs do
+        state.runs[i].container:SetEnabled(false)
+        state.runs[i].container:Hide()
+    end
+end
+
+local function ConfigureItemAuraOverlays(state, settings)
+    if NativeAuraConfigurationBlocked() then return end
+    state.overlays = state.overlays or {}
+    local count = 0
+    for _, bar in ipairs(state.bars) do
+        bar._nativeAuraOverlay = nil
+        local entry = bar._spellEntry
+        local item = entry and (entry.type == "item" or entry.type == "trinket"
+            or entry.type == "slot" or entry.type == "consumable")
+        local config = item and not IsBarHidden(bar) and not IsNativeAuraEntry(entry) and NativeAuraConfig(entry)
+        if config then
+            count = count + 1
+            local overlay = state.overlays[count]
+            if not overlay then
+                overlay = {
+                    container = CreateFrame("AuraContainer", nil, state.container, "CustomAuraContainerTemplate"),
+                    entry = entry,
+                    frames = {},
+                }
+                state.overlays[count] = overlay
+                overlay.container:SetUnit(config.unit)
+                overlay.container:AddAuraGroup("aura", config.filter, {
+                    maxFrameCount = 1,
+                    candidateFilters = { includeSpellIDs = config.includeSpellIDs },
+                    initializeFrame = function(button)
+                        overlay.frames[#overlay.frames + 1] = button
+                        StyleNativeBar(button, overlay.entry, state.settings)
+                    end,
+                })
+            else
+                overlay.entry = entry
+                overlay.container:SetUnit(config.unit)
+                overlay.container:SetAuraGroupFilterString("aura", config.filter)
+                SetGroupCandidateFilters(overlay.container, "aura", { includeSpellIDs = config.includeSpellIDs })
+                for _, button in ipairs(overlay.frames) do StyleNativeBar(button, entry, settings) end
+            end
+            local vertical = settings.orientation == "vertical"
+            local grow = settings.growUp ~= false
+            local spacing = settings.spacing or 2
+            overlay.container:SetFlowLayoutAxis(vertical
+                and AnchorUtil.FlowLayoutAxis.Horizontal or AnchorUtil.FlowLayoutAxis.Vertical)
+            overlay.container:SetFlowLayoutAnchorPoint(vertical
+                and (grow and "LEFT" or "RIGHT") or (grow and "BOTTOM" or "TOP"))
+            overlay.container:SetFlowLayoutGrowthDirection(
+                grow and AnchorUtil.FlowDirection.Right or AnchorUtil.FlowDirection.Left,
+                grow and AnchorUtil.FlowDirection.Up or AnchorUtil.FlowDirection.Down)
+            overlay.container:SetFlowLayoutMaximumLineSize(math.huge)
+            overlay.container:SetAuraGroupLayout("aura", {
+                elementWidth = vertical and ((settings.barHeight or 25) + spacing + 1) or (settings.barWidth or 215),
+                elementHeight = vertical and (settings.barWidth or 215) or ((settings.barHeight or 25) + spacing + 1),
+                elementSpacing = -1,
+                groupSpacing = -1,
+            })
+            overlay.container:SetEnabled(true)
+            overlay.container:Show()
+            bar._nativeAuraOverlay = overlay
+        end
+    end
+    for i = count + 1, #state.overlays do
+        state.overlays[i].container:SetEnabled(false)
+        state.overlays[i].container:Hide()
+    end
+end
+
+local function LayoutNativeRuns(state, settings, editMode)
+    local previous, previousRun
+    local vertical = settings.orientation == "vertical"
+    local grow = settings.growUp ~= false
+    local anchor = vertical and (grow and "LEFT" or "RIGHT") or (grow and "BOTTOM" or "TOP")
+    local opposite = vertical and (grow and "RIGHT" or "LEFT") or (grow and "TOP" or "BOTTOM")
+    for _, bar in ipairs(state.bars) do
+        local run = bar._nativeAuraRun
+        local frame
+        if run and not editMode then
+            frame = run.reserved and bar or run.container
+            if run.reserved then
+                run.container:ClearAllPoints()
+                run.container:SetPoint(anchor, bar, anchor, 0, 0)
+            else
+                bar:Hide()
+            end
+        elseif bar._nativeAuraOverlay and not editMode then
+            run = bar._nativeAuraOverlay
+            if bar._nativeAuraOverlayUseBase then
+                frame = bar
+                run.container:ClearAllPoints()
+                run.container:SetPoint(anchor, bar, anchor, 0, 0)
+                run = nil
+            else
+                frame = run.container
+            end
+        elseif bar:IsShown() then
+            frame = bar
+        end
+        if run then run.container:SetAlpha(editMode and 0 or 1) end
+        if frame and frame ~= previous then
+            local gap = previousRun and not previousRun.reserved and -1 or (settings.spacing or 2)
+            local offset = grow and gap or -gap
+            frame:ClearAllPoints()
+            if previous then
+                frame:SetPoint(anchor, previous, opposite, vertical and offset or 0, vertical and 0 or offset)
+            else
+                frame:SetPoint(anchor, state.container, anchor, 0, 0)
+            end
+            previous = frame
+            previousRun = run
+        end
+    end
+end
+
 local function AcquireBar(parent)
     local bar
     if #recyclePool > 0 then
@@ -989,7 +1202,10 @@ local function AcquireBar(parent)
         bar = CreateBar(parent)
     end
     bar:Show()
-    barPool[#barPool + 1] = bar
+    local state = GetBarState(parent)
+    state.bars[#state.bars + 1] = bar
+    bar._barState = state
+    bar._barIndex = #state.bars
     return bar
 end
 
@@ -1001,16 +1217,19 @@ local function ReleaseBar(bar)
     bar:ClearAllPoints()
     bar._spellEntry = nil
     bar._spellID = nil
+    bar._nativeAuraRun = nil
+    bar._nativeAuraOverlay = nil
+    bar._nativeAuraOverlayUseBase = nil
+    bar._barState = nil
+    bar._barIndex = nil
     bar._instanceKey = nil
     bar._active = false
     bar._auraUnit = nil
-    bar._auraInstanceID = nil
     bar._blzChild = nil
     bar._blzCooldownID = nil
     bar._blzChildMissAt = nil
     bar._cSideFill = nil
     bar._preferDurObjFill = nil
-    bar._forceTimerDurationRebind = nil
     bar._timerShowRearmPending = nil
     bar._lastPosKey = nil
     bar._lastAnchor = nil
@@ -1039,30 +1258,40 @@ local function ReleaseBar(bar)
     end
 end
 
-function CDMBars:ClearPool()
-    for i = #barPool, 1, -1 do
-        ReleaseBar(barPool[i])
-        barPool[i] = nil
+function CDMBars:ClearPool(containerKey)
+    local state = poolsByKey[containerKey or "trackedBar"]
+    if not state then return end
+    for i = #state.bars, 1, -1 do
+        ReleaseBar(state.bars[i])
+        state.bars[i] = nil
     end
-end
-
-function CDMBars:GetActiveBars()
-    return barPool
-end
-
-function CDMBars:MarkAuraRefresh(unit, updateInfo)
-    local marked = false
-    for _, bar in ipairs(barPool) do
-        if CDMBars.MarkBarAuraRefresh(bar, unit, updateInfo) then
-            marked = true
+    if not InCombatLockdown() then
+        for _, run in ipairs(state.runs) do
+            run.container:SetEnabled(false)
+            run.container:Hide()
+        end
+        for _, overlay in ipairs(state.overlays or {}) do
+            overlay.container:SetEnabled(false)
+            overlay.container:Hide()
         end
     end
-    return marked
+end
+
+function CDMBars:DeleteContainer(containerKey)
+    local state = poolsByKey[containerKey]
+    if not state then return end
+    self:ClearPool(containerKey)
+    if state.container then statesByContainer[state.container] = nil end
+    poolsByKey[containerKey] = nil
+end
+
+function CDMBars:GetActiveBars(containerKey)
+    local state = poolsByKey[containerKey or "trackedBar"]
+    return state and state.bars or {}
 end
 
 function CDMBars:ClearPerBarCaches()
-    for i = 1, #barPool do
-        local bar = barPool[i]
+    for bar in EnumerateBars() do
         if bar then
             bar._totemIconCache = nil
             bar._totemNameCache = nil
@@ -1071,15 +1300,17 @@ function CDMBars:ClearPerBarCaches()
 end
 
 function CDMBars:GetCacheStats()
-    return {
-        activeBars = #barPool,
-    }
+    local count = 0
+    for _ in EnumerateBars() do count = count + 1 end
+    return { activeBars = count }
 end
 
 function CDMBars:BuildBarsFromOwned(container, spellList)
     if not container then return end
+    local state = GetBarState(container)
+    local barPool = state.bars
     if not spellList or #spellList == 0 then
-        self:ClearPool()
+        self:ClearPool(state.key)
         return
     end
 
@@ -1122,7 +1353,7 @@ function CDMBars:BuildBarsFromOwned(container, spellList)
         return
     end
 
-    self:ClearPool()
+    self:ClearPool(state.key)
 
     for _, entry in ipairs(spellList) do
         local bar = AcquireBar(container)
@@ -1289,53 +1520,6 @@ local function UpdateItemBarCooldown(bar, entry)
         local n = Sources and Sources.QueryItemNameByID
             and Sources.QueryItemNameByID(itemID)
         if n then bar.NameText.SetText(bar.NameText, n) end
-    end
-
-    local scanner = _G.QUI and _G.QUI.SpellScanner
-    local isActive, auraDur, auraRemaining
-    if Sources and Sources.QueryScannedItemAuraInfo and itemID then
-        local scanned = Sources.QueryScannedItemAuraInfo(itemID)
-        if scanned and scanned.active == true then
-            local readableDuration = ReadNumber(scanned.duration, nil)
-            local readableExpiration = ReadNumber(scanned.expiration, nil)
-            if readableDuration and readableDuration > 0 then
-                isActive = true
-                auraDur = readableDuration
-                if readableExpiration then
-                    auraRemaining = readableExpiration - GetTime()
-                end
-            end
-        end
-    end
-    if not isActive and scanner and scanner.IsItemActive and itemID then
-        local active, expiration, duration = scanner.IsItemActive(itemID)
-        local readableDuration = ReadNumber(duration, nil)
-        local readableExpiration = ReadNumber(expiration, nil)
-        if active and readableDuration and readableDuration > 0 then
-            isActive = true
-            auraDur = readableDuration
-            if readableExpiration then
-                auraRemaining = readableExpiration - GetTime()
-            end
-        end
-    end
-
-    if isActive and auraRemaining and auraRemaining > 0 then
-        bar._active = true
-        bar._hideDurationText = GetBarSpellHideDurationOverride(bar)
-        bar._hasAuraExpirationTime = nil
-        bar._durObj = nil
-        bar._cSideFill = nil
-        bar._preferDurObjFill = nil
-        bar._totalDuration = auraDur
-        bar._expirationTime = GetTime() + auraRemaining
-        SetStatusBarValue(bar.StatusBar, auraRemaining / auraDur)
-        StoreBarRuntimeState(bar, "item-aura", true, {
-            itemID = itemID,
-            duration = auraDur,
-            remaining = auraRemaining,
-        })
-        return
     end
 
     local isAuraKind = entry and entry.kind == "aura"
@@ -1539,7 +1723,7 @@ pairedMirrorFrame:SetScript("OnUpdate", function(self, elapsed)
     pairedMirrorAccum = 0
     local anyPaired = false
     local activeChanged = false
-    for _, bar in ipairs(barPool) do
+    for bar in EnumerateBars() do
         if bar._isOwnedBar and bar._blzCooldownID then
             anyPaired = true
             local blz = GetPairedBlzChild(bar)
@@ -1555,8 +1739,10 @@ pairedMirrorFrame:SetScript("OnUpdate", function(self, elapsed)
     if not anyPaired then
         self:Hide()
     end
-    if activeChanged and _lastContainer and _lastSettings then
-        CDMBars:LayoutBars(_lastContainer, _lastSettings)
+    if activeChanged then
+        for _, state in pairs(poolsByKey) do
+            if state.settings then CDMBars:LayoutBars(state.container, state.settings) end
+        end
     end
 end)
 
@@ -1593,6 +1779,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
     end
     if bar._blzCooldownID then return end
 
+    if not bar._isTotemInstance and IsNativeAuraEntry(entry) then return end
     if entry and (entry.type == "item" or entry.type == "trinket" or entry.type == "slot") then
         UpdateItemBarCooldown(bar, entry)
         return
@@ -1628,24 +1815,14 @@ function CDMBars:UpdateOwnedBarAura(bar)
         bar._active = true
         bar._auraDataUnit = r.auraUnit
         bar._auraUnit = r.auraUnit
-        bar._auraInstanceID = r.auraInstanceID
         bar._hasAuraExpirationTime = r.hasExpirationTime
         bar._hideDurationText = ShouldHideAuraDurationText(r)
             or GetBarSpellHideDurationOverride(bar)
-
-        if not bar._hideDurationText and not r.durObj and r.auraData
-            and not InCombatLockdown() then
-            local readableDur = ReadNumber(r.auraData.duration, 0)
-            if readableDur <= 0 then
-                bar._hideDurationText = true
-            end
-        end
 
         if bar._hideDurationText then
             bar._durObj = nil
             bar._cSideFill = nil
             bar._preferDurObjFill = nil
-            bar._forceTimerDurationRebind = nil
             bar._totalDuration = nil
             bar._expirationTime = nil
             SetStatusBarFull(bar.StatusBar)
@@ -1659,30 +1836,20 @@ function CDMBars:UpdateOwnedBarAura(bar)
             end
         end
 
-        if r.auraData and not bar._hideDurationText
-            and not InCombatLockdown() then
-            local rawDur = ReadNumber(r.auraData.duration, nil)
-            if rawDur and rawDur > 0 then
-                bar._totalDuration = rawDur
-            end
-        end
-
         local durObj = r.durObj
         if durObj and not bar._hideDurationText then
             local prevDurObj = bar._durObj
-            local forceRebind = bar._forceTimerDurationRebind == true
             bar._durObj = durObj
             local canUseTimerDuration = bar.StatusBar and bar.StatusBar.SetTimerDuration
             bar._preferDurObjFill = canUseTimerDuration and true or nil
             if bar._cSideFill then
-                if forceRebind or durObj ~= prevDurObj then
+                if durObj ~= prevDurObj then
                     if canUseTimerDuration then
                         local ok = SetStatusBarTimerDuration(bar.StatusBar, durObj)
                         if not ok then
                             bar._preferDurObjFill = nil
                             bar._cSideFill = nil
                         end
-                        bar._forceTimerDurationRebind = nil
                     end
                 end
             elseif bar.StatusBar then
@@ -1694,7 +1861,6 @@ function CDMBars:UpdateOwnedBarAura(bar)
                         bar._preferDurObjFill = nil
                         bar._cSideFill = nil
                     end
-                    bar._forceTimerDurationRebind = nil
                 end
             end
 
@@ -1724,10 +1890,7 @@ function CDMBars:UpdateOwnedBarAura(bar)
                 end
             else
                 local runtimeTex
-                if r.auraData then
-                    runtimeTex = r.auraData.icon
-                end
-                if not runtimeTex and entry and entry.isAura then
+                if entry and entry.isAura then
                     local sid = entry.overrideSpellID or entry.spellID or entry.id
                     if sid then
                         local tex = Sources and Sources.QuerySpellTexture
@@ -1779,11 +1942,9 @@ function CDMBars:UpdateOwnedBarAura(bar)
     else
         bar._active = false
         bar._auraUnit = nil
-        bar._auraInstanceID = nil
         bar._durObj = nil
         bar._cSideFill = nil
         bar._preferDurObjFill = nil
-        bar._forceTimerDurationRebind = nil
         bar._totalDuration = nil
         bar._expirationTime = nil
         bar._hideDurationText = nil
@@ -1809,6 +1970,9 @@ end
 function CDMBars:LayoutBars(container, settings)
     if not container then return end
     if not settings then return end
+    local state = GetBarState(container)
+    state.inCombat = InCombatLockdown()
+    local barPool = state.bars
 
     local barHeight = settings.barHeight or 25
     local barWidth = settings.barWidth or 215
@@ -1846,7 +2010,8 @@ function CDMBars:LayoutBars(container, settings)
 
     local layoutActive = Helpers.IsLayoutModeActive()
     local hudLayering = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.hudLayering
-    local layerPriority = hudLayering and hudLayering.buffBar or 5
+    local layerKey = state.key == "trackedBar" and "buffBar" or "customBars"
+    local layerPriority = hudLayering and hudLayering[layerKey] or 5
     local frameLevel = 200
     if QUICore and QUICore.GetHUDFrameLevel then
         frameLevel = QUICore:GetHUDFrameLevel(layerPriority)
@@ -1860,6 +2025,7 @@ function CDMBars:LayoutBars(container, settings)
         or Helpers.IsLayoutModeActive()
         or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
     local visibleIndex = 0
+    local boundsCount = 0
     for _, bar in ipairs(barPool) do
         local fingerprint = bar._cfgFingerprint
         if not fingerprint then
@@ -1938,6 +2104,17 @@ function CDMBars:LayoutBars(container, settings)
             end
         end
 
+        if not editModeActive and IsBarHidden(bar) then shouldShow = false end
+        if shouldShow or bar._nativeAuraRun or bar._nativeAuraOverlay then
+            boundsCount = boundsCount + 1
+        end
+        if bar._nativeAuraRun then bar._nativeAuraRun.reserved = shouldShow end
+        bar._nativeAuraOverlayUseBase = shouldShow
+        if bar._nativeAuraOverlay then
+            bar._nativeAuraOverlay.container:SetAlpha(editModeActive and 0 or 1)
+            bar._nativeAuraOverlay.container:SetFrameLevel(frameLevel + 5)
+        end
+
         if shouldShow then
             local wasShown = bar:IsShown()
             local offsetIndex = visibleIndex
@@ -1989,23 +2166,26 @@ function CDMBars:LayoutBars(container, settings)
     end
 
     local totalW, totalH
-    if visibleIndex == 0 then
+    if boundsCount == 0 then
         totalW = effectiveBarWidth
         totalH = effectiveBarHeight
     elseif isVertical then
-        totalW = (visibleIndex * effectiveBarWidth) + ((visibleIndex - 1) * spacing)
+        totalW = (boundsCount * effectiveBarWidth) + ((boundsCount - 1) * spacing)
         totalH = effectiveBarHeight
     else
         totalW = effectiveBarWidth
-        totalH = (visibleIndex * effectiveBarHeight) + ((visibleIndex - 1) * spacing)
+        totalH = (boundsCount * effectiveBarHeight) + ((boundsCount - 1) * spacing)
     end
     totalW = QUICore:PixelRound(totalW)
     totalH = QUICore:PixelRound(totalH)
 
     ResizeContainer(container, totalW, totalH)
+    if state.runs[1] or (state.overlays and state.overlays[1]) then
+        LayoutNativeRuns(state, settings, editModeActive)
+    end
 end
 
-function CDMBars:Refresh(container, settings, overrideWidth, containerKey, runtimeEntries)
+function CDMBars:Refresh(container, settings, overrideWidth, containerKey, runtimeEntries, configuredEntries)
     if not container then return end
     if not settings then return end
 
@@ -2013,10 +2193,10 @@ function CDMBars:Refresh(container, settings, overrideWidth, containerKey, runti
         settings = setmetatable({ barWidth = overrideWidth }, { __index = settings })
     end
 
-    _lastContainer = container
-    _lastSettings = settings
+    local state = GetBarState(container, containerKey)
+    state.settings = settings
 
-    local spellList
+    local spellList = configuredEntries
     if containerKey == "trackedBar" then
         local configuredOwnedInitialized = ContainerOwnedListInitialized(containerKey)
         local configuredSpellList
@@ -2031,15 +2211,17 @@ function CDMBars:Refresh(container, settings, overrideWidth, containerKey, runti
     if spellList then
         self:BuildBarsFromOwned(container, spellList)
     else
-        self:ClearPool()
+        self:ClearPool(state.key)
     end
+    ConfigureNativeRuns(state, settings)
+    ConfigureItemAuraOverlays(state, settings)
     self:LayoutBars(container, settings)
 end
 
 function CDMBars:UpdateOwnedBars()
     local anyChanged = false
     local anyActive = false
-    for _, bar in ipairs(barPool) do
+    for bar in EnumerateBars() do
         if bar._isOwnedBar and bar._spellID then
             local wasPreviouslyActive = bar._active
             self:UpdateOwnedBarAura(bar)
@@ -2052,15 +2234,18 @@ function CDMBars:UpdateOwnedBars()
     if anyActive and not barTimerGroup:IsPlaying() then
         barTimerGroup:Play()
     end
-    if anyChanged and _lastContainer and _lastSettings then
-        self:LayoutBars(_lastContainer, _lastSettings)
+    for _, state in pairs(poolsByKey) do
+        if state.settings and (anyChanged or (state.settings.iconDisplayMode == "combat"
+            and state.inCombat ~= InCombatLockdown())) then
+            self:LayoutBars(state.container, state.settings)
+        end
     end
 end
 
 barTimerGroup:SetScript("OnLoop", function()
     local Helpers = ns.Helpers
     local anyActive = false
-    for _, bar in ipairs(barPool) do
+    for bar in EnumerateBars() do
         if bar._isOwnedBar and bar._active and bar:IsShown() then
             if GetPairedBlzChild(bar) then
                 anyActive = true
@@ -2103,7 +2288,7 @@ end
 function CDMBars:RefreshSkinColors()
     local H = ns.Helpers
     if not (H and H.GetSkinBorderColor) then return end
-    for _, bar in ipairs(self:GetActiveBars() or {}) do
+    local function RefreshBorder(bar)
         local bc = bar and bar.BorderContainer
         if bc and bc._top and bc._top.SetColorTexture then
             local r, g, b, a = H.GetSkinBorderColor(bar._borderSettings, "")
@@ -2111,6 +2296,18 @@ function CDMBars:RefreshSkinColors()
             bc._bottom:SetColorTexture(r, g, b, a)
             bc._left:SetColorTexture(r, g, b, a)
             bc._right:SetColorTexture(r, g, b, a)
+        end
+    end
+    for bar in EnumerateBars() do RefreshBorder(bar) end
+    if NativeAuraConfigurationBlocked() then return end
+    for _, state in pairs(poolsByKey) do
+        for _, run in ipairs(state.runs) do
+            for _, frames in pairs(run.frames) do
+                for _, button in ipairs(frames) do RefreshBorder(button) end
+            end
+        end
+        for _, overlay in ipairs(state.overlays or {}) do
+            for _, button in ipairs(overlay.frames) do RefreshBorder(button) end
         end
     end
 end

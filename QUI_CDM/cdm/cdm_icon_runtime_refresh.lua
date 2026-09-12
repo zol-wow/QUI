@@ -122,19 +122,6 @@ local function isAuraEntry(callbacks, entry)
     return callbacks.isAuraEntry and callbacks.isAuraEntry(entry) or false
 end
 
-local function isSelfAuraUnit(unit)
-    return unit == "player" or unit == "pet" or unit == "vehicle"
-end
-
-local function listHasEntries(list)
-    return type(list) == "table" and #list > 0
-end
-
-local function auraDeltaShouldWakeAuraEntries(unit, updateInfo)
-    if not (updateInfo and listHasEntries(updateInfo.addedAuras)) then return false end
-    return isSelfAuraUnit(unit) or unit == "target"
-end
-
 local function isItemEntry(entry)
     local entryType = entry and entry.type
     return entryType == "item" or entryType == "trinket" or entryType == "slot"
@@ -274,10 +261,6 @@ itemEntryMatchesAuraSpellIdentifierSet = function(callbacks, entry, spellIDs, ha
     if not itemSpellID then return false end
     if spellIdentifierSetHas(callbacks, spellIDs, itemSpellID) then return true end
 
-    if callbacks.queryCooldownAuraBySpellID then
-        local auraSpellID = callbacks.queryCooldownAuraBySpellID(itemSpellID)
-        return spellIdentifierSetHas(callbacks, spellIDs, auraSpellID)
-    end
     return false
 end
 
@@ -285,13 +268,13 @@ function CDMIconRuntimeRefresh.Create(callbacks)
     callbacks = callbacks or {}
 
     local controller = {
-        auraDeltaInstanceIDs = {},
-        auraDeltaSpellIDs = {},
         applySpellIDScratch = {},
+        auraScopeOptionsScratch = { skipNative = true },
         itemScopeOptionsScratch = { refreshRuntime = false },
         catalogScopeOptionsScratch = { includeItems = false },
         spellScopeRefreshOptionsScratch = { refreshRuntime = true },
         itemScopeRefreshOptionsScratch = { refreshRuntime = true },
+        barQueue = { scheduled = false },
         spellQueue = {
             ids = {},
             frame = nil,
@@ -349,6 +332,24 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
     end
 
+    local function drainBarQueue()
+        disarmQueue(controller.barQueue)
+        if not isRuntimeEnabled(callbacks) then
+            if callbacks.setBarsDirty then callbacks.setBarsDirty(false) end
+            return
+        end
+        if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
+    end
+
+    local function refreshBars(immediate)
+        if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
+        if immediate or not inCombat() then
+            drainBarQueue()
+        elseif not controller.barQueue.scheduled then
+            armQueue(controller.barQueue, drainBarQueue)
+        end
+    end
+
     function controller:AddSpellIdentifierToSet(set, rawID)
         return addSpellIdentifierToSet(callbacks, set, rawID)
     end
@@ -383,19 +384,25 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         local skipSelfAuraFn = options.skipSelfAuraIcons == true
             and callbacks.isDefinitivelySelfAuraIcon
             or nil
-        local editMode, ncdm, ncdmContainers, inCombatState = beginBatch(callbacks, "auraScope")
+        local editMode, ncdm, ncdmContainers, inCombatState
+        local batchStarted = false
         local refreshed = 0
         setResolveCallerTag("auraScope")
         for _, pool in pairs(getIconPools(callbacks)) do
             for _, icon in ipairs(pool) do
                 local entry = icon and icon._spellEntry
                 if entry
+                    and not (options.skipNative and (entry._useManagedAura or icon._customAuraOverlayPrepared))
                     and (isAuraEntry(callbacks, entry)
                         or icon._auraActive == true
                         or (includeItems and isItemEntry(entry))
                         or (includeCustomCooldowns and isCustomCooldownEntry(entry))
                         or (includeCustomCooldowns and entryHasLinkedSpellIDs(callbacks, icon, entry)))
                     and not (skipSelfAuraFn and skipSelfAuraFn(icon)) then
+                    if not batchStarted then
+                        editMode, ncdm, ncdmContainers, inCombatState = beginBatch(callbacks, "auraScope")
+                        batchStarted = true
+                    end
                     if not clearCustomCooldownDurationBinding(callbacks, icon, entry) then
                         clearAuraDurationBinding(callbacks, icon)
                     end
@@ -417,7 +424,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             end
         end
         setResolveCallerTag(nil)
-        endBatch(callbacks)
+        if batchStarted then endBatch(callbacks) end
         return refreshed
     end
 
@@ -651,117 +658,6 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         if refreshed and callbacks.drainLayoutDirty then
             callbacks.drainLayoutDirty()
         end
-        return refreshed
-    end
-
-    function controller:ApplyAuraInstances(unit, updateInfo)
-        if not updateInfo or updateInfo.isFullUpdate then return nil end
-
-        local ids = controller.auraDeltaInstanceIDs
-        wipe(ids)
-        local hasIDs = false
-        local hasRemovedIDs = false
-
-        local spellIDs = controller.auraDeltaSpellIDs
-        wipe(spellIDs)
-        local hasSpellIDs = false
-        local hasAddedAuraWithoutReadableSpellID = false
-
-        local wakeAuraEntries = auraDeltaShouldWakeAuraEntries(unit, updateInfo)
-
-        if updateInfo.addedAuras then
-            for _, auraData in ipairs(updateInfo.addedAuras) do
-                local auraInstanceID = auraData and auraData.auraInstanceID
-                if auraInstanceID ~= nil then
-                    ids[auraInstanceID] = true
-                    hasIDs = true
-                end
-                if auraData then
-                    local addedSpellID = addSpellIdentifierToSet(callbacks, spellIDs, auraData.spellId)
-                    addedSpellID = addSpellIdentifierToSet(callbacks, spellIDs, auraData.spellID) or addedSpellID
-                    hasSpellIDs = addedSpellID or hasSpellIDs
-                    if not addedSpellID then
-                        hasAddedAuraWithoutReadableSpellID = true
-                    end
-                end
-            end
-        end
-        if updateInfo.updatedAuraInstanceIDs then
-            for _, auraInstanceID in ipairs(updateInfo.updatedAuraInstanceIDs) do
-                if auraInstanceID ~= nil then
-                    ids[auraInstanceID] = true
-                    hasIDs = true
-                end
-            end
-        end
-        if updateInfo.removedAuraInstanceIDs then
-            for _, auraInstanceID in ipairs(updateInfo.removedAuraInstanceIDs) do
-                if auraInstanceID ~= nil then
-                    ids[auraInstanceID] = true
-                    hasIDs = true
-                    hasRemovedIDs = true
-                end
-            end
-        end
-
-        if not hasIDs and not hasSpellIDs and not wakeAuraEntries then return 0 end
-
-        local refreshed = 0
-        local batchStarted = false
-        local editMode, ncdm, ncdmContainers, inCombatState
-        setResolveCallerTag("aura")
-        for _, pool in pairs(getIconPools(callbacks)) do
-            for _, icon in ipairs(pool) do
-                local entry = icon and icon._spellEntry
-                local iconAuraInstanceID = icon and icon._auraInstanceID
-                local matches = iconAuraInstanceID
-                    and ids[iconAuraInstanceID]
-                    and (not unit or icon._auraUnit == unit)
-                if not matches
-                    and entryMatchesSpellIdentifierSet(callbacks, icon, entry, spellIDs, hasSpellIDs) then
-                    matches = true
-                end
-                if not matches
-                    and itemEntryMatchesAuraSpellIdentifierSet(callbacks, entry, spellIDs, hasSpellIDs) then
-                    matches = true
-                end
-                if not matches
-                    and hasRemovedIDs
-                    and isSelfAuraUnit(unit)
-                    and isItemEntry(entry)
-                    and icon
-                    and icon._auraActive == true
-                    and iconAuraInstanceID == nil then
-                    matches = true
-                end
-                if not matches and wakeAuraEntries and isAuraEntry(callbacks, entry) then
-                    matches = true
-                end
-                if not matches
-                    and wakeAuraEntries
-                    and hasAddedAuraWithoutReadableSpellID
-                    and isItemEntry(entry) then
-                    matches = true
-                end
-                if matches and entry then
-                    if not batchStarted then
-                        editMode, ncdm, ncdmContainers, inCombatState = beginBatch(callbacks, "auraDelta")
-                        batchStarted = true
-                    end
-                    if not clearCustomCooldownDurationBinding(callbacks, icon, entry) then
-                        clearAuraDurationBinding(callbacks, icon)
-                    end
-                    if controller:ApplyAuraScopedResolvedCooldown(icon, entry, editMode, ncdm, ncdmContainers, inCombatState) then
-                        refreshed = refreshed + 1
-                    end
-                end
-            end
-        end
-        setResolveCallerTag(nil)
-        if batchStarted then
-            endBatch(callbacks)
-        end
-
         return refreshed
     end
 
@@ -1061,39 +957,19 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         controller:QueueUsabilityRefresh()
     end
 
-    function controller:HandleAuraRefresh(unit, updateInfo)
+    function controller:HandleAuraRefresh(unit)
         if not isRuntimeEnabled(callbacks) then return end
         if callbacks.eventTracePrint then
             callbacks.eventTracePrint("aura-pre", "UNIT_AURA", unit, nil, nil,
-                callbacks.eventTraceAuraInfo and callbacks.eventTraceAuraInfo(unit, updateInfo))
+                callbacks.eventTraceAuraInfo and callbacks.eventTraceAuraInfo(unit))
         end
-
-        if callbacks.requestStackTextUpdate then
-            callbacks.requestStackTextUpdate()
-        end
-
-        local barsMarked = callbacks.markBarsForAuraRefresh
-            and callbacks.markBarsForAuraRefresh(unit, updateInfo) == true
-
-        if not updateInfo or updateInfo.isFullUpdate then
-            if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
-            controller:ApplyAuraScope({
-                includeItems = unit == "player",
-                includeCustomCooldowns = isSelfAuraUnit(unit),
-                skipSelfAuraIcons = unit == "target",
-            })
-            if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
-        else
-            local refreshed = controller:ApplyAuraInstances(unit, updateInfo) or 0
-            if refreshed > 0 or barsMarked then
-                if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
-                if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
-            end
-        end
-
+        if callbacks.requestStackTextUpdate then callbacks.requestStackTextUpdate() end
+        local options = controller.auraScopeOptionsScratch
+        options.skipSelfAuraIcons = unit == "target"
+        controller:ApplyAuraScope(options)
         if callbacks.eventTracePrint then
             callbacks.eventTracePrint("aura-post", "UNIT_AURA", unit, nil, nil,
-                callbacks.eventTraceAuraInfo and callbacks.eventTraceAuraInfo(unit, updateInfo))
+                callbacks.eventTraceAuraInfo and callbacks.eventTraceAuraInfo(unit))
         end
     end
 
@@ -1115,6 +991,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 isPlayerUnit = arg1 == "player" -- @secret-safe: else-branch of the callbacks.isSecretValue(arg1) probe above (callback-indirected guard the analyzer cannot see; tests inject secrets through the stub)
             end
             if isPlayerUnit then
+                refreshBars()
                 if normalizeSpellIdentifier(callbacks, arg3) ~= nil then
                     if runtimeRefreshStats then runtimeRefreshStats.unitSpellcastCooldownSkips = runtimeRefreshStats.unitSpellcastCooldownSkips + 1 end
                     controller:QueueResolvedCooldownForSpellID(arg3, nil) -- @secret-safe: reached only when normalizeSpellIdentifier(callbacks, arg3) ~= nil, and that helper probes isSecretValue and returns nil for secrets — arg3 proven readable here
@@ -1137,20 +1014,24 @@ function CDMIconRuntimeRefresh.Create(callbacks)
         end
         if event == "PLAYER_EQUIPMENT_CHANGED" then
             if arg1 == 13 or arg1 == 14 then
+                refreshBars()
                 controller:QueueItemScopeRefresh({ refreshRuntime = true })
             end
             return
         end
         if event == "PLAYER_TOTEM_UPDATE" then
+            refreshBars()
             if callbacks.scheduleUpdate then
                 callbacks.scheduleUpdate(true, UPDATE_COOLDOWN, "totem")
             end
             return
         end
         if event == "PLAYER_REGEN_DISABLED" then
+            refreshBars(true)
             return
         end
         if event == "PLAYER_REGEN_ENABLED" then
+            refreshBars(true)
             controller:DrainDeferredFullRefresh()
             if callbacks.refreshPendingSecureAttributes then
                 callbacks.refreshPendingSecureAttributes()
@@ -1216,6 +1097,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             return
         end
         if event == "BAG_UPDATE_COOLDOWN" then
+            refreshBars()
             controller:QueueItemScopeRefresh()
             return
         end
@@ -1224,25 +1106,23 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 callbacks.invalidateConsumableCategoryItems()
             end
             controller:QueueItemScopeRefresh({ refreshRuntime = true })
-            if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
-            if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
+            refreshBars()
             return
         end
     end
 
     function controller:Handle(event, arg1, arg2, arg3, arg4, frame)
         if event == "UNIT_AURA" then
-            return controller:HandleAuraRefresh(arg1, arg2) -- @secret-safe: HandleAuraRefresh is reached only via cdm_spelldata NotifyAuraConsumers, which passes a plain non-secret unit; updateInfo is a plain container table (round-13 hand-audit)
+            return controller:HandleAuraRefresh(arg1) -- @secret-safe: NotifyAuraConsumers passes a plain non-secret unit
         end
         return controller:HandleFrameEvent(event, arg1, arg2, arg3, arg4, frame) -- @secret-safe: HandleFrameEvent probes isSecretValue(arg1) before the unit compare and normalizes arg3 through the secret-probing normalizeSpellIdentifier (round-13 hand-audit)
     end
 
     function controller:HandleCooldownChanged(_, spellID, baseSpellID, kind, category, startRecoveryCategory, itemID)
         if not isRuntimeEnabled(callbacks) then return end
+        if kind ~= "refresh" then refreshBars() end
         if kind == "scanner_item" then
             controller:ApplyItemScope()
-            if callbacks.setBarsDirty then callbacks.setBarsDirty(true) end
-            if callbacks.runDirtyBarUpdate then callbacks.runDirtyBarUpdate() end
         elseif kind == "scanner_spell" then
             controller:ApplySpellScope()
         elseif kind == "refresh" then
@@ -1257,6 +1137,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
                 callbacks.updateCooldownOnly(true, true)
                 return
             end
+            refreshBars()
             local normalizedCategory = normalizeSpellIdentifier(callbacks, category)
             local normalizedItemID = normalizeSpellIdentifier(callbacks, itemID)
             local categoryOpaque = category ~= nil and normalizedCategory == nil
@@ -1311,6 +1192,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
 
     function controller:HandleChargesChanged(_, spellID, baseSpellID)
         if not isRuntimeEnabled(callbacks) then return end
+        refreshBars()
         if callbacks.requestStackTextUpdate then
             callbacks.requestStackTextUpdate()
         end

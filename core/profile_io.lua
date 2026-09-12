@@ -438,6 +438,7 @@ local PROFILE_QOL_GENERAL_KEYS = {
     "autoConfirmHighCost",
     "merchantKnownPetMark",
     "lootToastFilter",
+    "bonusRoll",
     "cursorTrail",
     "ejLootSpecIcons",
     "communitiesPrivacy",
@@ -1300,6 +1301,13 @@ local PROFILE_IMPORT_CATEGORIES = {
         description = "Native damage meter windows, appearance, and behavior settings.",
         recommended = true,
         topLevelKeys = { "damageMeter" },
+    },
+    {
+        id = "reminders",
+        label = "Reminders",
+        description = "Defensive callouts: boss ability picks, priority lists, and callout display.",
+        recommended = true,
+        topLevelKeys = { "reminders" },
     },
     {
         id = "chat",

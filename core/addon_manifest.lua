@@ -13,6 +13,7 @@ local MANIFEST = {
     { coreModule = "skinning",  flag = { "skinning",     "enabled" } },
     { folder = "QUI_DamageMeter",  class = "lod",                                                    sources = { "modules/damage_meter" } },
     { folder = "QUI_Bags",         class = "lod", legacyFlag = { "bags", "enabled" }, loadPolicy = "profile", sources = { "modules/bags" } },
+    { folder = "QUI_Reminders",    class = "lod",                                                    sources = {} },
 }
 
 local ADDON_NAME, ns = ...

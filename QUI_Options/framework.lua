@@ -5355,7 +5355,6 @@ function GUI:CreateMainFrame()
         accentSwatch._bg:SetVertexColor(r, g, b, 1)
         title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
         version:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
-        RefreshAllSkinning()
     end
 
     local themeLabel = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -7885,7 +7884,10 @@ function GUI:_findWidgetByLabel(root, label)
     for i = 1, r do
         local region = select(i, root:GetRegions())
         if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-            if region.GetText and region:GetText() == label then return root end
+            if region.GetText then
+                local text = region:GetText()
+                if not (issecretvalue and issecretvalue(text)) and text == label then return root end
+            end
         end
     end
     return nil
@@ -7938,6 +7940,10 @@ end
 function GUI:OnFontChanged()
     if not self.MainFrame or not self.MainFrame:IsShown() then return end
     self:RefreshAccentColor()
+    if ns.Registry then
+        ns.Registry:RefreshAll("skinning")
+    end
+    if _G.QUI_RefreshStatusTrackingBarSkin then _G.QUI_RefreshStatusTrackingBarSkin() end
 end
 
 QUI.GUI = GUI

@@ -1,20 +1,13 @@
 local _, ns = ...
 
+local SetGroupCandidateFilters = ns.AuraSkin and ns.AuraSkin.SetGroupCandidateFilters
+    or function(container, key, filters) container:SetAuraGroupCandidateFilters(key, filters) end
+
 local CDMReanchorRealEnv = {}
 ns.CDMReanchorRealEnv = CDMReanchorRealEnv
 
 local _securecall = securecallfunction or function(fn, ...) return fn(...) end
 local _issecretvalue = issecretvalue or function() return false end
-local _auraLookupUnits = { "player", "pet" }
-local _auraLookupFilters = { player = "HELPFUL", pet = "HELPFUL" }
-local _auraLookupIDs = {}
-
-local function AppendAuraLookupID(id)
-    if type(id) == "number" and not _issecretvalue(id) then
-        _auraLookupIDs[#_auraLookupIDs + 1] = id
-    end
-end
-
 local function IsBuffIconKey(key)
     return key == "buff" or key == "buffIcon"
 end
@@ -766,27 +759,6 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
         end
     end
 
-    local function entryAuraIsPresent(entry)
-        if type(entry) ~= "table" or not (SpellData and SpellData.GetCapturedAuraForLookup) then
-            return false
-        end
-        for i = #_auraLookupIDs, 1, -1 do
-            _auraLookupIDs[i] = nil
-        end
-        AppendAuraLookupID(entry.overrideSpellID)
-        AppendAuraLookupID(entry.spellID)
-        AppendAuraLookupID(entry.id)
-        local linked = entry.linkedSpellIDs
-        if type(linked) == "table" then
-            for i = 1, #linked do
-                AppendAuraLookupID(linked[i])
-            end
-        end
-        return SpellData.GetCapturedAuraForLookup(
-            _auraLookupIDs, entry.name, _auraLookupUnits, false,
-            _auraLookupFilters) ~= nil
-    end
-
     local function rowConfigForEntry(entry, containerKey)
         local settings = ctx.getSettings and ctx.getSettings(containerKey) or {}
         if Layout and Layout.BuildRows then
@@ -849,9 +821,89 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
         }
     end
 
-    local auraMirrors
-    if ns.CDMManagedAuraMirrors and ns.CDMManagedAuraMirrors.New then
-        auraMirrors = ns.CDMManagedAuraMirrors.New({
+    local dynamicAuraPools = {}
+    local function canConfigureAuras()
+        return not isInCombatLockdown() and not (C_Secrets and C_Secrets.ShouldAurasBeSecret
+            and C_Secrets.ShouldAurasBeSecret())
+    end
+
+    local function styleDynamicAura(button, record)
+        local skin = ns.AuraSkin or (ns.Addon and ns.Addon.AuraSkin)
+        if skin and skin.WireButton then skin.WireButton(button, record.profile) end
+        local runs = ns.CDMCustomAuraRuns
+        if runs and runs.ConfigureNativeEffects then runs.ConfigureNativeEffects(button, record.profile, record.baseIcon) end
+    end
+
+    local function acquireDynamicAura(container, entry, config, profile, options)
+        local pool = dynamicAuraPools[container]
+        if not pool then
+            pool = { runs = {}, cursor = 0, recordsByPlacement = {} }
+            dynamicAuraPools[container] = pool
+        end
+        if not canConfigureAuras() then
+            local record = pool.recordsByPlacement[options.placementKey]
+            if not record then return nil end
+            record.run.used = record.run.used + 1
+            record.host:SetAlpha(1)
+            record.reserved = not options.dynamic
+            record.baseIcon = options.source
+            record.entry = entry
+            return record
+        end
+        local route = config.unit .. ":" .. config.filter .. ":"
+            .. tostring(options.rowConfig and options.rowConfig.rowNum or entry._assignedRow or 1)
+        if options.single or pool.lastRoute ~= route or pool.lastOrder ~= options.order - 1 then
+            pool.cursor = pool.cursor + 1
+        end
+        pool.lastRoute, pool.lastOrder = route, options.order
+        local run = pool.runs[pool.cursor]
+        if not run then
+            if not canConfigureAuras() then return nil end
+            run = { host = CreateFrame("AuraContainer", nil, container, "CustomAuraContainerTemplate"), records = {}, used = 0 }
+            pool.runs[pool.cursor] = run
+        end
+        run.used = run.used + 1
+        local record = run.records[run.used]
+        if not record then
+            if not canConfigureAuras() then return nil end
+            record = { host = run.host, run = run, dynamic = true, key = "a" .. run.used, frames = {} }
+            run.records[run.used] = record
+        end
+        record.profile = profile
+        run.host:SetAlpha(1)
+        record.reserved = not options.dynamic
+        record.baseIcon = options.source
+        record.entry = entry
+        record.containerKey = options.containerKey
+        pool.recordsByPlacement[options.placementKey] = record
+        if canConfigureAuras() then
+            run.host:SetUnit(config.unit)
+            if not record.allocated then
+                record.allocated = true
+                run.host:AddAuraGroup(record.key, config.filter, {
+                    maxFrameCount = 1,
+                    candidateFilters = { includeSpellIDs = config.includeSpellIDs },
+                    initializeFrame = function(button)
+                        record.frames[#record.frames + 1] = button
+                        styleDynamicAura(button, record)
+                    end,
+                })
+            else
+                run.host:SetAuraGroupFilterString(record.key, config.filter)
+                SetGroupCandidateFilters(run.host, record.key, { includeSpellIDs = config.includeSpellIDs })
+                run.host:SetAuraGroupMaxFrameCount(record.key, 1)
+            end
+            run.host:SetEnabled(true)
+            run.host:Show()
+        end
+        return record
+    end
+
+    local auraMirrors = {}
+    local function createAuraMirrors(unit, filter)
+        return ns.CDMManagedAuraMirrors.New({
+            unit = unit,
+            filter = filter,
             createFrame = CreateFrame,
             isSecret = _issecretvalue,
             canCreate = function()
@@ -885,27 +937,127 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
     end
 
     local function beginAuraMirrorPass(container)
-        return auraMirrors and auraMirrors:BeginPass(container) or false
+        if not (ns.CDMManagedAuraMirrors and ns.CDMManagedAuraMirrors.New) then return false end
+        for _, manager in pairs(auraMirrors) do manager:BeginPass(container) end
+        local pool = dynamicAuraPools[container]
+        if pool then
+            if canConfigureAuras() then
+                for key in pairs(pool.recordsByPlacement) do pool.recordsByPlacement[key] = nil end
+            end
+            pool.cursor, pool.lastRoute, pool.lastOrder = 0, nil, nil
+            for _, run in ipairs(pool.runs) do run.used, run.positioned = 0, false end
+        end
+        return true
     end
 
-    local function acquireAuraMirror(entry, containerKey, placementKey)
-        if not auraMirrors then return nil end
+    local function acquireAuraMirror(entry, containerKey, placementKey, options)
+        if not (ns.CDMManagedAuraMirrors and ns.CDMManagedAuraMirrors.New) then return nil end
         local swipe = ns._OwnedSwipe and ns._OwnedSwipe.GetSettings
             and ns._OwnedSwipe.GetSettings() or nil
-        if swipe and swipe.showCooldownIconAuraPhase == false then return nil end
+        if not IsBuffIconKey(containerKey) and not (entry.isAura or entry.kind == "aura")
+            and swipe and swipe.showCooldownIconAuraPhase == false then return nil end
         local container = getContainerFor(containerKey)
         if not container then return nil end
+        local runs = ns.CDMCustomAuraRuns
+        local config = runs and runs.ResolveAuraConfig and runs.ResolveAuraConfig(entry)
+        local settings = ctx.getSettings and ctx.getSettings(containerKey) or {}
+        if options and config and (options.dynamic or settings.iconDisplayMode == "combat") then
+            options.single = settings.iconDisplayMode == "combat"
+            options.containerKey = containerKey
+            options.placementKey = placementKey
+            if canConfigureAuras() and options.source and Icons and Icons.UpdateSecureClickOverlay then
+                Icons.UpdateSecureClickOverlay(options.source, entry, containerKey)
+            end
+            return acquireDynamicAura(container, entry, config,
+                auraProfileFromRow(options.rowConfig or rowConfigForEntry(entry, containerKey)), options)
+        end
+        local unit, filter = config and config.unit or "player", config and config.filter or "HELPFUL"
+        local key = unit .. ":" .. filter
+        local manager = auraMirrors[key]
+        if not manager then
+            manager = createAuraMirrors(unit, filter)
+            auraMirrors[key] = manager
+            if not manager:BeginPass(container) then return nil end
+        end
         local profile = auraProfileFromRow(rowConfigForEntry(entry, containerKey))
-        return auraMirrors:Acquire(container, placementKey, entry, profile)
+        local record = manager:Acquire(container, placementKey, entry, profile, config)
+        if record then record._quiManager = manager end
+        return record
     end
 
     local function positionAuraMirror(record, baseIcon, container, x, y, w, h, rowConfig)
-        return auraMirrors and auraMirrors:Position(
+        if record and record.dynamic then
+            if canConfigureAuras() then
+                local settings = ctx.getSettings and ctx.getSettings(record.containerKey) or {}
+                local runs = ns.CDMCustomAuraRuns
+                record.profile = runs and runs.BuildProfile and runs.BuildProfile(rowConfig or {}, settings, record.entry)
+                    or auraProfileFromRow(rowConfig)
+                record.profile.iconWidth, record.profile.iconHeight = w, h
+                if record.baseIcon then record.baseIcon._quiNativeProcGlows = nil end
+                local direction = rowConfig and rowConfig.flowDirection
+                    or settings.growthDirection or "CENTERED_HORIZONTAL"
+                local vertical = direction == "UP" or direction == "DOWN"
+                local forward = direction ~= "LEFT" and direction ~= "DOWN"
+                local anchor = vertical and (forward and "BOTTOM" or "TOP")
+                    or (forward and "LEFT" or "RIGHT")
+                local padding = rowConfig and rowConfig.padding or 0
+                record.run.vertical, record.run.forward = vertical, forward
+                record.host:SetFlowLayoutAxis(vertical and AnchorUtil.FlowLayoutAxis.Vertical
+                    or AnchorUtil.FlowLayoutAxis.Horizontal)
+                record.host:SetFlowLayoutAnchorPoint(anchor)
+                record.host:SetFlowLayoutGrowthDirection(forward and AnchorUtil.FlowDirection.Right
+                    or AnchorUtil.FlowDirection.Left, forward and AnchorUtil.FlowDirection.Up or AnchorUtil.FlowDirection.Down)
+                record.host:SetFlowLayoutMaximumLineSize(math.huge)
+                record.host:SetAuraGroupLayout(record.key, {
+                    elementWidth = vertical and w or (w + padding + 1),
+                    elementHeight = vertical and (h + padding + 1) or h,
+                    elementSpacing = -1,
+                })
+                for _, button in ipairs(record.frames) do
+                    button:SetSize(w, h)
+                    styleDynamicAura(button, record)
+                end
+            end
+            if record.reserved then
+                baseIcon:ClearAllPoints()
+                baseIcon:SetPoint("CENTER", container, "CENTER", x, y)
+                baseIcon:SetSize(w, h)
+                if Icons and Icons.OnContainerIconPlaced then Icons.OnContainerIconPlaced(baseIcon, rowConfig) end
+                baseIcon:Show()
+                local run = record.run
+                local anchor = run.vertical and (run.forward and "BOTTOM" or "TOP")
+                    or (run.forward and "LEFT" or "RIGHT")
+                record.host:ClearAllPoints()
+                record.host:SetPoint(anchor, baseIcon, anchor, 0, 0)
+                return true
+            end
+            if not record.run.positioned then
+                record.host:ClearAllPoints()
+                record.host:SetPoint("CENTER", container, "CENTER", x, y)
+                record.run.positioned = true
+            end
+            baseIcon:Hide()
+            return true
+        end
+        return record and record._quiManager and record._quiManager:Position(
             record, baseIcon, container, x, y, w, h, rowConfig) or false
     end
 
     local function endAuraMirrorPass(container)
-        return auraMirrors and auraMirrors:EndPass(container) or true
+        for _, manager in pairs(auraMirrors) do manager:EndPass(container) end
+        local pool = dynamicAuraPools[container]
+        if pool then
+            for _, run in ipairs(pool.runs) do run.host:SetAlpha(run.used > 0 and 1 or 0) end
+        end
+        if pool and canConfigureAuras() then
+            for _, run in ipairs(pool.runs) do
+                for i = run.used + 1, #run.records do
+                    run.host:SetAuraGroupMaxFrameCount(run.records[i].key, 0)
+                end
+                if run.used == 0 then run.host:SetEnabled(false); run.host:Hide() end
+            end
+        end
+        return true
     end
 
     return {
@@ -959,7 +1111,6 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
             if _issecretvalue(active) then return true end -- @secret-policy: keep-visible-when-unknown
             return active and true or false
         end,
-        entryAuraIsPresent = entryAuraIsPresent,
         inCombat = function() return isInCombatLockdown() end,
         isEditMode = function()
             if Helpers and Helpers.IsLayoutModeActive and Helpers.IsLayoutModeActive() then
@@ -986,7 +1137,7 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
                 local s = ctx.getSettings(containerKey)
                 clickable = (s and s.clickableIcons) and true or false
             end
-            local icon = Factory:AcquireIcon(c, e, clickable)
+            local icon = Factory:AcquireIcon(c, e, clickable, IsBuffIconKey(containerKey))
             if icon and containerKey and Factory.EnsurePool then
                 local pool = Factory:EnsurePool(containerKey)
                 pool[#pool + 1] = icon

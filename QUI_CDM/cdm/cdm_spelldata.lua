@@ -2,7 +2,6 @@ local _, ns = ...
 local Helpers = ns.Helpers
 local Sources = ns.CDMSources
 local Shared = ns.CDMShared
-local GetTime = GetTime
 
 local function IsCDMRuntimeEnabled()
     return not Shared or Shared.IsRuntimeEnabled()
@@ -57,33 +56,6 @@ local runtimeEventFrame = nil
 local initialized = false
 local FireChangeCallback
 
-local STACK_SEARCH_UNITS = { "player", "pet" }
-local SELF_AURA_CAPTURE_LOOKUP_UNITS = { "player", "pet" }
-local AURA_CAPTURE_LOOKUP_UNITS = { "player", "pet", "target" }
-
-local _capturedAuraBySpellID = {}
-local _capturedAuraByName    = {}
-local _capturedAuraByUnitSpellID = {}
-local _capturedAuraByUnitName    = {}
-local _capturedAuraByUnitInstanceID = {}
-local TARGET_CAPTURED_AURA_FILTERS = { HELPFUL = true, HARMFUL = true }
-local DEFAULT_CAPTURED_AURA_FILTERS = {
-    player = "HELPFUL",
-    pet = "HELPFUL",
-    target = TARGET_CAPTURED_AURA_FILTERS,
-}
-local SINGLE_AURA_SPELL_ID = {}
-local SINGLE_AURA_UNITS = {
-    player = { "player" },
-    pet = { "pet" },
-    target = { "target" },
-}
-local SINGLE_AURA_FILTERS = {
-    player = { player = "HELPFUL" },
-    pet = { pet = "HELPFUL" },
-    target = { target = TARGET_CAPTURED_AURA_FILTERS },
-}
-
 local function IsUsableTableKey(key)
     if issecretvalue and issecretvalue(key) then return false end -- @secret-policy: reject-secret-ids
     if not key then return false end
@@ -95,386 +67,12 @@ local function IsUsableSpellIDKey(spellID)
         and type(spellID) == "number"
 end
 
-local function IsUsableAuraName(name)
-    return type(name) == "string"
-end
-
-local function GetCleanAuraSpellID(auraData)
-    if not auraData then return nil end
-    local sid = auraData.spellId
-    if issecretvalue and issecretvalue(sid) then return nil end -- @secret-policy: reject-secret-ids
-    if not sid then
-        sid = auraData.spellID
-    end
-    return IsUsableSpellIDKey(sid) and sid or nil
-end
-
-local function GetCleanAuraName(auraData)
-    if not auraData then return nil end
-    local name = auraData.name
-    if issecretvalue and issecretvalue(name) then return nil end -- @secret-policy: reject-secret-ids
-    return IsUsableAuraName(name) and name or nil
-end
-
-local function GetCleanAuraInstanceID(auraData)
-    if not auraData then return nil end
-    local instID = auraData.auraInstanceID
-    if issecretvalue and issecretvalue(instID) then return nil end -- @secret-policy: reject-secret-ids
-    return instID
-end
-
-local function GetRawAuraInstanceID(auraData)
-    if not auraData then return nil end
-    return auraData.auraInstanceID
-end
-
-local function GetCleanAuraApplications(auraData)
-    if not auraData then return nil end
-    local apps = auraData.applications
-    if issecretvalue and issecretvalue(apps) then return nil end -- @secret-policy: reject-secret-value
-    return apps
-end
-
-local function GetDisplayableAuraApplications(auraData)
-    local apps = GetCleanAuraApplications(auraData)
-    if apps == nil then return nil end
-    local appType = type(apps)
-    if appType == "number" then
-        return apps > 1 and apps or nil
-    end
-    if appType == "string" then
-        if apps == "" or apps == "0" or apps == "1" then
-            return nil
-        end
-        return apps
-    end
-    return nil
-end
-
-local function IsStrictOwnedAuraSource(auraData)
-    if not auraData then return false end
-    return Helpers.IsAuraOwnedByPlayerOrPet(auraData, true) == true
-end
-
-local function IsDefaultCapturedUnit(unit)
-    return unit == "player" or unit == "pet"
-end
-
-local function GetCapturedUnitMap(root, unit)
-    if type(unit) ~= "string" or unit == "" then return nil end
-    local map = root[unit]
-    if not map then
-        map = {}
-        root[unit] = map
-    end
-    return map
-end
-
-local function AuraInstancePassesFilter(unit, auraInstanceID, filter)
-    return nil
-end
-
-local function TargetAuraMatchesPlayerFilter(auraData, filter)
-    if not auraData then return false end
-    local playerFilter = filter or "HARMFUL"
-    if type(playerFilter) == "string"
-        and not playerFilter:find("PLAYER", 1, true) then
-        playerFilter = playerFilter .. "|PLAYER"
-    end
-    local instID = GetCleanAuraInstanceID(auraData)
-    if instID then
-        local passes = AuraInstancePassesFilter("target", instID, playerFilter)
-        if passes ~= nil then return passes end
-    end
-    return IsStrictOwnedAuraSource(auraData)
-end
-
-local function NormalizeCapturedAuraFilter(filter)
-    if filter == "HELPFUL" or filter == "HARMFUL" then
-        return filter
-    end
-    return nil
-end
-
-local function ResolveCapturedAuraFilter(unit, ad, instID, explicitFilter)
-    local filter = NormalizeCapturedAuraFilter(explicitFilter)
-    if filter then return filter end
-
-    if ad then
-        local isHelpful = ad.isHelpful
-        if issecretvalue and issecretvalue(isHelpful) then isHelpful = nil end -- @secret-policy: reject-secret-value
-        if isHelpful == true then return "HELPFUL" end
-        local isHarmful = ad.isHarmful
-        if issecretvalue and issecretvalue(isHarmful) then isHarmful = nil end -- @secret-policy: reject-secret-value
-        if isHarmful == true then return "HARMFUL" end
-    end
-
-    if AuraInstancePassesFilter(unit, instID, "HELPFUL") == true then
-        return "HELPFUL"
-    end
-    if AuraInstancePassesFilter(unit, instID, "HARMFUL") == true then
-        return "HARMFUL"
-    end
-    return nil
-end
-
-local function CapturePayloadAllowedForUnit(unit, auraData, auraFilter)
-    if unit ~= "target" then return true end
-    if auraFilter ~= "HELPFUL" and auraFilter ~= "HARMFUL" then return false end
-    return TargetAuraMatchesPlayerFilter(auraData, auraFilter)
-end
-
-local function CapturedAuraMatchesFilter(entry, allowedFiltersByUnit)
-    if not entry then return false end
-    if allowedFiltersByUnit == false then return true end
-
-    local unit = entry.unit
-    local allowed = allowedFiltersByUnit and allowedFiltersByUnit[unit]
-    if allowed == nil then
-        allowed = DEFAULT_CAPTURED_AURA_FILTERS[unit]
-    end
-    if allowed == nil or allowed == true then return true end
-
-    local filter = entry.filter
-    if type(allowed) == "table" then
-        return filter ~= nil and allowed[filter] == true
-    end
-    return filter == allowed
-end
-
-local CAST_CORRELATION_WINDOW = 0.1
-
-local _recentCasts = {}
-
 local function ClearDeprecatedLearnedCastToAuraDB()
     local QUI = ns.Addon
     if not QUI or not QUI.db or not QUI.db.global then return nil end
     if QUI.db.global.cdmLearnedCastToAura ~= nil then
         QUI.db.global.cdmLearnedCastToAura = nil
     end
-end
-
-local function PruneRecentCasts(now)
-    local cutoff = now - CAST_CORRELATION_WINDOW
-    while _recentCasts[1] and _recentCasts[1].time < cutoff do
-        table.remove(_recentCasts, 1)
-    end
-end
-
-local function RecordPlayerCast(spellID)
-    if not IsUsableSpellIDKey(spellID) then return end
-    local now = GetTime()
-    PruneRecentCasts(now)
-    _recentCasts[#_recentCasts + 1] = { spellID = spellID, time = now }
-end
-
-local function FindCorrelatedCast(now)
-    PruneRecentCasts(now)
-    local last = _recentCasts[#_recentCasts]
-    if last then return last.spellID end
-    return nil
-end
-
-local function StoreCapturedSpellKey(unit, spellID, entry)
-    if not IsUsableSpellIDKey(spellID) then return end
-    local unitMap = GetCapturedUnitMap(_capturedAuraByUnitSpellID, unit)
-    if unitMap then
-        unitMap[spellID] = entry
-    end
-    if IsDefaultCapturedUnit(unit) then
-        _capturedAuraBySpellID[spellID] = entry
-    end
-end
-
-local function StoreCapturedNameKey(unit, nameKey, entry)
-    if not IsUsableTableKey(nameKey) then return end
-    local unitMap = GetCapturedUnitMap(_capturedAuraByUnitName, unit)
-    if unitMap then
-        unitMap[nameKey] = entry
-    end
-    if IsDefaultCapturedUnit(unit) then
-        _capturedAuraByName[nameKey] = entry
-    end
-end
-
-local function CaptureAuraFromPayload(unit, ad, allowCastCorrelation, explicitFilter)
-    if not ad then return end
-    local instID = GetRawAuraInstanceID(ad)
-    if issecretvalue and issecretvalue(instID) then return end
-    if not instID then return end
-
-    local sid = GetCleanAuraSpellID(ad)
-    local nameRaw = GetCleanAuraName(ad)
-    local name, nameKey
-    local cleanName, cleanNameKey = (function()
-        if type(nameRaw) == "string" and nameRaw ~= "" then
-            return nameRaw, nameRaw:lower()
-        end
-        return nil, nil
-    end)()
-    if cleanName and IsUsableTableKey(cleanNameKey) then
-        name = cleanName
-        nameKey = cleanNameKey
-    end
-
-    local auraFilter = ResolveCapturedAuraFilter(unit, ad, instID, explicitFilter)
-    if not CapturePayloadAllowedForUnit(unit, ad, auraFilter) then
-        return
-    end
-
-    local castSID
-    if allowCastCorrelation == nil then
-        allowCastCorrelation = unit == "player" and auraFilter == "HELPFUL"
-    end
-    if allowCastCorrelation then
-        castSID = FindCorrelatedCast(GetTime())
-    end
-
-    if not sid and not name and not castSID then return end
-
-    local entry = {
-        auraInstanceID = instID,
-        unit = unit,
-        spellID = sid or castSID,
-        name = name,
-        filter = auraFilter,
-        auraData = ad,
-    }
-    if sid then
-        StoreCapturedSpellKey(unit, sid, entry)
-    end
-    if nameKey then
-        StoreCapturedNameKey(unit, nameKey, entry)
-    end
-    if castSID and castSID ~= sid and not _capturedAuraBySpellID[castSID] then
-        StoreCapturedSpellKey(unit, castSID, entry)
-    end
-    local instMap = GetCapturedUnitMap(_capturedAuraByUnitInstanceID, unit)
-    if instMap then
-        instMap[instID] = entry
-    end
-end
-
-local function ReleaseCapturedAurasForUnit(unit)
-    if type(unit) ~= "string" or unit == "" then return end
-    for k, entry in pairs(_capturedAuraBySpellID) do
-        if entry and entry.unit == unit then
-            _capturedAuraBySpellID[k] = nil
-        end
-    end
-    for k, entry in pairs(_capturedAuraByName) do
-        if entry and entry.unit == unit then
-            _capturedAuraByName[k] = nil
-        end
-    end
-    local unitSpellMap = _capturedAuraByUnitSpellID[unit]
-    if unitSpellMap then wipe(unitSpellMap) end
-    local unitNameMap = _capturedAuraByUnitName[unit]
-    if unitNameMap then wipe(unitNameMap) end
-    local unitInstMap = _capturedAuraByUnitInstanceID[unit]
-    if unitInstMap then wipe(unitInstMap) end
-end
-
-local function ReleaseCapturedEntry(entry)
-    if not entry then return end
-    for k, v in pairs(_capturedAuraBySpellID) do
-        if v == entry then _capturedAuraBySpellID[k] = nil end
-    end
-    for k, v in pairs(_capturedAuraByName) do
-        if v == entry then _capturedAuraByName[k] = nil end
-    end
-    for _, map in pairs(_capturedAuraByUnitSpellID) do
-        for k, v in pairs(map) do
-            if v == entry then map[k] = nil end
-        end
-    end
-    for _, map in pairs(_capturedAuraByUnitName) do
-        for k, v in pairs(map) do
-            if v == entry then map[k] = nil end
-        end
-    end
-    local instMap = _capturedAuraByUnitInstanceID[entry.unit]
-    if instMap and entry.auraInstanceID ~= nil
-        and instMap[entry.auraInstanceID] == entry then
-        instMap[entry.auraInstanceID] = nil
-    end
-end
-
-local function ReleaseCapturedAurasByInstanceIDsForUnit(unit, auraInstanceIDs)
-    if type(unit) ~= "string" or unit == "" then return false end
-    if type(auraInstanceIDs) ~= "table" then return false end
-
-    local instMap = _capturedAuraByUnitInstanceID[unit]
-    if not instMap then return false end
-
-    local released = false
-    for _, auraInstanceID in ipairs(auraInstanceIDs) do
-        if auraInstanceID ~= nil then
-            local entry = instMap[auraInstanceID]
-            if entry then
-                ReleaseCapturedEntry(entry)
-                released = true
-            end
-        end
-    end
-    return released
-end
-
-local function ReleaseCapturedAuraByInstanceID(unit, auraInstanceID)
-    local instMap = _capturedAuraByUnitInstanceID[unit]
-    local entry = instMap and instMap[auraInstanceID]
-    if entry then ReleaseCapturedEntry(entry) end
-end
-
-local function RescanCapturedAurasForUnit(unit, updateInfo)
-    if not updateInfo or not updateInfo.addedAuras
-        or (issecretvalue and issecretvalue(updateInfo.addedAuras)) then
-        local glue = ns.AuraGlue
-        if glue and glue.AurasAreSecret and glue.AurasAreSecret() then
-            return false
-        end
-        local collect = glue and glue.CollectReadableAuras
-        if not collect then return false end
-        local released = false
-        local result = collect(unit, function(auraData, filter)
-            if not released then
-                ReleaseCapturedAurasForUnit(unit)
-                released = true
-            end
-            local auraInstanceID = GetCleanAuraInstanceID(auraData)
-            if auraInstanceID then
-                ReleaseCapturedAuraByInstanceID(unit, auraInstanceID)
-            end
-            CaptureAuraFromPayload(unit, auraData, nil, filter)
-        end)
-        if result == true then
-            if not released then ReleaseCapturedAurasForUnit(unit) end
-            return true
-        end
-        if type(result) ~= "table" then return false end
-        ReleaseCapturedAurasForUnit(unit)
-        for _, item in ipairs(result) do
-            CaptureAuraFromPayload(unit, item[1], nil, item[2])
-        end
-        return true
-    end
-    for _, ad in ipairs(updateInfo.addedAuras) do
-        CaptureAuraFromPayload(unit, ad)
-    end
-    return false
-end
-
-local function RefreshCapturedAurasByInstanceIDs(unit, instanceIDs)
-    local glue = ns.AuraGlue
-    if glue and glue.AurasAreSecret and glue.AurasAreSecret() then
-        return false
-    end
-    local refresh = glue and glue.ReadAurasByInstanceID
-    if not refresh then return false end
-    return refresh(unit, instanceIDs, function(auraData, auraInstanceID)
-        ReleaseCapturedAuraByInstanceID(unit, auraInstanceID)
-        if auraData then CaptureAuraFromPayload(unit, auraData) end
-    end)
 end
 
 local function NotifyAuraConsumers(unit, updateInfo)
@@ -490,330 +88,16 @@ end
 
 local REGISTERED_UNITS = { "player", "pet", "target" }
 
-local function AnyDeltaElementSecret(arr, isAuraData)
-    if not arr then return false end
-    for i = 1, #arr do
-        local v = arr[i]
-        if issecretvalue(v) then return true end -- @secret-policy: report-secret-detected
-        if isAuraData and v ~= nil
-            and (issecretvalue(v.auraInstanceID)
-                or issecretvalue(v.spellId)
-                or issecretvalue(v.spellID)) then
-            return true
-        end
-    end
-    return false
-end
-
-local function HandleUnitAura(unit, updateInfo)
-    if updateInfo and issecretvalue and issecretvalue(updateInfo.isFullUpdate) then
-        updateInfo = nil
-    end
-    if updateInfo and issecretvalue
-        and (issecretvalue(updateInfo.addedAuras)
-            or issecretvalue(updateInfo.updatedAuraInstanceIDs)
-            or issecretvalue(updateInfo.removedAuraInstanceIDs)) then
-        updateInfo = nil
-    end
-    if updateInfo and issecretvalue
-        and (AnyDeltaElementSecret(updateInfo.addedAuras, true)
-            or AnyDeltaElementSecret(updateInfo.updatedAuraInstanceIDs)
-            or AnyDeltaElementSecret(updateInfo.removedAuraInstanceIDs)) then
-        updateInfo = nil
-    end
-    if not updateInfo or updateInfo.isFullUpdate then
-        RescanCapturedAurasForUnit(unit, updateInfo)
-        NotifyAuraConsumers(unit, updateInfo)
-        return
-    end
-    if updateInfo.addedAuras and not (issecretvalue and issecretvalue(updateInfo.addedAuras)) then
-        if updateInfo.updatedAuraInstanceIDs
-            and not (issecretvalue and issecretvalue(updateInfo.updatedAuraInstanceIDs))
-            and #updateInfo.updatedAuraInstanceIDs > 0 then
-            RefreshCapturedAurasByInstanceIDs(unit, updateInfo.updatedAuraInstanceIDs)
-        end
-        for _, ad in ipairs(updateInfo.addedAuras) do
-            CaptureAuraFromPayload(unit, ad)
-        end
-    elseif updateInfo.updatedAuraInstanceIDs
-        and not (issecretvalue and issecretvalue(updateInfo.updatedAuraInstanceIDs))
-        and #updateInfo.updatedAuraInstanceIDs > 0 then
-        RefreshCapturedAurasByInstanceIDs(unit, updateInfo.updatedAuraInstanceIDs)
-    end
-    if updateInfo.removedAuraInstanceIDs
-        and not (issecretvalue and issecretvalue(updateInfo.removedAuraInstanceIDs))
-        and #updateInfo.removedAuraInstanceIDs > 0 then
-        local released = ReleaseCapturedAurasByInstanceIDsForUnit(unit, updateInfo.removedAuraInstanceIDs)
-    end
-    NotifyAuraConsumers(unit, updateInfo)
-end
-
-local auraCaptureFrame = CreateFrame("Frame")
-local function AuraCaptureFrameOnEvent(self, event, ...)
-    if not IsCDMRuntimeEnabled() then
-        return
-    end
-
-    if event == "UNIT_SPELLCAST_SUCCEEDED" then
-        local _, _, spellID = ...
-        RecordPlayerCast(spellID)
-        return
-    end
-    if event == "PLAYER_TARGET_CHANGED" then
-        ReleaseCapturedAurasForUnit("target")
-        NotifyAuraConsumers("target", nil)
-        return
-    end
-    if event ~= "UNIT_AURA" then return end
-    local unit, updateInfo = ...
-    if issecretvalue and issecretvalue(unit) then
-        for i = 1, #REGISTERED_UNITS do
-            HandleUnitAura(REGISTERED_UNITS[i], nil)
-        end
-        return
-    end
-    if issecretvalue and issecretvalue(updateInfo) then
-        updateInfo = nil
-    end
-    HandleUnitAura(unit, updateInfo)
-end
-
-local function RegisterAuraCaptureFrame()
-    auraCaptureFrame:SetScript("OnEvent", AuraCaptureFrameOnEvent)
-    auraCaptureFrame:RegisterUnitEvent("UNIT_AURA", "player", "pet", "target")
-    auraCaptureFrame:RegisterUnitEvent("UNIT_SPELLCAST_SUCCEEDED", "player")
-    auraCaptureFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
-end
-
-RegisterAuraCaptureFrame()
-
 function CDMSpellData:DisableRuntime()
+    if ns.CDMAlerts and ns.CDMAlerts.RequestNativeSoundRefresh then
+        ns.CDMAlerts.RequestNativeSoundRefresh(true)
+    end
     initialized = false
-    auraCaptureFrame:UnregisterAllEvents()
-    auraCaptureFrame:SetScript("OnEvent", nil)
     if runtimeEventFrame then
         runtimeEventFrame:UnregisterAllEvents()
         runtimeEventFrame:SetScript("OnEvent", nil)
         runtimeEventFrame = nil
     end
-end
-
-local function GetCapturedAuraForLookup(spellIDs, entryName, preferredUnits, allowGlobalFallback, allowedFiltersByUnit)
-    if preferredUnits then
-        for unitIdx = 1, #preferredUnits do
-            local unit = preferredUnits[unitIdx]
-            local spellMap = _capturedAuraByUnitSpellID[unit]
-            if spellMap and spellIDs then
-                for i = 1, #spellIDs do
-                    local sid = spellIDs[i]
-                    if IsUsableTableKey(sid) then
-                        local entry = spellMap[sid]
-                        if entry and entry.auraInstanceID
-                           and CapturedAuraMatchesFilter(entry, allowedFiltersByUnit) then
-                            return entry
-                        end
-                    end
-                end
-            end
-            local nameMap = _capturedAuraByUnitName[unit]
-            if nameMap and type(entryName) == "string" then
-                local nameKey
-                if entryName ~= "" then nameKey = entryName:lower() end
-                if IsUsableTableKey(nameKey) then
-                    local entry = nameMap[nameKey]
-                    if entry and entry.auraInstanceID
-                       and CapturedAuraMatchesFilter(entry, allowedFiltersByUnit) then
-                        return entry
-                    end
-                end
-            end
-        end
-    end
-
-    if allowGlobalFallback == false then
-        return nil
-    end
-
-    if spellIDs then
-        for i = 1, #spellIDs do
-            local sid = spellIDs[i]
-            if IsUsableTableKey(sid) then
-                local entry = _capturedAuraBySpellID[sid]
-                if entry and entry.auraInstanceID
-                   and CapturedAuraMatchesFilter(entry, allowedFiltersByUnit) then
-                    return entry
-                end
-            end
-        end
-    end
-    if type(entryName) == "string" then
-        local nameKey
-        if entryName ~= "" then nameKey = entryName:lower() end
-        if IsUsableTableKey(nameKey) then
-            local entry = _capturedAuraByName[nameKey]
-            if entry and entry.auraInstanceID
-               and CapturedAuraMatchesFilter(entry, allowedFiltersByUnit) then
-                return entry
-            end
-        end
-    end
-    return nil
-end
-
-local function GetReadableAuraDurationState(auraData)
-    if not auraData then return nil end
-    local duration = auraData.duration
-    if issecretvalue and issecretvalue(duration) then
-        return nil -- @secret-policy: reject-secret-value
-    end
-    if duration == nil then
-        return false
-    end
-    if type(duration) ~= "number" then
-        return nil
-    end
-    if InCombatLockdown() then
-        return nil
-    end
-    local hasNoDuration = duration <= 0
-    if hasNoDuration then
-        return false
-    end
-    return true
-end
-
-local function ApplyAuraExpirationState(result, auraUnit, auraInstanceID, auraData)
-    local hasExpiration = GetReadableAuraDurationState(auraData)
-    if hasExpiration ~= nil then
-        result.hasExpirationTime = hasExpiration
-        if hasExpiration == false then
-            result.hideDurationText = true
-        end
-    end
-    return hasExpiration
-end
-
-local IsAuraOwnedByPlayerOrPet = Helpers.IsAuraOwnedByPlayerOrPet
-
-local function IsSelfUnit(auraUnit)
-    return auraUnit == "player" or auraUnit == "pet" or auraUnit == "vehicle"
-end
-
-local function FilterWantsToken(filter, token)
-    return type(filter) == "string"
-        and type(token) == "string"
-        and filter:find(token, 1, true) ~= nil
-end
-
-local function LookupCapturedAuraBySpellID(unit, spellID, filter)
-    if not unit or not spellID then
-        return nil
-    end
-    SINGLE_AURA_SPELL_ID[1] = spellID
-    local allowed = SINGLE_AURA_FILTERS[unit]
-    if unit ~= "target" then
-        allowed[unit] = filter == "HARMFUL" and "HARMFUL" or "HELPFUL"
-    end
-    return GetCapturedAuraForLookup(SINGLE_AURA_SPELL_ID, nil,
-        SINGLE_AURA_UNITS[unit], false, allowed)
-end
-
-local function QueryCapturedAuraByName(unit, name, filter)
-    if not unit or not IsUsableAuraName(name) then return nil end
-    local allowed = SINGLE_AURA_FILTERS[unit]
-    if unit ~= "target" then
-        allowed[unit] = filter == "HARMFUL" and "HARMFUL" or "HELPFUL"
-    end
-    return GetCapturedAuraForLookup(nil, name, SINGLE_AURA_UNITS[unit], false, allowed)
-end
-
-local function GetCapturedAuraData(entry)
-    return entry and (entry.auraData or entry) or nil
-end
-
-local function IsUsableResolvedAuraData(auraUnit, auraData)
-    if not auraData then return false end
-    if IsSelfUnit(auraUnit) then
-        return true
-    end
-    return IsAuraOwnedByPlayerOrPet(auraData, true)
-end
-
-local function ResolveAuraInstanceDurationState(result, auraUnit, auraInstanceID, auraData)
-    if not auraUnit or not auraInstanceID then
-        return false, nil
-    end
-
-    local hasExpiration = ApplyAuraExpirationState(result, auraUnit, auraInstanceID, auraData)
-    if hasExpiration == false then
-        return true, nil
-    end
-
-    local glue = ns.AuraGlue
-    local readDuration = glue and glue.ReadAuraDurationByInstanceID
-    if readDuration then
-        local durationObj = readDuration(auraUnit, auraInstanceID)
-        if durationObj then
-            return true, durationObj
-        end
-    end
-
-    if InCombatLockdown() then
-        result.durationStateUnknown = true
-        return true, nil
-    end
-
-    return true, nil
-end
-
-local function GetAuraApplications(unit, auraInstanceID)
-    local glue = ns.AuraGlue
-    local readCount = glue and glue.ReadAuraApplicationDisplayCount
-    if readCount then
-        return readCount(unit, auraInstanceID)
-    end
-    return false, nil
-end
-
-local function GetOwnedTargetFilter(filter)
-    local base = filter or "HARMFUL"
-    if FilterWantsToken(base, "PLAYER") then
-        return base
-    end
-    return base .. "|PLAYER"
-end
-
-local function IsUsableTargetAuraData(auraData, filter)
-    if not auraData then return false end
-    return TargetAuraMatchesPlayerFilter(auraData, filter or "HARMFUL|PLAYER")
-end
-
-local function ScanOwnedTargetAuraBySpellID(spellID, filter)
-    if not IsUsableSpellIDKey(spellID) then return nil end
-    SINGLE_AURA_SPELL_ID[1] = spellID
-    return GetCapturedAuraForLookup(SINGLE_AURA_SPELL_ID, nil,
-        SINGLE_AURA_UNITS.target, false, SINGLE_AURA_FILTERS.target)
-end
-
-local function ScanOwnedTargetAuraByName(spellName, filter)
-    if not IsUsableAuraName(spellName) then return nil end
-    return GetCapturedAuraForLookup(nil, spellName, SINGLE_AURA_UNITS.target, false,
-        SINGLE_AURA_FILTERS.target)
-end
-
-local function FindOwnedTargetAuraBySpellID(spellID, filter)
-    if not spellID then return nil end
-
-    local directFilter = GetOwnedTargetFilter(filter)
-    local ad = LookupCapturedAuraBySpellID("target", spellID, directFilter)
-    if ad then return ad end
-
-    return ScanOwnedTargetAuraBySpellID(spellID, filter)
-end
-
-local function FindOwnedTargetAuraByName(spellName, filter)
-    if not IsUsableAuraName(spellName) then return nil end
-    return ScanOwnedTargetAuraByName(spellName, filter)
 end
 
 local function SafeMaybeNumber(value)
@@ -905,26 +189,6 @@ local function BuildTotemCandidates(...)
     return _totemCandidateIDs
 end
 
-local _totemScanReport = {}
-
-local function FormatTotemSlotScan()
-    if not (GetTotemInfo and GetNumTotemSlots) then return "no-api" end
-    local slotCount = GetNumTotemSlots()
-    if type(slotCount) ~= "number" then return "no-slot-count" end
-    wipe(_totemScanReport)
-    for slot = 1, slotCount do
-        local hasTotem, _, _, _, _, _, totemSpellID = GetTotemInfo(slot)
-        if issecretvalue and issecretvalue(hasTotem) then hasTotem = nil end
-        if hasTotem == true then
-            -- @secret-safe: guarded by IsUsableSpellIDKey, which probes issecretvalue and rejects secrets; the analyzer is non-interprocedural and cannot see through the helper
-            local shown = IsUsableSpellIDKey(totemSpellID) and tostring(totemSpellID) or "?"
-            _totemScanReport[#_totemScanReport + 1] = tostring(slot) .. ":" .. shown
-        end
-    end
-    if #_totemScanReport == 0 then return "none-active" end
-    return table.concat(_totemScanReport, ",")
-end
-
 local function FindTotemSlotForSpellIDs(...)
     if not (GetTotemInfo and GetNumTotemSlots) then return nil end
     local slotCount = GetNumTotemSlots()
@@ -974,645 +238,42 @@ local function ResolveVirtualAuraState(explicitSlot)
     return state
 end
 
-local _auraResult = {
-    isActive = false,
-    auraInstanceID = nil,
-    auraUnit = "player",
-    durObj = nil,
-    auraData = nil,
-    absorbPoints = nil,
-    count = nil,
-    resolvedAuraSpellID = nil,
-    hasExpirationTime = nil,
-    hideDurationText = nil,
-    durationStateUnknown = nil,
-    totemSlot = nil,
-    totemName = nil,
-    totemIcon = nil,
-    isTotemInstance = false,
-}
-
-local _auraCountResult = {
-    value = nil,
-    sinkText = nil,
-    shown = false,
-    source = nil,
-}
-_auraResult.count = _auraCountResult
-
-local function IsSecretCountValue(value)
-    return issecretvalue and issecretvalue(value) or false
-end
-
-local function SafeCountNumber(value)
-    if IsSecretCountValue(value) or value == nil then
-        return nil
-    end
-    local valueType = type(value)
-    if valueType == "number" then
-        return value
-    end
-    if valueType == "string" then
-        return tonumber(value)
-    end
-    return nil
-end
-
-local function SetAuraCount(result, value, source, shown)
-    local count = result and result.count
-    if not count then return end
-
-    count.value = nil
-    count.sinkText = nil
-    count.shown = false
-    count.source = nil
-
-    if shown == false then
-        return
-    end
-    if not IsSecretCountValue(value) and value == nil then
-        return
-    end
-
-    count.value = SafeCountNumber(value)
-    count.sinkText = value
-    count.shown = true
-    count.source = source
-end
-
-local function WipeAuraResult()
-    _auraResult.isActive = false
-    _auraResult.auraInstanceID = nil
-    _auraResult.auraUnit = "player"
-    _auraResult.durObj = nil
-    _auraCountResult.value = nil
-    _auraCountResult.sinkText = nil
-    _auraCountResult.shown = false
-    _auraCountResult.source = nil
-    _auraResult.auraData = nil
-    _auraResult.absorbPoints = nil
-    _auraResult.resolvedAuraSpellID = nil
-    _auraResult.hasExpirationTime = nil
-    _auraResult.hideDurationText = nil
-    _auraResult.durationStateUnknown = nil
-    _auraResult.totemSlot = nil
-    _auraResult.totemName = nil
-    _auraResult.totemIcon = nil
-    _auraResult.isTotemInstance = false
-end
-
-local function SetResolvedAuraSpellID(result, auraData, fallbackID)
-    if not result then return end
-    local pts = auraData and auraData.points
-    if not (issecretvalue and issecretvalue(pts)) and pts ~= nil then
-        result.absorbPoints = pts
-    end
-    local sid = GetCleanAuraSpellID(auraData)
-    if not IsUsableTableKey(sid) then
-        sid = fallbackID
-    end
-    if IsUsableTableKey(sid) then
-        result.resolvedAuraSpellID = sid
-    end
-end
-
----@type fun(...): ... -- hot-swapped by QUI_Debug; the stub is narrower than d.ShouldAura
-local ShouldDebugAuraState = function() return false end
----@type fun(...)
-local AuraStateDebug       = function() end
----@type fun(...): string
-local FormatIDList         = function() return "nil" end
-
-local function FormatLinkedLookup(spellID)
-    local index = ns.CDMIndex
-    local catalog = ns.CDMCatalog
-    if not (index and index.Get) then return "no-index" end
-    if not (catalog and catalog.GetCooldownInfo) then return "no-catalog" end
-    if not IsUsableSpellIDKey(spellID) then return "bad-spellid" end
-    local mapped = index.Get(spellID)
-    if not mapped then return "no-index-entry" end
-    local cooldownID = mapped.cooldownID
-    if not IsUsableTableKey(cooldownID) then return "no-cooldown-id" end
-    -- @secret-safe: guarded by IsUsableTableKey, which probes issecretvalue and rejects secrets; the analyzer is non-interprocedural and cannot see through the helper
-    local prefix = "cd=" .. tostring(cooldownID)
-    local info = catalog.GetCooldownInfo(cooldownID)
-    if not info then return prefix .. " no-info" end
-    local function Show(value)
-        if not IsUsableTableKey(value) then return "nil" end
-        -- @secret-safe: guarded by IsUsableTableKey, which probes issecretvalue and rejects secrets; the analyzer is non-interprocedural and cannot see through the helper
-        return tostring(value)
-    end
-    prefix = prefix
-        .. " sid=" .. Show(info.spellID)
-        .. " ovr=" .. Show(info.overrideSpellID)
-        .. " tip=" .. Show(info.overrideTooltipSpellID)
-        .. " link=" .. Show(info.linkedSpellID)
-        .. " flags=" .. Show(info.flags)
-    local linked = info.linkedSpellIDs
-    if type(linked) ~= "table" then return prefix .. " no-linked-table" end
-    if #linked == 0 then return prefix .. " linked-empty" end
-    return prefix .. " linked=" .. FormatIDList(linked)
-end
-
-local _resolveAuraScratch = {
-    spellID = nil, entrySpellID = nil, entryID = nil, entryName = nil,
-    entryLinkedSpellID = nil, entryLinkedSpellIDs = nil,
-    entryIsAura = false, entryTexture = nil, viewerType = nil,
-    debugAura = false, isBuiltinAuraViewer = false,
-
-    hasMappedAuraID = false,
-}
-
-local _scratchCandidateIDs  = {}
-local _scratchCandidateSeen = {}
-local _scratchProbeIDs      = {}
-local _scratchProbeSeen     = {}
-
-local function WipeResolveAuraScratch()
-    local s = _resolveAuraScratch
-    s.spellID = nil; s.entrySpellID = nil; s.entryID = nil; s.entryName = nil
-    s.entryLinkedSpellID = nil; s.entryLinkedSpellIDs = nil
-    s.entryIsAura = false; s.entryTexture = nil; s.viewerType = nil
-    s.debugAura = false; s.isBuiltinAuraViewer = false
-    s.hasMappedAuraID = false
-    wipe(_scratchCandidateIDs)
-    wipe(_scratchCandidateSeen)
-    wipe(_scratchProbeIDs)
-    wipe(_scratchProbeSeen)
-end
-
 local _abilityToAuraSpellID
 local _auraIDsForSpell
 local ResolveAuraDisplaySpellID
+local totemResult, totemCount = {}, {}
 
-local function ResolveAuraAppendID(id)
-    if not IsUsableTableKey(id) or _scratchCandidateSeen[id] then return end
-    _scratchCandidateSeen[id] = true
-    _scratchCandidateIDs[#_scratchCandidateIDs + 1] = id
-end
-
-local function ResolveAuraAppendMappedAuraIDs(id)
-    if not IsUsableTableKey(id) then return end
-    local auraIDs
-    if CDMSpellData.GetAuraIDsForSpell then
-        auraIDs = CDMSpellData:GetAuraIDsForSpell(id)
-    elseif _auraIDsForSpell then
-        auraIDs = _auraIDsForSpell[id]
-    end
-    if not auraIDs then return end
-    for _, aid in ipairs(auraIDs) do
-        if IsUsableTableKey(aid) then
-            _resolveAuraScratch.hasMappedAuraID = true
-        end
-        ResolveAuraAppendID(aid)
-    end
-end
-
-local function ResolveAuraAppendLinkedSpellIDs(id)
-    local linked = GetLinkedSpellIDsForSpellID(id)
-    if not linked then return end
-    for _, linkedID in ipairs(linked) do
-        if IsUsableTableKey(linkedID) then
-            _resolveAuraScratch.hasMappedAuraID = true
-        end
-        ResolveAuraAppendID(linkedID)
-    end
-end
-
-local function ResolveAuraTryCaptured(preferredUnits, allowGlobalFallback, phaseName)
-    local s = _resolveAuraScratch
-    local captured = GetCapturedAuraForLookup(_scratchCandidateIDs, s.entryName,
-        preferredUnits, allowGlobalFallback)
-    if not (captured and captured.auraInstanceID) then
-        return false
-    end
-
-    local capturedUnit = captured.unit or "player"
-    local r = _auraResult
-    local auraData = not InCombatLockdown() and captured.auraData or nil
-    local alive, durObj = ResolveAuraInstanceDurationState(r,
-        capturedUnit, captured.auraInstanceID, auraData)
-    if alive then
-        AuraStateDebug(s.debugAura, phaseName,
-            "spellID=", captured.spellID,
-            "inst=", captured.auraInstanceID,
-            "unit=", capturedUnit)
-        r.durObj = durObj
-        r.auraData = auraData
-        SetResolvedAuraSpellID(r, auraData, captured.spellID)
-        return true, captured.auraInstanceID, capturedUnit
-    end
-
-    ReleaseCapturedEntry(captured)
-    return false
-end
-
-local function ResolveAuraRuntimeStateImpl(params)
-    WipeAuraResult()
-    WipeResolveAuraScratch()
-    local r = _auraResult
-    local s = _resolveAuraScratch
-
+local function ResolveTotemRuntimeState(params)
+    local result = totemResult
+    wipe(result)
+    wipe(totemCount)
+    result.isActive, result.auraUnit, result.count = false, "player", totemCount
+    totemCount.shown = false
     local spellID = params.spellID
-    if not spellID then return r end
-
-    local entrySpellID = params.entrySpellID
-    local entryID = params.entryID
-    local entryName = params.entryName
-    local entryLinkedSpellID = params.entryLinkedSpellID
-    local entryLinkedSpellIDs = params.entryLinkedSpellIDs
-    local entryKind = params.entryKind
-    local entryIsAura = params.entryIsAura == true or entryKind == "aura"
-    local entryTexture = params.entryTexture
-    local viewerType = params.viewerType
-    local debugAura = ShouldDebugAuraState(entryName, spellID, entryID)
-    local isBuiltinAuraViewer = IsBuiltinAuraContainerKey(viewerType)
-
-    s.spellID = spellID
-    s.entrySpellID = entrySpellID
-    s.entryID = entryID
-    s.entryName = entryName
-    s.entryLinkedSpellID = entryLinkedSpellID
-    s.entryLinkedSpellIDs = entryLinkedSpellIDs
-    s.entryIsAura = entryIsAura
-    s.entryTexture = entryTexture
-    s.viewerType = viewerType
-    s.debugAura = debugAura
-    s.isBuiltinAuraViewer = isBuiltinAuraViewer
-
-    AuraStateDebug(debugAura,
-        "begin",
-        "name=", entryName or "?",
-        "spellID=", spellID,
-        "entrySpellID=", entrySpellID,
-        "entryID=", entryID,
-        "viewerType=", viewerType)
-
-    local auraSpellID = spellID
+    if not spellID then return result end
     if ResolveAuraDisplaySpellID then
-        local mappedAuraID, remapped = ResolveAuraDisplaySpellID(auraSpellID)
-        if remapped == true then
-            auraSpellID = mappedAuraID
+        spellID = ResolveAuraDisplaySpellID(spellID)
+    end
+    local slot = params.totemSlot
+    if slot == nil and params.entryIsAura ~= true and params.entryKind ~= "aura" then
+        slot = FindTotemSlotForSpellIDs(spellID, params.entrySpellID, params.entryID)
+    end
+    if slot then
+        local state = ResolveVirtualAuraState(slot)
+        if state.slot then
+            result.totemSlot = state.slot
+            result.totemName = state.totemName
+            result.totemIcon = state.totemIcon
+            result.isTotemInstance = true
+            result.isActive = state.isActive == true
+            result.durObj = state.durObj
         end
     end
-
-    local explicitTotemSlot = params.totemSlot
-    if explicitTotemSlot == nil and not entryIsAura then
-        explicitTotemSlot = FindTotemSlotForSpellIDs(auraSpellID, entrySpellID, entryID)
-        if debugAura then
-            AuraStateDebug(debugAura, "cooldown-totem-slot",
-                "slot=", explicitTotemSlot,
-                "candidates=", FormatIDList(_totemCandidateIDs),
-                "slots=", FormatTotemSlotScan(),
-                "lookup=", FormatLinkedLookup(entrySpellID))
-        end
-    end
-    local disableLooseVisibilityFallback = params.disableLooseVisibilityFallback
-
-    if explicitTotemSlot then
-        local virtualState = ResolveVirtualAuraState(explicitTotemSlot)
-        if virtualState.slot then
-            r.totemSlot = virtualState.slot
-            r.totemName = virtualState.totemName
-            r.totemIcon = virtualState.totemIcon
-            r.isTotemInstance = true
-            if virtualState.isActive then
-                r.isActive = true
-                r.auraUnit = virtualState.auraUnit or "player"
-                r.durObj = virtualState.durObj
-                return r
-            end
-        end
-    end
-
-    local isActive = false
-    local childAuraInstID = nil
-    local auraUnit = "player"
-    local directAuraActiveUnit = nil
-    local directAuraActivePhase = nil
-
-    if entryIsAura and isBuiltinAuraViewer then
-        ResolveAuraAppendID(auraSpellID)
-        ResolveAuraAppendID(entrySpellID)
-    else
-        ResolveAuraAppendID(auraSpellID)
-        ResolveAuraAppendID(entrySpellID)
-        ResolveAuraAppendID(entryID)
-        ResolveAuraAppendMappedAuraIDs(auraSpellID)
-        ResolveAuraAppendMappedAuraIDs(entrySpellID)
-        ResolveAuraAppendMappedAuraIDs(entryID)
-        ResolveAuraAppendLinkedSpellIDs(auraSpellID)
-        ResolveAuraAppendLinkedSpellIDs(entrySpellID)
-        ResolveAuraAppendLinkedSpellIDs(entryID)
-        if IsUsableSpellIDKey(entryLinkedSpellID) then
-            s.hasMappedAuraID = true
-            ResolveAuraAppendID(entryLinkedSpellID)
-        end
-        if type(entryLinkedSpellIDs) == "table" then
-            for _, linkedID in ipairs(entryLinkedSpellIDs) do
-                if IsUsableSpellIDKey(linkedID) then
-                    s.hasMappedAuraID = true
-                    ResolveAuraAppendID(linkedID)
-                end
-            end
-        end
-    end
-
-    if not entryIsAura then
-        local glue = ns.AuraGlue
-        local resolveCooldownAura = glue and glue.GetCooldownAuraBySpellID
-        if resolveCooldownAura then
-            for i = 1, #_scratchCandidateIDs do
-                local auraID = resolveCooldownAura(_scratchCandidateIDs[i])
-                if IsUsableSpellIDKey(auraID) then
-                    s.hasMappedAuraID = true
-                    ResolveAuraAppendID(auraID)
-                end
-            end
-        end
-    end
-
-    if not entryIsAura and not s.hasMappedAuraID then
-        AuraStateDebug(debugAura, "cooldown-no-mirror", "skip-api-fallbacks",
-            "hasMappedAuraID=", s.hasMappedAuraID,
-            "candidates=", FormatIDList(_scratchCandidateIDs))
-        return r
-    end
-
-    if InCombatLockdown() then
-        local matched, newInstID, newUnit = ResolveAuraTryCaptured(
-            SELF_AURA_CAPTURE_LOOKUP_UNITS, false,
-            "phase3.1-event-self-captured")
-        if matched then
-            isActive = true
-            childAuraInstID = newInstID
-            auraUnit = newUnit
-        end
-    end
-
-    if not isActive then
-        for _, tryID in ipairs(_scratchCandidateIDs) do
-            if childAuraInstID then break end
-            for unitIdx = 1, #STACK_SEARCH_UNITS do
-                if childAuraInstID then break end
-                local unitID = STACK_SEARCH_UNITS[unitIdx]
-                local ad = LookupCapturedAuraBySpellID(unitID, tryID, "HELPFUL")
-                if ad then
-                    local auraData = GetCapturedAuraData(ad)
-                    local instID = GetCleanAuraInstanceID(ad)
-                    if instID then
-                        childAuraInstID = instID
-                        auraUnit = unitID
-                        r.auraData = not InCombatLockdown() and auraData or nil
-                        SetResolvedAuraSpellID(r, auraData, tryID)
-                    elseif IsSelfUnit(unitID) and not directAuraActiveUnit then
-                        directAuraActiveUnit = unitID
-                        directAuraActivePhase = "phase3.2-player-active-no-inst"
-                        SetResolvedAuraSpellID(r, ad, tryID)
-                    end
-                end
-            end
-            if not childAuraInstID then
-                local targetAura = FindOwnedTargetAuraBySpellID(tryID, "HARMFUL")
-                local auraData = GetCapturedAuraData(targetAura)
-                local targetInstID = GetCleanAuraInstanceID(targetAura)
-                if targetInstID then
-                    childAuraInstID = targetInstID
-                    auraUnit = "target"
-                    r.auraData = not InCombatLockdown() and auraData or nil
-                    SetResolvedAuraSpellID(r, auraData, tryID)
-                end
-            end
-        end
-    end
-
-    if childAuraInstID then
-        local alive, durObj = ResolveAuraInstanceDurationState(r, auraUnit, childAuraInstID, r.auraData)
-        if alive or r.auraData then
-            AuraStateDebug(debugAura, "phase3.2-duration", "unit=", auraUnit, "inst=", childAuraInstID,
-                "durObj=", durObj and "yes" or "no", "unknown=", r.durationStateUnknown and "yes" or "no")
-            isActive = true
-            r.durObj = durObj
-        end
-    end
-
-    if not isActive then
-        local matched, newInstID, newUnit = ResolveAuraTryCaptured(
-            AURA_CAPTURE_LOOKUP_UNITS, nil,
-            "phase3.4-event-captured")
-        if matched then
-            isActive = true
-            childAuraInstID = newInstID
-            auraUnit = newUnit
-        end
-    end
-
-    if not isActive and directAuraActiveUnit then
-        AuraStateDebug(debugAura, directAuraActivePhase or "phase3.2-active-no-inst",
-            "unit=", directAuraActiveUnit)
-        isActive = true
-        auraUnit = directAuraActiveUnit
-    end
-
-    if not isActive then
-        for _, tryID in ipairs(_scratchCandidateIDs) do
-            if isActive then break end
-            if tryID then
-                local ad = LookupCapturedAuraBySpellID("player", tryID, "HELPFUL")
-                local auraData = GetCapturedAuraData(ad)
-                local instID = GetCleanAuraInstanceID(ad)
-                if instID then
-                    AuraStateDebug(debugAura, "phase4-player-id", "tryID=", tryID, "inst=", instID)
-                    isActive = true
-                    childAuraInstID = instID
-                    auraUnit = "player"
-                    r.auraData = not InCombatLockdown() and auraData or nil
-                    SetResolvedAuraSpellID(r, auraData, tryID)
-                elseif ad then
-                    AuraStateDebug(debugAura, "phase4-player-id-active-no-inst", "tryID=", tryID)
-                    isActive = true
-                    auraUnit = "player"
-                    SetResolvedAuraSpellID(r, ad, tryID)
-                end
-            end
-        end
-    end
-    if not isActive
-        and entryName and entryName ~= "" then
-        local ad = QueryCapturedAuraByName("player", entryName, "HELPFUL")
-        local auraData = GetCapturedAuraData(ad)
-        local instID = GetCleanAuraInstanceID(ad)
-        if instID then
-            AuraStateDebug(debugAura, "phase4-player-name", "inst=", instID)
-            isActive = true
-            childAuraInstID = instID
-            auraUnit = "player"
-            r.auraData = not InCombatLockdown() and auraData or nil
-            SetResolvedAuraSpellID(r, auraData, nil)
-        elseif ad then
-            AuraStateDebug(debugAura, "phase4-player-name-active-no-inst")
-            isActive = true
-            auraUnit = "player"
-            SetResolvedAuraSpellID(r, ad, nil)
-        end
-    end
-    if not isActive
-        and entryName and entryName ~= "" then
-        local ad = QueryCapturedAuraByName("pet", entryName, "HELPFUL")
-        local auraData = GetCapturedAuraData(ad)
-        local instID = GetCleanAuraInstanceID(ad)
-        if instID then
-            AuraStateDebug(debugAura, "phase4-pet-name", "inst=", instID)
-            isActive = true
-            childAuraInstID = instID
-            auraUnit = "pet"
-            r.auraData = not InCombatLockdown() and auraData or nil
-            SetResolvedAuraSpellID(r, auraData, nil)
-        end
-    end
-    if not isActive        and entryName and entryName ~= "" then
-        local ad = FindOwnedTargetAuraByName(entryName, "HARMFUL")
-        local auraData = GetCapturedAuraData(ad)
-        local instID = GetCleanAuraInstanceID(ad)
-        if instID then
-            AuraStateDebug(debugAura, "phase4-target-harmful", "inst=", instID)
-            isActive = true
-            childAuraInstID = instID
-            auraUnit = "target"
-            r.auraData = not InCombatLockdown() and auraData or nil
-            SetResolvedAuraSpellID(r, auraData, nil)
-        end
-    end
-    if not isActive and childAuraInstID then
-        if IsSelfUnit(auraUnit) then
-            local alive, durObj = ResolveAuraInstanceDurationState(r, auraUnit, childAuraInstID, r.auraData)
-            if alive then
-                AuraStateDebug(debugAura, "phase5-validate-inst", "unit=", auraUnit, "inst=", childAuraInstID)
-                isActive = true
-                r.durObj = durObj
-            end
-        end
-    end
-
-    if isActive
-        and not childAuraInstID        and entryName and entryName ~= "" then
-        local tad = FindOwnedTargetAuraByName(entryName, "HARMFUL")
-        local targetData = GetCapturedAuraData(tad)
-        local tadInstID = GetCleanAuraInstanceID(tad)
-        if tadInstID then
-            childAuraInstID = tadInstID
-            auraUnit = "target"
-            r.auraData = not InCombatLockdown() and targetData or nil
-            SetResolvedAuraSpellID(r, targetData, nil)
-        end
-        if not childAuraInstID then
-            local pad = QueryCapturedAuraByName("player", entryName, "HELPFUL")
-            local playerData = GetCapturedAuraData(pad)
-            local padInstID = GetCleanAuraInstanceID(pad)
-            if padInstID then
-                childAuraInstID = padInstID
-                auraUnit = "player"
-                r.auraData = not InCombatLockdown() and playerData or nil
-                SetResolvedAuraSpellID(r, playerData, nil)
-            end
-        end
-        if not childAuraInstID then
-            for _, tryID in ipairs(_scratchCandidateIDs) do
-                if childAuraInstID then break end
-                if tryID then
-                    local ad = LookupCapturedAuraBySpellID("player", tryID, "HELPFUL")
-                    local auraData = GetCapturedAuraData(ad)
-                    local instID = GetCleanAuraInstanceID(ad)
-                    if instID then
-                        childAuraInstID = instID
-                        auraUnit = "player"
-                        r.auraData = not InCombatLockdown() and auraData or nil
-                        SetResolvedAuraSpellID(r, auraData, tryID)
-                    end
-                end
-            end
-        end
-    end
-
-    if isActive and childAuraInstID and not r.durObj then
-        ApplyAuraExpirationState(r, auraUnit, childAuraInstID, r.auraData)
-    end
-
-    if isActive then
-        local apps
-        local stackSource
-        local appsResolved = false
-        if childAuraInstID then
-            local gotApps, stackApps = GetAuraApplications(auraUnit, childAuraInstID)
-            if gotApps then
-                apps = stackApps
-                stackSource = "display-count"
-                appsResolved = true
-            end
-        end
-        if not appsResolved
-            and childAuraInstID
-            and not InCombatLockdown()
-            and r.auraData then
-            local directApps = GetDisplayableAuraApplications(r.auraData)
-            if IsUsableResolvedAuraData(auraUnit, r.auraData) and directApps ~= nil then
-                apps = directApps
-                stackSource = "resolved-data"
-                appsResolved = true
-            end
-        end
-        if not appsResolved
-            and not childAuraInstID            and entryName and entryName ~= "" then
-            for i = 1, #STACK_SEARCH_UNITS do
-                local stackUnit = STACK_SEARCH_UNITS[i]
-                if not appsResolved then
-                    local nad = QueryCapturedAuraByName(stackUnit, entryName, "HELPFUL")
-                    local auraData = GetCapturedAuraData(nad)
-                    local nadApps = GetDisplayableAuraApplications(auraData)
-                    if auraData and nadApps ~= nil then
-                        apps = nadApps
-                        stackSource = "name-" .. stackUnit
-                        appsResolved = true
-                    end
-                end
-            end
-            if not appsResolved then
-                local tad = FindOwnedTargetAuraByName(entryName, "HARMFUL")
-                local tadInstID = GetRawAuraInstanceID(tad)
-                local gotApps, tadApps = GetAuraApplications("target", tadInstID)
-                if gotApps then
-                    apps = tadApps
-                    stackSource = "display-count"
-                    appsResolved = true
-                end
-            end
-        end
-        local appsShown = appsResolved
-            and (IsSecretCountValue(apps) or apps ~= nil)
-        SetAuraCount(r, apps, stackSource, appsShown)
-        if debugAura then
-            local appsLog = IsSecretCountValue(apps) and "<secret>" or apps
-            AuraStateDebug(debugAura, "count",
-                "shown=", tostring(_auraCountResult.shown == true),
-                "source=", stackSource or "nil",
-                "value=", appsLog)
-        end
-    end
-
-    r.isActive = isActive
-    r.auraInstanceID = childAuraInstID
-    r.auraUnit = auraUnit
-    if isActive and not r.resolvedAuraSpellID then
-        SetResolvedAuraSpellID(r, r.auraData, auraSpellID)
-    end
-    AuraStateDebug(debugAura, "end", "active=", isActive, "unit=", auraUnit,
-        "inst=", childAuraInstID, "hasExp=", r.hasExpirationTime,
-        "hideDur=", r.hideDurationText)
-    return r
+    return result
 end
 
 if ns.CDMAuraRuntime and ns.CDMAuraRuntime.SetResolver then
-    ns.CDMAuraRuntime.SetResolver(ResolveAuraRuntimeStateImpl)
+    ns.CDMAuraRuntime.SetResolver(ResolveTotemRuntimeState)
 end
 
 local function GetNcdmDB()
@@ -2433,6 +1094,9 @@ local function CombatGuard()
 end
 
 FireChangeCallback = function()
+    if ns.CDMAlerts and ns.CDMAlerts.RequestNativeSoundRefresh then
+        ns.CDMAlerts.RequestNativeSoundRefresh()
+    end
     if _G.QUI_OnSpellDataChanged then
         _G.QUI_OnSpellDataChanged()
     end
@@ -2946,13 +1610,6 @@ function CDMSpellData:HasResolvableAuraForItem(itemID)
     end
 
     if useSpellID then
-        local glue = ns.AuraGlue
-        local resolveCooldownAura = glue and glue.GetCooldownAuraBySpellID
-        local cooldownAuraID = resolveCooldownAura and resolveCooldownAura(useSpellID)
-        if type(cooldownAuraID) == "number" and cooldownAuraID > 0 then
-            return cooldownAuraID
-        end
-
         local auraIDs = CDMSpellData:GetAuraIDsForSpell(useSpellID)
         if auraIDs and type(auraIDs[1]) == "number" and auraIDs[1] > 0 then
             return auraIDs[1]
@@ -3150,47 +1807,6 @@ local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, Enum.SpellBookSpell
     return result
 end
 
-function CDMSpellData:GetActiveAuras(filter)
-    local result = {}
-    local seen = {}
-
-    local entries = _capturedAuraByUnitSpellID.player
-    if not entries then return result end
-    for sid, auraData in pairs(entries) do
-        if sid and not seen[auraData] and CapturedAuraMatchesFilter(auraData, {
-            player = filter or "HELPFUL",
-        }) then
-            seen[auraData] = true
-            local rawAuraData = GetCapturedAuraData(auraData)
-            local icon = rawAuraData and rawAuraData.icon
-            local duration = rawAuraData and rawAuraData.duration
-            if (issecretvalue and issecretvalue(icon)) or type(icon) ~= "number" then
-                icon = 0
-            end
-            if (issecretvalue and issecretvalue(duration)) or type(duration) ~= "number" then
-                duration = 0
-            end
-            result[#result + 1] = {
-                spellID = GetCleanAuraSpellID(rawAuraData) or auraData.spellID or sid,
-                name = auraData.name or "",
-                icon = icon,
-                duration = duration,
-            }
-        end
-    end
-
-    return result
-end
-
-function CDMSpellData:GetCapturedAuraDataByInstanceID(unit, auraInstanceID)
-    if type(unit) ~= "string" or unit == ""
-        or (issecretvalue and issecretvalue(auraInstanceID)) then
-        return nil
-    end
-    local instMap = _capturedAuraByUnitInstanceID[unit]
-    return GetCapturedAuraData(instMap and instMap[auraInstanceID])
-end
-
 function CDMSpellData:GetPassiveAuras()
     local result = {}
     local seen = {}
@@ -3371,69 +1987,9 @@ function CDMSpellData:InvalidateLearnedCache()
 end
 
 function CDMSpellData:GetCacheStats()
-    local function size(t)
-        if type(t) ~= "table" then return 0 end
-        local n = 0
-        for _ in pairs(t) do n = n + 1 end
-        return n
-    end
-    local function capturedStats()
-        local seenEntries = {}
-        local seenUnits = {}
-        local entryCount = 0
-        local unitCount = 0
-
-        local function addEntry(entry)
-            if type(entry) == "table" and not seenEntries[entry] then
-                seenEntries[entry] = true
-                entryCount = entryCount + 1
-            end
-        end
-
-        local function addUnit(unit)
-            if unit and not seenUnits[unit] then
-                seenUnits[unit] = true
-                unitCount = unitCount + 1
-            end
-        end
-
-        for _, entry in pairs(_capturedAuraBySpellID) do
-            addEntry(entry)
-            addUnit(entry and entry.unit)
-        end
-        for _, entry in pairs(_capturedAuraByName) do
-            addEntry(entry)
-            addUnit(entry and entry.unit)
-        end
-        for unit, map in pairs(_capturedAuraByUnitSpellID) do
-            addUnit(unit)
-            for _, entry in pairs(map) do
-                addEntry(entry)
-                addUnit(entry and entry.unit)
-            end
-        end
-        for unit, map in pairs(_capturedAuraByUnitName) do
-            addUnit(unit)
-            for _, entry in pairs(map) do
-                addEntry(entry)
-                addUnit(entry and entry.unit)
-            end
-        end
-
-        return entryCount, unitCount
-    end
-    local learnedSize = 0
-    if type(learnedCooldownsCache) == "table" then
-        learnedSize = #learnedCooldownsCache
-    end
-    local capturedAuraEntries, capturedAuraUnits = capturedStats()
     return {
-        capturedAuraEntries = capturedAuraEntries,
-        capturedAuraUnits   = capturedAuraUnits,
-        capturedAuraSpellKeys = size(_capturedAuraBySpellID),
-        capturedAuraNameKeys  = size(_capturedAuraByName),
-        learnedDirty        = learnedCooldownsCacheDirty and true or false,
-        learnedSize         = learnedSize,
+        learnedDirty = learnedCooldownsCacheDirty and true or false,
+        learnedSize = type(learnedCooldownsCache) == "table" and #learnedCooldownsCache or 0,
     }
 end
 
@@ -3464,8 +2020,6 @@ function CDMSpellData:Initialize()
     if not IsCDMRuntimeEnabled() then
         return
     end
-
-    RegisterAuraCaptureFrame()
 
     C_Timer.After(0.5, function()
         if not IsCDMRuntimeEnabled() then return end
@@ -3498,6 +2052,8 @@ function CDMSpellData:Initialize()
     eventFrame:RegisterEvent("COOLDOWN_VIEWER_SPELL_OVERRIDE_UPDATED")
     eventFrame:RegisterEvent("COOLDOWN_VIEWER_TABLE_HOTFIXED")
     eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+    eventFrame:RegisterUnitEvent("UNIT_AURA", "player", "pet", "target")
+    eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
     eventFrame:SetScript("OnEvent", function(self, event, arg)
         if ns.CDMNativeCallTrace then ns.CDMNativeCallTrace:Checkpoint("spelldata event entry: " .. event) end
         if not IsCDMRuntimeEnabled() then
@@ -3505,7 +2061,17 @@ function CDMSpellData:Initialize()
             return
         end
 
-        if event == "PLAYER_SPECIALIZATION_CHANGED" then
+        if event == "UNIT_AURA" then
+            if issecretvalue and issecretvalue(arg) then
+                for _, unit in ipairs(REGISTERED_UNITS) do
+                    NotifyAuraConsumers(unit, nil)
+                end
+            else
+                NotifyAuraConsumers(arg, nil)
+            end
+        elseif event == "PLAYER_TARGET_CHANGED" then
+            NotifyAuraConsumers("target", nil)
+        elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
             InvalidateLearnedCooldownsCache()
         elseif event == "SPELLS_CHANGED" then
             InvalidateLearnedCooldownsCache()
@@ -3578,12 +2144,6 @@ function CDMSpellData:Initialize()
                     RefreshNativeReanchorHooks(false)
                 end
             end
-            for i = 1, #REGISTERED_UNITS do
-                local unit = REGISTERED_UNITS[i]
-                if RescanCapturedAurasForUnit(unit) then
-                    NotifyAuraConsumers(unit, nil)
-                end
-            end
         elseif event == "PLAYER_ENTERING_WORLD" then
             _inZoneTransition = true
             C_Timer.After(2.0, function()
@@ -3635,17 +2195,7 @@ CDMSpellData.ResolveEntryKind = ResolveEntryKind
 CDMSpellData.IsAuraEntry = IsAuraEntry
 CDMSpellData.GetContainerDB = GetContainerDB
 CDMSpellData.GetEntryListField = GetEntryListField
-CDMSpellData.GetCapturedAuraForLookup = GetCapturedAuraForLookup
 CDMSpellData.GetLinkedSpellIDsForSpellID = GetLinkedSpellIDsForSpellID
-if ns.CDMAuraRuntime then
-    if ns.CDMAuraRuntime.SetApplicationsGetter then
-        ns.CDMAuraRuntime.SetApplicationsGetter(GetAuraApplications)
-    end
-    if ns.CDMAuraRuntime.SetCapturedAuraGetter then
-        ns.CDMAuraRuntime.SetCapturedAuraGetter(GetCapturedAuraForLookup)
-    end
-end
-
 function CDMSpellData:ResolveDisplaySpellID(entry)
     return entry and (entry.overrideSpellID or entry.spellID or entry.id)
 end
@@ -3662,12 +2212,3 @@ function CDMSpellData:ResolveDisplayName(entry)
 end
 
 ns.CDMSpellData = CDMSpellData
-
-function CDMSpellData._BindDebugImports()
-    local d = ns.CDMDebug
-    if d then
-        ShouldDebugAuraState  = d.ShouldAura            or ShouldDebugAuraState
-        AuraStateDebug        = d.Aura                  or AuraStateDebug
-        FormatIDList          = d.FormatIDList          or FormatIDList
-    end
-end

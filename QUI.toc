@@ -96,6 +96,7 @@ core\debug_gate.lua
 core\utils.lua
 core\pack.lua
 core\safecall.lua
+core\announce.lua
 core\theme.lua
 core\ns_export_guard.lua
 core\infobar_shared.lua
@@ -300,6 +301,7 @@ modules\qol\event_sounds.lua
 modules\qol\sound_mute_catalog.lua
 modules\qol\sound_mute.lua
 modules\qol\collection_fanfare.lua
+modules\qol\bonus_roll.lua
 modules\dungeon\keystone.lua
 modules\dungeon\mplus_timer.lua
 modules\dungeon\mplus_progress.lua

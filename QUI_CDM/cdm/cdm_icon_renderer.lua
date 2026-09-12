@@ -37,7 +37,6 @@ local GetSpellTexture = Resolvers.GetSpellTexture
 local ResolveMacro = Resolvers.ResolveMacro
 local GetEntryTexture = Resolvers.GetEntryTexture
 local IsAuraEntry = Resolvers.IsAuraEntry
-local ResolveAuraActiveState = Resolvers.ResolveAuraActiveState
 local GetChargeMetadataDB = RuntimeQueries.GetChargeMetadataDB
 
 local durationBindingStats
@@ -177,7 +176,7 @@ local SyncSpellRangeChecks
 local DisableSpellRangeChecks
 local GetTrackerSettings
 local stackPolicy
-local GetAuraApplicationsForSpell
+local GetSpellCountForEntry
 local customBarPolicy
 local refreshBatch
 local refreshWalker
@@ -1418,16 +1417,10 @@ stackPolicy = ns.CDMIconStackPolicy and ns.CDMIconStackPolicy.Create({
     getSources = function()
         return Sources
     end,
-    getAuraRuntime = function()
-        return ns.CDMAuraRuntime
-    end,
     safeBoolean = SafeBoolean,
     isAuraEntry = IsAuraEntry,
     isBuiltinAuraContainerKey = IsBuiltinAuraContainerKey,
     isTotemSlotEntry = IsTotemSlotEntry,
-    resolveAuraActiveState = function(entry)
-        return ResolveAuraActiveState(entry)
-    end,
     getChargeMetadataDB = function()
         return GetChargeMetadataDB and GetChargeMetadataDB() or nil
     end,
@@ -1460,33 +1453,9 @@ stackPolicy = ns.CDMIconStackPolicy and ns.CDMIconStackPolicy.Create({
     chargeDebug = ChargeDebug,
 })
 
-function _resolverRuntimePolicy.GetAuraApplicationsFromData(auraData, unit, source)
-    if stackPolicy then
-        return stackPolicy:GetAuraApplicationsFromData(auraData, unit, source)
-    end
-    return nil
-end
 
-function _resolverRuntimePolicy.GetAuraApplicationsForInstance(unit, auraInstanceID, source, minApplications)
-    if stackPolicy then
-        return stackPolicy:GetAuraApplicationsForInstance(unit, auraInstanceID, source, minApplications)
-    end
-    return nil
-end
 
-function _resolverRuntimePolicy.TryAuraApplicationsBySpellID(auraID, source)
-    if stackPolicy then
-        return stackPolicy:TryAuraApplicationsBySpellID(auraID, source)
-    end
-    return nil
-end
 
-function _resolverRuntimePolicy.TryLinkedAuraApplications(linkedSpellIDs, entry, icon, seenIDs, source)
-    if stackPolicy then
-        return stackPolicy:TryLinkedAuraApplications(linkedSpellIDs, entry, icon, seenIDs, source)
-    end
-    return nil
-end
 
 function _resolverRuntimePolicy.GetSpellCountForEntry(spellID, entry, icon)
     if stackPolicy then
@@ -1495,16 +1464,10 @@ function _resolverRuntimePolicy.GetSpellCountForEntry(spellID, entry, icon)
     return nil
 end
 
-function _resolverRuntimePolicy.ResolveAuraApplicationsForEntry(spellID, entry, icon)
-    if stackPolicy then
-        return stackPolicy:ResolveAuraApplicationsForEntry(spellID, entry, icon)
-    end
-    return nil
-end
 
-GetAuraApplicationsForSpell = function(spellID, entryOrName, icon)
+GetSpellCountForEntry = function(spellID, entryOrName, icon)
     if stackPolicy then
-        return stackPolicy:GetAuraApplicationsForSpell(spellID, entryOrName, icon)
+        return stackPolicy:GetSpellCountForEntry(spellID, entryOrName, icon)
     end
     return nil
 end
@@ -2742,42 +2705,6 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
         end
     end
 
-    if entry.type == "item" or entry.type == "trinket" or entry.type == "slot" then
-        local _coerceItemID
-        if entry.type == "slot" or entry.type == "trinket" then
-            _coerceItemID = Sources and Sources.QueryInventoryItemID
-                and Sources.QueryInventoryItemID("player", entry.id)
-        else
-            _coerceItemID = (Sources and Sources.QueryBestOwnedItemVariant
-                and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id
-        end
-        local _isAuraKind = entry.kind == "aura"
-        local _coerceContainerDB = GetTrackerSettings(entry.viewerType)
-        local _isCustom = IsCustomBarContainer(_coerceContainerDB)
-        local _isAuraOnlyOverride = _isCustom
-            and entry.displayMode == "auraOnly"
-        if _isAuraKind or _isAuraOnlyOverride then
-            local _auraIsActive = false
-            if Sources and Sources.QueryScannedItemAuraInfo and _coerceItemID then
-                local scanned = Sources.QueryScannedItemAuraInfo(_coerceItemID)
-                if scanned and scanned.active == true then
-                    local readableDuration = IsSafeNumeric(scanned.duration)
-                        and scanned.duration or nil
-                    local readableExpiration = IsSafeNumeric(scanned.expiration)
-                        and scanned.expiration or nil
-                    if readableDuration and readableDuration > 0
-                       and readableExpiration
-                       and (readableExpiration - GetTime()) > 0 then
-                        _auraIsActive = true
-                    end
-                end
-            end
-            if not _auraIsActive then
-                ClearItemIconInactive(icon, entry, _coerceItemID)
-                return
-            end
-        end
-    end
 
     local resolvedApplied = ApplyResolvedCooldown(icon, preResolvedCooldownState, trustIsOnGCD) == true
     local resolvedState = ns.CDMRuntimeStore and ns.CDMRuntimeStore.GetFrameState
@@ -3022,14 +2949,7 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
                     end
                     stackSource = resolvedState.countSource
                 end
-                if _resolverRuntimePolicy.ValueIsMissing(stackVal)
-                   and _resolverRuntimePolicy.GetAuraApplicationsForInstance then
-                    stackVal, stackSource = _resolverRuntimePolicy.GetAuraApplicationsForInstance(
-                        icon._auraUnit or (resolvedState and resolvedState.auraUnit) or "player",
-                        icon._auraInstanceID or (resolvedState and resolvedState.auraInstanceID),
-                        "item-aura-stack",
-                        2)
-                end
+
             end
 
             if _resolverRuntimePolicy.ValueIsPresent(stackVal) then
@@ -3052,7 +2972,7 @@ local function UpdateIconCooldownOwned(icon, trustIsOnGCD)
             end
         elseif stackTextWritesAllowed and not _chargeCountForwarded
             and entry.type ~= "item" and entry.type ~= "consumable" then
-            local stackVal = GetAuraApplicationsForSpell(_runtimeSid, entry, icon)
+            local stackVal = GetSpellCountForEntry(_runtimeSid, entry, icon)
             if _resolverRuntimePolicy.ValueIsPresent(stackVal) then
                 local displayText
                 if issecretvalue and issecretvalue(stackVal) then
@@ -3127,13 +3047,12 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         end
     end
     local isAuraEntry = (kind == "aura")
-    local settings = GetTrackerSettings(viewerType)
     local auraRuns = ns.CDMCustomAuraRuns
     local spellData = ns.CDMSpellData
-    local selfAura = isAuraEntry
-        and spellData
-        and spellData.IsSelfAuraSpell
-        and spellData:IsSelfAuraSpell(entry.id)
+    local selfAura
+    if isAuraEntry and spellData and spellData.IsSelfAuraSpell then
+        selfAura = spellData:IsSelfAuraSpell(entry.id)
+    end
     local itemID = (entry.type == "item")
         and ((Sources and Sources.QueryBestOwnedItemVariant
             and Sources.QueryBestOwnedItemVariant(entry.id)) or entry.id)
@@ -3151,7 +3070,12 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
         itemID = itemID,
         _isCustomEntry = true,
         _sourceSpecID = entry._sourceSpecID,
+        _isTotemInstance = entry._isTotemInstance,
+        _totemSlot = entry._totemSlot or entry.totemSlot,
         source = entry.source,
+        displayMode = entry.displayMode,
+        auraUnit = entry.auraUnit,
+        auraFilter = entry.auraFilter,
         quiAlerts = entry.quiAlerts,
         linkedSpellID = entry.linkedSpellID,
         linkedSpellIDs = entry.linkedSpellIDs,
@@ -3182,12 +3106,11 @@ local function BuildSpellEntryFromCustom(entry, idx, viewerType)
             spellEntry.name = GetCachedSpellName(entry.id) or ""
         end
     end
-    local managedAuraRoute = isAuraEntry
-        and not (ns.CDMAlerts and ns.CDMAlerts.HasEnabled and ns.CDMAlerts.HasEnabled(spellEntry))
-        and auraRuns
-        and auraRuns.ShouldUseSettings(settings, viewerType)
-        and auraRuns.ResolveRoute
-        and auraRuns.ResolveRoute(spellEntry)
+    local auraOnlyItem = not isSpellType and spellEntry.displayMode == "auraOnly"
+        and not IsBuiltinCooldownContainerKey(viewerType)
+    local managedAuraRoute = (isAuraEntry or auraOnlyItem)
+        and not spellEntry._isTotemInstance
+        and auraRuns and auraRuns.ResolveRoute and auraRuns.ResolveRoute(spellEntry)
     spellEntry._managedAuraRoute = managedAuraRoute
     spellEntry._useManagedAura = managedAuraRoute and true or nil
     if _G.QUI_CDM_ICON_DEBUG and CDMIcons.DebugEntryBuild then
@@ -3207,6 +3130,22 @@ function CDMIcons.ResolveCustomSpellEntries(viewerType)
             if spellEntry then
                 out[#out + 1] = spellEntry
             end
+        end
+    end
+    return out
+end
+
+function CDMIcons.ResolveCustomContainerEntries(viewerType)
+    local settings = GetTrackerSettings(viewerType)
+    if not settings then return {} end
+    local entries = settings.specSpecific and ns.CDMSpellData
+        and ns.CDMSpellData.GetSpecEntries and ns.CDMSpellData:GetSpecEntries(viewerType)
+    if type(entries) ~= "table" then entries = settings.entries end
+    local out = {}
+    for idx, entry in ipairs(entries or {}) do
+        if entry.enabled ~= false and IsCustomBarEntryUsableOnCurrentClass(entry, viewerType) then
+            local resolved = BuildSpellEntryFromCustom(entry, idx, viewerType)
+            if resolved then out[#out + 1] = resolved end
         end
     end
     return out
@@ -3709,13 +3648,22 @@ local function RequestStackTextUpdate()
 end
 
 local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editMode, inCombat)
-    if entry and entry._useManagedAura then
-        if icon:IsShown() then icon:Hide() end
+    local spellOvr = (not editMode) and GetIconSpellOverride(icon) or nil
+    local isHiddenOverride = spellOvr and spellOvr.hidden
+    local mode = containerDB and containerDB.iconDisplayMode or "always"
+    local mirrors = ns.CDMManagedAuraMirrors
+    if mirrors and mirrors.ConfigureCombatVisibility then
+        mirrors.ConfigureCombatVisibility(icon, entry and entry._useManagedAura
+            and icon.clickButton ~= nil
+            and not editMode and not isHiddenOverride and not icon._quiManagedAuraProxy
+            and (mode == "combat" or (mode == "always" and containerDB
+                and containerDB.showOnlyInCombat == true and not containerDB.showOnlyWhenActive)))
+    end
+    if icon._quiCDMCombatVisibility then
+        if icon.Icon and icon.Icon.SetDesaturated then icon.Icon:SetDesaturated(not editMode) end
         SyncCooldownBling(icon)
         return
     end
-    local spellOvr = (not editMode) and GetIconSpellOverride(icon) or nil
-    local isHiddenOverride = spellOvr and spellOvr.hidden
 
     if isHiddenOverride then
         if icon:IsShown() then icon:Hide() end
@@ -3728,6 +3676,21 @@ local function UpdateCooldownContainerVisibility(icon, entry, containerDB, editM
         return
     end
 
+    if entry and entry._useManagedAura then
+        local placeholder = editMode or (mode == "always"
+            and not (containerDB and containerDB.showOnlyWhenActive))
+            or (mode == "combat" and inCombat)
+        if not editMode and containerDB and containerDB.showOnlyInCombat and not inCombat then placeholder = false end
+        if icon._quiManagedAuraProxy then placeholder = false end
+        if placeholder then
+            icon:Show()
+            if icon.Icon and icon.Icon.SetDesaturated then icon.Icon:SetDesaturated(not editMode) end
+        else
+            icon:Hide()
+        end
+        SyncCooldownBling(icon)
+        return
+    end
     if editMode then
         icon:SetAlpha(1)
         icon:Show()
@@ -4159,6 +4122,10 @@ end
 
 function CDMIcons.OnFactoryIconAcquired(icon, entry, reused)
     if not icon then return end
+    local mirrors = ns.CDMManagedAuraMirrors
+    if mirrors and mirrors.ConfigureCombatVisibility then mirrors.ConfigureCombatVisibility(icon, false) end
+    icon._quiManagedAuraProxy = nil
+    icon._customAuraOverlayPrepared = nil
     local highlighter = ns._OwnedHighlighter
     if highlighter and highlighter.PrepareIcon then highlighter.PrepareIcon(icon) end
     if reused then
@@ -4181,6 +4148,14 @@ end
 
 function CDMIcons.OnFactoryIconReleased(icon)
     if not icon then return end
+    local mirrors = ns.CDMManagedAuraMirrors
+    if mirrors and mirrors.ConfigureCombatVisibility then mirrors.ConfigureCombatVisibility(icon, false) end
+    local auraRuns = ns.CDMCustomAuraRuns
+    if auraRuns and auraRuns.SetNativeProcGlow then auraRuns.SetNativeProcGlow(icon, false) end
+    icon._quiNativeProcGlows = nil
+    icon._quiNativeProcGlowActive = nil
+    icon._quiManagedAuraProxy = nil
+    icon._customAuraOverlayPrepared = nil
     local entry = icon._spellEntry
     if _G.QUI_CDM_CHARGE_DEBUG then
         ChargeDebug(entry and entry.name, "RELEASE",
@@ -4582,12 +4557,6 @@ do
         drainLayoutDirty = DrainLayoutDirty,
         isAuraEntry = function(entry)
             return IsAuraEntry and IsAuraEntry(entry)
-        end,
-        markBarsForAuraRefresh = function(unit, updateInfo)
-            local bars = ns.CDMBars
-            return bars and bars.MarkAuraRefresh
-                and bars:MarkAuraRefresh(unit, updateInfo)
-                or false
         end,
         getItemIDForEntry = GetItemIDForEntry,
         getLinkedSpellIDsForSpellID = function(spellID)

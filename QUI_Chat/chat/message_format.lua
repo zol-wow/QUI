@@ -357,6 +357,7 @@ function Format.BuildPayloadFromArgs(event, ...)
         guid = (not IsSecret(a12)) and type(a12) == "string" and a12 ~= "" and a12 or nil,
         rawGuid = a12,
         bnID = (not IsSecret(a13)) and type(a13) == "number" and a13 or nil,
+        rawBnID = a13,
         suppressIcons = (not IsSecret(a17)) and a17 and true or nil,
         isSubtitle = a15 and true or nil,
         hideSenderInLetterbox = a16 and true or nil,
@@ -569,6 +570,7 @@ local function FormatDiscordMessage(discordInfo, message)
 end
 
 local function ResolvePrefixedChannelName(channelFull)
+    if not channelFull:match("(%d+. )(.*)") then return channelFull end
     local util = _G.ChatFrameUtil
     if util and util.ResolvePrefixedChannelName then
         local ok, resolved = ns.SafeCall("chain-next", util.ResolvePrefixedChannelName, channelFull)
@@ -682,16 +684,21 @@ end
 
 local function BuildPlayerLink(typeKey, chatGroup, p, linkDisplayText)
     local sender = p.sender
-    if type(sender) ~= "string" or sender == "" then return nil end
     if typeKey == "BN_WHISPER" or typeKey == "BN_WHISPER_INFORM" then
-        if type(p.bnID) == "number" then
+        if IsSecret(p.rawSender) then sender = p.rawSender end
+        if not IsSecret(sender) and (type(sender) ~= "string" or sender == "") then return nil end
+        local bnID = p.rawBnID
+        if not IsSecret(bnID) then bnID = p.bnID end
+        if IsSecret(bnID) or type(bnID) == "number" then
             local lid = type(p.lineID) == "number" and p.lineID or 0
-            local target = ChatTargetFor(chatGroup, sender, p.chNum)
-            return ("|HBNplayer:%s:%d:%d:%s:%s|h%s|h"):format(
-                sender, p.bnID, lid, chatGroup, target, linkDisplayText)
+            local target = sender
+            if not IsSecret(sender) then target = ChatTargetFor(chatGroup, sender, p.chNum) end
+            return string.format("|HBNplayer:%s:%s:%s:%s:%s|h%s|h",
+                sender, bnID, lid, chatGroup, target, linkDisplayText)
         end
         return linkDisplayText
     end
+    if type(sender) ~= "string" or sender == "" then return nil end
     if (typeKey == "GUILD_DISCORD" or typeKey == "GUILD") and p.isFromDiscord then
         local lid = type(p.lineID) == "number" and p.lineID or 0
         local target = ChatTargetFor(chatGroup, sender, p.chNum)
@@ -721,8 +728,11 @@ local function BuildPlayerLink(typeKey, chatGroup, p, linkDisplayText)
     return ("|Hplayer:%s:%d:%s:%s|h%s|h"):format(sender, lid, chatGroup, target, linkDisplayText)
 end
 
-local function BuildSecretSenderLink(p)
+local function BuildSecretSenderLink(typeKey, p)
     if not IsSecret(p.rawSender) then return nil end
+    if typeKey == "BN_WHISPER" or typeKey == "BN_WHISPER_INFORM" then
+        return BuildPlayerLink(typeKey, ChatCategory(typeKey), p, string.format("[%s]", p.rawSender))
+    end
     local guid = p.rawGuid
     local guidSecret = IsSecret(guid)
     if not guidSecret and not guid then guid = p.guid end
@@ -760,8 +770,14 @@ local function FormatNormalLine(event, typeKey, p)
     local usingDifferentLanguage = type(p.language) == "string" and p.language ~= ""
         and p.language ~= RelevantDefaultLanguage(typeKey)
 
-    if showLink and sender == "" and typeKey ~= "TEXT_EMOTE" then
-        local secretLink = BuildSecretSenderLink(p)
+    if showLink and typeKey ~= "TEXT_EMOTE"
+        and (sender == "" or (chatGroup == "BN_WHISPER" and IsSecret(p.rawBnID))) then
+        local secretLink
+        if sender ~= "" then
+            secretLink = BuildPlayerLink(typeKey, chatGroup, p, ("[%s]"):format(p.decorated or sender))
+        else
+            secretLink = BuildSecretSenderLink(typeKey, p)
+        end
         if IsSecret(secretLink) or secretLink then
             local linkWithFlag = string.format("%s%s", pflag, secretLink)
             local fmt = OutFormat(typeKey)
@@ -878,7 +894,8 @@ local function FormatSpecialLine(event, typeKey, kind, p)
     local channelFull, channelNumber, targetUser = p.channelFull, p.chNum, p.target
 
     if kind == "ach" then
-        if type(sender) ~= "string" or sender == "" then return nil end
+        if IsSecret(p.rawSender) then sender = p.rawSender end
+        if not IsSecret(sender) and (type(sender) ~= "string" or sender == "") then return nil end
         local shown = p.decorated or sender
         local link = BracketedPlayerLink(sender, shown)
         return FormatString(text, link)
@@ -998,6 +1015,9 @@ function Format.WrapSecretEventLine(event, p)
     local typeKey = Format.EventToTypeKey(event)
     if not typeKey then return text end
 
+    if SPECIAL_KIND[typeKey] == "ach" then
+        return FormatSpecialLine(event, typeKey, "ach", p)
+    end
     if BOSS_NOTICE_EVENTS[event] or SPECIAL_KIND[typeKey] then
         return text
     end
@@ -1023,7 +1043,7 @@ function Format.WrapSecretEventLine(event, p)
         if type(p.sender) == "string" and p.sender ~= "" then
             link = BuildPlayerLink(typeKey, chatGroup, p, ("[%s]"):format(p.decorated or p.sender))
         elseif IsSecret(p.rawSender) then
-            link = BuildSecretSenderLink(p)
+            link = BuildSecretSenderLink(typeKey, p)
         end
         local linkSecret = IsSecret(link)
         if linkSecret or link then

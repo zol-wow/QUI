@@ -293,6 +293,21 @@ function QUI:SlashCommandOpen(input)
             print("|cff60A5FAQUI:|r UI smoke runner did not initialize.")
         end
         return
+    elseif input and input:match("^bonusroll%s+show%s*$") then
+        if ns.BonusRoll then ns.BonusRoll.ShowPendingRoll() end
+        return
+    elseif input and input:match("^reminders%s+test%s*$") then
+        if ns.Reminders and ns.Reminders.Test then
+            local pick, reason = ns.Reminders.Test()
+            if pick then
+                print("|cff60A5FAQUI:|r " .. ns.L["Reminders test: calling %s."]:format(pick.name or "?"))
+            else
+                print("|cff60A5FAQUI:|r " .. ns.L["Reminders test: nothing to call (%s)."]:format(tostring(reason)))
+            end
+        else
+            print("|cff60A5FAQUI:|r " .. ns.L["Reminders module is not loaded."])
+        end
+        return
     elseif input and input == "debug" then
         self.db.char.debug.reload = true
         QUI:SafeReload()
@@ -618,12 +633,6 @@ function QUI:OnEnable()
     self:RegisterEvent("PLAYER_REGEN_ENABLED")
     self:RegisterEvent("ADDON_LOADED")
     self:RegisterOptionalPullAlias()
-
-    ns.RunAfterFirstFrame(function()
-        if QUI:EnsureOptionsLoaded() then
-            QUI.GUI:InitializeOptions()
-        end
-    end, 0)
 
     if self.QUICore then
         local sw = self.db and self.db.global and self.db.global.setupWizard

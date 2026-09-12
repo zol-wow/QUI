@@ -118,6 +118,51 @@ hooksecurefunc("SetItemRef", function(link, text, button, ...)
     end
 end)
 
+if _G.ChatFrameUtil and _G.ChatFrameUtil.ShowChatChannelContextMenu then
+    hooksecurefunc(_G.ChatFrameUtil, "ShowChatChannelContextMenu", function(source, chatType, chatTarget, chatName)
+        if IsSecret(source) or IsSecret(chatType) or IsSecret(chatTarget) or IsSecret(chatName) then return end
+        if source ~= nil or type(chatType) ~= "string" then return end
+        local settings = I.GetSettings and I.GetSettings()
+        if not (I.IsChatEnabled and I.IsChatEnabled(settings)) then return end
+        local Display = ns.QUI.Chat.DisplayLayer
+        local TM = ns.QUI.Chat.TabManager
+        local TabUI = ns.QUI.Chat.TabUI
+        if not (Display and TM and TabUI) then return end
+        local windowID = Display.GetActiveWindow()
+        for id = 1, Display.GetWindowCount() do
+            local container = Display.GetContainer(id)
+            if container and container:IsShown() and container:IsMouseOver() then windowID = id end
+        end
+        local container = Display.GetContainer(windowID)
+        if not (container and container:IsShown()) then return end
+
+        local name
+        if chatType == "CHANNEL" then
+            local Registry = ns.QUI.Chat.ChannelRegistry
+            name = Registry and Registry.ResolveName(tonumber(chatTarget))
+        elseif _G.ChatTypeInfo and _G.ChatTypeInfo[chatType] then
+            name = _G[chatType] or chatType
+        end
+        if IsSecret(name) then return end
+        local valid = type(name) == "string" and name ~= ""
+        _G.MenuUtil.CreateContextMenu(container, function(_, rootDescription)
+            if valid then rootDescription:CreateTitle(name) end
+            local button = rootDescription:CreateButton(ns.L["Add Tab"], function()
+                if not valid then return end
+                local tab = TM.NewDefaultTab(name)
+                if chatType == "CHANNEL" then tab.channels[name] = true
+                else tab.groups[chatType] = true end
+                local tabs = TM.GetWindowTabs(windowID)
+                tabs[#tabs + 1] = tab
+                TabUI.Rebuild()
+                TabUI.ActivateFrameID(windowID, -#tabs)
+                if I.NotifyChatSettingsChanged then I.NotifyChatSettingsChanged() end
+            end)
+            button:SetEnabled(valid)
+        end)
+    end)
+end
+
 local TOOLTIP_LINK_TYPES = {
     achievement = true,
     battlepet = true,

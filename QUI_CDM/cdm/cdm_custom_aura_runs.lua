@@ -31,65 +31,22 @@ local function IsManagedAuraIcon(icon)
     return entry and entry._useManagedAura == true and entry._managedAuraRoute ~= nil
 end
 
-local function EntryListHasAlerts(entries)
-    if type(entries) ~= "table" then return false end
-    for _, entry in pairs(entries) do
-        if ns.CDMAlerts and ns.CDMAlerts.HasEnabled and ns.CDMAlerts.HasEnabled(entry) then
-            return true
-        end
-    end
-    return false
-end
-
-local function SettingsHaveAlerts(settings, viewerType)
-    if EntryListHasAlerts(settings and settings.entries) then return true end
-    local globalDB = ns.Addon and ns.Addon.db and ns.Addon.db.global
-    local root = globalDB and globalDB.ncdm and globalDB.ncdm.specTrackerSpells
-    local bySpec = root and root[viewerType]
-    if type(bySpec) ~= "table" then return false end
-    for _, entries in pairs(bySpec) do
-        if EntryListHasAlerts(entries) then return true end
-    end
-    return false
-end
-
 function Runs.ShouldUseSettings(settings, viewerType)
     if type(settings) ~= "table" or settings.containerType ~= "customBar" then return false end
     if type(viewerType) ~= "string" or viewerType == "" then return false end
-    if SettingsHaveAlerts(settings, viewerType) then return false end
     if settings.dynamicLayout ~= true then return false end
-    if settings.clickableIcons == true then return false end
-    if settings.activeGlowEnabled ~= false then return false end
-    if settings.showOnlyWhenActive ~= true
+    if (settings.showOnlyWhenActive ~= true and settings.iconDisplayMode ~= "active")
         or settings.showOnlyOnCooldown == true
         or settings.showOnlyWhenOffCooldown == true
         or settings.showOnlyInCombat == true
         or settings.hideNonUsable == true then
         return false
     end
-    if settings.layoutDirection == "VERTICAL" then return false end
-    if settings.growDirection and settings.growDirection ~= "RIGHT" then return false end
-
-    if type(settings.spellOverrides) == "table" then
-        for _, override in pairs(settings.spellOverrides) do
-            if type(override) == "table" and next(override) ~= nil then return false end
-        end
-    end
-
-    local profile = ns.Addon and ns.Addon.db and ns.Addon.db.profile
-    local glow = profile and profile.customGlow
-    if not glow then return false end
-    if glow[viewerType .. "Enabled"] == true
-        or glow[viewerType .. "PandemicDebuffEnabled"] ~= false
-        or glow[viewerType .. "PandemicBuffEnabled"] ~= false then
-        return false
-    end
-
     local rowCount = 0
     if settings.row1 and (settings.row1.iconCount or 0) > 0 then rowCount = rowCount + 1 end
     if settings.row2 and (settings.row2.iconCount or 0) > 0 then rowCount = rowCount + 1 end
     if settings.row3 and (settings.row3.iconCount or 0) > 0 then rowCount = rowCount + 1 end
-    return rowCount == 1
+    return rowCount > 0
 end
 
 function Runs.IsManagedAuraIcon(icon)
@@ -105,7 +62,7 @@ function Runs.HasAuraEntries(settings, viewerType)
     if type(entries) ~= "table" then return false end
     for i = 1, #entries do
         local entry = entries[i]
-        if entry and entry.enabled ~= false and entry.kind == "aura"
+        if entry and entry.enabled ~= false and (entry.kind == "aura" or entry.displayMode == "auraOnly")
             and ResolveRoute and ResolveRoute(entry) then
             return true
         end
@@ -113,12 +70,18 @@ function Runs.HasAuraEntries(settings, viewerType)
     return false
 end
 
+local function EntryHidden(entry, settings)
+    local overrides = settings and settings.spellOverrides
+    local override = overrides and entry and overrides[entry.id or entry.spellID]
+    return entry and entry.hidden == true or type(override) == "table" and override.hidden == true
+end
+
 local function IsCooldownAuraOverlayEntry(entry)
     return type(entry) == "table"
         and entry.enabled ~= false
         and entry._isCustomEntry == true
         and entry.kind == "cooldown"
-        and (entry.type == nil or entry.type == "spell")
+        and entry.type ~= "macro"
 end
 
 function Runs.ShouldUseCooldownAuraOverlays(settings, viewerType)
@@ -146,7 +109,7 @@ function Runs.HasCooldownAuraOverlayEntries(settings, viewerType)
     for i = 1, #entries do
         local entry = entries[i]
         if entry and entry.enabled ~= false and entry.kind == "cooldown"
-            and (entry.type == nil or entry.type == "spell") then
+            and entry.type ~= "macro" then
             return true
         end
     end
@@ -154,80 +117,77 @@ function Runs.HasCooldownAuraOverlayEntries(settings, viewerType)
 end
 
 local function CandidateIDs(entry)
-    local out, seen = {}, {}
-    local function add(value)
-        if type(value) == "number" and not IsSecret(value) and not seen[value] then
-            seen[value] = true
-            out[#out + 1] = value
-        end
-    end
-
     local mirrors = ns.CDMManagedAuraMirrors
     if mirrors and mirrors.ResolveCandidateIDs then
-        local ids = mirrors.ResolveCandidateIDs(entry, IsSecret)
-        for i = 1, #ids do add(ids[i]) end
-    else
-        add(entry and (entry.overrideSpellID or entry.spellID or entry.id))
+        return mirrors.ResolveCandidateIDs(entry, IsSecret)
     end
-
-    local runtime = ns.CDMAuraRuntime
-    if runtime and runtime.ResolveAbilityAuraSpellID then
-        local mapped = runtime.ResolveAbilityAuraSpellID(entry and (entry.id or entry.spellID))
-        add(mapped)
-    end
-
-    local spellData = ns.CDMSpellData
-    if spellData and spellData.GetAuraIDsForSpell then
-        local ids = spellData:GetAuraIDsForSpell(entry and (entry.id or entry.spellID))
-        if type(ids) == "table" then
-            for i = 1, #ids do add(ids[i]) end
-        end
-    end
-    return out
+    local id = entry and (entry.overrideSpellID or entry.spellID or entry.id)
+    return type(id) == "number" and not IsSecret(id) and id > 0 and { id } or {}
 end
 
-local function ResolveCooldownAuraUnit(entry)
-    local unit = entry and entry.auraUnit
-    if unit == "player" or unit == "pet" then return unit end
+function Runs.ResolveAuraConfig(entry)
+    if type(entry) ~= "table" then return nil end
     local ids = CandidateIDs(entry)
-    for i = 1, #ids do
-        if PET_AURA_UNITS[ids[i]] then return "pet" end
+    local include = {}
+    for i = 1, #ids do include[ids[i]] = true end
+    if not next(include) then return nil end
+    local unit, filter = entry.auraUnit, entry.auraFilter
+    local selfAura = entry.kind == "aura" and entry._selfAura
+    if entry.kind ~= "aura" then selfAura = nil end
+    local spellData = ns.CDMSpellData
+    local isItem = entry.type == "item" or entry.type == "slot" or entry.type == "trinket"
+        or entry.type == "consumable"
+    local primaryID = isItem and ids[1] or (entry.spellID or entry.id)
+    if selfAura == nil and spellData and spellData.IsSelfAuraSpell then
+        selfAura = spellData:IsSelfAuraSpell(primaryID)
     end
-    return "player"
+    if not unit then
+        if selfAura == false then
+            unit = "target"
+        else
+            unit = "player"
+            for i = 1, #ids do
+                if PET_AURA_UNITS[ids[i]] then unit = "pet"; break end
+            end
+        end
+    end
+    if not filter then
+        if selfAura == false then
+            local sources = ns.CDMSources
+            local helpful = sources and sources.QuerySpellHelpful
+                and sources.QuerySpellHelpful(primaryID) == true
+            filter = helpful and HELPFUL_FILTER or HARMFUL_FILTER
+        elseif selfAura == true then
+            filter = HELPFUL_FILTER
+        else
+            filter = "HELPFUL"
+        end
+    end
+    return { unit = unit, filter = filter, includeSpellIDs = include }
 end
 
 ResolveRoute = function(entry)
-    if type(entry) ~= "table" or entry.source ~= "blizzardCDM" then return nil end
-    local selfAura = entry._selfAura
-    if entry.kind ~= "aura" then selfAura = nil end
-    if selfAura == nil then
-        local spellData = ns.CDMSpellData
-        if spellData and spellData.IsSelfAuraSpell then
-            selfAura = spellData:IsSelfAuraSpell(entry.id or entry.spellID)
-        end
-    end
-    if selfAura == nil then return nil end
-
-    local helpful, harmful = false, false
-    local sources = ns.CDMSources
-    local ids = CandidateIDs(entry)
-    for i = 1, #ids do
-        local spellID = ids[i]
-        helpful = helpful or (sources and sources.QuerySpellHelpful
-            and sources.QuerySpellHelpful(spellID) == true) or false
-        harmful = harmful or (sources and sources.QuerySpellHarmful
-            and sources.QuerySpellHarmful(spellID) == true) or false
-    end
-    if helpful == harmful then return nil end
-    if selfAura == true then return helpful and "SELF_HELPFUL" or nil end
-    return helpful and "HELPFUL" or "HARMFUL"
+    local config = Runs.ResolveAuraConfig(entry)
+    if not config then return nil end
+    if config.unit == "player" and config.filter == HELPFUL_FILTER then return "SELF_HELPFUL" end
+    if config.unit == "target" and config.filter == HELPFUL_FILTER then return "HELPFUL" end
+    if config.unit == "target" and config.filter == HARMFUL_FILTER then return "HARMFUL" end
+    return config.unit .. ":" .. config.filter
 end
 
 function Runs.ResolveRoute(entry)
     return ResolveRoute(entry)
 end
 
-local function Profile(rowConfig)
+local function Profile(rowConfig, settings, entry)
+    local overrides = settings and settings.spellOverrides
+    local override = overrides and entry and overrides[entry.id or entry.spellID]
+    if type(override) == "table" then
+        local merged = {}
+        for key, value in pairs(rowConfig) do merged[key] = value end
+        for key, value in pairs(override) do merged[key] = value end
+        rowConfig = merged
+    end
     local size = rowConfig.size or 39
     local aspect = rowConfig.aspectRatioCrop or 1
     if aspect <= 0 then aspect = 1 end
@@ -261,7 +221,30 @@ local function Profile(rowConfig)
     else
         swipeColor = { 0.93, 0.77, 0, 0.45 }
     end
+    local pandemicGlow
+    local auraConfig = entry and Runs.ResolveAuraConfig(entry)
+    local viewerType = entry and entry.viewerType
+    local glowSettings = ns.Addon and ns.Addon.db and ns.Addon.db.profile.customGlow
+    if auraConfig and viewerType then
+        local suffix = auraConfig.filter:find("HARMFUL", 1, true)
+            and "PandemicDebuffEnabled" or "PandemicBuffEnabled"
+        if not glowSettings or glowSettings[viewerType .. suffix] ~= false then
+            pandemicGlow = { color = { 1, 0.85, 0.2, 1 } }
+        end
+    end
     return {
+        cdmProcGlow = ns._OwnedGlows and ns._OwnedGlows.ResolveGlowForEntry
+            and ns._OwnedGlows.ResolveGlowForEntry(entry) or nil,
+        cdmActiveGlow = settings and settings.containerType == "customBar" and settings.activeGlowEnabled ~= false
+            and not (override and override.glowEnabled == false) and {
+            color = override and override.glowColor or settings.activeGlowColor or { 1, 0.85, 0.3, 1 },
+            thickness = settings.activeGlowThickness or 2,
+            glowType = settings.activeGlowType or "Pixel Glow",
+            lines = settings.activeGlowLines or 8,
+            frequency = settings.activeGlowFrequency or 0.25,
+            scale = settings.activeGlowScale or 1,
+        } or nil,
+        pandemicGlow = pandemicGlow,
         maxIcons = 1,
         iconSize = size,
         iconWidth = size,
@@ -306,15 +289,216 @@ local function Profile(rowConfig)
     }
 end
 
-local function GetAuraOverlayManager(unit)
-    unit = unit or "player"
-    if auraOverlayManagers[unit] then return auraOverlayManagers[unit] end
+Runs.BuildProfile = Profile
+
+function Runs.ConfigureNativeClick(button, source)
+    if not button._quiNativeCast then return end
+    local action = source and source.GetAttribute and source:GetAttribute("type")
+    for _, key in ipairs({ "type", "spell", "item", "macro", "macrotext", "unit" }) do
+        button:SetAttribute(key, action and source:GetAttribute(key) or nil)
+    end
+    button:RegisterForClicks("AnyUp", "AnyDown")
+    if button.SetMouseClickEnabled then button:SetMouseClickEnabled(action ~= nil) end
+    if button.SetMouseMotionEnabled then button:SetMouseMotionEnabled(true) end
+end
+
+function Runs.StyleNativeEffects(frame, profile, key)
+    key = key or "_quiCDMNativeGlow"
+    local glow = profile.cdmActiveGlow
+    local effects = frame[key]
+    if not effects then
+        effects = {}
+        frame[key] = effects
+    end
+    local width = profile.iconWidth or profile.iconSize or 39
+    local height = profile.iconHeight or width
+    local style = glow and glow.glowType or "Pixel Glow"
+    local lines = math.max(1, math.floor(glow and glow.lines or 8))
+    local thickness = math.max(1, glow and glow.thickness or 2)
+    local frequency = glow and glow.frequency or 0.25
+    local scale = glow and glow.scale or 1
+    local color = glow and glow.color
+    local r, g, b, a = color and color[1] or 1, color and (color[2] or 1) or 0.85,
+        color and (color[3] or 1) or 0.3, color and color[4] or 1
+    local config = effects.config
+    if not glow and config == false then return effects end
+    if glow and config and config.width == width and config.height == height
+        and config.style == style and config.lines == lines and config.thickness == thickness
+        and config.frequency == frequency and config.scale == scale
+        and config.r == r and config.g == g and config.b == b and config.a == a then
+        return effects
+    end
+    effects.config = nil
+    for _, effect in ipairs(effects) do
+        effect.group:Stop()
+        effect.playing = false
+        effect.texture:SetAlpha(0)
+        effect.enabled = false
+    end
+    if not glow or not frame.CreateTexture then
+        effects.config = false
+        return effects
+    end
+    local host = frame._quiCDMNativeEffectHost
+    if not host then
+        host = CreateFrame("Frame", nil, frame)
+        host:SetAllPoints(frame)
+        frame._quiCDMNativeEffectHost = host
+    end
+    local flipbook = style == "Proc Glow" or style == "Button Glow"
+    local length = math.max(thickness, math.min(width, height, math.floor((width + height) * (2 / lines - 0.1))))
+    local segments = style == "Pixel Glow" and math.ceil(length / thickness) or 1
+    local layers = style == "Autocast Shine" and 4 or 1
+    local count = flipbook and 1 or lines * segments * layers
+    local period = 1 / math.max(0.01, math.abs(frequency))
+    local perimeter = (width + height) * 2
+    for i = 1, count do
+        local effect = effects[i]
+        if not effect then
+            local texture = host:CreateTexture(nil, "OVERLAY")
+            effect = { texture = texture, group = host:CreateAnimationGroup() }
+            effects[i] = effect
+        end
+        effect.enabled = true
+        local texture, group = effect.texture, effect.group
+        texture:ClearAllPoints()
+        texture:SetVertexColor(r, g, b, a)
+        texture:SetAlpha(1)
+        texture:SetTexCoord(0, 1, 0, 1)
+        texture:SetBlendMode("BLEND")
+        local animationKind = flipbook and "FlipBook" or "Path"
+        if effect.animationKind ~= animationKind then
+            group:RemoveAnimations()
+            effect.animationKind = nil
+            effect.animation = group:CreateAnimation(animationKind)
+            effect.animation:SetTarget(texture)
+            effect.points = nil
+            if not flipbook then
+                effect.points = {}
+                for order = 1, 5 do
+                    effect.points[order] = effect.animation:CreateControlPoint(nil, nil, order)
+                end
+            end
+            group:SetLooping("REPEAT")
+            effect.animationKind = animationKind
+        end
+        if flipbook then
+            texture:SetPoint("CENTER", frame, "CENTER", 0, 0)
+            texture:SetSize(width * 1.4, height * 1.4)
+            if style == "Proc Glow" then
+                texture:SetAtlas("UI-HUD-ActionBar-Proc-Loop-Flipbook")
+            else
+                texture:SetTexture("Interface\\SpellActivationOverlay\\IconAlertAnts")
+            end
+            local animation = effect.animation
+            animation:SetDuration(math.max(0.5, math.min(2, period * 0.25)))
+            animation:SetFlipBookRows(style == "Proc Glow" and 6 or 5)
+            animation:SetFlipBookColumns(5)
+            animation:SetFlipBookFrames(style == "Proc Glow" and 30 or 22)
+            animation:SetFlipBookFrameWidth(style == "Proc Glow" and 0 or 48 / 256)
+            animation:SetFlipBookFrameHeight(style == "Proc Glow" and 0 or 48 / 256)
+        else
+            local layer = math.floor((i - 1) / lines) + 1
+            local size = style == "Autocast Shine" and (8 - layer) * scale or thickness
+            texture:SetSize(size, size)
+            if style == "Autocast Shine" then
+                texture:SetTexture("Interface\\Artifacts\\Artifacts")
+                texture:SetTexCoord(0.8115234375, 0.9169921875, 0.8798828125, 0.9853515625)
+                texture:SetBlendMode("ADD")
+            else
+                texture:SetColorTexture(1, 1, 1, 1)
+            end
+            local phase = ((i - 1) % lines) / lines
+            if style == "Pixel Glow" then
+                phase = math.floor((i - 1) / segments) / lines + ((i - 1) % segments) * thickness / perimeter
+            end
+            local start = (phase % 1) * perimeter
+            local function Point(distance)
+                distance = distance % perimeter
+                if distance <= width then return distance, 0 end
+                if distance <= width + height then return width, width - distance end
+                if distance <= width * 2 + height then return width * 2 + height - distance, -height end
+                return 0, distance - perimeter
+            end
+            local x, y = Point(start)
+            texture:SetPoint("CENTER", frame, "TOPLEFT", x, y)
+            local corners = {}
+            for _, distance in ipairs({ width, width + height, width * 2 + height, perimeter }) do
+                if distance <= start then distance = distance + perimeter end
+                corners[#corners + 1] = distance
+            end
+            table.sort(corners)
+            local path = effect.animation
+            path:SetDuration(period * (style == "Autocast Shine" and layer or 1))
+            path:SetCurveType("NONE")
+            for order = 1, #corners do
+                local corner = frequency < 0 and #corners + 1 - order or order
+                local cx, cy = Point(corners[corner])
+                effect.points[order]:SetOffset(cx - x, cy - y)
+            end
+            effect.points[5]:SetOffset(0, 0)
+        end
+        group:Play()
+        effect.playing = true
+    end
+    effects.config = {
+        width = width, height = height, style = style, lines = lines, thickness = thickness,
+        frequency = frequency, scale = scale, r = r, g = g, b = b, a = a,
+    }
+    return effects
+end
+
+function Runs.SetNativeProcGlow(icon, active)
+    if not icon then return end
+    icon._quiNativeProcGlowActive = active == true
+    if not icon._quiNativeProcGlows then return end
+    for effects in pairs(icon._quiNativeProcGlows) do
+        for _, effect in ipairs(effects) do
+            local playing = active == true and effect.enabled == true
+            if effect.playing ~= playing then
+                if playing then effect.group:Play() else effect.group:Stop() end
+                effect.playing = playing
+                effect.texture:SetAlpha(playing and 1 or 0)
+            end
+        end
+    end
+end
+
+function Runs.ConfigureNativeEffects(frame, profile, owner)
+    Runs.StyleNativeEffects(frame, profile)
+    local effects = Runs.StyleNativeEffects(frame, {
+        cdmActiveGlow = profile.cdmProcGlow,
+        iconWidth = profile.iconWidth,
+        iconHeight = profile.iconHeight,
+        iconSize = profile.iconSize,
+    }, "_quiCDMNativeProcGlow")
+    if owner and effects then
+        owner._quiNativeProcGlows = owner._quiNativeProcGlows or {}
+        owner._quiNativeProcGlows[effects] = true
+        Runs.SetNativeProcGlow(owner, owner._quiNativeProcGlowActive)
+    end
+end
+
+local function StyleNativeFrame(frame, profile)
+    local AuraSkin = ns.AuraSkin or (ns.Addon and ns.Addon.AuraSkin)
+    if AuraSkin and AuraSkin.WireButton then AuraSkin.WireButton(frame, profile) end
+    Runs.ConfigureNativeEffects(frame, profile, profile.cdmEffectOwner)
+    Runs.ConfigureNativeClick(frame, profile.cdmClickSource)
+end
+
+local function GetAuraOverlayManager(config, clickable)
+    local key = config.unit .. ":" .. config.filter .. (clickable and ":cast" or "")
+    if auraOverlayManagers[key] then return auraOverlayManagers[key] end
     local mirrors = ns.CDMManagedAuraMirrors
     if not (mirrors and mirrors.New) then return nil end
     local AuraSkin = ns.AuraSkin or (ns.Addon and ns.Addon.AuraSkin)
     local manager = mirrors.New({
         createFrame = CreateFrame,
-        unit = unit,
+        unit = config.unit,
+        filter = config.filter,
+        interactive = true,
+        secureClicks = clickable == true,
+        configureClick = Runs.ConfigureNativeClick,
         isSecret = IsSecret,
         canCreate = function()
             return not (InCombatLockdown and InCombatLockdown())
@@ -326,21 +510,21 @@ local function GetAuraOverlayManager(unit)
             return C_Secrets and C_Secrets.ShouldAurasBeSecret
                 and C_Secrets.ShouldAurasBeSecret()
         end,
-        styleFrame = AuraSkin and AuraSkin.WireButton,
-        restyleFrame = AuraSkin and function(frame, rowConfig)
-            return AuraSkin.WireButton(frame, Profile(rowConfig))
+        styleFrame = AuraSkin and StyleNativeFrame,
+        restyleFrame = AuraSkin and function(frame, rowConfig, profile)
+            return StyleNativeFrame(frame, profile or Profile(rowConfig))
         end,
     })
-    auraOverlayManagers[unit] = manager
+    auraOverlayManagers[key] = manager
     return manager
 end
 
 local function DisableCooldownAuraOverlays(owner)
     ClearPreparedAuraOverlayIcons(owner)
     if not owner or not activeAuraOverlayOwners[owner] then return end
-    for unit in pairs(auraOverlayManagers) do
-        local manager = GetAuraOverlayManager(unit)
-        if manager and manager:BeginPass(owner, false) then manager:EndPass(owner) end
+    for _, manager in pairs(auraOverlayManagers) do
+        if manager.SetCombatVisibility then manager:SetCombatVisibility(owner, false) end
+        if manager:BeginPass(owner, false) then manager:EndPass(owner) end
     end
     activeAuraOverlayOwners[owner] = nil
 end
@@ -354,64 +538,63 @@ function Runs.HasPreparedAuraOverlays(owner)
 end
 
 local function ApplyCooldownAuraOverlays(owner, settings, layoutPlan, inCombat, viewerType)
-    if owner and not inCombat then
-        ClearPreparedAuraOverlayIcons(owner)
-    end
-    if owner and not inCombat then
-        preparedAuraOverlayOwners[owner] = Runs.ShouldUseCooldownAuraOverlays(settings, viewerType)
-            and Runs.HasCooldownAuraOverlayEntries(settings, viewerType) or nil
-    end
     if inCombat then return Runs.HasAuraOverlays(owner) end
-
-    local eligible = owner
-        and Runs.ShouldUseCooldownAuraOverlays(settings, viewerType)
-        and layoutPlan and layoutPlan.placements
-    if not eligible then
+    ClearPreparedAuraOverlayIcons(owner)
+    local cooldownOverlays = Runs.ShouldUseCooldownAuraOverlays(settings, viewerType)
+    local staticAuras = not Runs.ShouldUseSettings(settings, viewerType)
+    local helpers = ns.Helpers
+    local editMode = (helpers and helpers.IsEditModeActive and helpers.IsEditModeActive())
+        or (helpers and helpers.IsLayoutModeActive and helpers.IsLayoutModeActive())
+        or (_G.QUI_IsCDMEditModeActive and _G.QUI_IsCDMEditModeActive())
+    if owner then
+        preparedAuraOverlayOwners[owner] =
+            (cooldownOverlays and Runs.HasCooldownAuraOverlayEntries(settings, viewerType))
+            or (staticAuras and Runs.HasAuraEntries(settings, viewerType)) or nil
+    end
+    if not (owner and layoutPlan and layoutPlan.placements) then
         DisableCooldownAuraOverlays(owner)
         return false
     end
-    local managers = {}
-    for i = 1, #layoutPlan.placements do
-        local placement = layoutPlan.placements[i]
-        if IsCooldownAuraOverlayEntry(placement.icon and placement.icon._spellEntry) then
-            local unit = ResolveCooldownAuraUnit(placement.icon._spellEntry)
-            if not managers[unit] then
-                local manager = GetAuraOverlayManager(unit)
-                if manager and manager:BeginPass(owner) then managers[unit] = manager end
-            end
-        end
-    end
-    for unit, manager in pairs(auraOverlayManagers) do
-        if not managers[unit] and manager:BeginPass(owner, false) then
-            managers[unit] = manager
-        end
-    end
-    local managerCount = 0
-    for _ in pairs(managers) do managerCount = managerCount + 1 end
-    if managerCount == 0 then return Runs.HasAuraOverlays(owner) end
-
+    local managers, preparedIcons = {}, {}
     local mirrored = 0
-    local preparedIcons = {}
     for i = 1, #layoutPlan.placements do
         local placement = layoutPlan.placements[i]
         local icon = placement.icon
-        if IsCooldownAuraOverlayEntry(icon and icon._spellEntry) then
-            local rowConfig = placement.rowConfig or {}
-            local width = rowConfig.size or 39
-            local aspect = rowConfig.aspectRatioCrop or 1
-            if aspect <= 0 then aspect = 1 end
-            local manager = managers[ResolveCooldownAuraUnit(icon._spellEntry)]
-            local record = manager and manager:Acquire(owner, icon, icon._spellEntry,
-                Profile(rowConfig))
-            if record and manager:PositionOverlay(record, icon, owner, placement.x, placement.y,
-                width, width / aspect, rowConfig) then
-                icon._customAuraOverlayPrepared = true
-                preparedIcons[icon] = true
-                mirrored = mirrored + 1
+        local entry = icon and icon._spellEntry
+        local managed = staticAuras and IsManagedAuraIcon(icon)
+        if not EntryHidden(entry, settings)
+            and (managed or (cooldownOverlays and IsCooldownAuraOverlayEntry(entry))) then
+            local config = Runs.ResolveAuraConfig(entry)
+            local manager = config and GetAuraOverlayManager(config, settings.clickableIcons)
+            if manager and not managers[manager] then
+                managers[manager] = manager:BeginPass(owner) and true or nil
+            end
+            if manager and managers[manager] then
+                local rowConfig = placement.rowConfig or {}
+                local width = rowConfig.size or 39
+                local aspect = rowConfig.aspectRatioCrop or 1
+                if aspect <= 0 then aspect = 1 end
+                local profile = Profile(rowConfig, managed and settings or nil, entry)
+                profile.cdmClickSource = settings.clickableIcons and icon.clickButton or nil
+                profile.cdmEffectOwner = icon
+                icon._quiNativeProcGlows = nil
+                local record = manager:Acquire(owner, icon, entry, profile, config)
+                if record and manager:PositionOverlay(record, icon, owner, placement.x, placement.y,
+                    width, width / aspect, rowConfig) then
+                    icon._customAuraOverlayPrepared = true
+                    if managed then icon._quiManagedAuraProxy = nil end
+                    preparedIcons[icon] = true
+                    mirrored = mirrored + 1
+                end
             end
         end
     end
-    for _, manager in pairs(managers) do manager:EndPass(owner) end
+    for _, manager in pairs(auraOverlayManagers) do
+        if manager.SetCombatVisibility then
+            manager:SetCombatVisibility(owner, managers[manager] and settings.showOnlyInCombat == true and not editMode)
+        end
+        if managers[manager] or manager:BeginPass(owner, false) then manager:EndPass(owner) end
+    end
     preparedAuraOverlayIcons[owner] = preparedIcons
     activeAuraOverlayOwners[owner] = mirrored > 0 or nil
     return mirrored > 0
@@ -432,14 +615,21 @@ local function AcquireRun(owner, index)
     return container, pool
 end
 
-local function BuildGroup(icon, index, rowConfig)
+local function BuildGroup(icon, index, rowConfig, settings)
     local ids = CandidateIDs(icon._spellEntry)
     local include = {}
     for i = 1, #ids do include[ids[i]] = true end
-    local filters = next(include) and { includeSpellIDs = include } or { maxDuration = 0 }
+    local filters = next(include) and not EntryHidden(icon._spellEntry, settings)
+        and { includeSpellIDs = include } or { maxDuration = 0 }
     local spacing = rowConfig.padding or 0
+    local profile = Profile(rowConfig, settings, icon._spellEntry)
+    profile.cdmClickSource = settings.clickableIcons and icon.clickButton or nil
+    profile.cdmEffectOwner = icon
+    icon._quiNativeProcGlows = nil
     return {
-        key = "a" .. tostring(index),
+        key = "a" .. tostring(index) .. (settings.clickableIcons and ":cast" or ""),
+        secureClicks = settings.clickableIcons == true,
+        profile = profile,
         filter = HELPFUL_FILTER,
         maxFrameCount = 1,
         candidateFilters = filters,
@@ -458,17 +648,24 @@ local function HostileTarget()
         and UnitCanAttack and UnitCanAttack("player", "target") == true
 end
 
+local function RouteConfig(route)
+    if route == "SELF_HELPFUL" then return "player", HELPFUL_FILTER end
+    if route == "HELPFUL" then return "target", HELPFUL_FILTER end
+    if route == "HARMFUL" then return "target", HARMFUL_FILTER end
+    return route:match("^([^:]+):(.+)$")
+end
+
 local function RouteActive(route)
-    return route == "SELF_HELPFUL"
-        or (route == "HELPFUL" and FriendlyTarget())
-        or (route == "HARMFUL" and HostileTarget())
+    local unit, filter = RouteConfig(route)
+    if unit ~= "target" then return unit ~= nil end
+    if filter:find("HARMFUL", 1, true) then return HostileTarget() end
+    return FriendlyTarget()
 end
 
 local function ApplyRoute(record)
-    local unit = record.route == "SELF_HELPFUL" and "player" or "target"
-    local filter = record.route == "HARMFUL" and HARMFUL_FILTER or HELPFUL_FILTER
+    local unit, filter = RouteConfig(record.route)
     local active = RouteActive(record.route)
-    local cancel = record.route == "SELF_HELPFUL" and "RightButtonUp" or nil
+    local cancel = unit == "player" and filter:find("HELPFUL", 1, true) and "RightButtonUp" or nil
     for i = 1, #record.groups do
         local group = record.groups[i]
         group.filter = filter
@@ -477,7 +674,33 @@ local function ApplyRoute(record)
     end
     local container = record.container
     container:SetUnit(unit)
+    local buttons = container._quiCDMNativeButtons or {}
+    local profiles = {}
+    container._quiCDMNativeButtons = buttons
+    container._quiCDMNativeProfiles = profiles
+    for i = 1, #record.groups do
+        local group = record.groups[i]
+        local key = group.key
+        profiles[key] = group.profile or record.profile
+        if container.AddAuraGroup and container.HasAuraGroup and not container:HasAuraGroup(key) then
+            container:AddAuraGroup(key, group.filter, {
+                maxFrameCount = group.maxFrameCount,
+                candidateFilters = group.candidateFilters,
+                templateNames = group.secureClicks and { "SecureActionButtonTemplate" } or nil,
+                initializeFrame = function(button)
+                    button._quiNativeCast = group.secureClicks
+                    buttons[button] = key
+                    StyleNativeFrame(button, container._quiCDMNativeProfiles[key] or {})
+                    if not button._quiNativeCast and button.SetCancelAuraButtons then button:SetCancelAuraButtons(cancel) end
+                end,
+            })
+        end
+    end
     record.AuraSkin.Configure(container, record.profile, record.groups)
+    if not (InCombatLockdown and InCombatLockdown())
+        and not (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()) then
+        for button, key in pairs(buttons) do StyleNativeFrame(button, profiles[key] or {}) end
+    end
     container:SetEnabled(true)
     container:Show()
 end
@@ -525,6 +748,16 @@ function Runs.CanRelayoutInCombat(owner, settings, icons)
         and state.valid ~= false and Runs.ShouldUseSettings(settings, state.viewerType)) then
         return false
     end
+    if settings.clickableIcons then return false end
+    local factory = ns.CDMIconFactory
+    if factory and factory.PoolHasProtectedIcon and factory:PoolHasProtectedIcon(state.viewerType) then
+        return false
+    end
+    for _, container in ipairs(owner._quiCDMAuraRuns or {}) do
+        for button in pairs(container._quiCDMNativeButtons or {}) do
+            if button._quiNativeCast then return false end
+        end
+    end
     local capacity = (settings.row1 and settings.row1.iconCount or 0)
         + (settings.row2 and settings.row2.iconCount or 0)
         + (settings.row3 and settings.row3.iconCount or 0)
@@ -541,6 +774,9 @@ local function Disable(owner)
     if owner then activeOwners[owner] = nil end
     local pool = owner and owner._quiCDMAuraRuns
     if not pool then return end
+    for icon in pairs(owner._quiCDMAuraRunByIcon or {}) do
+        icon._quiManagedAuraProxy = nil
+    end
     local AuraSkin = ns.AuraSkin or (ns.Addon and ns.Addon.AuraSkin)
     for i = 1, #pool do
         local container = pool[i]
@@ -653,7 +889,78 @@ local function AnchorPreparedRuns(owner, layoutPlan, runByIcon)
     })
 end
 
+local function ApplyRowRuns(owner, settings, layoutPlan, AuraSkin)
+    local records, byIcon = {}, {}
+    local previous, previousNative, rowConfig, currentRun
+    local vertical = settings.layoutDirection == "VERTICAL"
+    for _, placement in ipairs(layoutPlan.placements) do
+        local icon = placement.icon
+        local row = placement.rowConfig or {}
+        if row ~= rowConfig then
+            rowConfig, currentRun, previous = row, nil, nil
+        end
+        local frame
+        local native = IsManagedAuraIcon(icon)
+        if native then
+            local route = icon._spellEntry._managedAuraRoute
+            if not currentRun or currentRun.route ~= route then
+                local container = AcquireRun(owner, #records + 1)
+                currentRun = { container = container, route = route, groups = {}, rowConfig = row }
+                currentRun.profile = Profile(row, settings)
+                currentRun.profile.grow = vertical and "DOWN" or "RIGHT"
+                currentRun.AuraSkin = AuraSkin
+                records[#records + 1] = currentRun
+                frame = container
+            end
+            byIcon[icon] = currentRun
+            local group = BuildGroup(icon, #currentRun.groups + 1, row, settings)
+            if vertical then
+                group.elementWidth = row.size or 39
+                group.elementHeight = (row.size or 39) / (row.aspectRatioCrop or 1)
+                    + (row.padding or 0) + 1
+            end
+            currentRun.groups[#currentRun.groups + 1] = group
+            HideProxy(icon)
+        else
+            currentRun = nil
+            frame = icon
+        end
+        if frame then
+            frame:ClearAllPoints()
+            if previous then
+                local gap = previousNative and -1 or (row.padding or 0)
+                if vertical then
+                    frame:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -gap)
+                else
+                    frame:SetPoint("TOPLEFT", previous, "TOPRIGHT", gap, 0)
+                end
+            else
+                local width = row.size or 39
+                local height = width / (row.aspectRatioCrop or 1)
+                frame:SetPoint("TOPLEFT", owner, "CENTER", placement.x - width / 2, placement.y + height / 2)
+            end
+            previous, previousNative = frame, native
+        end
+    end
+    if #records == 0 then Disable(owner); return false end
+    for _, record in ipairs(records) do ApplyRoute(record) end
+    for i = #records + 1, #(owner._quiCDMAuraRuns or {}) do
+        local container = owner._quiCDMAuraRuns[i]
+        AuraSkin.Configure(container, container._quiProfile or {}, {})
+        container:SetEnabled(false)
+        container:Hide()
+    end
+    owner._quiCDMAuraRunRecords = records
+    owner._quiCDMAuraRunByIcon = byIcon
+    owner._quiCDMAuraCombatState = nil
+    activeOwners[owner] = true
+    return true
+end
+
 function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat, viewerType)
+    if C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret() then
+        return Runs.HasActiveRuns(owner) or Runs.HasAuraOverlays(owner)
+    end
     local overlaysApplied = ApplyCooldownAuraOverlays(
         owner, settings, layoutPlan, inCombat, viewerType)
     if not (owner and Runs.ShouldUseSettings(settings, viewerType)
@@ -669,6 +976,15 @@ function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat, viewerType)
     if inCombat then
         return Runs.RelayoutPreparedInCombat(owner, settings, allIcons) ~= nil
             or overlaysApplied
+    end
+
+    local rowCount = 0
+    for i = 1, 3 do
+        local row = settings["row" .. i]
+        if row and (row.iconCount or 0) > 0 then rowCount = rowCount + 1 end
+    end
+    if rowCount > 1 or settings.layoutDirection == "VERTICAL" then
+        return ApplyRowRuns(owner, settings, layoutPlan, AuraSkin) or overlaysApplied
     end
 
     local runRecords = {}
@@ -706,7 +1022,7 @@ function Runs.Apply(owner, settings, layoutPlan, allIcons, inCombat, viewerType)
             end
             runByIcon[icon] = currentRun
             currentRun.groups[#currentRun.groups + 1] = BuildGroup(
-                icon, #currentRun.groups + 1, currentRun.rowConfig)
+                icon, #currentRun.groups + 1, currentRun.rowConfig, settings)
         else
             currentRun = nil
         end
