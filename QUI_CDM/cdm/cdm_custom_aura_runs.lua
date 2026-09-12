@@ -235,7 +235,7 @@ local function Profile(rowConfig, settings, entry)
     return {
         cdmProcGlow = ns._OwnedGlows and ns._OwnedGlows.ResolveGlowForEntry
             and ns._OwnedGlows.ResolveGlowForEntry(entry) or nil,
-        cdmActiveGlow = settings and settings.activeGlowEnabled ~= false
+        cdmActiveGlow = settings and settings.containerType == "customBar" and settings.activeGlowEnabled ~= false
             and not (override and override.glowEnabled == false) and {
             color = override and override.glowColor or settings.activeGlowColor or { 1, 0.85, 0.3, 1 },
             thickness = settings.activeGlowThickness or 2,
@@ -458,8 +458,8 @@ function Runs.SetNativeProcGlow(icon, active)
             if effect.playing ~= playing then
                 if playing then effect.group:Play() else effect.group:Stop() end
                 effect.playing = playing
+                effect.texture:SetAlpha(playing and 1 or 0)
             end
-            effect.texture:SetAlpha(playing and 1 or 0)
         end
     end
 end

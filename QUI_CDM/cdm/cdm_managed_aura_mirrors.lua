@@ -72,6 +72,12 @@ local function CandidateFilter(spellID)
     return { includeSpellIDs = { [spellID] = true } }
 end
 
+local function SetSlotCandidate(auraContainer, slot, spellID)
+    if slot.spellID == spellID then return end
+    auraContainer:SetAuraSlotCandidateFilters(slot.key, spellID and CandidateFilter(spellID) or PARK_FILTER)
+    slot.spellID = spellID
+end
+
 function CDMManagedAuraMirrors.New(deps)
     deps = deps or {}
     local self = {
@@ -145,7 +151,7 @@ local function ParkRecord(pool, record)
     if record.parked then return end
     local auraContainer = pool.auraContainer
     for i = 1, #record.slots do
-        auraContainer:SetAuraSlotCandidateFilters(record.slots[i].key, PARK_FILTER)
+        SetSlotCandidate(auraContainer, record.slots[i], nil)
     end
     record.parked = true
 end
@@ -235,8 +241,7 @@ function CDMManagedAuraMirrors:Acquire(ownerContainer, placementKey, entry, prof
         local slot = record.slots[i]
         if slot then
             auraContainer:SetAuraSlotFilterString(slot.key, filter)
-            auraContainer:SetAuraSlotCandidateFilters(slot.key, CandidateFilter(spellID))
-            slot.spellID = spellID
+            SetSlotCandidate(auraContainer, slot, spellID)
         else
             pool.slotSeq = pool.slotSeq + 1
             local key = "quiAuraMirror:" .. tostring(pool.slotSeq)
@@ -270,7 +275,7 @@ function CDMManagedAuraMirrors:Acquire(ownerContainer, placementKey, entry, prof
         end
     end
     for i = #ids + 1, #record.slots do
-        auraContainer:SetAuraSlotCandidateFilters(record.slots[i].key, PARK_FILTER)
+        SetSlotCandidate(auraContainer, record.slots[i], nil)
     end
 
     record.entry = entry

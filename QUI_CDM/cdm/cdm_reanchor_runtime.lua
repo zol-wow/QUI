@@ -432,7 +432,7 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
         if frame then
             local options = wrapper.auraMirrorOptions
             if options then
-                options.order = index
+                options.order = options.order or index
                 options.rowConfig = placement.rowConfig
                 wrapper.auraMirror = deps.acquireAuraMirror(wrapper.src, containerKey,
                     wrapper.placementKey or (containerKey .. ":layout:" .. index), options)
@@ -493,6 +493,7 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
         local row = placement.rowConfig and placement.rowConfig.rowNum or 1
         local segments = rows[row]
         if not segments then segments = { count = 0 }; rows[row] = segments end
+        segments.lastPlacement = placement
         if not segments.active then
             segments.active = true
             rowOrder[#rowOrder + 1] = row
@@ -538,12 +539,19 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
                 end
                 if not segment.wrapper.reanchored then
                     frame:ClearAllPoints()
-                    if segments.count == 1 then
+                    local alignment = placement.rowConfig and placement.rowConfig.flowAlignment or "CENTER"
+                    if segments.count == 1 and alignment == "CENTER" then
                         local offset = (padding + 1) / 2 * (forward and 1 or -1)
                         local rc = placement.rowConfig
                         frame:SetPoint("CENTER", container, "CENTER",
                             vertical and placement.x or ((rc and rc.xOffset or 0) + offset),
                             vertical and ((rc and rc.yOffset or 0) + offset) or placement.y)
+                    elseif segments.count == 1 and alignment == "END" then
+                        local last = segments.lastPlacement
+                        local lastW, lastH = PlacementRect(last)
+                        local offset = ((vertical and lastH or lastW) / 2 + padding + 1) * (forward and 1 or -1)
+                        frame:SetPoint(opposite, container, "CENTER", last.x + (vertical and 0 or offset),
+                            last.y + (vertical and offset or 0))
                     elseif previous then
                         local offset = (previousDynamic and -1 or padding) * (forward and 1 or -1)
                         frame:SetPoint(anchor, previous, opposite, vertical and 0 or offset, vertical and offset or 0)
@@ -561,6 +569,7 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
             segment.frame, segment.record, segment.placement, segment.wrapper = nil, nil, nil, nil
         end
         segments.count, segments.active, segments.direction, segments.hasDynamic = 0, nil, nil, nil
+        segments.lastPlacement = nil
         rowOrder[rowIndex] = nil
     end
     for frame in pairs(positionedFrames) do positionedFrames[frame] = nil end
