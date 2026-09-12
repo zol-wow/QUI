@@ -894,7 +894,8 @@ local function FormatSpecialLine(event, typeKey, kind, p)
     local channelFull, channelNumber, targetUser = p.channelFull, p.chNum, p.target
 
     if kind == "ach" then
-        if type(sender) ~= "string" or sender == "" then return nil end
+        if IsSecret(p.rawSender) then sender = p.rawSender end
+        if not IsSecret(sender) and (type(sender) ~= "string" or sender == "") then return nil end
         local shown = p.decorated or sender
         local link = BracketedPlayerLink(sender, shown)
         return FormatString(text, link)
@@ -1014,6 +1015,9 @@ function Format.WrapSecretEventLine(event, p)
     local typeKey = Format.EventToTypeKey(event)
     if not typeKey then return text end
 
+    if SPECIAL_KIND[typeKey] == "ach" then
+        return FormatSpecialLine(event, typeKey, "ach", p)
+    end
     if BOSS_NOTICE_EVENTS[event] or SPECIAL_KIND[typeKey] then
         return text
     end
