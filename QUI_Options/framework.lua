@@ -5355,7 +5355,6 @@ function GUI:CreateMainFrame()
         accentSwatch._bg:SetVertexColor(r, g, b, 1)
         title:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
         version:SetTextColor(C.accentLight[1], C.accentLight[2], C.accentLight[3], 1)
-        RefreshAllSkinning()
     end
 
     local themeLabel = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -7941,6 +7940,10 @@ end
 function GUI:OnFontChanged()
     if not self.MainFrame or not self.MainFrame:IsShown() then return end
     self:RefreshAccentColor()
+    if ns.Registry then
+        ns.Registry:RefreshAll("skinning")
+    end
+    if _G.QUI_RefreshStatusTrackingBarSkin then _G.QUI_RefreshStatusTrackingBarSkin() end
 end
 
 QUI.GUI = GUI

@@ -634,12 +634,6 @@ function QUI:OnEnable()
     self:RegisterEvent("ADDON_LOADED")
     self:RegisterOptionalPullAlias()
 
-    ns.RunAfterFirstFrame(function()
-        if QUI:EnsureOptionsLoaded() then
-            QUI.GUI:InitializeOptions()
-        end
-    end, 0)
-
     if self.QUICore then
         local sw = self.db and self.db.global and self.db.global.setupWizard
         if sw and not sw.completedAt then
