@@ -4,6 +4,25 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.1-beta7 - 2026-09-12
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Changed
+
+- **Options load on demand**, reducing startup work and avoiding unnecessary
+  gameplay skin refreshes when opening settings.
+- **Group Frames allocate raid headers on demand** and reuse secure unit buttons,
+  reducing repeated styling during roster updates.
+
+### Fixed
+
+- **Chat handles restricted achievement messages and channel names safely**,
+  preserving achievement formatting and sender links.
+- **Minimap datatexts keep their saved positions during refresh**, preventing
+  circular anchors while preserving Layout Mode dragging and automatic sizing.
+
 ## v5.3.1-beta6 - 2026-09-11
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
