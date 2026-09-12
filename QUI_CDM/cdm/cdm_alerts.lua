@@ -184,7 +184,6 @@ end
 local nativeRegistrations = {}
 local nativeEvents = {}
 local nativeStatuses = {}
-local recoveredOwnership = setmetatable({}, { __mode = "k" })
 local refreshPending = false
 local nativeDisabled = false
 local reconciling = false
@@ -197,14 +196,6 @@ local function NativeSignature(record)
     return table.concat({ "viewer", tostring(record.layout), record.cooldownID, record.event, record.payload }, ":")
 end
 
-local function NativeOwnership()
-    local db = ns.Addon and ns.Addon.db
-    if not db then return nil end
-    db.char = db.char or {}
-    db.char.cdmNativeSoundAlerts = db.char.cdmNativeSoundAlerts or {}
-    return db.char.cdmNativeSoundAlerts
-end
-
 local function FindNativeAlert(alerts, event, payload)
     for _, alert in ipairs(alerts or {}) do
         if alert[1] == Enum.CooldownViewerAlertType.Sound and alert[2] == event and alert[3] == payload then
@@ -213,30 +204,10 @@ local function FindNativeAlert(alerts, event, payload)
     end
 end
 
-local function RecoverNativeOwnership(manager)
-    local ownership = NativeOwnership()
-    if not (ownership and manager and manager.GetLayout) then return end
-    if manager.IsLoaded and not manager:IsLoaded() then return end
-    for key, saved in pairs(ownership) do
-        local layout = manager:GetLayout(saved.layoutID)
-        local alerts = layout and manager:GetAlertsForLayout(layout, saved.cooldownID, Enum.CDMLayoutMode.AccessOnly)
-        local alert = FindNativeAlert(alerts, saved.event, saved.payload)
-        if alert then
-            local record = { kind = "viewer", manager = manager, layout = layout, alert = alert, owned = true,
-                cooldownID = saved.cooldownID, event = saved.event, payload = saved.payload,
-                ownership = ownership }
-            local signature = NativeSignature(record)
-            local existing = nativeRegistrations[signature]
-            if not recoveredOwnership[ownership] then
-                nativeRegistrations[signature] = existing or record
-            elseif not existing or existing.alert ~= alert then
-                ownership[key] = nil
-            end
-        elseif not recoveredOwnership[ownership] then
-            ownership[key] = nil
-        end
-    end
-    recoveredOwnership[ownership] = true
+local function GetNativeAlerts(record)
+    local info = record.layout and record.layout.cooldownInfo
+    local block = info and info[record.cooldownID]
+    return block and block.alerts
 end
 
 local function EventKey(entry, eventKey)
@@ -307,9 +278,18 @@ function Alerts.GetNativeSoundStatus(containerKey, entry, eventKey)
     if not entry then return nil end
     local statuses = nativeStatuses[containerKey]
     local status = statuses and statuses[EventKey(entry, eventKey)]
-    if status then return status end
-    local _, reason = ResolveNativeSelection(entry, eventKey)
-    return reason
+    if not status then
+        local _, reason = ResolveNativeSelection(entry, eventKey)
+        status = reason
+    end
+    local config = entry.quiAlerts and entry.quiAlerts[eventKey]
+    if auraEvents[eventKey] and type(config) == "table" and (config.mode == "tts"
+        or (type(config.sound) == "string" and config.sound:match("^kit:%d+$"))) then
+        local instruction = ns.L["Configure or disable this aura sound in Blizzard's Cooldown Manager settings."]
+        if status and status ~= instruction then return status .. "\n" .. instruction end
+        return instruction
+    end
+    return status
 end
 
 local function RemoveNativeRegistration(record)
@@ -317,17 +297,6 @@ local function RemoveNativeRegistration(record)
         local api = _G.C_UnitAuras
         if not (api and api.RemoveAuraSound) then return false end
         return ns.SafeCall("best-effort-style", api.RemoveAuraSound, record.id)
-    end
-    if not record.owned then return true end
-    local alerts = record.manager:GetAlertsForLayout(record.layout, record.cooldownID,
-        Enum.CDMLayoutMode.AccessOnly)
-    for i, alert in ipairs(alerts or {}) do
-        if alert == record.alert and alert[1] == Enum.CooldownViewerAlertType.Sound
-            and alert[2] == record.event and alert[3] == record.payload then
-            table.remove(alerts, i)
-            record.manager:SetHasPendingChanges(true, true)
-            break
-        end
     end
     return true
 end
@@ -345,27 +314,9 @@ local function RegisterNativeSound(record)
         record.id = id
         return true
     end
-    local manager = record.manager
-    record.layout = manager:GetActiveLayout(Enum.CDMLayoutMode.AccessOnly)
-    local alerts = manager:GetAlerts(record.cooldownID, Enum.CDMLayoutMode.AccessOnly)
-    record.alert = FindNativeAlert(alerts, record.event, record.payload)
+    record.alert = FindNativeAlert(GetNativeAlerts(record), record.event, record.payload)
     if record.alert then return true end
-    local alert = { Enum.CooldownViewerAlertType.Sound, record.event, record.payload }
-    local ok, status = ns.SafeCall("best-effort-style", manager.AddAlert, manager, record.cooldownID, alert)
-    if not ok or status ~= Enum.CooldownViewerAddAlertStatus.Success then
-        return false, ns.L["Blizzard could not add this sound alert. Each cooldown entry supports at most three native alerts."]
-    end
-    record.alert, record.owned = alert, true
-    record.layout = manager:GetActiveLayout(Enum.CDMLayoutMode.AccessOnly)
-    local ownership = NativeOwnership()
-    local layoutID = record.layout and record.layout.layoutID
-    if ownership and layoutID then
-        record.ownership = ownership
-        local ownershipKey = table.concat({ layoutID, record.cooldownID, record.event, record.payload }, ":")
-        ownership[ownershipKey] = { layoutID = layoutID, cooldownID = record.cooldownID,
-            event = record.event, payload = record.payload }
-    end
-    return true
+    return false, ns.L["Configure or disable this aura sound in Blizzard's Cooldown Manager settings."]
 end
 
 function Alerts.ReconcileNativeSounds(disabled)
@@ -377,11 +328,9 @@ function Alerts.ReconcileNativeSounds(disabled)
     local desired = {}
     nativeEvents, nativeStatuses = {}, {}
     local settingsFrame = _G.CooldownViewerSettings
-    local manager = settingsFrame and settingsFrame.GetLayoutManager and settingsFrame:GetLayoutManager()
-    if manager and manager.IsLoaded and not manager:IsLoaded() then manager = nil end
-    local layout = manager and manager:GetActiveLayout(Enum.CDMLayoutMode.AccessOnly)
-    RecoverNativeOwnership(manager)
-    local ownership = NativeOwnership()
+    local provider = settingsFrame and settingsFrame.dataProvider
+    local manager = provider and provider.displayData and not provider.displayDataDirty and provider.layoutManager
+    local layout = manager and manager.layouts and manager.layouts[manager.activeLayoutID]
     local containers = ns.CDMContainers
     local enabled = not nativeDisabled and (not ns.CDMShared or ns.CDMShared.IsRuntimeEnabled())
     local all = enabled and containers and containers.GetContainers and containers:GetContainers() or {}
@@ -429,11 +378,10 @@ function Alerts.ReconcileNativeSounds(disabled)
         local nextRecord = desired[signature]
         local missing = false
         if record.kind == "viewer" then
-            local alerts = record.manager:GetAlertsForLayout(record.layout, record.cooldownID, Enum.CDMLayoutMode.AccessOnly)
+            local alerts = GetNativeAlerts(record)
             missing = FindNativeAlert(alerts, record.event, record.payload) ~= record.alert
         end
-        if not nextRecord or missing or (record.kind == "viewer" and (record.layout ~= layout or record.manager ~= manager
-            or (record.owned and record.ownership ~= ownership))) then
+        if not nextRecord or missing or (record.kind == "viewer" and (record.layout ~= layout or record.manager ~= manager)) then
             if RemoveNativeRegistration(record) then nativeRegistrations[signature] = nil end
         end
     end
