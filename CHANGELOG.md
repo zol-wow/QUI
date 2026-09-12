@@ -4,6 +4,44 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-ptr-alpha4 - 2026-09-12
+
+> ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
+> not load on the live 12.1 client.
+
+Includes the beta updates through v5.3.1-beta8 while retaining PTR features.
+
+### Added
+
+- **Reminders is a new optional module, off by default**, with defensive
+  callouts driven by BigWigs, DBM, or Blizzard's encounter timeline. Configure
+  per-spec priorities, movable callouts, sound or text-to-speech, and CDM glows.
+- **Bonus Roll filters** can hide prompts by raid difficulty, boss, dungeon,
+  Delve, or Mythic+ key level. Recover an unexpired hidden offer with
+  `/qui bonusroll show`.
+- **Group Frames can hide raid groups 7 and 8 in Mythic raids and hide unit
+  tooltips during combat.**
+
+### Changed
+
+- **Options load on demand and raid frames reuse secure unit buttons**,
+  reducing startup work and repeated styling during roster updates.
+- **Cooldown Manager custom auras use native tracking and rendering**, with
+  improved buff-row spacing, alignment, group boundaries, and aura glows.
+
+### Fixed
+
+- **Cooldown Manager aura sounds no longer modify Blizzard's native alert
+  layouts**, preventing taint in native cooldown and aura tracking. Configure
+  native sounds and text-to-speech in Blizzard's Cooldown Manager settings.
+- **Chat preserves whisper recipients, replies, and Battle.net routing**,
+  follows the active window, and safely handles restricted achievement messages
+  and channel names.
+- **Castbar anchor chains no longer restrict resizing during combat**, arena target health bars
+  retain class colors, and minimap datatexts keep their saved positions.
+- **Settings searches skip restricted preview text**, unchanged pinned values
+  avoid full refreshes, and Rotation Helper clears stale suggestions.
+
 ## v5.5.0-ptr-alpha3 - 2026-09-08
 
 > ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
