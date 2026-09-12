@@ -1,0 +1,18 @@
+## Interface: 120105
+## Title: |cFF30D1FFQUI|r Reminders
+## Notes: QUI module. Requires the QUI core addon.
+## Author: Zol and Drew
+## Version: 5.5.0-ptr-alpha3
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## OptionalDeps: BigWigs, DBM-Core
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+## LoadOnDemand: 1
+
+bootstrap.lua
+reminders\bossmods.lua
+reminders\journal.lua
+reminders\defensives.lua
+reminders\callout.lua
+reminders\engine.lua

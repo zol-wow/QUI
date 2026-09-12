@@ -209,6 +209,9 @@ local function should_load_script(path)
         if path:match("^QUI_ActionBars/actionbars/settings/") then
             return true
         end
+        if path == "QUI_Reminders/reminders/settings/reminders_content.lua" then
+            return true
+        end
         return false
     end
 

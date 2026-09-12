@@ -24,7 +24,7 @@ TARGETS=(
     QUI_Debug/ core/ modules/ init.lua
     QUI_ActionBars/ QUI_Bags/ QUI_CDM/ QUI_Chat/
     QUI_DamageMeter/ QUI_GroupFrames/ QUI_Nameplates/ QUI_Options/
-    QUI_ResourceBars/ QUI_UnitFrames/
+    QUI_Reminders/ QUI_ResourceBars/ QUI_UnitFrames/
     tests/unit/ tests/helpers/ tests/replay/ tests/taint/
 )
 

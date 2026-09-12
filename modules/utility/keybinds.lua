@@ -1852,6 +1852,16 @@ local function UpdateAllRotationHelpers(overrideSpellID, baseSpellID)
     UpdateViewerRotationHelper("utility", nextSpellID, nextBaseSpellID)
 end
 
+-- Explicit "no suggestion": drop the cached spell and hide every overlay
+-- without asking GetNextCastSpell again (it may still answer with a stale
+-- spell after Assisted Combat went away).
+local function ClearAllRotationHelpers()
+    currentRotationSpellID = nil
+    currentRotationBaseSpellID = nil
+    UpdateViewerRotationHelper("essential", nil)
+    UpdateViewerRotationHelper("utility", nil)
+end
+
 local function ShouldRunRotationHelper()
     local core = GetCore()
     if not core or not core.db or not core.db.profile then return false end
@@ -1865,6 +1875,8 @@ local function ShouldRunRotationHelper()
     return (essential and essential.showRotationHelper) or (utility and utility.showRotationHelper)
 end
 
+local SyncRotationHelperPoll
+
 local function RefreshRotationHelper()
     rotationHelperEnabled = ShouldRunRotationHelper()
 
@@ -1874,6 +1886,7 @@ local function RefreshRotationHelper()
     else
         UpdateAllRotationHelpers()
     end
+    if SyncRotationHelperPoll then SyncRotationHelperPoll() end
 end
 
 local rotationHelperInitFrame = CreateFrame("Frame")
@@ -1899,6 +1912,190 @@ QUI._onIconAssigned = function(icon)
     local settings = core.db.profile.viewers[VIEWER_DB_KEY[vType] or vType]
     if settings then
         ApplyRotationHelperToIcon(icon, settings, currentRotationSpellID, currentRotationBaseSpellID)
+    end
+end
+
+-- Shared next-cast poller.
+-- Blizzard only calls UpdateAllAssistedHighlightFramesForSpell from its own
+-- OnUpdate poll, and that poll only runs while the "assistedCombatHighlight"
+-- CVar is on. OnSetActionSpell fires on spec/loadout changes, not per
+-- suggestion. So consumers that hang off those hooks freeze when the CVar is
+-- off. This ticker gives them a heartbeat of their own, at Blizzard's own
+-- update rate, and only notifies when the suggested spell changes.
+local AssistedCombatNext = {}
+do
+    local subscribers = {}
+    local subscriberCount = 0
+    local ticker = nil
+    local tickerRate = nil
+    local lastRaw = nil
+    local lastWasSecret = false
+    -- nil is a valid "no suggestion" answer, so "nothing delivered yet" needs
+    -- its own flag; otherwise the first tick after Reset() could be swallowed.
+    local delivered = false
+    local lastDispatchWasClear = false
+    local available = nil
+
+    local function PollRate()
+        local manager = _G.AssistedCombatManager
+        local rate = manager and manager.GetUpdateRate and manager:GetUpdateRate()
+        if type(rate) ~= "number" or rate <= 0 then rate = 0.2 end
+        if rate < 0.1 then rate = 0.1 end
+        return rate
+    end
+
+    local function RefreshAvailability()
+        if not (C_AssistedCombat and C_AssistedCombat.GetNextCastSpell) then
+            available = false
+            return
+        end
+        if not C_AssistedCombat.IsAvailable then
+            available = true
+            return
+        end
+        local ok, isAvailable = QUI.SafeCall("best-effort-style", C_AssistedCombat.IsAvailable)
+        available = ok and (isAvailable == true)
+    end
+
+    local function Dispatch(spellID)
+        for _, fn in pairs(subscribers) do
+            -- keep polling even if one consumer misbehaves
+            QUI.SafeCall("bulkhead", fn, spellID)
+        end
+    end
+
+    local function Tick()
+        if subscriberCount == 0 then return end
+        local ok, sid = QUI.SafeCall("best-effort-style", C_AssistedCombat.GetNextCastSpell, false)
+        if not ok then return end
+        if Helpers.IsSecretValue(sid) then
+            -- can't compare secrets; notify once on the transition into secrecy
+            if not lastWasSecret or not delivered then
+                lastWasSecret = true
+                lastRaw = nil
+                delivered = true
+                lastDispatchWasClear = false
+                Dispatch(sid)
+            end
+            return
+        end
+        lastWasSecret = false
+        if delivered and sid == lastRaw then return end
+        lastRaw = sid
+        delivered = true
+        lastDispatchWasClear = false
+        Dispatch(sid)
+    end
+
+    -- Assisted Combat went away (spec without it, API missing): tell consumers
+    -- to drop whatever they last showed, once.
+    local function ClearConsumers()
+        if subscriberCount == 0 then return end
+        if lastDispatchWasClear then return end
+        lastRaw = nil
+        lastWasSecret = false
+        delivered = true
+        lastDispatchWasClear = true
+        Dispatch(nil)
+    end
+
+    local function Stop()
+        if ticker then
+            ticker:Cancel()
+            ticker = nil
+            tickerRate = nil
+        end
+    end
+
+    local function Start()
+        if subscriberCount == 0 then Stop() return end
+        if available == nil then RefreshAvailability() end
+        if not available then
+            Stop()
+            ClearConsumers()
+            return
+        end
+        if not (C_Timer and C_Timer.NewTicker) then return end
+        local rate = PollRate()
+        if ticker and tickerRate == rate then return end
+        Stop()
+        tickerRate = rate
+        ticker = C_Timer.NewTicker(rate, Tick)
+    end
+
+    function AssistedCombatNext.Subscribe(key, fn)
+        if not key or type(fn) ~= "function" then return end
+        if not subscribers[key] then subscriberCount = subscriberCount + 1 end
+        subscribers[key] = fn
+        local clearedBefore = lastDispatchWasClear
+        Start()
+        -- Consumers typically query the API themselves right before
+        -- subscribing and may have painted a stale suggestion. If Assisted
+        -- Combat is unavailable, tell this consumer directly: the shared
+        -- latch only covers subscribers that were present at the last clear.
+        if not available and clearedBefore then
+            QUI.SafeCall("bulkhead", fn, nil)
+        end
+    end
+
+    function AssistedCombatNext.Unsubscribe(key)
+        if not key or not subscribers[key] then return end
+        subscribers[key] = nil
+        subscriberCount = subscriberCount - 1
+        if subscriberCount == 0 then Stop() end
+    end
+
+    -- Re-evaluate availability/rate and force the next tick to notify.
+    function AssistedCombatNext.Reset()
+        lastRaw = nil
+        lastWasSecret = false
+        delivered = false
+        RefreshAvailability()
+        Start()
+    end
+
+    function AssistedCombatNext.IsPolling()
+        return ticker ~= nil
+    end
+
+    function AssistedCombatNext.GetLast()
+        return lastRaw
+    end
+
+    -- Test seam: drive a tick without a timer.
+    AssistedCombatNext._Tick = Tick
+
+    local resetFrame = CreateFrame("Frame")
+    resetFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+    resetFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+    resetFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
+    resetFrame:RegisterEvent("CVAR_UPDATE")
+    resetFrame:SetScript("OnEvent", function(_, event, cvarName)
+        if event == "CVAR_UPDATE" then
+            if cvarName ~= "assistedCombatIconUpdateRate" then return end
+            Stop()
+            Start()
+            return
+        end
+        AssistedCombatNext.Reset()
+    end)
+end
+QUI.AssistedCombatNext = AssistedCombatNext
+
+local ROTATION_HELPER_POLL_KEY = "QUI_CDMRotationHelper"
+
+SyncRotationHelperPoll = function()
+    if rotationHelperEnabled then
+        AssistedCombatNext.Subscribe(ROTATION_HELPER_POLL_KEY, function(spellID)
+            if not rotationHelperEnabled then return end
+            if spellID == nil then
+                ClearAllRotationHelpers()
+                return
+            end
+            UpdateAllRotationHelpers()
+        end)
+    else
+        AssistedCombatNext.Unsubscribe(ROTATION_HELPER_POLL_KEY)
     end
 end
 

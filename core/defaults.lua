@@ -290,6 +290,20 @@ local defaults = {
             merchantKnownPetMark = false,
             ejLootSpecIcons = false,
             worldMapTeleports = false,
+            bonusRoll = {
+                enabled = false,
+                announce = true,
+                mythicPlus = {
+                    mode = "show",
+                    minLevel = 10,
+                },
+                difficulty = {
+                    ["*"] = {
+                        hide = false,
+                        encounters = { ["*"] = false },
+                    },
+                },
+            },
             deathAlert = {
                 enabled = false,
                 sound = "None",
@@ -562,6 +576,33 @@ local defaults = {
             reputationFilter = {},
             equipmentHiddenCharacters = {},
             equipmentSort = "name",
+        },
+
+        reminders = {
+            enabled = false,
+            source = "auto",
+            inDungeons = true,
+            inRaids = true,
+            elsewhere = false,
+            leadTime = 3,
+            linger = 4,
+            onlyWhenTanking = true,
+            skipWhenCovered = true,
+            fireOnMessages = true,
+            timelineAllEvents = true,
+            cdmGlow = true,
+            display = {
+                showIcon = true,
+                iconSize = 56,
+                showText = true,
+                textSize = 18,
+                textSide = "BOTTOM",
+                glow = true,
+            },
+            sound = { mode = "off", sound = "None", ttsMode = "name", ttsText = "" },
+            chat = { enabled = false, channel = "SAY" },
+            priorities = {},
+            abilities = {},
         },
 
         damageMeter = {
@@ -2863,6 +2904,7 @@ local defaults = {
                     fontSize = 12,
                     fontOutline = "OUTLINE",
                     showTooltips = true,
+                    hideTooltipsInCombat = false,
                     darkMode = false,
                     darkModeHealthColor = { 0.15, 0.15, 0.15, 1 },
                     darkModeBgColor = { 0.25, 0.25, 0.25, 1 },
@@ -3011,6 +3053,7 @@ local defaults = {
                     fontSize = 12,
                     fontOutline = "OUTLINE",
                     showTooltips = true,
+                    hideTooltipsInCombat = false,
                     darkMode = false,
                     darkModeHealthColor = { 0.15, 0.15, 0.15, 1 },
                     darkModeBgColor = { 0.25, 0.25, 0.25, 1 },
@@ -3030,6 +3073,7 @@ local defaults = {
                     sortByRole = true,
                     groupBy = "GROUP",
                     limitGroupsByRaidSize = false,
+                    hideBenchGroupsInMythic = false,
                     unitsPerFlat = 5,
                 },
                 health = {
@@ -4339,6 +4383,13 @@ local defaults = {
                 hideWithParent = false, keepInPlace = true,
                 widthAdjust = 0, heightAdjust = 0,
             },
+            remindersCallout = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = 120,
+                sizeStable = true, autoWidth = false, autoHeight = false,
+                hideWithParent = false, keepInPlace = true,
+                widthAdjust = 0, heightAdjust = 0,
+            },
             readyCheck = {
                 point = "CENTER", parent = "screen", relative = "CENTER",
                 offsetX = 0, offsetY = 0,
@@ -4407,6 +4458,11 @@ local defaults = {
         },
     },
     global = {
+        reminders = { seen = {} },
+        bonusRoll = {
+            seenDifficulties = {},
+            seenEncounters = {},
+        },
         setupWizard = {
             completedAt = false,
             noticeShown = false,

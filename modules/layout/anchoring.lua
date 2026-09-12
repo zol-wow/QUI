@@ -1581,6 +1581,20 @@ local CASTBAR_ANCHOR_KEYS = {
     totCastbar = true,
 }
 
+local function HasCastbarAnchor(key)
+    local anchoringDB = QUICore and QUICore.db and QUICore.db.profile
+        and QUICore.db.profile.frameAnchoring
+    local visited = {}
+    local hasCastbar = false
+    while key and not visited[key] do
+        if CASTBAR_ANCHOR_KEYS[key] then hasCastbar = true end
+        visited[key] = true
+        local settings = GetSavedFrameAnchorSettings(anchoringDB, key)
+        key = settings and settings.parent
+    end
+    return hasCastbar, key ~= nil
+end
+
 local DYNAMIC_SIZE_ANCHOR_KEYS = {
     buffIcon = true,
     buffBar = true,
@@ -1858,9 +1872,62 @@ local function FrameSelfRestricts(frame)
         or ns.Helpers.FrameIsAnchoringRestricted(frame)
 end
 
+local pinnedAnchorFrames = setmetatable({}, { __mode = "k" })
+local pinnedAnchorTargets = setmetatable({}, { __mode = "k" })
+
+local function TrackPinnedAnchor(frame, key, target)
+    pinnedAnchorFrames[frame] = { key = key, target = target }
+    local _, cyclic = HasCastbarAnchor(key)
+    if cyclic or target == UIParent or pinnedAnchorTargets[target] then return end
+    pinnedAnchorTargets[target] = true
+    local pending = false
+    local function refresh()
+        if pending then return end
+        pending = true
+        C_Timer.After(0, function()
+            pending = false
+            if _G.QUI_IsLayoutModeActive and _G.QUI_IsLayoutModeActive() then return end
+            local refreshed = {}
+            for _, entry in pairs(pinnedAnchorFrames) do
+                local followKey = entry.key
+                local followsCastbar, hasCycle = HasCastbarAnchor(followKey)
+                if entry.target == target and not refreshed[followKey] and followsCastbar and not hasCycle then
+                    refreshed[followKey] = true
+                    _G.QUI_ApplyFrameAnchor(followKey)
+                    _G.QUI_UpdateFramesAnchoredTo(followKey)
+                end
+            end
+        end)
+    end
+    ns.SafeCallMethod("best-effort-style", target, "HookScript", "OnSizeChanged", refresh)
+    ns.SafeCall("best-effort-style", hooksecurefunc, target, "SetPoint", refresh)
+    if target.SetPointBase then ns.SafeCall("best-effort-style", hooksecurefunc, target, "SetPointBase", refresh) end
+end
+
+local function PinCastbarAnchor(key, frame, pt, target, relPt, x, y)
+    TrackPinnedAnchor(frame, key, target)
+    local scale = ns.Helpers.SafeToNumber(frame:GetEffectiveScale(), 0)
+    local uiScale = ns.Helpers.SafeToNumber(UIParent:GetEffectiveScale(), 0)
+    if scale <= 0 or uiScale <= 0 then return end
+    ns.Helpers.PinFrameToTargetAbsolute(frame, pt, target, relPt, x * scale / uiScale, y * scale / uiScale)
+end
+
 local function AnchorOrPin(key, frame, pt, parentFrame, relPt, x, y)
     local live, mover = LiveAuraContainerFor(key)
     if live then
+        local anchoringDB = QUICore and QUICore.db and QUICore.db.profile
+            and QUICore.db.profile.frameAnchoring
+        local settings = GetSavedFrameAnchorSettings(anchoringDB, key)
+        local parentLive = settings and LiveAuraContainerFor(settings.parent)
+        if HasCastbarAnchor(key) and not parentLive then
+            if InCombatLockdown() and not ns._inInitSafeWindow and ns.Helpers.FrameMutationRestricted(live) then
+                pendingAnchoredFrameUpdateAfterCombat = true
+            else
+                PinCastbarAnchor(key, live, pt, parentFrame, relPt, x, y)
+            end
+            if mover then PinCastbarAnchor(key, mover, pt, parentFrame, relPt, x, y) end
+            return
+        end
         ns.SafeCallMethod("best-effort-style", live, "ClearAllPoints")
         ns.SafeCallMethod("best-effort-style", live, "SetPoint", pt, parentFrame, relPt, x, y)
         if mover then
@@ -1875,6 +1942,11 @@ local function AnchorOrPin(key, frame, pt, parentFrame, relPt, x, y)
     if parentFrame and parentFrame._quiHostMover then
         parentFrame = parentFrame._quiHostMover
     end
+    if HasCastbarAnchor(key) then
+        PinCastbarAnchor(key, frame, pt, parentFrame, relPt, x, y)
+        return
+    end
+    pinnedAnchorFrames[frame] = nil
     if ParentRestricts(parentFrame)
         and (CASTBAR_ANCHOR_KEYS[key]
             or (IsDynamicSizeAnchorKey(key) and not FrameSelfRestricts(frame)))
@@ -1894,7 +1966,7 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
         return
     end
 
-    local resolved = ResolveApplyFrameForKey(key)
+    local resolved = key == "bossFrames" and FRAME_RESOLVERS[key]() or ResolveApplyFrameForKey(key)
     if not resolved then
         return
     end
@@ -2096,9 +2168,9 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
                 targetParent = resolved[i - 1]
                 targetPt, targetRelPt, targetX, targetY = GetBossStackPoint(bossGrowDirection, bossSpacingX, bossSpacingY)
             end
-            if targetParent and not FrameAlreadyAtPosition(frame, targetPt, targetParent, targetRelPt, targetX, targetY) then
+            if targetParent and (HasCastbarAnchor(key) or not FrameAlreadyAtPosition(frame, targetPt, targetParent, targetRelPt, targetX, targetY)) then
                 _editModeReapplyGuard = true
-                ns.SafeCall("best-effort-style", SmoothSetPoint, frame, targetPt, targetParent, targetRelPt, targetX, targetY)
+                ns.SafeCall("best-effort-style", AnchorOrPin, key, frame, targetPt, targetParent, targetRelPt, targetX, targetY)
                 _editModeReapplyGuard = false
             end
         end
@@ -2123,7 +2195,7 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
                 centerY = centerY / fScale
             end
         end
-        if not FrameAlreadyAtPosition(resolved, "CENTER", parentFrame, "CENTER", centerX, centerY) then
+        if HasCastbarAnchor(key) or not FrameAlreadyAtPosition(resolved, "CENTER", parentFrame, "CENTER", centerX, centerY) then
             _editModeReapplyGuard = true
             ns.SafeCall("best-effort-style", AnchorOrPin, key, resolved, "CENTER", parentFrame, "CENTER", centerX, centerY)
             _editModeReapplyGuard = false
@@ -2148,14 +2220,14 @@ function QUI_Anchoring:ApplyFrameAnchor(key, settings)
             local centerX, centerY = ComputeCenterOffsetsForAnchor(
                 resolved, key, parentFrame, point, relative, offsetX, offsetY, settings.parent
             )
-            if not FrameAlreadyAtPosition(resolved, "CENTER", parentFrame, "CENTER", centerX, centerY) then
+            if HasCastbarAnchor(key) or not FrameAlreadyAtPosition(resolved, "CENTER", parentFrame, "CENTER", centerX, centerY) then
                 _editModeReapplyGuard = true
                 ns.SafeCall("best-effort-style", AnchorOrPin, key, resolved, "CENTER", parentFrame, "CENTER", centerX, centerY)
                 _editModeReapplyGuard = false
             end
         else
             local live = LiveAuraContainerFor(key)
-            if live or not FrameAlreadyAtPosition(resolved, point, parentFrame, relative, offsetX, offsetY) then
+            if live or HasCastbarAnchor(key) or not FrameAlreadyAtPosition(resolved, point, parentFrame, relative, offsetX, offsetY) then
                 _editModeReapplyGuard = true
                 ns.SafeCall("best-effort-style", AnchorOrPin, key, resolved, point, parentFrame, relative, offsetX, offsetY)
                 _editModeReapplyGuard = false
@@ -2476,9 +2548,9 @@ _G.QUI_ReanchorFramePositionOnly = function(key)
             local centerX, centerY = ComputeCenterOffsetsForAnchor(
                 resolved, key, parentFrame, point, relative, offsetX, offsetY, settings.parent
             )
-            H.BaseSetPoint(resolved, "CENTER", parentFrame, "CENTER", centerX, centerY)
+            AnchorOrPin(key, resolved, "CENTER", parentFrame, "CENTER", centerX, centerY)
         else
-            H.BaseSetPoint(resolved, point, parentFrame, relative, offsetX, offsetY)
+            AnchorOrPin(key, resolved, point, parentFrame, relative, offsetX, offsetY)
         end
     end)
 end
@@ -2640,7 +2712,8 @@ _G.QUI_UpdateFramesAnchoredTo = function(targetKeyOrFrame)
     end
 
     if InCombatLockdown() then
-        if targetKey ~= "cdmEssential" and targetKey ~= "cdmUtility"
+        if not HasCastbarAnchor(targetKey)
+            and targetKey ~= "cdmEssential" and targetKey ~= "cdmUtility"
             and targetKey ~= "buffIcon" and targetKey ~= "buffBar"
             and targetKey ~= "buffFrame" and targetKey ~= "debuffFrame"
         then

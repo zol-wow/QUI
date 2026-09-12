@@ -25,6 +25,12 @@ local NEUTER_ALLOWED = {
     UPDATE_CHAT_COLOR = true,
 }
 
+local PRIMARY_ALLOWED = {
+    CHAT_MSG_WHISPER = true,
+    CHAT_MSG_BN_WHISPER = true,
+    CAUTIONARY_CHAT_MESSAGE = true,
+}
+
 local neutered = {}
 local registerHooked = {}
 local inOwnRegister = false
@@ -41,7 +47,7 @@ end
 
 local function IsNeuterAllowed(frame, event)
     if NEUTER_ALLOWED[event] then return true end
-    return event == "CAUTIONARY_CHAT_MESSAGE" and frame == _G.ChatFrame1
+    return frame == _G.ChatFrame1 and PRIMARY_ALLOWED[event] == true
 end
 
 local function HookRegisterEvent(frame)
@@ -77,9 +83,12 @@ local function NeuterOne(frame)
         ns.SafeCallMethod("best-effort-style", frame, "RegisterEvent", event)
     end
     local valid = _G.C_EventUtils and _G.C_EventUtils.IsEventValid
-    if frame == _G.ChatFrame1
-        and (not valid or valid("CAUTIONARY_CHAT_MESSAGE")) then
-        ns.SafeCallMethod("best-effort-style", frame, "RegisterEvent", "CAUTIONARY_CHAT_MESSAGE")
+    if frame == _G.ChatFrame1 then
+        for event in pairs(PRIMARY_ALLOWED) do
+            if not valid or valid(event) then
+                ns.SafeCallMethod("best-effort-style", frame, "RegisterEvent", event)
+            end
+        end
     end
     inOwnRegister = false
     HookRegisterEvent(frame)
@@ -150,6 +159,74 @@ function Suppress.IsActive()
     return lastActive == true
 end
 
+local savedWhisperMode
+local changingWhisperMode = false
+local pendingWhisperMode
+local whisperModeWatcher
+
+function Suppress.GetWhisperMode()
+    return savedWhisperMode or (_G.GetCVar and _G.GetCVar("whisperMode"))
+end
+
+local function SetNativeWhisperMode(mode)
+    local setCVar = _G.C_CVar and _G.C_CVar.SetCVar or _G.SetCVar
+    if not setCVar then return end
+    pendingWhisperMode = mode
+    changingWhisperMode = true
+    setCVar("whisperMode", mode)
+    changingWhisperMode = false
+end
+
+local function RestoreWhisperMode()
+    if not savedWhisperMode then return end
+    local mode = savedWhisperMode
+    savedWhisperMode = nil
+    SetNativeWhisperMode(mode)
+end
+
+local function SyncWhisperMode()
+    if not _G.GetCVar then return end
+    local mode = _G.GetCVar("whisperMode")
+    if mode == "popout" then
+        savedWhisperMode = mode
+        SetNativeWhisperMode("popout_and_inline")
+    elseif mode ~= "popout_and_inline" then
+        savedWhisperMode = nil
+    end
+    if not whisperModeWatcher then
+        whisperModeWatcher = CreateFrame("Frame")
+        whisperModeWatcher:RegisterEvent("CVAR_UPDATE")
+        whisperModeWatcher:RegisterEvent("PLAYER_LOGOUT")
+        whisperModeWatcher:SetScript("OnEvent", function(_, event, name, value)
+            if event == "CVAR_UPDATE" and name == "whisperMode"
+                and pendingWhisperMode == (value or _G.GetCVar("whisperMode")) then
+                pendingWhisperMode = nil
+                return
+            end
+            if changingWhisperMode then return end
+            if event == "PLAYER_LOGOUT" then
+                RestoreWhisperMode()
+            elseif lastActive == true and name == "whisperMode" then
+                if value and value ~= _G.GetCVar("whisperMode") then return end
+                savedWhisperMode = nil
+                SyncWhisperMode()
+            end
+        end)
+        local function OnSetCVar(name, value)
+            if changingWhisperMode or lastActive ~= true or name ~= "whisperMode" then return end
+            savedWhisperMode = value == "popout" and value or nil
+            SyncWhisperMode()
+        end
+        if _G.hooksecurefunc then
+            if _G.C_CVar and _G.C_CVar.SetCVar then
+                _G.hooksecurefunc(_G.C_CVar, "SetCVar", OnSetCVar)
+            elseif _G.SetCVar then
+                _G.hooksecurefunc("SetCVar", OnSetCVar)
+            end
+        end
+    end
+end
+
 local pendingParents = setmetatable({}, { __mode = "k" })
 local regenFlushFrame
 local graceApply = false
@@ -175,8 +252,12 @@ SafeSetParent = function(region, parent)
     if not (region and region.SetParent and parent) then return end
     if not graceApply
         and type(_G.InCombatLockdown) == "function" and _G.InCombatLockdown() then
-        QueueParentForRegen(region, parent)
-        return
+        local protected = region.IsProtected and region:IsProtected()
+        local restricted = region.IsAnchoringRestricted and region:IsAnchoringRestricted()
+        if IsSecret(protected) or IsSecret(restricted) or protected or restricted then
+            QueueParentForRegen(region, parent)
+            return
+        end
     end
     inOwnSetParent = true
     ns.SafeCallMethod("best-effort-style", region, "SetParent", parent)
@@ -294,6 +375,9 @@ local function SuppressOne(name)
     end
     SuppressRegion(_G[name .. "Tab"], function() return hiddenAnchor end)
     SuppressRegion(_G[name .. "ButtonFrame"], function() return hiddenAnchor end)
+    SuppressRegion(_G[name .. "EditBox"], function() return _G.UIParent end)
+    local EB = ns.QUI.Chat.EditBoxBasics
+    if EB and EB.StyleEditBox and f then EB.StyleEditBox(f) end
 end
 
 local function NeuterChatFrameManager()
@@ -403,6 +487,7 @@ local function SuppressAll()
         hiddenAnchor:Hide()
     end
 
+    SyncWhisperMode()
     EachChatFrameName(SuppressOne)
     StripCombatLogChatMessages()
     EnsureChannelRefreshWatcher()
@@ -411,8 +496,6 @@ local function SuppressAll()
 
     SuppressRegion(_G.GeneralDockManager, function() return hiddenAnchor end)
     NeutralizeDockUpdateScripts()
-
-    SuppressRegion(_G.ChatFrame1EditBox, function() return _G.UIParent end)
 
     NeuterChatFrameManager()
     SwapTempWindowFn()
@@ -433,12 +516,17 @@ local function SuppressAll()
 end
 
 local function RestoreAll()
+    RestoreWhisperMode()
     RestoreChatFrameManager()
     RestoreTempWindowFn()
     local CL = ns.QUI.Chat.CombatLogTab
     if CL and CL.Deactivate then CL.Deactivate(1) end
     for region, parent in pairs(savedParents) do
         SafeSetParent(region, parent)
+    end
+    local EB = ns.QUI.Chat.EditBoxBasics
+    if EB and EB.RemoveEditBoxStyle then
+        EachChatFrameName(function(name) EB.RemoveEditBoxStyle(_G[name]) end)
     end
     savedParents = {}
     local toRestore = {}
@@ -458,6 +546,7 @@ local function ApplyNow()
     else
         RestoreAll()
     end
+    if ns.RefreshSoundMute then ns.RefreshSoundMute() end
 end
 
 function Suppress.Apply()

@@ -777,8 +777,13 @@ IsOverlayed = function(spellID)
     return false
 end
 
+local function CanUpdateIconGlow(icon)
+    local entry = icon and icon._spellEntry
+    return entry and (entry._useManagedAura or icon._customAuraOverlayPrepared or icon:IsShown())
+end
+
 local function EvaluateGlowForIcon(icon)
-    if not icon or not icon:IsShown() or not icon._spellEntry then
+    if not CanUpdateIconGlow(icon) then
         return false, nil
     end
 
@@ -835,6 +840,8 @@ end
 
 SyncGlowForIcon = function(icon)
     local shouldGlow, spellOvr = EvaluateGlowForIcon(icon)
+    local runs = ns.CDMCustomAuraRuns
+    if runs and runs.SetNativeProcGlow then runs.SetNativeProcGlow(icon, shouldGlow) end
 
     if shouldGlow and not activeGlowIcons[icon] then
         StartGlow(icon, spellOvr)
@@ -868,7 +875,7 @@ local function ScanProcOnUsableGlows()
     if procOnUsableGlowMapReady then
         for i = 1, #procOnUsableGlowIcons do
             local icon = procOnUsableGlowIcons[i]
-            if icon and icon:IsShown() and icon._spellEntry and HasProcOnUsableOverride(icon) then
+            if CanUpdateIconGlow(icon) and HasProcOnUsableOverride(icon) then
                 SyncGlowForIcon(icon)
             end
         end
@@ -878,7 +885,7 @@ local function ScanProcOnUsableGlows()
     for _, viewerType in ipairs(GetBuiltinCooldownContainerKeys()) do
         local pool = IconFactory:GetIconPool(viewerType)
         for _, icon in ipairs(pool) do
-            if icon and icon:IsShown() and icon._spellEntry and HasProcOnUsableOverride(icon) then
+            if CanUpdateIconGlow(icon) and HasProcOnUsableOverride(icon) then
                 SyncGlowForIcon(icon)
             end
         end
@@ -886,10 +893,7 @@ local function ScanProcOnUsableGlows()
 end
 
 local function _SyncGlowIfVisible(icon)
-    if not icon:IsShown() then return end
-    if icon._spellEntry then
-        SyncGlowForIcon(icon)
-    end
+    if CanUpdateIconGlow(icon) then SyncGlowForIcon(icon) end
 end
 
 local function ScanAllGlows()
@@ -919,7 +923,7 @@ local function _ProcessGlowIconsForCandidate(spellID, visited)
         local icon = icons[i]
         if not visited[icon] then
             visited[icon] = true
-            if icon:IsShown() and icon._spellEntry then
+            if CanUpdateIconGlow(icon) then
                 SyncGlowForIcon(icon)
             end
         end
@@ -1298,6 +1302,12 @@ local function FindIconBySpellID(castSpellID)
     foundIcon = nil
     return found
 end
+
+-- Published for other suite addons (QUI_Reminders glows the defensive it calls).
+-- Defined here, after the locals exist; the ns._OwnedGlows table itself is
+-- created earlier in this file.
+ns._OwnedGlows.FindIconBySpellID = FindIconBySpellID
+ns._OwnedGlows.ForEachIconBySpellID = ForEachIconBySpellID
 
 local function GetPressedMode(viewerType)
     local container = Shared and Shared.GetContainerDB and Shared.GetContainerDB(viewerType)
@@ -1808,28 +1818,7 @@ local function ApplySwipeToIcon(icon, settings)
         mode = "inactive"
     elseif icon._auraActive then
         mode = "aura"
-    elseif not isBuffIcon then
-        if Resolvers and Resolvers.ResolveAuraActiveState then
-            local active = Resolvers.ResolveAuraActiveState(entry)
-            if active then mode = "aura" end
-        end
-        if not mode then
-            local sid = entry.overrideSpellID or entry.spellID
-            local IconFactory = ns.CDMIconFactory
-            if sid and IconFactory then
-                local buffPool = IconFactory:GetIconPool("buff")
-                if buffPool then
-                    for _, buffIcon in ipairs(buffPool) do
-                        local be = buffIcon._spellEntry
-                        if be and (be.overrideSpellID == sid or be.spellID == sid)
-                           and buffIcon:IsShown() then
-                            mode = "aura"
-                            break
-                        end
-                    end
-                end
-            end
-        end
+
     end
     if not mode then
         mode = "cooldown"
