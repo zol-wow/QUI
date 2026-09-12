@@ -573,8 +573,11 @@ local function UpdateDatatextPanel()
         datatextFrame:SetScale(1)
     end
 
-    datatextFrame:ClearAllPoints()
-    datatextFrame:SetPoint("TOP", Minimap, "BOTTOM", 0, -(minimapBorderSize + yOffset))
+    local hasAnchor = _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor("datatextPanel")
+    if not hasAnchor then
+        datatextFrame:ClearAllPoints()
+        datatextFrame:SetPoint("TOP", Minimap, "BOTTOM", 0, -(minimapBorderSize + yOffset))
+    end
 
     datatextFrame.borderLeft:ClearAllPoints()
     datatextFrame.borderLeft:SetPoint("TOPRIGHT", datatextFrame, "TOPLEFT", 0, dtBorderSize)
@@ -615,6 +618,11 @@ local function UpdateDatatextPanel()
     end
 
     datatextFrame:Show()
+
+    if hasAnchor and _G.QUI_ApplyFrameAnchor
+        and not (_G.QUI_IsLayoutModeActive and _G.QUI_IsLayoutModeActive()) then
+        _G.QUI_ApplyFrameAnchor("datatextPanel")
+    end
 
     RefreshDatatextSlots()
 end
