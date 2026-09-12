@@ -4,6 +4,18 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.1-beta8 - 2026-09-12
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Cooldown Manager aura sounds no longer modify Blizzard's native alert
+  layouts**, preventing QUI from tainting native cooldown and aura tracking.
+  Configure or disable native sounds and text-to-speech in Blizzard's Cooldown
+  Manager settings; QUI's sound status now explains where to change them.
+
 ## v5.3.1-beta7 - 2026-09-12
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
