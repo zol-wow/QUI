@@ -281,6 +281,31 @@ function CDMLayout.ApplyCustomBarGrowthOrder(icons, settings)
     return reversed
 end
 
+local function PackNativeAuraTail(icons, first, count)
+    local fixedCount = 0
+    for i = first, first + count - 1 do
+        local options = icons[i].auraMirrorOptions
+        if not (options and options.dynamic) then fixedCount = fixedCount + 1 end
+    end
+    if fixedCount == 0 or fixedCount == count then return icons, count end
+
+    local ordered = {}
+    for i, icon in ipairs(icons) do ordered[i] = icon end
+    local fixedIndex, tailIndex = first, first + fixedCount
+    for i = first, first + count - 1 do
+        local icon = icons[i]
+        local options = icon.auraMirrorOptions
+        if options and options.dynamic then
+            ordered[tailIndex] = icon
+            tailIndex = tailIndex + 1
+        else
+            ordered[fixedIndex] = icon
+            fixedIndex = fixedIndex + 1
+        end
+    end
+    return ordered, fixedCount
+end
+
 function CDMLayout.BuildIconLayout(settings, icons, opts)
     opts = opts or {}
     local rows = CDMLayout.BuildRows(settings)
@@ -316,16 +341,18 @@ function CDMLayout.BuildIconLayout(settings, icons, opts)
         local rowCount = rowConfig._actualCount or rowConfig.count
         local iconsInRow = math.min(rowCount, #icons - tempIndex + 1)
         if iconsInRow > 0 then
+            local sizeCount
+            icons, sizeCount = PackNativeAuraTail(icons, tempIndex, iconsInRow)
             local iconWidth = rowConfig.size
             local aspectRatio = rowConfig.aspectRatioCrop or 1.0
             local iconHeight = rowConfig.size / aspectRatio
 
             if isVertical then
-                local colHeight = (iconsInRow * iconHeight) + ((iconsInRow - 1) * rowConfig.padding)
+                local colHeight = (sizeCount * iconHeight) + ((sizeCount - 1) * rowConfig.padding)
                 rowWidths[rowNum] = iconWidth
                 if colHeight > maxColHeight then maxColHeight = colHeight end
             else
-                local rowWidth = (iconsInRow * iconWidth) + ((iconsInRow - 1) * rowConfig.padding)
+                local rowWidth = (sizeCount * iconWidth) + ((sizeCount - 1) * rowConfig.padding)
                 rowWidths[rowNum] = rowWidth
                 if rowWidth > maxRowWidth then maxRowWidth = rowWidth end
             end
@@ -342,6 +369,10 @@ function CDMLayout.BuildIconLayout(settings, icons, opts)
         local rowCount = rowConfig._actualCount or rowConfig.count
         local iconsInRow = math.min(rowCount, #icons - tempIdx + 1)
         if iconsInRow > 0 then
+            rowConfig.flowDirection = isVertical and "DOWN" or "RIGHT"
+            rowConfig.flowAlignment = isVertical and "START"
+                or (rowConfig.growDirection == "RIGHT" and "START"
+                    or rowConfig.growDirection == "LEFT" and "END" or "CENTER")
             local aspectRatio = rowConfig.aspectRatioCrop or 1.0
             local iconHeight = rowConfig.size / aspectRatio
             local iconWidth = rowConfig.size
@@ -540,7 +571,9 @@ function CDMLayout.BuildBuffGridLayout(settings, icons, _opts)
     local rowConfig = {
         rowNum = 1,
         count = #icons,
-        size = iconSize,
+        size = iconWidth,
+        flowDirection = growthDirection == "CENTERED_HORIZONTAL" and "RIGHT" or growthDirection,
+        flowAlignment = "CENTER",
         borderSize = settings.borderSize or 2,
         borderColorSource = settings.borderColorSource,
         borderColor = settings.borderColor or settings.borderColorTable or {0, 0, 0, 1},
@@ -566,7 +599,8 @@ function CDMLayout.BuildBuffGridLayout(settings, icons, _opts)
         opacity = settings.opacity or 1.0,
     }
 
-    local n = #icons
+    local n
+    icons, n = PackNativeAuraTail(icons, 1, #icons)
     local placements = {}
     local totalWidth, totalHeight
 
@@ -579,7 +613,7 @@ function CDMLayout.BuildBuffGridLayout(settings, icons, _opts)
         else
             startY = (totalHeight / 2) - iconHeight / 2
         end
-        for i = 1, n do
+        for i = 1, #icons do
             local y = (growthDirection == "UP")
                 and (startY + (i - 1) * (iconHeight + padding))
                 or (startY - (i - 1) * (iconHeight + padding))
@@ -592,7 +626,7 @@ function CDMLayout.BuildBuffGridLayout(settings, icons, _opts)
         local startX = growLeft
             and (totalWidth / 2 - iconWidth / 2)
             or (-totalWidth / 2 + iconWidth / 2)
-        for i = 1, n do
+        for i = 1, #icons do
             local x = growLeft
                 and (startX - (i - 1) * (iconWidth + padding))
                 or (startX + (i - 1) * (iconWidth + padding))

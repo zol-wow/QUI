@@ -1,5 +1,8 @@
 local _, ns = ...
 
+local SetGroupCandidateFilters = ns.AuraSkin and ns.AuraSkin.SetGroupCandidateFilters
+    or function(container, key, filters) container:SetAuraGroupCandidateFilters(key, filters) end
+
 local CDMReanchorRealEnv = {}
 ns.CDMReanchorRealEnv = CDMReanchorRealEnv
 
@@ -887,7 +890,7 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
                 })
             else
                 run.host:SetAuraGroupFilterString(record.key, config.filter)
-                run.host:SetAuraGroupCandidateFilters(record.key, { includeSpellIDs = config.includeSpellIDs })
+                SetGroupCandidateFilters(run.host, record.key, { includeSpellIDs = config.includeSpellIDs })
                 run.host:SetAuraGroupMaxFrameCount(record.key, 1)
             end
             run.host:SetEnabled(true)
@@ -991,7 +994,8 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
                     or auraProfileFromRow(rowConfig)
                 record.profile.iconWidth, record.profile.iconHeight = w, h
                 if record.baseIcon then record.baseIcon._quiNativeProcGlows = nil end
-                local direction = settings.growthDirection or "CENTERED_HORIZONTAL"
+                local direction = rowConfig and rowConfig.flowDirection
+                    or settings.growthDirection or "CENTERED_HORIZONTAL"
                 local vertical = direction == "UP" or direction == "DOWN"
                 local forward = direction ~= "LEFT" and direction ~= "DOWN"
                 local anchor = vertical and (forward and "BOTTOM" or "TOP")

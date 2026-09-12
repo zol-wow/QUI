@@ -1,4 +1,7 @@
 local _, ns = ...
+
+local SetGroupCandidateFilters = ns.AuraSkin and ns.AuraSkin.SetGroupCandidateFilters
+    or function(container, key, filters) container:SetAuraGroupCandidateFilters(key, filters) end
 local Helpers = ns.Helpers
 local QUICore = ns.Addon
 local LSM = ns.LSM
@@ -1052,7 +1055,7 @@ local function ConfigureNativeRuns(state, settings)
                     })
                 else
                     run.container:SetAuraGroupFilterString("bar1", config.filter)
-                    run.container:SetAuraGroupCandidateFilters("bar1", filters)
+                    SetGroupCandidateFilters(run.container, "bar1", filters)
                     for _, button in ipairs(run.frames.bar1) do StyleNativeBar(button, run.entry, settings) end
                 end
                 run.container:SetFlowLayoutAxis(vertical
@@ -1113,7 +1116,7 @@ local function ConfigureItemAuraOverlays(state, settings)
                 overlay.entry = entry
                 overlay.container:SetUnit(config.unit)
                 overlay.container:SetAuraGroupFilterString("aura", config.filter)
-                overlay.container:SetAuraGroupCandidateFilters("aura", { includeSpellIDs = config.includeSpellIDs })
+                SetGroupCandidateFilters(overlay.container, "aura", { includeSpellIDs = config.includeSpellIDs })
                 for _, button in ipairs(overlay.frames) do StyleNativeBar(button, entry, settings) end
             end
             local vertical = settings.orientation == "vertical"
