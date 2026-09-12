@@ -4,6 +4,22 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.1-beta6 - 2026-09-11
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Cooldown Manager custom auras use native tracking and rendering**. Aura alert
+  settings explain native sound and text-to-speech limitations.
+- **Buff rows retain their spacing, alignment, and group boundaries**, including
+  mixed native and custom aura rows and layouts refreshed during combat.
+- **Aura glows reuse animations and avoid redundant refresh work**, with fixes
+  for animation script warnings, inactive proc effects, and custom bar glows.
+- **Chat replies and sender links preserve the intended whisper recipient**,
+  including Battle.net routing. Channel menus create filtered QUI chat tabs.
+
 ## v5.3.1-beta5 - 2026-09-10
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
