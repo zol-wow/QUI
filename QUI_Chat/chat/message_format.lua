@@ -570,6 +570,7 @@ local function FormatDiscordMessage(discordInfo, message)
 end
 
 local function ResolvePrefixedChannelName(channelFull)
+    if not channelFull:match("(%d+. )(.*)") then return channelFull end
     local util = _G.ChatFrameUtil
     if util and util.ResolvePrefixedChannelName then
         local ok, resolved = ns.SafeCall("chain-next", util.ResolvePrefixedChannelName, channelFull)
