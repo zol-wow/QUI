@@ -194,8 +194,8 @@ local THROTTLE_INTERVAL = 0.1
 
 ns.QUI_GroupFrameIconLayout.HEADER_INIT_CONFIG_FUNC = [[
         local header = self:GetParent()
-        local w = header:GetAttribute("_initialAttribute-unit-width") or 200
-        local h = header:GetAttribute("_initialAttribute-unit-height") or 40
+        local w = header:GetAttribute("qui-unit-width") or 200
+        local h = header:GetAttribute("qui-unit-height") or 40
         self:SetWidth(w)
         self:SetHeight(h)
         self:SetAttribute("*type1", "target")
@@ -2695,6 +2695,11 @@ local function ConfigurePartyHeader(header)
     local layout = GetLayoutSettings(false)
     if not layout then return end
 
+    local mode = "party"
+    local w, h = GetFrameDimensions(mode)
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", w)
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", h)
+
     local db = GetSettings()
     local selfFirst = GetPartySelfFirst(db)
     local inParty = IsInGroup() and not IsInRaid()
@@ -2707,8 +2712,6 @@ local function ConfigurePartyHeader(header)
     _state.SetHeaderAttributeIfChanged(header, "maxColumns", 1)
     _state.SetHeaderAttributeIfChanged(header, "unitsPerColumn", 5)
 
-    local mode = "party"
-    local w, h = GetFrameDimensions(mode)
     local spacing = layout.spacing or 2
 
     local grow = GetLayoutGrowDirection(layout, "DOWN")
@@ -2760,23 +2763,22 @@ local function ConfigurePartyHeader(header)
         -- valid filtered state instead of briefly showing everyone.
         _state.SetHeaderAttributeIfChanged(header, "nameList", nil)
     end
-
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttributeNames", "unit-width,unit-height")
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", w)
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", h)
 end
 
 local function ConfigureRaidHeader(header)
     local layout = GetLayoutSettings(true)
     if not layout then return end
 
+    local mode = GetGroupMode()
+    local w, h = GetFrameDimensions(mode ~= "party" and mode or "small")
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", w)
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", h)
+
     _state.SetHeaderAttributeIfChanged(header, "showRaid", true)
     _state.SetHeaderAttributeIfChanged(header, "showParty", false)
     _state.SetHeaderAttributeIfChanged(header, "showPlayer", false)
     _state.SetHeaderAttributeIfChanged(header, "showSolo", false)
 
-    local mode = GetGroupMode()
-    local w, h = GetFrameDimensions(mode)
     local spacing = layout.spacing or 2
     local groupSpacing = layout.groupSpacing or 10
 
@@ -2848,10 +2850,6 @@ local function ConfigureRaidHeader(header)
     else
         _state.SetHeaderAttributeIfChanged(header, "sortMethod", layout.sortMethod or "INDEX")
     end
-
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttributeNames", "unit-width,unit-height")
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", w)
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", h)
 end
 
 _state.SetHeaderAttributeIfChanged = function(header, name, value)
@@ -2865,7 +2863,7 @@ local function ConfigureRaidGroupHeaders()
     if not layout then return end
 
     local mode = GetGroupMode()
-    local w, h = GetFrameDimensions(mode)
+    local w, h = GetFrameDimensions(mode ~= "party" and mode or "small")
     local spacing = layout.spacing or 2
 
     local grow = GetLayoutGrowDirection(layout, "DOWN")
@@ -2891,6 +2889,8 @@ local function ConfigureRaidGroupHeaders()
     for g, header in ipairs(QUI_GF.raidGroupHeaders) do
         local section = sections and sections[g] or nil
         if header then
+            _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", w)
+            _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", h)
             _state.SetHeaderAttributeIfChanged(header, "point", point)
             _state.SetHeaderAttributeIfChanged(header, "xOffset", xOff)
             _state.SetHeaderAttributeIfChanged(header, "yOffset", yOff)
@@ -2942,10 +2942,6 @@ local function ConfigureRaidGroupHeaders()
                     _state.SetHeaderAttributeIfChanged(header, "sortMethod", "INDEX")
                 end
             end
-
-            _state.SetHeaderAttributeIfChanged(header, "_initialAttributeNames", "unit-width,unit-height")
-            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", w)
-            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", h)
         end
     end
 
@@ -3170,9 +3166,6 @@ function _state.EnsureRaidHeaders()
                 header:SetAttribute("groupingOrder", tostring(g))
                 header:SetAttribute("maxColumns", 1)
                 header:SetAttribute("unitsPerColumn", 5)
-                header:SetAttribute("_initialAttributeNames", "unit-width,unit-height")
-                header:SetAttribute("_initialAttribute-unit-width", w)
-                header:SetAttribute("_initialAttribute-unit-height", h)
                 header:SetAttribute("point", grow == "UP" and "BOTTOM" or grow == "LEFT" and "RIGHT"
                     or grow == "RIGHT" and "LEFT" or "TOP")
                 header:SetAttribute("xOffset", grow == "RIGHT" and spacing or grow == "LEFT" and -spacing or 0)
@@ -3182,6 +3175,9 @@ function _state.EnsureRaidHeaders()
                 ConfigureRaidHeader(header)
             end
         end
+
+        _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", w)
+        _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", h)
 
         if preallocate and not header:GetAttribute("child" .. preallocate) then
             local headerShown = header:IsShown()
@@ -3273,9 +3269,8 @@ local function CreateHeaders()
     local partyDims = db.party and db.party.dimensions
     local selfW = partyDims and partyDims.partyWidth or 200
     local selfH = partyDims and partyDims.partyHeight or 40
-    selfHeader:SetAttribute("_initialAttributeNames", "unit-width,unit-height")
-    selfHeader:SetAttribute("_initialAttribute-unit-width", selfW)
-    selfHeader:SetAttribute("_initialAttribute-unit-height", selfH)
+    selfHeader:SetAttribute("qui-unit-width", selfW)
+    selfHeader:SetAttribute("qui-unit-height", selfH)
     selfHeader:SetSize(selfW, selfH)
     selfHeader:SetMovable(true)
     selfHeader:SetClampedToScreen(true)
@@ -3332,6 +3327,8 @@ local _parkedSpotlight = nil
 local function ApplySpotlightHeaderConfig(container, header, spot)
     local w = spot.frameWidth or 180
     local h = spot.frameHeight or 36
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", w)
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", h)
 
     container:SetSize(w, h)
     container:ClearAllPoints()
@@ -3378,9 +3375,6 @@ local function ApplySpotlightHeaderConfig(container, header, spot)
             header:SetAttribute("nameList", nameList)
         end
     end
-
-    header:SetAttribute("_initialAttribute-unit-width", w)
-    header:SetAttribute("_initialAttribute-unit-height", h)
 
     header:SetAttribute("point", nil)
     header:SetAttribute("xOffset", nil)
@@ -3797,8 +3791,8 @@ local function UpdateHeaderSizes()
         local partyDims = db.party and db.party.dimensions
         local sw = partyDims and partyDims.partyWidth or 200
         local sh = partyDims and partyDims.partyHeight or 40
-        _state.SetHeaderAttributeIfChanged(selfHdr, "_initialAttribute-unit-width", sw)
-        _state.SetHeaderAttributeIfChanged(selfHdr, "_initialAttribute-unit-height", sh)
+        _state.SetHeaderAttributeIfChanged(selfHdr, "qui-unit-width", sw)
+        _state.SetHeaderAttributeIfChanged(selfHdr, "qui-unit-height", sh)
         selfHdr:SetSize(sw, sh)
         local child = selfHdr:GetAttribute("child1")
         if child then child:SetSize(sw, sh) end
@@ -4066,23 +4060,23 @@ local function UpdateFrameScaling(forceUpdate)
 
     local partyHeader = QUI_GF.headers.party
     if partyHeader then
-        _state.SetHeaderAttributeIfChanged(partyHeader, "_initialAttribute-unit-width", partyW)
-        _state.SetHeaderAttributeIfChanged(partyHeader, "_initialAttribute-unit-height", partyH)
+        _state.SetHeaderAttributeIfChanged(partyHeader, "qui-unit-width", partyW)
+        _state.SetHeaderAttributeIfChanged(partyHeader, "qui-unit-height", partyH)
     end
     local selfHeader = QUI_GF.headers.self
     if selfHeader then
-        _state.SetHeaderAttributeIfChanged(selfHeader, "_initialAttribute-unit-width", partyW)
-        _state.SetHeaderAttributeIfChanged(selfHeader, "_initialAttribute-unit-height", partyH)
+        _state.SetHeaderAttributeIfChanged(selfHeader, "qui-unit-width", partyW)
+        _state.SetHeaderAttributeIfChanged(selfHeader, "qui-unit-height", partyH)
     end
     local raidHeader = QUI_GF.headers.raid
     if raidHeader then
-        _state.SetHeaderAttributeIfChanged(raidHeader, "_initialAttribute-unit-width", raidW)
-        _state.SetHeaderAttributeIfChanged(raidHeader, "_initialAttribute-unit-height", raidH)
+        _state.SetHeaderAttributeIfChanged(raidHeader, "qui-unit-width", raidW)
+        _state.SetHeaderAttributeIfChanged(raidHeader, "qui-unit-height", raidH)
     end
     for _, header in ipairs(QUI_GF.raidGroupHeaders) do
         if header then
-            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", raidW)
-            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", raidH)
+            _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", raidW)
+            _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", raidH)
         end
     end
 
