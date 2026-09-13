@@ -4650,6 +4650,10 @@ do
             if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.RefreshTargets then
                 ns.CDMCustomAuraRuns.RefreshTargets(identityChanged, unit)
             end
+            local boot = ns._cdmBoot
+            if identityChanged and boot and boot.RefreshAuraMirrors then
+                boot:RefreshAuraMirrors(unit)
+            end
         end,
         refreshPendingSecureAttributes = function()
             for _, pool in pairs(iconPools) do
