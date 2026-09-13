@@ -952,8 +952,13 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
 
     local function shouldRetainAuraMirror(containerKey, placementKey)
         if canConfigureAuras() then return false end
-        local pool = dynamicAuraPools[getContainerFor(containerKey)]
-        return pool and pool.recordsByPlacement[placementKey] ~= nil or false
+        local container = getContainerFor(containerKey)
+        local pool = dynamicAuraPools[container]
+        if pool and pool.recordsByPlacement[placementKey] then return true end
+        for _, manager in pairs(auraMirrors) do
+            if manager:ShouldRetainPlacement(container, placementKey) then return true end
+        end
+        return false
     end
 
     local function acquireAuraMirror(entry, containerKey, placementKey, options)

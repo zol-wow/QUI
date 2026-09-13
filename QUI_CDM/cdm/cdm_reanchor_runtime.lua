@@ -528,6 +528,7 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
                     n = n + 1
                 end
             elseif deps.positionOwned then
+                frame._quiManagedAuraProxy = wrapper.hideAuraBase or nil
                 local positionedByAuraMirror = false
                 if wrapper.auraMirror and deps.positionAuraMirror then
                     positionedByAuraMirror = deps.positionAuraMirror(

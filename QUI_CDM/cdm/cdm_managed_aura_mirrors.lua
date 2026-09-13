@@ -53,6 +53,7 @@ function CDMManagedAuraMirrors.ResolveCandidateIDs(entry, isSecret)
     if type(linked) == "table" then
         for i = 1, #linked do AppendID(out, seen, linked[i], isSecret) end
     end
+    if entry._nativeAuraSlot then return out end
     local runtime = ns.CDMAuraRuntime
     if baseID and runtime and runtime.ResolveAbilityAuraSpellID then
         local mapped = runtime.ResolveAbilityAuraSpellID(baseID)
@@ -113,6 +114,13 @@ end
 local function ConfigurationBlocked(self, ownerContainer)
     return (self._deps.aurasAreSecret and self._deps.aurasAreSecret())
         or (self._deps.canMutate and not self._deps.canMutate(ownerContainer))
+end
+
+function CDMManagedAuraMirrors:ShouldRetainPlacement(ownerContainer, placementKey)
+    if not ConfigurationBlocked(self, ownerContainer) then return false end
+    local pool = self._pools[ownerContainer]
+    local record = pool and pool.records[placementKey]
+    return record ~= nil and not record.free and not record.parked
 end
 
 function CDMManagedAuraMirrors.ConfigureCombatVisibility(frame, combatOnly)

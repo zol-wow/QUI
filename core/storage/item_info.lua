@@ -44,13 +44,14 @@ local extended = {}
 
 function ItemInfo.GetExtended(itemID, link)
     if not itemID then return nil end
-    local hit = extended[itemID]
+    local key = link or itemID
+    local hit = extended[key]
     if hit then return hit end
     local name, infoLink, _, baseIlvl, _, _, _, maxStack, _, _, _, _, _, bindType, expacID, _, isCraftingReagent = C_Item.GetItemInfo(itemID)
     if not name then return nil end
     local ilvl = C_Item.GetDetailedItemLevelInfo(link or infoLink) or baseIlvl
     local rec = { name = name, ilvl = ilvl, expacID = expacID, maxStack = maxStack,
         bindType = bindType, isReagent = isCraftingReagent and true or false }
-    extended[itemID] = rec
+    extended[key] = rec
     return rec
 end

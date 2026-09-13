@@ -1136,6 +1136,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 if name then
                     addState.itemName = nil
                     addState.itemID = nil
+                    addState.macroName = nil
                     addState.spellName = name
                     addState.actionType = "spell"
                     if spellInput then spellInput:SetText(name) end
@@ -1156,7 +1157,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                     addState.itemID = nil
                     addState.actionType = "macro"
                     addState.macroText = body
-                    addState.spellName = name or ns.L["Macro"]
+                    addState.macroName = name
                     if macroInput then macroInput:SetText(body) end
                     if actionDrop then actionDrop.SetValue("macro", true) end
                     if macroInputContainer then macroInputContainer:Show() end
@@ -1173,6 +1174,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 addState.actionType = "item"
                 addState.itemID = itemID
                 addState.itemName = itemName
+                addState.macroName = nil
                 if actionDrop then actionDrop.SetValue("item", true) end
                 if spellInputContainer then spellInputContainer:Hide() end
                 if macroInputContainer then macroInputContainer:Hide() end
@@ -1580,7 +1582,8 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         elseif actionType == "macro" then
             local text = addState.macroText
             if not text or text == "" then print("|cFFFF5555[QUI]|r " .. ns.L["Enter macro text."]) return end
-            newBinding.spell = "Macro"
+            newBinding.macroName = addState.macroName
+            newBinding.spell = addState.macroName or "Macro"
             newBinding.macro = text
         else
             newBinding.spell = actionType
@@ -1598,6 +1601,7 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         addState.itemName = nil
         addState.itemID = nil
         addState.macroText = ""
+        addState.macroName = nil
         addState.key = nil
         addState.targetFilter = "any"
         if targetFilterDrop and targetFilterDrop.SetValue then targetFilterDrop.SetValue("any", true) end
@@ -1723,7 +1727,8 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
                 row.comboText:SetText(modLabel .. triggerLabel)
                 row.comboText:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
                 local displayName = itemName or spellName or actionType
-                if actionType == "macro" then displayName = ns.L["Macro"]
+                if actionType == "macro" then
+                    displayName = type(binding.macroName) == "string" and binding.macroName ~= "" and binding.macroName or ns.L["Macro"]
                 elseif actionType == "menu" then displayName = ns.L["Unit Menu"]
                 elseif PING_DISPLAY_NAMES[actionType] then displayName = PING_DISPLAY_NAMES[actionType] end
                 if binding.friend then

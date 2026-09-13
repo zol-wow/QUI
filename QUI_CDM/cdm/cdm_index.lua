@@ -308,6 +308,7 @@ local function BuildOrderedMaps()
     for _, cat in ipairs(visibleCats) do
         if cat ~= nil then
             local catSpellMap = {}
+            local catSpellPriority = {}
             local catEquipSlotMap = {}
             local catCategoryMap = {}
             spellMapByCategory[cat] = catSpellMap
@@ -319,7 +320,7 @@ local function BuildOrderedMaps()
                     and not (_G.CDM_HIDE_INVISIBLE_ITEMS and snapshotInfo.isInvisible) then
                     local info = api.GetCooldownViewerCooldownInfo(cdID)
                     if info then
-                        local entry = { cooldownID = cdID, category = cat }
+                        local entry = { cooldownID = cdID, category = cat, cooldownInfo = info }
                         local equipSlot = info.equipSlot
                         if type(equipSlot) == "number"
                             and not issecretvalue(equipSlot)
@@ -342,13 +343,21 @@ local function BuildOrderedMaps()
                             and not catCategoryMap[spellCategoryID] then
                             catCategoryMap[spellCategoryID] = entry
                         end
+                        local sourceBase = CDMIndex.ToBaseSpellID(info.spellID)
+                        local overrideBase = CDMIndex.ToBaseSpellID(info.overrideSpellID)
+                        local displayBase = CDMIndex.ToBaseSpellID(SelectPrimaryCooldownInfoID(info))
                         CDMIndex.ForEachCooldownInfoID(info, function(id)
                             local b = CDMIndex.ToBaseSpellID(id)
                             if b and not spellMap[b] then
                                 spellMap[b] = entry
                             end
-                            if b and not catSpellMap[b] then
+                            local isDirect = b and (b == sourceBase or b == overrideBase)
+                            local priority = b == displayBase and (isDirect and 3 or 2)
+                                or (isDirect and 1 or 0)
+                            if b and (not catSpellMap[b]
+                                or priority > catSpellPriority[b]) then
                                 catSpellMap[b] = entry
+                                catSpellPriority[b] = priority
                             end
                         end)
                     end

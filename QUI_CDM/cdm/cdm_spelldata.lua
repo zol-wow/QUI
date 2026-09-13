@@ -513,13 +513,25 @@ local function ResolveOwnedEntry(entry, containerKey, index)
 
         local isAuraEntry = ResolveEntryKind(entry, containerKey) == "aura"
         local displayID = entry.id
+        local nativeInfo
 
         if isAuraEntry then
-            local auraDisplayID, remapped = ResolveAuraDisplaySpellID(entry.id)
-            if remapped then
-                displayID = auraDisplayID
-                resolved.spellID = displayID
+            local broker = ns.CDMIndex
+            if entry.source == BLIZZARD_CDM_ENTRY_SOURCE and IsBuiltinAuraContainerKey(containerKey)
+                and broker and broker.GetOrderedForContainer then
+                local slot = broker.GetOrderedForContainer(containerKey, entry.id)
+                nativeInfo = slot and slot.cooldownInfo
             end
+            if nativeInfo then
+                if entry.id == nativeInfo.spellID or entry.id == nativeInfo.overrideSpellID then
+                    displayID = nativeInfo.overrideTooltipSpellID or nativeInfo.overrideSpellID
+                        or nativeInfo.spellID
+                end
+            else
+                local auraDisplayID, remapped = ResolveAuraDisplaySpellID(entry.id)
+                if remapped then displayID = auraDisplayID end
+            end
+            resolved.spellID = displayID
             resolved.isAura = true
             resolved.kind = "aura"
         else
@@ -537,7 +549,12 @@ local function ResolveOwnedEntry(entry, containerKey, index)
             resolved.overrideSpellID = displayID
         end
 
-        AttachCatalogAuraIDs(resolved, displayID, resolved.overrideSpellID, entry.id)
+        if nativeInfo then
+            resolved._nativeAuraSlot = true
+            resolved.linkedSpellIDs = nativeInfo.linkedSpellIDs
+        else
+            AttachCatalogAuraIDs(resolved, displayID, resolved.overrideSpellID, entry.id)
+        end
 
         local cachedName = ns._GetCachedSpellName
         if cachedName then
