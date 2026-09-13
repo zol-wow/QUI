@@ -343,6 +343,7 @@ function CDMReanchorBoot.BuildRuntime(env)
         releaseOwned = env.releaseIcon,
         positionOwned = MakePositionOwned(env),
         acquireAuraMirror = env.acquireAuraMirror,
+        shouldRetainAuraMirror = env.shouldRetainAuraMirror,
         positionAuraMirror = env.positionAuraMirror,
         beginAuraMirrorPass = env.beginAuraMirrorPass,
         endAuraMirrorPass = env.endAuraMirrorPass,
@@ -360,6 +361,9 @@ function CDMReanchorBoot.BuildRuntime(env)
         bridge = bridge,
         wiring = wiring,
         runtime = runtime,
+        RefreshAuraMirrors = function(_, unit)
+            if env.refreshAuraMirrors then env.refreshAuraMirrors(unit) end
+        end,
         RefreshBuiltin = function(_, containerKey)
             return runtime:RefreshContainer(containerKey)
         end,

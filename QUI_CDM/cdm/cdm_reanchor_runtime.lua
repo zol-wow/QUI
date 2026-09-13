@@ -14,6 +14,15 @@ local function IsBlizzardCDMEntry(entry)
     return entry and entry.source == BLIZZARD_CDM_ENTRY_SOURCE
 end
 
+local function ShouldRetainAuraMirror(deps, entry, containerKey, ordinal)
+    if not IsBuffIconKey(containerKey) or IsBlizzardCDMEntry(entry)
+        or entry._isTotemInstance or not deps.shouldRetainAuraMirror then return false end
+    local planner = deps.placementPlanner or ns.CDMPlacementPlanner
+    local placementKey = planner and planner.BuildPlacementKey(containerKey, ordinal, entry)
+        or (containerKey .. ":" .. tostring(ordinal))
+    return deps.shouldRetainAuraMirror(containerKey, placementKey)
+end
+
 local function PlacementRect(placement)
     local w, h = placement.w, placement.h
     if w and h then return w, h end
@@ -258,7 +267,8 @@ function CDMReanchorRuntime:AssembleEntries(containerKey, frameMap, settings, pr
         local assignment = assignmentByEntry and assignmentByEntry[e] or nil
         if IsBuffIconKey(containerKey) and not IsBlizzardCDMEntry(e)
             and not e._isTotemInstance and deps.acquireAuraMirror
-            and (not m or (filterInactive and nativeUsable == false)) then
+            and (not m or (filterInactive and nativeUsable == false)
+                or ShouldRetainAuraMirror(deps, e, containerKey, i)) then
             if m then
                 diag.staleNative = diag.staleNative + 1
                 claimedFrames[m.frame] = nil
@@ -421,9 +431,61 @@ function CDMReanchorRuntime:AssembleEntries(containerKey, frameMap, settings, pr
     return entries, claimedFrames
 end
 
+local function ResizeCenteredAuraRow(frame)
+    frame:SetSize(0.001, 0.001)
+    frame:ResizeToBoundsRect()
+end
+
+local function UpdateCenteredAuraRow(frame, elapsed)
+    ResizeCenteredAuraRow(frame)
+    frame.elapsed = frame.elapsed + elapsed
+    if frame.elapsed >= 0.05 then frame:SetScript("OnUpdate", nil) end
+end
+
+local function QueueCenteredAuraRow(frame, event, unit)
+    if not frame.active then return end
+    if event == "UNIT_AURA" then
+        if not issecretvalue(unit) then
+            if not frame.units[unit] then return end
+        end
+    end
+    if event == "PLAYER_TARGET_CHANGED" and not frame.units.target then return end
+    if event == "PLAYER_FOCUS_CHANGED" and not frame.units.focus then return end
+    frame.elapsed = 0
+    frame:SetScript("OnUpdate", UpdateCenteredAuraRow)
+end
+
+local function GetCenteredAuraRow(container, row)
+    local frames = container._quiCenteredAuraRows
+    if not frames then frames = {}; container._quiCenteredAuraRows = frames end
+    local frame = frames[row]
+    if not frame then
+        frame = CreateFrame("Frame", nil, container)
+        frame.units = {}
+        frame.bounds = CreateFrame("Frame", nil, frame, "DisableUntrustedLayoutScriptsTemplate")
+        frame:RegisterEvent("UNIT_AURA")
+        frame:RegisterEvent("PLAYER_TARGET_CHANGED")
+        frame:RegisterEvent("PLAYER_FOCUS_CHANGED")
+        frame:SetScript("OnEvent", QueueCenteredAuraRow)
+        frame:SetScript("OnShow", QueueCenteredAuraRow)
+        frames[row] = frame
+    end
+    frame.active = true
+    frame:Show()
+    return frame
+end
+
 function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
-    if not (plan and plan.placements) then return 0 end
     local deps, bridge = self._deps, self._bridge
+    if container._quiCenteredAuraRows then
+        for _, frame in pairs(container._quiCenteredAuraRows) do
+            frame.active = false
+            for unit in pairs(frame.units) do frame.units[unit] = nil end
+            frame:SetScript("OnUpdate", nil)
+            frame:Hide()
+        end
+    end
+    if not (plan and plan.placements) then return 0 end
     local n = 0
     local hasDynamic = false
     for index, placement in ipairs(plan.placements) do
@@ -518,10 +580,23 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
             local vertical, forward = direction.vertical, direction.forward
             local anchor = vertical and (forward and "BOTTOM" or "TOP") or (forward and "LEFT" or "RIGHT")
             local opposite = vertical and (forward and "TOP" or "BOTTOM") or (forward and "RIGHT" or "LEFT")
+            local firstPlacement = segments[1].placement
+            local firstConfig = firstPlacement.rowConfig
+            local centered = segments.count > 1 and (not firstConfig or firstConfig.flowAlignment == "CENTER")
+                and GetCenteredAuraRow(container, row) or nil
+            if centered then
+                local padding = firstConfig and firstConfig.padding or 0
+                local offset = (padding + 1) / 2 * (forward and 1 or -1)
+                centered:ClearAllPoints()
+                centered:SetPoint("CENTER", container, "CENTER",
+                    vertical and firstPlacement.x or ((firstConfig and firstConfig.xOffset or 0) + offset),
+                    vertical and ((firstConfig and firstConfig.yOffset or 0) + offset) or firstPlacement.y)
+            end
             for index = 1, segments.count do
                 local segment = segments[index]
                 local record, frame = segment.record, segment.frame
                 local dynamic = record and record.dynamic and not record.reserved
+                if centered and dynamic then centered.units[record.host:GetUnit()] = true end
                 local placement = segment.placement
                 local padding = placement.rowConfig and placement.rowConfig.padding or 0
                 local w, h = PlacementRect(placement)
@@ -537,7 +612,12 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
                     segment.frame:ClearAllPoints()
                     segment.frame:SetPoint("CENTER", frame, "CENTER", 0, 0)
                 end
-                if not segment.wrapper.reanchored then
+                if centered and segment.wrapper.reanchored then
+                    local x = vertical and 0 or (placement.x - firstPlacement.x + w / 2 * (forward and 1 or -1))
+                    local y = vertical and (placement.y - firstPlacement.y + h / 2 * (forward and 1 or -1)) or 0
+                    bridge:OverlayRect(frame, centered, anchor, x - w / 2, y + h / 2,
+                        anchor, x + w / 2, y - h / 2)
+                elseif not segment.wrapper.reanchored then
                     frame:ClearAllPoints()
                     local alignment = placement.rowConfig and placement.rowConfig.flowAlignment or "CENTER"
                     if segments.count == 1 and alignment == "CENTER" then
@@ -555,6 +635,8 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
                     elseif previous then
                         local offset = (previousDynamic and -1 or padding) * (forward and 1 or -1)
                         frame:SetPoint(anchor, previous, opposite, vertical and 0 or offset, vertical and offset or 0)
+                    elseif centered then
+                        frame:SetPoint(anchor, centered, anchor, 0, 0)
                     else
                         local offset = (vertical and h or w) / 2 * (forward and -1 or 1)
                         frame:SetPoint(anchor, container, "CENTER", placement.x + (vertical and 0 or offset),
@@ -562,6 +644,16 @@ function CDMReanchorRuntime:PositionEntries(container, plan, containerKey)
                     end
                 end
                 previous, previousDynamic = frame, dynamic
+            end
+            if centered then
+                local bounds = centered.bounds
+                local w, h = PlacementRect(firstPlacement)
+                bounds:ClearAllPoints()
+                bounds:SetSize(w, h)
+                bounds:SetPoint(anchor, segments[1].frame, anchor, 0, 0)
+                bounds:SetPoint(opposite, previous, opposite, 0, 0)
+                ResizeCenteredAuraRow(centered)
+                QueueCenteredAuraRow(centered)
             end
         end
         for index = 1, segments.count do
@@ -669,6 +761,11 @@ function CDMReanchorRuntime:_PrepareContainerState(containerKey)
             usable = deps.frameIsActive(match.frame, containerKey, match.entry) and true or false
         end
         state.nativeUsableByEntry[match.entry] = usable
+    end
+    for i, entry in ipairs(state.curated) do
+        if ShouldRetainAuraMirror(deps, entry, containerKey, i) then
+            state.nativeUsableByEntry[entry] = false
+        end
     end
     return state
 end
