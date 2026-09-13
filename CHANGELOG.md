@@ -4,6 +4,23 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.1-beta10 - 2026-09-13
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **New raid members use the configured Group Frame dimensions** when joining
+  an active roster.
+- **Cooldown Manager native glows avoid errors from restricted frame sizes**,
+  preserving the selected style and offsets.
+- **Cooldown Manager keeps distinct native buff slots visible and correctly
+  placed through combat**, while hiding duplicate base icons.
+- **Bags preserve the correct item level for upgraded item variants** instead
+  of reusing cached information from another version of the same item.
+- **Click-cast bindings preserve imported macro names** when editing or saving.
+
 ## v5.3.1-beta9 - 2026-09-12
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
