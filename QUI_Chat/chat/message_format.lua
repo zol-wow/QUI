@@ -737,7 +737,10 @@ local function BuildSecretSenderLink(typeKey, p)
     local guidSecret = IsSecret(guid)
     if not guidSecret and not guid then guid = p.guid end
     if not IsSecret(p.text) and not guidSecret and not guid then return nil end
-    local shown = string.format("[%s]", p.rawSender)
+    local mode = ShowRealmNames()
+        and (typeKey == "GUILD" and "guild" or "none")
+        or "short"
+    local shown = string.format("[%s]", _G.Ambiguate(p.rawSender, mode))
     shown = ColorizeSenderName(guid, p.sender, shown)
     return string.format("|Hplayer:%s|h%s|h", p.rawSender, shown)
 end

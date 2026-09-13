@@ -330,7 +330,8 @@ function CDMManagedAuraMirrors:PositionOverlay(record, baseIcon, ownerContainer,
     return true
 end
 
-function CDMManagedAuraMirrors:Refresh()
+function CDMManagedAuraMirrors:Refresh(unit)
+    if unit and self._deps.unit ~= unit then return end
     for _, pool in pairs(self._pools) do
         local auraContainer = pool.auraContainer
         if auraContainer and auraContainer.UpdateAllAuras then

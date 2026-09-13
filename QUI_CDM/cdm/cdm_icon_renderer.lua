@@ -4293,6 +4293,7 @@ cdEventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 cdEventFrame:RegisterEvent("ITEM_COUNT_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
+cdEventFrame:RegisterEvent("PLAYER_FOCUS_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_SOFT_ENEMY_CHANGED")
 cdEventFrame:RegisterEvent("PLAYER_SOFT_FRIEND_CHANGED")
 cdEventFrame:RegisterUnitEvent("UNIT_FACTION", "target")
@@ -4645,9 +4646,9 @@ do
                 and icon._auraActive == true
                 and icon._auraUnit == "player"
         end,
-        refreshCustomAuraTargets = function(identityChanged)
+        refreshCustomAuraTargets = function(identityChanged, unit)
             if ns.CDMCustomAuraRuns and ns.CDMCustomAuraRuns.RefreshTargets then
-                ns.CDMCustomAuraRuns.RefreshTargets(identityChanged)
+                ns.CDMCustomAuraRuns.RefreshTargets(identityChanged, unit)
             end
         end,
         refreshPendingSecureAttributes = function()

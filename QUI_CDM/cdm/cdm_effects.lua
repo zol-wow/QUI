@@ -608,73 +608,101 @@ StopGlow = function(icon, glowKey)
     end
 end
 
-local PANDEMIC_TEXTURE = FLASH_TEXTURE
+local pandemicOwners = setmetatable({}, { __mode = "k" })
+local pandemicStyleRevision = 0
+local emptyPandemicProfile = {}
 
-local function EnsurePandemicGlowFrame(icon)
-    if not icon then return nil end
+local function ResolvePandemicGlowForEntry(entry)
+    local icon = { _spellEntry = entry }
+    local viewerType = GetViewerType(icon)
+    local settings = viewerType and GetViewerSettings(viewerType)
+    if settings then return ApplyGlowColorOverride(settings, GetSpellGlowOverride(icon)) end
+    return { color = { 1, 0.85, 0.2, 1 } }
+end
+
+local function StylePandemicGlow(icon, entry)
+    local runs = ns.CDMCustomAuraRuns
+    if not runs then return nil end
     local frame = icon.PandemicGlow
-    if frame then return frame end
-
-    local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
-    frame = CreateFrame("Frame", nil, icon, template)
-    frame:SetAllPoints(icon)
-    frame:SetAlpha(0)
-
-    local tex = frame:CreateTexture(nil, "OVERLAY")
-    tex:SetTexture(PANDEMIC_TEXTURE)
-    tex:SetTexCoord(0, 1, 0, 1)
-    tex:SetBlendMode("ADD")
-    tex:SetAllPoints(frame)
-    tex:SetVertexColor(1, 0.85, 0.2, 1)
-    frame.texture = tex
-
-    icon.PandemicGlow = frame
-    EnsureGlowBelowSwipe(icon, frame)
+    if not frame then
+        local template = icon._quiLayoutRestricted and "DisableUntrustedLayoutScriptsTemplate" or nil
+        frame = CreateFrame("Frame", nil, icon, template)
+        frame:SetAllPoints(icon)
+        frame:SetAlpha(0)
+        icon.PandemicGlow = frame
+        EnsureGlowBelowSwipe(icon, frame)
+    end
+    local width, height = icon:GetSize()
+    if _issecretvalue(width) then width = nil end
+    if _issecretvalue(height) then height = nil end
+    local profile = frame._quiPandemicProfile
+    if profile and profile.entry == entry and profile.viewerType == entry.viewerType
+        and profile.spellID == (entry.spellID or entry.id)
+        and profile.revision == pandemicStyleRevision
+        and profile.iconWidth == width and profile.iconHeight == height then
+        return frame
+    end
+    local glow = ResolvePandemicGlowForEntry(entry)
+    profile = profile or {}
+    profile.entry, profile.viewerType, profile.spellID = entry, entry.viewerType, entry.spellID or entry.id
+    profile.revision = pandemicStyleRevision
+    profile.cdmActiveGlow = glow.glowType and glow or nil
+    profile.iconWidth, profile.iconHeight = width, height
+    frame._quiPandemicProfile = profile
+    runs.StyleNativeEffects(frame, profile, "_quiPandemicEffects")
+    if not glow.glowType and not frame.texture then
+        local texture = frame:CreateTexture(nil, "OVERLAY")
+        texture:SetTexture(FLASH_TEXTURE)
+        texture:SetBlendMode("ADD")
+        texture:SetAllPoints(frame)
+        texture:SetVertexColor(1, 0.85, 0.2, 1)
+        frame.texture = texture
+    end
+    if frame.texture then frame.texture:SetShown(not glow.glowType) end
+    frame._quiPandemicAlphaTarget = glow.glowType and frame._quiCDMNativeEffectHost or frame.texture
+    pandemicOwners[icon] = entry
     return frame
+end
+
+ClearPandemicState = function(icon, preserveOwner)
+    local frame = icon and icon.PandemicGlow
+    if not frame then return end
+    frame:SetAlpha(0)
+    local runs = ns.CDMCustomAuraRuns
+    if runs and frame._quiPandemicProfile then
+        runs.StyleNativeEffects(frame, emptyPandemicProfile, "_quiPandemicEffects")
+    end
+    frame._quiPandemicProfile = nil
+    frame._quiPandemicSuppressed = preserveOwner or nil
+    if not preserveOwner then
+        pandemicOwners[icon] = nil
+        icon._quiNativePandemicActive = nil
+    end
 end
 
 UpdatePandemicGlow = function(icon)
     if not icon or not icon._spellEntry then return end
-
-    local frame = icon.PandemicGlow
-    local enabled = IsPandemicMirroringEnabled(icon)
-    if not enabled then
-        if frame then frame:SetAlpha(0) end
+    if not IsPandemicMirroringEnabled(icon) or not icon._auraActive or not icon._lastAuraDurObj then
+        ClearPandemicState(icon)
         return
     end
-
-    if not icon._auraActive or not icon._lastAuraDurObj then
-        if frame then frame:SetAlpha(0) end
-        return
-    end
-
     local curve = GetPandemicCurve()
     if not curve then
-        if frame then frame:SetAlpha(0) end
+        ClearPandemicState(icon)
         return
     end
-
-    frame = frame or EnsurePandemicGlowFrame(icon)
+    local frame = StylePandemicGlow(icon, icon._spellEntry)
     if not frame then return end
-
     local durObj = icon._lastAuraDurObj
-
-    if frame.texture
-       and durObj.IsZero
-       and C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
-        local isZero = durObj.IsZero(durObj)
-        local gate = C_CurveUtil.EvaluateColorValueFromBoolean(isZero, 0, 1)
-        frame.texture.SetAlpha(frame.texture, gate)
+    local host = frame._quiPandemicAlphaTarget
+    if host then
+        if durObj.IsZero and C_CurveUtil and C_CurveUtil.EvaluateColorValueFromBoolean then
+            host:SetAlpha(C_CurveUtil.EvaluateColorValueFromBoolean(durObj:IsZero(), 0, 1))
+        else
+            host:SetAlpha(1)
+        end
     end
-
     frame:SetAlpha(durObj:EvaluateRemainingPercent(curve))
-end
-
-ClearPandemicState = function(icon)
-    if not icon then return end
-    if icon.PandemicGlow then
-        icon.PandemicGlow:SetAlpha(0)
-    end
 end
 
 local _pandemicEntryProbe = {}
@@ -687,24 +715,17 @@ local function IsPandemicEnabledForEntry(entry)
     return enabled
 end
 
-local function ApplyPandemicToOverlay(overlay)
-    if not overlay then return end
-    local tex = overlay._quiPandemicTex
-    if not tex and overlay.CreateTexture then
-        tex = overlay:CreateTexture(nil, "OVERLAY")
-        tex:SetTexture(PANDEMIC_TEXTURE)
-        tex:SetTexCoord(0, 1, 0, 1)
-        tex:SetBlendMode("ADD")
-        tex:SetAllPoints(overlay)
-        tex:SetVertexColor(1, 0.85, 0.2, 1)
-        overlay._quiPandemicTex = tex
+local function ApplyPandemicToOverlay(overlay, entry)
+    if not overlay or not entry then return end
+    local frame = StylePandemicGlow(overlay, entry)
+    if frame then
+        overlay._quiNativePandemicActive = true
+        frame:SetAlpha(1)
     end
-    if tex then tex:Show() end
 end
 
 local function ClearPandemicFromOverlay(overlay)
-    local tex = overlay and overlay._quiPandemicTex
-    if tex then tex:Hide() end
+    ClearPandemicState(overlay)
 end
 
 local GROW_POP_PEAK     = 1.25
@@ -980,17 +1001,19 @@ local function StopAllTrackedGlows()
     end
     for _, icon in ipairs(toStop) do
         StopGlow(icon)
-        if icon.PandemicGlow then
-            icon.PandemicGlow:SetAlpha(0)
-        end
+        ClearPandemicState(icon)
     end
     wipe(toStop)
     wipe(activeGlowIcons)
     wipe(overlayGlowSpell)
     wipe(overlayGlowBase)
+    if not IsCDMRuntimeEnabled() then
+        for icon in pairs(pandemicOwners) do ClearPandemicState(icon) end
+    end
 end
 
 local function RefreshAllGlows()
+    pandemicStyleRevision = pandemicStyleRevision + 1
     StopAllTrackedGlows()
 
     if not IsCDMRuntimeEnabled() then
@@ -999,9 +1022,21 @@ local function RefreshAllGlows()
 
     RebuildGlowSpellMap()
     ScanAllGlows()
+    for icon, entry in pairs(pandemicOwners) do
+        if IsPandemicEnabledForEntry(entry) then
+            local frame = StylePandemicGlow(icon, entry)
+            if frame and frame._quiPandemicSuppressed and icon._quiNativePandemicActive then
+                frame:SetAlpha(1)
+                frame._quiPandemicSuppressed = nil
+            end
+        else
+            ClearPandemicState(icon, true)
+        end
+    end
 end
 
 local function ResyncAllGlows()
+    pandemicStyleRevision = pandemicStyleRevision + 1
     if not IsCDMRuntimeEnabled() then
         StopAllTrackedGlows()
         return
@@ -1082,6 +1117,7 @@ local function DisableRuntime()
     eventFrame:UnregisterAllEvents()
     eventFrame:SetScript("OnEvent", nil)
     StopAllTrackedGlows()
+    for icon in pairs(pandemicOwners) do ClearPandemicState(icon) end
 end
 
 local _pandemicVisited = {}
@@ -1119,6 +1155,7 @@ ns._OwnedGlows = {
     StartGlow = StartGlow,
     StopGlow = StopGlow,
     ResolveGlowForEntry = ResolveGlowForEntry,
+    ResolvePandemicGlowForEntry = ResolvePandemicGlowForEntry,
     RefreshAllGlows = RefreshAllGlows,
     ResyncAllGlows = ResyncAllGlows,
     RebuildGlowSpellMap = RebuildGlowSpellMap,

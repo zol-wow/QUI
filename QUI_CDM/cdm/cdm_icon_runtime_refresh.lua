@@ -947,8 +947,10 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             callbacks.chargeDebug(nil, "EVENT", event, "target-scope-refresh")
         end
         if callbacks.refreshCustomAuraTargets then
-            callbacks.refreshCustomAuraTargets(event ~= "UNIT_FACTION")
+            callbacks.refreshCustomAuraTargets(event ~= "UNIT_FACTION",
+                event == "PLAYER_FOCUS_CHANGED" and "focus" or "target")
         end
+        if event == "PLAYER_FOCUS_CHANGED" then return end
         if callbacks.updateAllIconRanges then
             setResolveCallerTag("rangeTarget")
             callbacks.updateAllIconRanges()
@@ -1002,7 +1004,7 @@ function CDMIconRuntimeRefresh.Create(callbacks)
             end
             return
         end
-        if event == "PLAYER_TARGET_CHANGED" then
+        if event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_FOCUS_CHANGED" then
             controller:ApplyTargetScope(event)
             return
         end
