@@ -4,6 +4,22 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.1-beta9 - 2026-09-12
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Cooldown Manager buff rows avoid duplicate aura icons** during combat and
+  stay centered as the number of visible native and custom auras changes.
+- **Target and focus auras refresh when you switch units**, including built-in
+  and custom Cooldown Manager tracking.
+- **Pandemic glows follow the selected style and settings**, including changes
+  made during an active pandemic window.
+- **Chat sender names honor the realm-name setting** when WoW restricts sender
+  information.
+
 ## v5.3.1-beta8 - 2026-09-12
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
