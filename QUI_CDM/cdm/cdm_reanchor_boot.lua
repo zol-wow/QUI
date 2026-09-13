@@ -302,9 +302,9 @@ function CDMReanchorBoot.BuildRuntime(env)
             end
             return false
         end,
-        startPandemic = function(overlay)
+        startPandemic = function(overlay, entry)
             local OG = ns._OwnedGlows
-            if OG and OG.ApplyPandemicToOverlay then OG.ApplyPandemicToOverlay(overlay) end
+            if OG and OG.ApplyPandemicToOverlay then OG.ApplyPandemicToOverlay(overlay, entry) end
         end,
         stopPandemic = function(overlay)
             local OG = ns._OwnedGlows

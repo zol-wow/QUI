@@ -384,7 +384,7 @@ local function styleButton(button, profile)
     local pandemic = button._quiPandemic
     if pandemic then
         local glow = profile.pandemicGlow
-        if type(glow) == "table" and type(glow.color) == "table" then
+        if type(glow) == "table" and not glow.glowType and type(glow.color) == "table" then
             local c = glow.color
             if pandemic.SetVertexColor then pandemic:SetVertexColor(c[1] or 1, c[2] or 0.85, c[3] or 0.2, 1) end
             if pandemic.SetAlpha then pandemic:SetAlpha(c[4] or 1) end

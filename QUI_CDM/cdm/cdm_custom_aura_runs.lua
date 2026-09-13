@@ -229,7 +229,8 @@ local function Profile(rowConfig, settings, entry)
         local suffix = auraConfig.filter:find("HARMFUL", 1, true)
             and "PandemicDebuffEnabled" or "PandemicBuffEnabled"
         if not glowSettings or glowSettings[viewerType .. suffix] ~= false then
-            pandemicGlow = { color = { 1, 0.85, 0.2, 1 } }
+            pandemicGlow = ns._OwnedGlows and ns._OwnedGlows.ResolvePandemicGlowForEntry
+                and ns._OwnedGlows.ResolvePandemicGlowForEntry(entry) or { color = { 1, 0.85, 0.2, 1 } }
         end
     end
     return {
@@ -310,9 +311,14 @@ function Runs.StyleNativeEffects(frame, profile, key)
         effects = {}
         frame[key] = effects
     end
-    local width = profile.iconWidth or profile.iconSize or 39
-    local height = profile.iconHeight or width
     local style = glow and glow.glowType or "Pixel Glow"
+    local useOffsets = style == "Pixel Glow" or style == "Autocast Shine" or style == "Proc Glow"
+    local xOffset = useOffsets and glow and glow.xOffset or 0
+    local yOffset = useOffsets and glow and glow.yOffset or 0
+    local baseWidth = profile.iconWidth or profile.iconSize or 39
+    local baseHeight = profile.iconHeight or baseWidth
+    local width = math.max(1, baseWidth + xOffset * 2)
+    local height = math.max(1, baseHeight + yOffset * 2)
     local lines = math.max(1, math.floor(glow and glow.lines or 8))
     local thickness = math.max(1, glow and glow.thickness or 2)
     local frequency = glow and glow.frequency or 0.25
@@ -325,6 +331,7 @@ function Runs.StyleNativeEffects(frame, profile, key)
     if glow and config and config.width == width and config.height == height
         and config.style == style and config.lines == lines and config.thickness == thickness
         and config.frequency == frequency and config.scale == scale
+        and config.xOffset == xOffset and config.yOffset == yOffset
         and config.r == r and config.g == g and config.b == b and config.a == a then
         return effects
     end
@@ -346,10 +353,11 @@ function Runs.StyleNativeEffects(frame, profile, key)
         frame._quiCDMNativeEffectHost = host
     end
     local flipbook = style == "Proc Glow" or style == "Button Glow"
+    local pulse = style == "Flash" or style == "Hammer"
     local length = math.max(thickness, math.min(width, height, math.floor((width + height) * (2 / lines - 0.1))))
     local segments = style == "Pixel Glow" and math.ceil(length / thickness) or 1
     local layers = style == "Autocast Shine" and 4 or 1
-    local count = flipbook and 1 or lines * segments * layers
+    local count = (flipbook or pulse) and 1 or lines * segments * layers
     local period = 1 / math.max(0.01, math.abs(frequency))
     local perimeter = (width + height) * 2
     for i = 1, count do
@@ -358,6 +366,10 @@ function Runs.StyleNativeEffects(frame, profile, key)
             local texture = host:CreateTexture(nil, "OVERLAY")
             effect = { texture = texture, group = host:CreateAnimationGroup() }
             effects[i] = effect
+            if key == "_quiCDMNativePandemicGlow" and frame.AddPandemicRegion then
+                texture:Hide()
+                frame:AddPandemicRegion(texture)
+            end
         end
         effect.enabled = true
         local texture, group = effect.texture, effect.group
@@ -366,25 +378,35 @@ function Runs.StyleNativeEffects(frame, profile, key)
         texture:SetAlpha(1)
         texture:SetTexCoord(0, 1, 0, 1)
         texture:SetBlendMode("BLEND")
-        local animationKind = flipbook and "FlipBook" or "Path"
+        local animationKind = flipbook and "FlipBook" or pulse and "Alpha" or "Path"
         if effect.animationKind ~= animationKind then
             group:RemoveAnimations()
             effect.animationKind = nil
             effect.animation = group:CreateAnimation(animationKind)
             effect.animation:SetTarget(texture)
             effect.points = nil
-            if not flipbook then
+            if animationKind == "Path" then
                 effect.points = {}
                 for order = 1, 5 do
                     effect.points[order] = effect.animation:CreateControlPoint(nil, nil, order)
                 end
             end
-            group:SetLooping("REPEAT")
+            group:SetLooping(pulse and "BOUNCE" or "REPEAT")
             effect.animationKind = animationKind
         end
-        if flipbook then
+        if pulse then
+            texture:SetPoint("TOPLEFT", frame, "TOPLEFT", -xOffset, yOffset)
+            texture:SetSize(width, height)
+            texture:SetTexture(((ns.Helpers and ns.Helpers.AssetPath) or "Interface\\AddOns\\QUI\\assets\\")
+                .. (style == "Flash" and "iconskin\\Flash" or "quazii_hammer"))
+            texture:SetBlendMode("ADD")
+            effect.animation:SetFromAlpha(0.3)
+            effect.animation:SetToAlpha(1)
+            effect.animation:SetDuration(0.4)
+        elseif flipbook then
             texture:SetPoint("CENTER", frame, "CENTER", 0, 0)
-            texture:SetSize(width * 1.4, height * 1.4)
+            texture:SetSize(math.max(1, baseWidth * 1.4 + xOffset * 2),
+                math.max(1, baseHeight * 1.4 + yOffset * 2))
             if style == "Proc Glow" then
                 texture:SetAtlas("UI-HUD-ActionBar-Proc-Loop-Flipbook")
             else
@@ -421,7 +443,7 @@ function Runs.StyleNativeEffects(frame, profile, key)
                 return 0, distance - perimeter
             end
             local x, y = Point(start)
-            texture:SetPoint("CENTER", frame, "TOPLEFT", x, y)
+            texture:SetPoint("CENTER", frame, "TOPLEFT", x - xOffset, y + yOffset)
             local corners = {}
             for _, distance in ipairs({ width, width + height, width * 2 + height, perimeter }) do
                 if distance <= start then distance = distance + perimeter end
@@ -444,6 +466,7 @@ function Runs.StyleNativeEffects(frame, profile, key)
     effects.config = {
         width = width, height = height, style = style, lines = lines, thickness = thickness,
         frequency = frequency, scale = scale, r = r, g = g, b = b, a = a,
+        xOffset = xOffset, yOffset = yOffset,
     }
     return effects
 end
@@ -466,6 +489,12 @@ end
 
 function Runs.ConfigureNativeEffects(frame, profile, owner)
     Runs.StyleNativeEffects(frame, profile)
+    Runs.StyleNativeEffects(frame, {
+        cdmActiveGlow = profile.pandemicGlow and profile.pandemicGlow.glowType and profile.pandemicGlow or nil,
+        iconWidth = profile.iconWidth,
+        iconHeight = profile.iconHeight,
+        iconSize = profile.iconSize,
+    }, "_quiCDMNativePandemicGlow")
     local effects = Runs.StyleNativeEffects(frame, {
         cdmActiveGlow = profile.cdmProcGlow,
         iconWidth = profile.iconWidth,
@@ -705,7 +734,10 @@ local function ApplyRoute(record)
     container:Show()
 end
 
-function Runs.RefreshTargets(identityChanged)
+function Runs.RefreshTargets(identityChanged, unit)
+    if identityChanged then
+        for _, manager in pairs(auraOverlayManagers) do manager:Refresh(unit) end
+    end
     for owner in pairs(activeOwners) do
         local records = owner._quiCDMAuraRunRecords
         if records then
