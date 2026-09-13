@@ -53,6 +53,11 @@ function CDMReanchor:OverlayRect(frame, relativeTo, tlRelPoint, tlX, tlY, brRelP
         tlRelPoint = tlRelPoint, tlX = tlX, tlY = tlY,
         brRelPoint = brRelPoint, brX = brX, brY = brY,
     }
+    if tlRelPoint == brRelPoint then
+        fd.glowSize = fd.glowSize or {}
+        fd.glowSize.width = brX - tlX
+        fd.glowSize.height = tlY - brY
+    end
     fd.sunk = nil
     local raw, sc = self._raw, self._securecall
     sc(raw.SetAlpha, frame, 1)

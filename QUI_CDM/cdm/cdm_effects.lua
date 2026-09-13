@@ -518,6 +518,8 @@ local function ApplyLibCustomGlow(icon, viewerSettings, glowKey, skipTracking)
             glowFrame:ClearAllPoints()
             glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, yOffset)
             glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -yOffset)
+            glowFrame._quiGlowWidthOffset = xOffset * 2
+            glowFrame._quiGlowHeightOffset = yOffset * 2
             EnsureGlowBelowSwipe(icon, glowFrame)
         end
 
@@ -528,6 +530,8 @@ local function ApplyLibCustomGlow(icon, viewerSettings, glowKey, skipTracking)
             glowFrame:ClearAllPoints()
             glowFrame:SetPoint("TOPLEFT", icon, "TOPLEFT", -xOffset, yOffset)
             glowFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", xOffset, -yOffset)
+            glowFrame._quiGlowWidthOffset = xOffset * 2
+            glowFrame._quiGlowHeightOffset = yOffset * 2
             EnsureGlowBelowSwipe(icon, glowFrame)
         end
 
@@ -1241,6 +1245,7 @@ local function GetReanchorHighlightTarget(frame)
     local parent = ensureOverlay and ensureOverlay(frame)
     if not parent then return nil end
     target = CreateFrame("Frame", nil, parent)
+    target._quiGlowSize = parent._quiGlowSize
     target._quiHighlightCooldown = frame.Cooldown
     target:SetAllPoints(parent)
     reanchorHighlightTargets[frame] = target

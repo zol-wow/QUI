@@ -3257,7 +3257,12 @@ local function EnsureReanchorGlowOverlay(frame)
     if not (frame and CreateFrame) then return nil end
     local o = _reanchorGlowOverlays[frame]
     if not o then
+        local boot = ns._cdmBoot
+        local bridge = boot and boot.bridge
+        local data = bridge and bridge:GetData(frame)
+        if not (data and data.glowSize) then return nil end
         o = CreateFrame("Frame", nil, frame)
+        o._quiGlowSize = data.glowSize
         if o.SetAllPoints then o:SetAllPoints(frame) end
         _reanchorGlowOverlays[frame] = o
     end
