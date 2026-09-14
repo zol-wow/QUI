@@ -786,6 +786,11 @@ LayoutBuffIcons = function()
         end
     end
 
+    if ns._cdmBoot then
+        isIconLayoutRunning = false
+        return
+    end
+
     local iconSize = settings.iconSize or 42
     local padding = settings.padding or 0
     local aspectRatio = settings.aspectRatioCrop or 1.0
@@ -802,11 +807,9 @@ LayoutBuffIcons = function()
     local currentCount = #icons
 
     if currentCount == 0 then
-        if not ns._cdmBoot then
-            viewer:SetSize(iconWidth, iconHeight)
-            if _G.QUI_SetCDMViewerBounds then
-                _G.QUI_SetCDMViewerBounds(viewer, iconWidth, iconHeight)
-            end
+        viewer:SetSize(iconWidth, iconHeight)
+        if _G.QUI_SetCDMViewerBounds then
+            _G.QUI_SetCDMViewerBounds(viewer, iconWidth, iconHeight)
         end
         isIconLayoutRunning = false
         return

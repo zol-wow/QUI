@@ -512,7 +512,7 @@ end
 
 local function PandemicLatchKey(entry)
     if not entry then return nil end
-    return entry.spellID or entry.id or entry
+    return tostring(entry.viewerType or "") .. ":" .. tostring(entry.spellID or entry.id or entry)
 end
 
 function CDMReanchorPandemic:_StopFor(frame)
@@ -540,7 +540,7 @@ function CDMReanchorPandemic:_OnShowPandemic(frame)
     if not (self._ensureOverlay and self._startPandemic) then return end
     local overlay = self._ensureOverlay(frame)
     if overlay then
-        self._startPandemic(overlay)
+        self._startPandemic(overlay, entry)
         self._active[frame] = PandemicLatchKey(entry)
     end
 end

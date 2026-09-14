@@ -147,6 +147,9 @@ end
 
 function TabManager.BuildConversationFilter(key)
     return function(entry)
+        if key == "WHISPERS" then
+            return _I.WHISPER_TYPE_KEYS and _I.WHISPER_TYPE_KEYS[entry.k] == true
+        end
         return entry.w == key
     end
 end

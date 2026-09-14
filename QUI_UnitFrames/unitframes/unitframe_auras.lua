@@ -147,6 +147,9 @@ QUI_UF.ApplyContainerConfig = ApplyContainerConfig
 
 local function UpdateAuras(frame)
     if not frame or not QUI_UF.GetFrameUnit(frame) then return end
+    for _, container in ipairs(frame._quiAuraContainers or {}) do
+        container:UpdateAllAuras()
+    end
     if InCombatLockdown() then
         local ok = ns.SafeCall("best-effort-style", ApplyElementPass, frame, true)
         if not ok then

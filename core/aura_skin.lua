@@ -384,7 +384,7 @@ local function styleButton(button, profile)
     local pandemic = button._quiPandemic
     if pandemic then
         local glow = profile.pandemicGlow
-        if type(glow) == "table" and type(glow.color) == "table" then
+        if type(glow) == "table" and not glow.glowType and type(glow.color) == "table" then
             local c = glow.color
             if pandemic.SetVertexColor then pandemic:SetVertexColor(c[1] or 1, c[2] or 0.85, c[3] or 0.2, 1) end
             if pandemic.SetAlpha then pandemic:SetAlpha(c[4] or 1) end
@@ -594,6 +594,57 @@ local function EachTrackedButton(container, fn)
     end
 end
 
+local EMPTY_CANDIDATE_FILTERS = {}
+
+local function CandidateFiltersMatch(previous, filters)
+    if not previous then return false end
+    filters = filters or EMPTY_CANDIDATE_FILTERS
+    for field, value in pairs(filters) do
+        local old = previous[field]
+        if type(value) == "table" then
+            if type(old) ~= "table" then return false end
+            for key, entry in pairs(value) do
+                if old[key] ~= entry then return false end
+            end
+            for key in pairs(old) do
+                if value[key] == nil then return false end
+            end
+        elseif old ~= value then
+            return false
+        end
+    end
+    for field in pairs(previous) do
+        if filters[field] == nil then return false end
+    end
+    return true
+end
+
+local function CacheGroupCandidateFilters(container, key, filters)
+    local cache = container._quiGroupCandidateFilters
+    if not cache then
+        cache = {}
+        container._quiGroupCandidateFilters = cache
+    end
+    local snapshot = {}
+    for field, value in pairs(filters or EMPTY_CANDIDATE_FILTERS) do
+        if type(value) == "table" then
+            local copy = {}
+            for entry, enabled in pairs(value) do copy[entry] = enabled end
+            snapshot[field] = copy
+        else
+            snapshot[field] = value
+        end
+    end
+    cache[key] = snapshot
+end
+
+function AuraSkin.SetGroupCandidateFilters(container, key, filters)
+    local cache = container._quiGroupCandidateFilters
+    if CandidateFiltersMatch(cache and cache[key], filters) then return end
+    container:SetAuraGroupCandidateFilters(key, filters)
+    CacheGroupCandidateFilters(container, key, filters)
+end
+
 function AuraSkin.Configure(container, profile, groups)
     local L = ResolveLayout(profile)
     container._quiProfile = profile
@@ -635,7 +686,7 @@ function AuraSkin.Configure(container, profile, groups)
             end
             container:SetAuraGroupMaxFrameCount(key, maxCount)
             container:SetAuraGroupSortMethod(key, sortMethod, sortDir)
-            container:SetAuraGroupCandidateFilters(key, g.candidateFilters)
+            AuraSkin.SetGroupCandidateFilters(container, key, g.candidateFilters)
             container:SetAuraGroupLayout(key, GroupLayout(L, g))
             registered[key] = filter
         else
@@ -647,6 +698,7 @@ function AuraSkin.Configure(container, profile, groups)
                 initializeFrame  = MakeInitializer(container, g, key),
                 layout           = GroupLayout(L, g),
             })
+            CacheGroupCandidateFilters(container, key, g.candidateFilters)
             registered[key] = filter
         end
     end

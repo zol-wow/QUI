@@ -122,10 +122,6 @@ function CDMIconStackPolicy.Create(callbacks)
         return callbacks.getSources and callbacks.getSources() or ns.CDMSources
     end
 
-    local function AuraRuntime()
-        return callbacks.getAuraRuntime and callbacks.getAuraRuntime() or ns.CDMAuraRuntime
-    end
-
     local function IsAuraEntry(entry)
         return callbacks.isAuraEntry and callbacks.isAuraEntry(entry) or false
     end
@@ -159,16 +155,12 @@ function CDMIconStackPolicy.Create(callbacks)
         return not controller:ValueIsPresent(value)
     end
 
-    local function AuraCountTextHasDisplay(value)
+    local function CountTextHasDisplay(value)
         if issecretvalue(value) then
             return true -- @secret-policy: route-to-text-sink
         end
-        if type(value) == "number" then
-            return value > 0
-        end
-        if type(value) == "string" then
-            return value ~= "" and value ~= "0"
-        end
+        if type(value) == "number" then return value > 0 end
+        if type(value) == "string" then return value ~= "" and value ~= "0" end
         return value ~= nil
     end
 
@@ -182,130 +174,6 @@ function CDMIconStackPolicy.Create(callbacks)
         icon.StackText.SetText(icon.StackText, "")
         icon.StackText.Hide(icon.StackText)
         icon._stackTextSource = nil
-    end
-
-    function controller:GetDisplayableAuraApplicationsFromData(auraData)
-        if not auraData then return nil end
-
-        local apps = auraData.applications
-        if issecretvalue(apps) then
-            return nil -- @secret-policy: reject-secret-value
-        end
-        if apps == nil then return nil end
-
-        local appType = type(apps)
-        if appType == "number" then
-            return apps > 1 and apps or nil
-        end
-        if appType == "string" then
-            if apps == "" or apps == "0" or apps == "1" then
-                return nil
-            end
-            return apps
-        end
-
-        return nil
-    end
-
-    function controller:GetAuraApplicationsFromData(auraData, unit, source)
-        if not auraData then return nil end
-
-        local apps = controller:GetDisplayableAuraApplicationsFromData(auraData)
-        if controller:ValueIsPresent(apps) then
-            return apps, source
-        end
-
-        return nil
-    end
-
-    function controller:GetAuraApplicationsForInstance(unit, auraInstanceID, source, minApplications)
-        return nil
-    end
-
-    function controller:ResolveAuraApplicationsForEntry(spellID, entry, icon)
-        if not (spellID and entry) then
-            return nil
-        end
-
-        local auraRuntime = AuraRuntime()
-        if not (auraRuntime and auraRuntime.ResolveState) then
-            return nil
-        end
-
-        local p = icon and icon._stackAuraParams or {}
-        if icon then icon._stackAuraParams = p end
-        p.spellID = spellID
-        p.entrySpellID = entry.spellID
-        p.entryID = entry.id
-        p.entryName = entry.name
-        p.entryKind = entry.kind
-        p.entryType = entry.type
-        p.entryIsAura = IsAuraEntry(entry)
-        p.entryTexture = callbacks.getEntryTexture and callbacks.getEntryTexture(entry) or nil
-        p.viewerType = entry.viewerType
-        p.totemSlot = callbacks.isTotemSlotEntry and callbacks.isTotemSlotEntry(entry) and entry._totemSlot or nil
-        p.disableLooseVisibilityFallback = true
-
-        local r = auraRuntime.ResolveState(p)
-        if not r then
-            return nil
-        end
-
-        if r.isActive and not r.isTotemInstance then
-            local count = r.count
-            if count and count.shown == true and controller:ValueIsPresent(count.sinkText) then
-                return count.sinkText, count.source
-            end
-            if count and count.shown == true and controller:ValueIsPresent(count.value) then
-                return count.value, count.source
-            end
-            return controller:GetAuraApplicationsFromData(r.auraData, r.auraUnit, "resolved-data")
-        end
-
-        return nil
-    end
-
-    function controller:TryAuraApplicationsBySpellID(auraID, source)
-        return nil
-    end
-
-    function controller:TryLinkedAuraApplications(linkedSpellIDs, entry, icon, seenIDs, source)
-        if type(linkedSpellIDs) ~= "table" then
-            return nil
-        end
-
-        for _, linkedID in ipairs(linkedSpellIDs) do
-            local queryID = linkedID
-            local auraID = type(linkedID) == "number" and linkedID or nil
-
-            if queryID and (not auraID or (auraID > 0 and not seenIDs[auraID])) then
-                if auraID then
-                    seenIDs[auraID] = true
-                end
-
-                local apps, appSource = controller:TryAuraApplicationsBySpellID(queryID, source or "linked")
-                if controller:ValueIsPresent(apps) then
-                    if _G.QUI_CDM_CHARGE_DEBUG and callbacks.chargeDebug then
-                        callbacks.chargeDebug(entry and entry.name, "AURA linked stack",
-                            "auraID=", auraID or "dynamic", "source=", appSource or "nil")
-                    end
-                    return apps, appSource
-                end
-
-                if auraID then
-                    apps, appSource = controller:ResolveAuraApplicationsForEntry(auraID, entry, icon)
-                    if controller:ValueIsPresent(apps) then
-                        if _G.QUI_CDM_CHARGE_DEBUG and callbacks.chargeDebug then
-                            callbacks.chargeDebug(entry and entry.name, "AURA linked resolve",
-                                "auraID=", auraID, "source=", appSource or "nil")
-                        end
-                        return apps, appSource or (source or "linked")
-                    end
-                end
-            end
-        end
-
-        return nil
     end
 
     local function TryActionButtonSpellCount(spellID, seenIDs, icon)
@@ -372,81 +240,13 @@ function CDMIconStackPolicy.Create(callbacks)
         return nil
     end
 
-    function controller:GetAuraApplicationsForSpell(spellID, entryOrName, icon)
-        local entry = type(entryOrName) == "table" and entryOrName or nil
-        local spellName = entry and entry.name or entryOrName
-        if controller:ValueIsMissing(spellID) then
-            return nil
-        end
-
-        if entry and not IsAuraEntry(entry) then
-            local spellCount, countSource = controller:GetSpellCountForEntry(spellID, entry, icon)
-            if controller:ValueIsPresent(spellCount) then
-                return spellCount, countSource
-            end
-        end
-
-        local seenIDs = icon and icon._stackAuraSeenIDs or {}
-        if icon then icon._stackAuraSeenIDs = seenIDs end
-        wipe(seenIDs)
-        seenIDs[spellID] = true
-
-        local directApps, directSource = controller:TryAuraApplicationsBySpellID(spellID, "spell")
-        if controller:ValueIsPresent(directApps) then
-            return directApps, directSource
-        end
-
-        local auraID = spellID
-        local auraRuntime = AuraRuntime()
-        local mapped, remapped
-        if auraRuntime and auraRuntime.ResolveAbilityAuraSpellID then
-            mapped, remapped = auraRuntime.ResolveAbilityAuraSpellID(auraID)
-        end
-        if remapped == true and mapped then
-            auraID = mapped
-        end
-        if auraID and not seenIDs[auraID] then
-            seenIDs[auraID] = true
-            local mappedApps, mappedSource = controller:TryAuraApplicationsBySpellID(auraID, "mapped")
-            if controller:ValueIsPresent(mappedApps) then
-                return mappedApps, mappedSource
-            end
-        end
-
-        if not (entry and IsBuiltinAuraContainerKey(entry.viewerType)) then
-            local linkedApps, linkedSource = controller:TryLinkedAuraApplications(
-                entry and entry.linkedSpellIDs, entry, icon, seenIDs, "entry-linked")
-            if controller:ValueIsPresent(linkedApps) then return linkedApps, linkedSource end
-        end
-
-        local resolvedApps, resolvedSource = controller:ResolveAuraApplicationsForEntry(spellID, entry, icon)
-        if controller:ValueIsPresent(resolvedApps) then
-            return resolvedApps, resolvedSource
-        end
-
-        return nil
-    end
-
     function controller:ResolveIconStackText(icon)
         if not icon or not icon._spellEntry then
             return nil, nil
         end
         local entry = icon._spellEntry
 
-        if IsAuraEntry(entry) then
-            local active, auraUnit, instID
-            if callbacks.resolveAuraActiveState then
-                active, auraUnit, instID = callbacks.resolveAuraActiveState(entry)
-            end
-            local auraRuntime = AuraRuntime()
-            if active and instID and auraRuntime and auraRuntime.GetApplications then
-                local resolved, stacks = auraRuntime.GetApplications(auraUnit or "player", instID)
-                if resolved and AuraCountTextHasDisplay(stacks) then
-                    return stacks, "Applications"
-                end
-            end
-            return nil, nil
-        end
+        if IsAuraEntry(entry) then return nil, nil end
 
         local sid = icon._runtimeSpellID
             or (entry.overrideSpellID or entry.spellID or entry.id)
@@ -547,7 +347,7 @@ function CDMIconStackPolicy.Create(callbacks)
         end
 
         if controller:ValueIsPresent(count.sinkText) or showZero then
-            if showZero or AuraCountTextHasDisplay(stackValue) then
+            if showZero or CountTextHasDisplay(stackValue) then
                 local sink = Sink()
                 if sink and sink.Show then
                     sink.Show(icon, stackValue, count.source or "Applications", count.visibilityGate)
@@ -567,7 +367,7 @@ function CDMIconStackPolicy.Create(callbacks)
             displayText = C_StringUtil.TruncateWhenZero(stackValue)
         end
 
-        if AuraCountTextHasDisplay(displayText) then
+        if CountTextHasDisplay(displayText) then
             local sink = Sink()
             if sink and sink.Show then
                 sink.Show(icon, displayText, count.source or "Applications", count.visibilityGate)
@@ -1532,17 +1332,6 @@ function CDMIconCustomBarPolicy.Create(callbacks)
         if sources and sources.QueryItemSpell then
             local _, spellID = sources.QueryItemSpell(itemID)
             itemSpellID = spellID
-        end
-        if sources and sources.QueryScannedItemAuraInfo then
-            local scanned = sources.QueryScannedItemAuraInfo(itemID, itemSpellID)
-            if scanned and scanned.active == true then
-                local expiration = scanned.expiration
-                local duration = scanned.duration
-                if IsReadableNumber(expiration) and IsReadableNumber(duration) then
-                    return true, expiration - duration, duration, "buff"
-                end
-                return true, nil, nil, "buff"
-            end
         end
         if itemSpellID then
             return ResolveSpellActiveState(itemSpellID, icon, entry)

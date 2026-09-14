@@ -302,9 +302,9 @@ function CDMReanchorBoot.BuildRuntime(env)
             end
             return false
         end,
-        startPandemic = function(overlay)
+        startPandemic = function(overlay, entry)
             local OG = ns._OwnedGlows
-            if OG and OG.ApplyPandemicToOverlay then OG.ApplyPandemicToOverlay(overlay) end
+            if OG and OG.ApplyPandemicToOverlay then OG.ApplyPandemicToOverlay(overlay, entry) end
         end,
         stopPandemic = function(overlay)
             local OG = ns._OwnedGlows
@@ -334,7 +334,6 @@ function CDMReanchorBoot.BuildRuntime(env)
         buildLayout = env.buildLayout,
         buildBuffLayout = env.buildBuffLayout,
         frameIsActive = env.frameIsActive,
-        entryAuraIsPresent = env.entryAuraIsPresent,
         inCombat = env.inCombat,
         canMutate = env.canMutate,
         isEditMode = env.isEditMode,
@@ -344,6 +343,7 @@ function CDMReanchorBoot.BuildRuntime(env)
         releaseOwned = env.releaseIcon,
         positionOwned = MakePositionOwned(env),
         acquireAuraMirror = env.acquireAuraMirror,
+        shouldRetainAuraMirror = env.shouldRetainAuraMirror,
         positionAuraMirror = env.positionAuraMirror,
         beginAuraMirrorPass = env.beginAuraMirrorPass,
         endAuraMirrorPass = env.endAuraMirrorPass,
@@ -361,6 +361,9 @@ function CDMReanchorBoot.BuildRuntime(env)
         bridge = bridge,
         wiring = wiring,
         runtime = runtime,
+        RefreshAuraMirrors = function(_, unit)
+            if env.refreshAuraMirrors then env.refreshAuraMirrors(unit) end
+        end,
         RefreshBuiltin = function(_, containerKey)
             return runtime:RefreshContainer(containerKey)
         end,

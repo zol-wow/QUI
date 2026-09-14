@@ -1696,14 +1696,16 @@ function QUI_GFEM:CreateSpotlightHeader()
 
         local initConfigFunc = [[
             local header = self:GetParent()
-            self:SetWidth(header:GetAttribute("_initialAttribute-unit-width") or 200)
-            self:SetHeight(header:GetAttribute("_initialAttribute-unit-height") or 40)
+            self:SetWidth(header:GetAttribute("qui-unit-width") or 200)
+            self:SetHeight(header:GetAttribute("qui-unit-height") or 40)
             self:SetAttribute("*type1", "target")
             self:SetAttribute("*type2", "togglemenu")
             RegisterUnitWatch(self)
         ]]
 
         spotlightHeader = CreateFrame("Frame", "QUI_SpotlightHeader", spotlightContainer, "SecureGroupHeaderTemplate")
+        spotlightHeader:SetAttribute("qui-unit-width", w)
+        spotlightHeader:SetAttribute("qui-unit-height", h)
         spotlightHeader:SetAttribute("template", "SecureUnitButtonTemplate, BackdropTemplate")
         spotlightHeader:SetAttribute("initialConfigFunction", initConfigFunc)
         spotlightHeader:SetAttribute("showRaid", true)

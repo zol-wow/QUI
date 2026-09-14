@@ -703,9 +703,28 @@ local function RenderAppearanceSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, ns.L["Font Size"], fontSizeSlider)
     )
 
-    local showTooltipsCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showTooltips", general, refresh, {
+    local hideTooltipsInCombatCell
+    local function UpdateTooltipCells()
+        if hideTooltipsInCombatCell then
+            hideTooltipsInCombatCell:SetAlpha(general.showTooltips ~= false and 1.0 or 0.4)
+        end
+    end
+    local showTooltipsCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showTooltips", general, function()
+        refresh()
+        UpdateTooltipCells()
+    end, {
         description = ns.L["Show the Blizzard unit tooltip when hovering a group frame."],
     })
+    local hideTooltipsInCombatCheckbox = gui:CreateFormCheckbox(card.frame, nil, "hideTooltipsInCombat", general, refresh, {
+        description = ns.L["Suppress group frame tooltips while you are in combat."],
+    })
+    hideTooltipsInCombatCell = optionsAPI.BuildSettingRow(card.frame, ns.L["Hide Tooltips in Combat"], hideTooltipsInCombatCheckbox)
+    card.AddRow(
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Tooltips on Hover"], showTooltipsCheckbox),
+        hideTooltipsInCombatCell
+    )
+    UpdateTooltipCells()
+
     local function UpdatePortraitCells()
         local alpha = portrait.showPortrait and 1.0 or 0.4
         if portraitSideCell then
@@ -721,11 +740,6 @@ local function RenderAppearanceSection(sectionHost, ctx)
     end, {
         description = ns.L["Show a portrait next to each frame."],
     })
-    card.AddRow(
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Tooltips on Hover"], showTooltipsCheckbox),
-        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Portrait"], showPortraitCheckbox)
-    )
-
     local portraitSideDropdown = gui:CreateFormDropdown(card.frame, nil, ANCHOR_SIDE_OPTIONS, "portraitSide", portrait, refresh, {
         description = ns.L["Which side of the frame the portrait sits on."],
     })
@@ -734,7 +748,11 @@ local function RenderAppearanceSection(sectionHost, ctx)
         description = ns.L["Portrait width and height in pixels."],
     })
     portraitSizeCell = optionsAPI.BuildSettingRow(card.frame, ns.L["Portrait Size"], portraitSizeSlider)
-    card.AddRow(portraitSideCell, portraitSizeCell)
+    card.AddRow(
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Show Portrait"], showPortraitCheckbox),
+        portraitSideCell
+    )
+    card.AddRow(portraitSizeCell)
 
     UpdatePortraitCells()
     builder.CloseCard(card)
@@ -878,6 +896,14 @@ local function RenderLayoutSection(sectionHost, ctx)
             description = ns.L["Limit visible raid groups by instance size: groups 1-4 in Mythic and 1-6 otherwise."],
         })
         card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Limit Groups by Raid Size"], limitGroupsCheckbox))
+
+        local hideBenchCheckbox = gui:CreateFormCheckbox(card.frame, nil, "hideBenchGroupsInMythic", layout, function()
+            refresh(true)
+            RequestTabRepaint(ctx)
+        end, {
+            description = ns.L["Hide raid members in groups 7 and 8 while inside a Mythic raid. Works in every Group By mode, including flat layouts. Has no effect outside Mythic."],
+        })
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Hide Groups 7-8 in Mythic"], hideBenchCheckbox))
 
         local hiddenPlayersEdit = gui:CreateFormEditBox(card.frame, nil, "hiddenPlayers", groupFrames.gfdb, function()
             refresh(true)

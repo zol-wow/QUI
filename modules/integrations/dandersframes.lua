@@ -31,14 +31,6 @@ local function AddUniqueFrame(frames, seen, frame)
     table.insert(frames, frame)
 end
 
-local function IsFrameProtected(frame)
-    if not frame then return false end
-    if type(frame.IsProtected) ~= "function" then return false end
-
-    local ok, isProtected = ns.SafeCallMethod("best-effort-style", frame, "IsProtected")
-    return ok and isProtected or false
-end
-
 local function GetDandersAddon()
     return _G["DandersFrames"]
 end
@@ -142,13 +134,42 @@ local function ApplyPositionToFrames(frames, applyFunc)
     local shouldRetryAfterCombat = false
 
     for _, container in ipairs(frames) do
-        local ok = ns.SafeCall("best-effort-style", applyFunc, container)
-        if not ok then
+        local ok, applied = ns.SafeCall("best-effort-style", applyFunc, container)
+        if not ok or applied == false then
             shouldRetryAfterCombat = true
         end
     end
 
     return shouldRetryAfterCombat
+end
+
+local hookedAnchorFrames = setmetatable({}, { __mode = "k" })
+local hookedContainerFrames = setmetatable({}, { __mode = "k" })
+local anchorUpdateQueued = false
+
+local function QueueAnchorUpdate()
+    if InCombatLockdown() then
+        pendingUpdate = true
+        return
+    end
+    if anchorUpdateQueued then return end
+    anchorUpdateQueued = true
+    C_Timer.After(0, function()
+        anchorUpdateQueued = false
+        QUI_DandersFrames:ApplyAllPositions()
+    end)
+end
+
+local function TrackAnchorFrame(frame)
+    if hookedAnchorFrames[frame] then return end
+    hookedAnchorFrames[frame] = true
+    frame:HookScript("OnSizeChanged", QueueAnchorUpdate)
+    frame:HookScript("OnShow", QueueAnchorUpdate)
+    hooksecurefunc(frame, "SetPoint", QueueAnchorUpdate)
+    hooksecurefunc(frame, "SetScale", QueueAnchorUpdate)
+    if frame.SetPointBase then
+        hooksecurefunc(frame, "SetPointBase", QueueAnchorUpdate)
+    end
 end
 
 function QUI_DandersFrames:ApplyPosition(containerKey)
@@ -171,6 +192,7 @@ function QUI_DandersFrames:ApplyPosition(containerKey)
     if hasAnchor then
         anchorFrame = self:GetAnchorFrame(cfg.anchorTo)
         if not anchorFrame then return end
+        TrackAnchorFrame(anchorFrame)
     end
 
     local inCombat = InCombatLockdown()
@@ -179,16 +201,32 @@ function QUI_DandersFrames:ApplyPosition(containerKey)
 
     if inCombat then
         for _, container in ipairs(liveContainers) do
-            if IsFrameProtected(container) then
+            if ns.Helpers.FrameMutationRestricted(container) then
                 pendingUpdate = true
                 return
             end
         end
     end
 
-    local shouldRetryAfterCombat = ApplyPositionToFrames(liveContainers, function(container)
-        container:ClearAllPoints()
-        if not hasAnchor then
+    local function applyPosition(container)
+        if hasAnchor then
+            if not hookedContainerFrames[container] then
+                hookedContainerFrames[container] = true
+                hooksecurefunc(container, "SetScale", QueueAnchorUpdate)
+            end
+            local scale = ns.Helpers.SafeToNumber(container:GetEffectiveScale(), 0)
+            local uiScale = ns.Helpers.SafeToNumber(UIParent:GetEffectiveScale(), 0)
+            if scale <= 0 or uiScale <= 0 then return false end
+            return ns.Helpers.PinFrameToTargetAbsolute(
+                container,
+                cfg.sourcePoint or "TOP",
+                anchorFrame,
+                cfg.targetPoint or "BOTTOM",
+                (cfg.offsetX or 0) * scale / uiScale,
+                (cfg.offsetY or -5) * scale / uiScale
+            )
+        else
+            container:ClearAllPoints()
             container:SetPoint(
                 cfg.absolutePoint or "CENTER",
                 UIParent,
@@ -196,38 +234,13 @@ function QUI_DandersFrames:ApplyPosition(containerKey)
                 cfg.absoluteX or 0,
                 cfg.absoluteY or 0
             )
-        else
-            container:SetPoint(
-                cfg.sourcePoint or "TOP",
-                anchorFrame,
-                cfg.targetPoint or "BOTTOM",
-                cfg.offsetX or 0,
-                cfg.offsetY or -5
-            )
         end
-    end)
+    end
+
+    local shouldRetryAfterCombat = ApplyPositionToFrames(liveContainers, applyPosition)
 
     if #previewContainers > 0 then
-        local previewRetry = ApplyPositionToFrames(previewContainers, function(container)
-            container:ClearAllPoints()
-            if not hasAnchor then
-                container:SetPoint(
-                    cfg.absolutePoint or "CENTER",
-                    UIParent,
-                    "CENTER",
-                    cfg.absoluteX or 0,
-                    cfg.absoluteY or 0
-                )
-            else
-                container:SetPoint(
-                    cfg.sourcePoint or "TOP",
-                    anchorFrame,
-                    cfg.targetPoint or "BOTTOM",
-                    cfg.offsetX or 0,
-                    cfg.offsetY or -5
-                )
-            end
-        end)
+        local previewRetry = ApplyPositionToFrames(previewContainers, applyPosition)
         shouldRetryAfterCombat = shouldRetryAfterCombat or previewRetry
     end
 

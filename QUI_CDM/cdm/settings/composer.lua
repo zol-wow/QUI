@@ -274,6 +274,9 @@ local function RefreshActiveContainerDormancy()
 end
 
 local function RefreshCDM()
+    if ns.CDMAlerts and ns.CDMAlerts.RequestNativeSoundRefresh then
+        ns.CDMAlerts.RequestNativeSoundRefresh()
+    end
     if activeContainer and _G.QUI_ForceLayoutContainer then
         _G.QUI_ForceLayoutContainer(activeContainer)
     end
@@ -1395,6 +1398,10 @@ local function SaveAlertEditor(ui)
         text = ui.alertDB.text or "",
     }
     NotifyComposerEntriesChanged(false)
+    if ns.CDMAlerts and ns.CDMAlerts.ReconcileNativeSounds then
+        ns.CDMAlerts.ReconcileNativeSounds()
+    end
+    ShowOverridePanel(ui.state.parentRow, ui.state.containerKey, entry, ui.state.entryIndex)
 end
 
 local function GetOverrideWidget(GUI, key)
@@ -1484,11 +1491,7 @@ local function GetOverrideWidget(GUI, key)
             { description = ns.L["Enable the selected alert event for this entry."] })
     elseif key == "alertMode" then
         widget = GUI:CreateFormDropdown(overridePanel, ns.L["Alert Type"], ALERT_MODE_OPTIONS,
-            "mode", ui.alertDB, function()
-                SaveAlertEditor(ui)
-                ShowOverridePanel(ui.state.parentRow, ui.state.containerKey,
-                    ui.state.entry, ui.state.entryIndex)
-            end, { description = ns.L["Play a sound or speak custom text with the game text-to-speech voice."] })
+            "mode", ui.alertDB, function() SaveAlertEditor(ui) end, { description = ns.L["Play a sound or speak custom text with the game text-to-speech voice."] })
     elseif key == "alertSound" then
         widget = GUI:CreateFormDropdown(overridePanel, ns.L["Sound"], GetAlertSoundOptions(),
             "sound", ui.alertDB, function() SaveAlertEditor(ui) end,
@@ -1543,6 +1546,7 @@ ShowOverridePanel = function(parentRow, containerKey, entry, entryIndex)
         widget:Hide()
     end
     if ui.hint then ui.hint:Hide() end
+    if ui.alertStatus then ui.alertStatus:Hide() end
 
     local titleLabel = ui.title
     if not titleLabel then
@@ -1636,11 +1640,14 @@ ShowOverridePanel = function(parentRow, containerKey, entry, entryIndex)
     end
     alertHeader:ClearAllPoints()
     alertHeader:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, sy + 2)
+    alertHeader:SetPoint("RIGHT", overridePanel, "RIGHT", -8, 0)
     alertHeader:SetText(ns.L["Alerts"])
     alertHeader:Show()
     sy = sy - 22
 
-    local alertOptions = (entry.kind == "aura" or GetContainerImpliedKind(containerKey) == "aura")
+    local alertOptions = (entry.kind == "aura" or GetContainerImpliedKind(containerKey) == "aura"
+        or (entry.displayMode == "auraOnly" and Shared and Shared.ShouldShowItemDisplayModeRow
+            and Shared.ShouldShowItemDisplayModeRow(entry, containerKey, containerDB)))
         and AURA_ALERT_EVENT_OPTIONS or COOLDOWN_ALERT_EVENT_OPTIONS
     local selectedEvent = ui.alertDB.event
     local eventValid = false
@@ -1662,6 +1669,22 @@ ShowOverridePanel = function(parentRow, containerKey, entry, entryIndex)
         PlaceWidget(soundWidget)
     end
     PlaceWidget(GetOverrideWidget(GUI, "alertPreview"))
+
+    local status = ns.CDMAlerts and ns.CDMAlerts.GetNativeSoundStatus
+        and ns.CDMAlerts.GetNativeSoundStatus(containerKey, entry, selectedEvent)
+    if status then
+        if not ui.alertStatus then
+            ui.alertStatus = overridePanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            ui.alertStatus:SetJustifyH("LEFT")
+            ui.alertStatus:SetTextColor(1, 0.8, 0.35)
+        end
+        ui.alertStatus:ClearAllPoints()
+        ui.alertStatus:SetPoint("TOPLEFT", overridePanel, "TOPLEFT", 8, sy)
+        ui.alertStatus:SetPoint("RIGHT", overridePanel, "RIGHT", -8, 0)
+        ui.alertStatus:SetText(status)
+        ui.alertStatus:Show()
+        sy = sy - ui.alertStatus:GetStringHeight() - 8
+    end
 
     local totalHeight = math_abs(sy) + 32
     overridePanel:SetHeight(totalHeight)
@@ -3042,29 +3065,6 @@ RefreshAddList = function()
                 sourceEntries[#sourceEntries + 1] = e
             end
         end
-        local helpful = (spellData.GetActiveAuras and spellData:GetActiveAuras("HELPFUL")) or {}
-        for _, aura in ipairs(helpful) do
-            if aura.spellID and not seen[aura.spellID] then
-                seen[aura.spellID] = true
-                sourceEntries[#sourceEntries + 1] = {
-                    spellID = aura.spellID,
-                    name = aura.name or "",
-                    icon = aura.icon or 0,
-                }
-            end
-        end
-        local harmful = (spellData.GetActiveAuras and spellData:GetActiveAuras("HARMFUL")) or {}
-        for _, aura in ipairs(harmful) do
-            if aura.spellID and not seen[aura.spellID] then
-                seen[aura.spellID] = true
-                sourceEntries[#sourceEntries + 1] = {
-                    spellID = aura.spellID,
-                    name = aura.name or "",
-                    icon = aura.icon or 0,
-                }
-            end
-        end
-
     elseif activeAddTab == "all_cooldowns" then
         sourceEntries = spellData:GetAllLearnedCooldowns() or {}
 
@@ -3141,26 +3141,6 @@ RefreshAddList = function()
                     end
                 end
             end
-        end
-
-    elseif activeAddTab == "active_buffs" then
-        local auras = spellData:GetActiveAuras("HELPFUL") or {}
-        for _, aura in ipairs(auras) do
-            sourceEntries[#sourceEntries + 1] = {
-                spellID = aura.spellID,
-                name = aura.name or "",
-                icon = aura.icon or 0,
-            }
-        end
-
-    elseif activeAddTab == "active_debuffs" then
-        local auras = spellData:GetActiveAuras("HARMFUL") or {}
-        for _, aura in ipairs(auras) do
-            sourceEntries[#sourceEntries + 1] = {
-                spellID = aura.spellID,
-                name = aura.name or "",
-                icon = aura.icon or 0,
-            }
         end
 
     elseif activeAddTab == "by_spell_id" then
@@ -3282,9 +3262,7 @@ RefreshAddList = function()
                         local isCustomBarAdd = not IsBuiltInContainer(activeContainer)
                         local function kindForActiveTab()
                             if activeAddTab == "auras"
-                               or activeAddTab == "other_auras"
-                               or activeAddTab == "active_buffs"
-                               or activeAddTab == "active_debuffs" then
+                               or activeAddTab == "other_auras" then
                                 return "aura"
                             end
                             if activeAddTab == "cooldowns"

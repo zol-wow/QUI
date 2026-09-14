@@ -533,10 +533,7 @@ local function EnsurePinButton(widget, host, interactive)
             else
                 local descriptor = BuildBindingDescriptor(binding, true)
                 if descriptor and descriptor.value ~= nil then
-                    local ok = Pins:Pin(path, descriptor)
-                    if ok then
-                        Pins:RefreshRuntime()
-                    end
+                    Pins:Pin(path, descriptor)
                 end
             end
 

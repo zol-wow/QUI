@@ -31,7 +31,8 @@ local COLOR_OUT_OF_RANGE = { 0.8, 0.2, 0.2 }
 
 local iconFrame = nil
 local isInitialized = false
-local lastSpellID = nil
+local lastSpellID = nil      -- last query result (reset to force a repaint)
+local displayedSpellID = nil -- what is actually painted on the icon
 local inCombat = false
 
 local GCD_SPELL_ID = 61304
@@ -210,14 +211,31 @@ UpdateIconDisplay = function(spellID)
     local db = GetDB()
     if not db or not db.enabled then
         iconFrame:Hide()
+        displayedSpellID = nil
         return
     end
 
     local isEmpty = (spellID == nil) or
         (not IsSecretValue(spellID) and spellID == 0)
+    displayedSpellID = (not isEmpty) and spellID or nil
     if isEmpty then
-        if not iconFrame:IsShown() then
-            UpdateVisibility()
+        -- No suggestion. Never leave the previous spell on screen: mirror
+        -- Blizzard's single button, which falls back to the Assisted Combat
+        -- action icon, dimmed, with no keybind.
+        UpdateVisibility()
+        local fallback = nil
+        if C_AssistedCombat and C_AssistedCombat.GetActionSpell then
+            local okAct, actionSpellID = ns.SafeCall("best-effort-style", C_AssistedCombat.GetActionSpell)
+            if okAct and actionSpellID and not IsSecretValue(actionSpellID) and actionSpellID ~= 0 then
+                local okTex, tex = ns.SafeCall("best-effort-style", C_Spell.GetSpellTexture, actionSpellID)
+                if okTex then fallback = tex end
+            end
+        end
+        iconFrame.icon:SetTexture(fallback)
+        iconFrame.icon:SetVertexColor(COLOR_UNUSABLE[1], COLOR_UNUSABLE[2], COLOR_UNUSABLE[3], 1)
+        iconFrame.keybindText:SetText("")
+        if iconFrame.cooldown then
+            iconFrame.cooldown:Clear()
         end
         return
     end
@@ -356,10 +374,22 @@ local function DoUpdate(overrideSpellID)
         end
     end
 
-    if spellID ~= lastSpellID then
+    -- Repaint when the query answer changed, or when what is painted no
+    -- longer matches it (e.g. target change reset the cache and the next
+    -- answer is "nothing": the old spell must not stay on screen).
+    local displayedChanged = IsSecretValue(displayedSpellID) or spellID ~= displayedSpellID
+    if spellID ~= lastSpellID or displayedChanged then
         lastSpellID = spellID
         UpdateIconDisplay(spellID)
     end
+end
+
+-- Explicit "no suggestion" from the poller: do not re-query (the API may
+-- still answer with a stale spell after Assisted Combat went away).
+local function ClearIconDisplay()
+    lastSpellID = nil
+    if displayedSpellID == nil then return end
+    UpdateIconDisplay(nil)
 end
 
 RefreshIconFrame = function()
@@ -496,6 +526,30 @@ if AssistedCombatManager and AssistedCombatManager.UpdateAllAssistedHighlightFra
     end)
 end
 
+local POLL_KEY = "QUI_RotationAssistIcon"
+
+-- The EventRegistry/hooksecurefunc paths above only fire while Blizzard's
+-- own highlight poll is running (assistedCombatHighlight CVar on). The shared
+-- poller in keybinds.lua keeps the icon moving regardless.
+local function SyncNextCastPoll()
+    local poll = QUI.AssistedCombatNext
+    if not poll then return end
+    local db = GetDB()
+    if db and db.enabled then
+        poll.Subscribe(POLL_KEY, function(spellID)
+            local cur = GetDB()
+            if not cur or not cur.enabled then return end
+            if spellID == nil then
+                ClearIconDisplay()
+                return
+            end
+            DoUpdate(spellID)
+        end)
+    else
+        poll.Unsubscribe(POLL_KEY)
+    end
+end
+
 local function InitOrCatchUp()
     C_Timer.After(0.5, function()
         if not isInitialized then
@@ -508,6 +562,7 @@ local function InitOrCatchUp()
             RefreshIconFrame()
             DoUpdate()
         end
+        SyncNextCastPoll()
     end)
 end
 
@@ -564,6 +619,7 @@ end
 
 local function RefreshRotationAssistIcon()
     RefreshIconFrame()
+    SyncNextCastPoll()
 end
 
 _G.QUI_RefreshRotationAssistIcon = RefreshRotationAssistIcon

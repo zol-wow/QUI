@@ -194,8 +194,8 @@ local THROTTLE_INTERVAL = 0.1
 
 ns.QUI_GroupFrameIconLayout.HEADER_INIT_CONFIG_FUNC = [[
         local header = self:GetParent()
-        local w = header:GetAttribute("_initialAttribute-unit-width") or 200
-        local h = header:GetAttribute("_initialAttribute-unit-height") or 40
+        local w = header:GetAttribute("qui-unit-width") or 200
+        local h = header:GetAttribute("qui-unit-height") or 40
         self:SetWidth(w)
         self:SetHeight(h)
         self:SetAttribute("*type1", "target")
@@ -373,7 +373,7 @@ local function UseRaidSectionHeaders(db)
     local layout = raidVdb and raidVdb.layout
     return IsMultiHeaderMode()
         or GetRaidSelfFirst(db)
-        or (layout and layout.limitGroupsByRaidSize == true)
+        or _state.IsRaidGroupLimitEnabled(layout)
         -- Hidden players need computed nameLists in every raid mode, so the
         -- single groupFilter-driven raid header can't be used.
         or _state.GetHiddenPlayerSet(db) ~= nil
@@ -394,8 +394,7 @@ _state.UseRaidNameListSections = function(db, layout)
     if _state.GetHiddenPlayerSet(db) ~= nil then
         return true
     end
-    return layout
-        and layout.limitGroupsByRaidSize == true
+    return _state.IsRaidGroupLimitEnabled(layout)
         and (layout.groupBy or "GROUP") ~= "GROUP"
 end
 
@@ -415,13 +414,31 @@ local function GetLayoutGrowDirection(layout, fallback)
     return fallback or "DOWN"
 end
 
+-- Raid group limits. Two independent layout toggles cap which subgroups the
+-- raid headers show:
+--   limitGroupsByRaidSize  -> groups 1-4 in Mythic (difficulty 16), 1-6 elsewhere
+--   hideBenchGroupsInMythic -> groups 1-6 in Mythic only (7-8 are the bench),
+--                             no cap outside Mythic
+-- When both are on the stricter cap wins. Either toggle forces the
+-- section-header / nameList paths (see UseRaidSectionHeaders) so the cap
+-- applies in every Group By mode, including flat layouts.
+_state.IsRaidGroupLimitEnabled = function(layout)
+    if not layout then return false end
+    return layout.limitGroupsByRaidSize == true
+        or layout.hideBenchGroupsInMythic == true
+end
+
 _state.GetRaidGroupLimit = function(layout)
-    if not layout or layout.limitGroupsByRaidSize ~= true then
+    if not _state.IsRaidGroupLimitEnabled(layout) then
         return 8
     end
 
     local difficultyID = _G.GetInstanceInfo and select(3, _G.GetInstanceInfo())
-    return difficultyID == 16 and 4 or 6
+    local isMythic = (difficultyID == 16)
+    if layout.limitGroupsByRaidSize == true then
+        return isMythic and 4 or 6
+    end
+    return isMythic and 6 or 8
 end
 
 _state.GetRaidGroupFilterString = function(layout)
@@ -716,9 +733,14 @@ end
 QUI_GF.GetVisualDB = GetVisualDB
 QUI_GF.CalculateHeaderSize = CalculateHeaderSize
 
+function _state.TooltipsSuppressed(general)
+    if not general or general.showTooltips == false then return true end
+    return general.hideTooltipsInCombat == true and InCombatLockdown()
+end
+
 local function ShowUnitTooltip(frame)
     local general = GetGeneralSettings(frame._isRaid)
-    if not general or general.showTooltips == false then return end
+    if _state.TooltipsSuppressed(general) then return end
     local unit = QUI_GF.GetFrameUnit(frame)
     if not unit or not UnitExists(unit) then return end
     GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
@@ -731,6 +753,19 @@ local function HideUnitTooltip()
     if t then t:Cancel(); _state._tooltipTimer = nil end
     _state._tooltipPending = nil
     GameTooltip:Hide()
+end
+
+-- Combat start: drop a group-frame tooltip that is already open (or pending)
+-- when the owning frame's profile asks for tooltips to stay hidden in combat.
+function _state.HideUnitTooltipOnCombatStart()
+    local pending = _state._tooltipPending
+    local owner = GameTooltip:IsShown() and GameTooltip:GetOwner() or nil
+    local frame = pending or owner
+    if not frame or not QUI_GF.GetFrameUnit(frame) then return end
+    local general = GetGeneralSettings(frame._isRaid)
+    if general and general.hideTooltipsInCombat == true then
+        HideUnitTooltip()
+    end
 end
 
 local function GetHealthBarColor(unit, isRaid)
@@ -2074,7 +2109,7 @@ local function DecorateGroupFrame(frame)
 
         frame:HookScript("OnEnter", function(self)
             local general = GetGeneralSettings(self._isRaid)
-            if not general or general.showTooltips == false then return end
+            if _state.TooltipsSuppressed(general) then return end
             _state._tooltipPending = self
             if _state._tooltipTimer then return end
             _state._tooltipTimer = C_Timer.NewTimer(0.10, function()
@@ -2660,6 +2695,11 @@ local function ConfigurePartyHeader(header)
     local layout = GetLayoutSettings(false)
     if not layout then return end
 
+    local mode = "party"
+    local w, h = GetFrameDimensions(mode)
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", w)
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", h)
+
     local db = GetSettings()
     local selfFirst = GetPartySelfFirst(db)
     local inParty = IsInGroup() and not IsInRaid()
@@ -2672,8 +2712,6 @@ local function ConfigurePartyHeader(header)
     _state.SetHeaderAttributeIfChanged(header, "maxColumns", 1)
     _state.SetHeaderAttributeIfChanged(header, "unitsPerColumn", 5)
 
-    local mode = "party"
-    local w, h = GetFrameDimensions(mode)
     local spacing = layout.spacing or 2
 
     local grow = GetLayoutGrowDirection(layout, "DOWN")
@@ -2725,23 +2763,22 @@ local function ConfigurePartyHeader(header)
         -- valid filtered state instead of briefly showing everyone.
         _state.SetHeaderAttributeIfChanged(header, "nameList", nil)
     end
-
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttributeNames", "unit-width,unit-height")
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", w)
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", h)
 end
 
 local function ConfigureRaidHeader(header)
     local layout = GetLayoutSettings(true)
     if not layout then return end
 
+    local mode = GetGroupMode()
+    local w, h = GetFrameDimensions(mode ~= "party" and mode or "small")
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", w)
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", h)
+
     _state.SetHeaderAttributeIfChanged(header, "showRaid", true)
     _state.SetHeaderAttributeIfChanged(header, "showParty", false)
     _state.SetHeaderAttributeIfChanged(header, "showPlayer", false)
     _state.SetHeaderAttributeIfChanged(header, "showSolo", false)
 
-    local mode = GetGroupMode()
-    local w, h = GetFrameDimensions(mode)
     local spacing = layout.spacing or 2
     local groupSpacing = layout.groupSpacing or 10
 
@@ -2813,10 +2850,6 @@ local function ConfigureRaidHeader(header)
     else
         _state.SetHeaderAttributeIfChanged(header, "sortMethod", layout.sortMethod or "INDEX")
     end
-
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttributeNames", "unit-width,unit-height")
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", w)
-    _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", h)
 end
 
 _state.SetHeaderAttributeIfChanged = function(header, name, value)
@@ -2830,7 +2863,7 @@ local function ConfigureRaidGroupHeaders()
     if not layout then return end
 
     local mode = GetGroupMode()
-    local w, h = GetFrameDimensions(mode)
+    local w, h = GetFrameDimensions(mode ~= "party" and mode or "small")
     local spacing = layout.spacing or 2
 
     local grow = GetLayoutGrowDirection(layout, "DOWN")
@@ -2856,6 +2889,8 @@ local function ConfigureRaidGroupHeaders()
     for g, header in ipairs(QUI_GF.raidGroupHeaders) do
         local section = sections and sections[g] or nil
         if header then
+            _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", w)
+            _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", h)
             _state.SetHeaderAttributeIfChanged(header, "point", point)
             _state.SetHeaderAttributeIfChanged(header, "xOffset", xOff)
             _state.SetHeaderAttributeIfChanged(header, "yOffset", yOff)
@@ -2907,10 +2942,6 @@ local function ConfigureRaidGroupHeaders()
                     _state.SetHeaderAttributeIfChanged(header, "sortMethod", "INDEX")
                 end
             end
-
-            _state.SetHeaderAttributeIfChanged(header, "_initialAttributeNames", "unit-width,unit-height")
-            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", w)
-            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", h)
         end
     end
 
@@ -3068,6 +3099,109 @@ function _state.RefreshAllRaidGroupLabels()
     end
 end
 
+function _state.EnsureRaidHeaders()
+    if InCombatLockdown() and not _state.inInitSafeWindow then return end
+    local db = GetSettings()
+    if not db then return end
+    local useSections = UseRaidSectionHeaders(db)
+    local layout = GetLayoutSettings(true)
+    local groupBy = layout and layout.groupBy or "GROUP"
+    local count = groupBy == "CLASS" and MAX_RAID_SECTION_HEADERS
+        or groupBy == "ROLE" and #RAID_SECTION_ROLE_ORDER
+        or groupBy == "GROUP" and 8 or 1
+    if useSections then
+        local ready = #QUI_GF.raidGroupHeaders >= count
+        if ready and groupBy == "GROUP" then
+            for g = 1, count do
+                if not QUI_GF.raidGroupHeaders[g]:GetAttribute("child5") then
+                    ready = false
+                    break
+                end
+            end
+        end
+        if ready then return end
+    elseif QUI_GF.headers.raid then
+        return
+    end
+
+    local raidRoot = EnsureAnchorFrame("raid")
+    local rootShown = raidRoot:IsShown()
+    local mode = GetGroupMode()
+    local w, h = GetFrameDimensions(mode ~= "party" and mode or "small")
+    local grow = GetLayoutGrowDirection(layout, "DOWN")
+    local spacing = layout and layout.spacing or 2
+    local preallocate = not useSections and 40 or groupBy == "GROUP" and 5 or nil
+
+    for g = 1, useSections and count or 1 do
+        local header
+        if useSections then
+            header = QUI_GF.raidGroupHeaders[g]
+        else
+            header = QUI_GF.headers.raid
+        end
+        if not header then
+            local name = useSections and ("QUI_RaidGroup" .. g .. "Header") or "QUI_RaidHeader"
+            header = CreateFrame("Frame", name, raidRoot, "SecureGroupHeaderTemplate")
+            header:Hide()
+            if useSections then
+                header._raidGroupIndex = g
+                QUI_GF.raidGroupHeaders[g] = header
+            else
+                QUI_GF.headers.raid = header
+            end
+            header:SetAttribute("template", "SecureUnitButtonTemplate,BackdropTemplate,PingableUnitFrameTemplate")
+            header.QUI_OnChildCreated = QUI_GF.HeaderChildCreated
+            header:SetAttribute("initialConfigFunction", ns.QUI_GroupFrameIconLayout.HEADER_INIT_CONFIG_FUNC)
+            header:SetMovable(true)
+            header:SetClampedToScreen(true)
+            header:SetSize(w, h)
+
+            if useSections then
+                header:SetAttribute("showRaid", true)
+                header:SetAttribute("showParty", false)
+                header:SetAttribute("showPlayer", false)
+                header:SetAttribute("showSolo", false)
+                header:SetAttribute("groupBy", "GROUP")
+                header:SetAttribute("groupFilter", tostring(g))
+                header:SetAttribute("groupingOrder", tostring(g))
+                header:SetAttribute("maxColumns", 1)
+                header:SetAttribute("unitsPerColumn", 5)
+                header:SetAttribute("point", grow == "UP" and "BOTTOM" or grow == "LEFT" and "RIGHT"
+                    or grow == "RIGHT" and "LEFT" or "TOP")
+                header:SetAttribute("xOffset", grow == "RIGHT" and spacing or grow == "LEFT" and -spacing or 0)
+                header:SetAttribute("yOffset", grow == "UP" and spacing or grow == "DOWN" and -spacing or 0)
+                header:SetAttribute("columnAnchorPoint", GetRaidColumnAnchorPoint(layout, grow))
+            else
+                ConfigureRaidHeader(header)
+            end
+        end
+
+        _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", w)
+        _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", h)
+
+        if preallocate and not header:GetAttribute("child" .. preallocate) then
+            local headerShown = header:IsShown()
+            header:Hide()
+            if useSections then
+                header:SetAttribute("maxColumns", 1)
+                header:SetAttribute("unitsPerColumn", 5)
+            end
+            header:SetAttribute("showPlayer", true)
+            header:SetAttribute("showSolo", true)
+            header:SetAttribute("startingIndex", 1 - preallocate)
+            raidRoot:Show()
+            header:Show()
+            header:SetAttribute("startingIndex", 1)
+            header:Hide()
+            header:SetAttribute("showPlayer", false)
+            header:SetAttribute("showSolo", false)
+            if headerShown then header:Show() end
+        end
+    end
+    if not rootShown then raidRoot:Hide() end
+    _state.ApplyHUDLayering()
+end
+
 local function CreateHeaders()
     local db = GetSettings()
     if not db then return end
@@ -3109,17 +3243,6 @@ local function CreateHeaders()
     partyRoot:Hide()
     ConfigurePartyHeader(partyHeader)
 
-    local raidHeader = CreateFrame("Frame", "QUI_RaidHeader", raidRoot, "SecureGroupHeaderTemplate")
-    raidHeader:SetAttribute("template", "SecureUnitButtonTemplate,BackdropTemplate,PingableUnitFrameTemplate")
-    raidHeader.QUI_OnChildCreated = QUI_GF.HeaderChildCreated
-    raidHeader:SetAttribute("initialConfigFunction", initConfigFunc)
-    QUI_GF.headers.raid = raidHeader
-    ConfigureRaidHeader(raidHeader)
-
-    local raidCount = math_max(IsInRaid() and GetNumGroupMembers() or 25, 5)
-    local raidW, raidH = CalculateHeaderSize(db, raidCount)
-    raidHeader:SetSize(raidW, raidH)
-
     raidRoot:ClearAllPoints()
     local faRaid = faDB and faDB.raidFrames
     if faRaid and faRaid.point then
@@ -3130,78 +3253,6 @@ local function CreateHeaders()
         local raidOffY = raidPos and raidPos.offsetY or 0
         raidRoot:SetPoint("CENTER", UIParent, "CENTER", raidOffX, raidOffY)
     end
-    raidHeader:SetMovable(true)
-    raidHeader:SetClampedToScreen(true)
-
-    raidRoot:Show()
-    raidHeader:SetAttribute("showPlayer", true)
-    raidHeader:SetAttribute("showSolo", true)
-    raidHeader:SetAttribute("startingIndex", -39)
-    raidHeader:Show()
-    raidHeader:SetAttribute("startingIndex", 1)
-    raidHeader:Hide()
-    raidRoot:Hide()
-    ConfigureRaidHeader(raidHeader)
-
-    raidRoot:Show()
-    for g = 1, MAX_RAID_SECTION_HEADERS do
-        local groupHeader = CreateFrame("Frame", "QUI_RaidGroup" .. g .. "Header", raidRoot, "SecureGroupHeaderTemplate")
-        groupHeader:SetAttribute("template", "SecureUnitButtonTemplate,BackdropTemplate,PingableUnitFrameTemplate")
-        groupHeader.QUI_OnChildCreated = QUI_GF.HeaderChildCreated
-        groupHeader:SetAttribute("initialConfigFunction", initConfigFunc)
-        groupHeader._raidGroupIndex = g
-        QUI_GF.raidGroupHeaders[g] = groupHeader
-        groupHeader:SetAttribute("showRaid", true)
-        groupHeader:SetAttribute("showParty", false)
-        groupHeader:SetAttribute("showPlayer", false)
-        groupHeader:SetAttribute("showSolo", false)
-        groupHeader:SetAttribute("groupBy", "GROUP")
-        groupHeader:SetAttribute("groupFilter", tostring(g))
-        groupHeader:SetAttribute("groupingOrder", tostring(g))
-        groupHeader:SetAttribute("maxColumns", 8)
-        groupHeader:SetAttribute("unitsPerColumn", 5)
-        groupHeader:SetAttribute("_initialAttributeNames", "unit-width,unit-height")
-
-        local rW, rH = GetFrameDimensions("small")
-        groupHeader:SetAttribute("_initialAttribute-unit-width", rW)
-        groupHeader:SetAttribute("_initialAttribute-unit-height", rH)
-        groupHeader:SetSize(rW, rH)
-        groupHeader:SetMovable(true)
-        groupHeader:SetClampedToScreen(true)
-
-        local layoutDB = GetLayoutSettings(true)
-        local preGrow = GetLayoutGrowDirection(layoutDB, "DOWN")
-        local preSpacing = layoutDB and layoutDB.spacing or 2
-        local preColumnAnchorPoint = GetRaidColumnAnchorPoint(layoutDB, preGrow)
-        if preGrow == "DOWN" then
-            groupHeader:SetAttribute("point", "TOP")
-            groupHeader:SetAttribute("xOffset", 0)
-            groupHeader:SetAttribute("yOffset", -preSpacing)
-        elseif preGrow == "UP" then
-            groupHeader:SetAttribute("point", "BOTTOM")
-            groupHeader:SetAttribute("xOffset", 0)
-            groupHeader:SetAttribute("yOffset", preSpacing)
-        elseif preGrow == "RIGHT" then
-            groupHeader:SetAttribute("point", "LEFT")
-            groupHeader:SetAttribute("xOffset", preSpacing)
-            groupHeader:SetAttribute("yOffset", 0)
-        elseif preGrow == "LEFT" then
-            groupHeader:SetAttribute("point", "RIGHT")
-            groupHeader:SetAttribute("xOffset", -preSpacing)
-            groupHeader:SetAttribute("yOffset", 0)
-        end
-        groupHeader:SetAttribute("columnAnchorPoint", preColumnAnchorPoint)
-
-        groupHeader:SetAttribute("showPlayer", true)
-        groupHeader:SetAttribute("showSolo", true)
-        groupHeader:SetAttribute("startingIndex", -39)
-        groupHeader:Show()
-        groupHeader:SetAttribute("startingIndex", 1)
-        groupHeader:Hide()
-        groupHeader:SetAttribute("showPlayer", false)
-        groupHeader:SetAttribute("showSolo", false)
-    end
-    raidRoot:Hide()
 
     local selfHeader = CreateFrame("Frame", "QUI_SelfHeader", partyRoot, "SecureGroupHeaderTemplate")
     selfHeader:SetAttribute("template", "SecureUnitButtonTemplate,BackdropTemplate,PingableUnitFrameTemplate")
@@ -3218,9 +3269,8 @@ local function CreateHeaders()
     local partyDims = db.party and db.party.dimensions
     local selfW = partyDims and partyDims.partyWidth or 200
     local selfH = partyDims and partyDims.partyHeight or 40
-    selfHeader:SetAttribute("_initialAttributeNames", "unit-width,unit-height")
-    selfHeader:SetAttribute("_initialAttribute-unit-width", selfW)
-    selfHeader:SetAttribute("_initialAttribute-unit-height", selfH)
+    selfHeader:SetAttribute("qui-unit-width", selfW)
+    selfHeader:SetAttribute("qui-unit-height", selfH)
     selfHeader:SetSize(selfW, selfH)
     selfHeader:SetMovable(true)
     selfHeader:SetClampedToScreen(true)
@@ -3230,6 +3280,8 @@ local function CreateHeaders()
     selfHeader:Show()
     selfHeader:Hide()
     partyRoot:Hide()
+
+    _state.EnsureRaidHeaders()
 end
 
 local function InitSpotlightChildren(header, force)
@@ -3275,6 +3327,8 @@ local _parkedSpotlight = nil
 local function ApplySpotlightHeaderConfig(container, header, spot)
     local w = spot.frameWidth or 180
     local h = spot.frameHeight or 36
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", w)
+    _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", h)
 
     container:SetSize(w, h)
     container:ClearAllPoints()
@@ -3321,9 +3375,6 @@ local function ApplySpotlightHeaderConfig(container, header, spot)
             header:SetAttribute("nameList", nameList)
         end
     end
-
-    header:SetAttribute("_initialAttribute-unit-width", w)
-    header:SetAttribute("_initialAttribute-unit-height", h)
 
     header:SetAttribute("point", nil)
     header:SetAttribute("xOffset", nil)
@@ -3740,8 +3791,8 @@ local function UpdateHeaderSizes()
         local partyDims = db.party and db.party.dimensions
         local sw = partyDims and partyDims.partyWidth or 200
         local sh = partyDims and partyDims.partyHeight or 40
-        _state.SetHeaderAttributeIfChanged(selfHdr, "_initialAttribute-unit-width", sw)
-        _state.SetHeaderAttributeIfChanged(selfHdr, "_initialAttribute-unit-height", sh)
+        _state.SetHeaderAttributeIfChanged(selfHdr, "qui-unit-width", sw)
+        _state.SetHeaderAttributeIfChanged(selfHdr, "qui-unit-height", sh)
         selfHdr:SetSize(sw, sh)
         local child = selfHdr:GetAttribute("child1")
         if child then child:SetSize(sw, sh) end
@@ -3830,6 +3881,8 @@ local function UpdateHeaderVisibility(skipDeferredRefresh)
         return
     end
 
+    _state.EnsureRaidHeaders()
+
     local partySelfFirst = GetPartySelfFirst(db)
     local selfHeader = QUI_GF.headers.self
     local useRaidSections = UseRaidSectionHeaders(db)
@@ -3906,11 +3959,7 @@ local function UpdateHeaderVisibility(skipDeferredRefresh)
         end
     end
 
-    if skipDeferredRefresh then
-        ApplyChildFrameLayout()
-    end
     UpdateHeaderSizes()
-    UpdateAnchorFrames()
 
     _pending.initSafe = false
 
@@ -3996,15 +4045,14 @@ end
 
 local function UpdateFrameScaling(forceUpdate)
     local mode = GetGroupMode()
+    if not forceUpdate and mode == _state.lastMode then return end
 
     if InCombatLockdown() and not _state.inInitSafeWindow then
         _pending.resize = true
         _pending.resizeForce = _pending.resizeForce or (forceUpdate and true or false)
-        ApplyChildFrameLayout()
         return
     end
 
-    if not forceUpdate and mode == _state.lastMode then return end
     _state.lastMode = mode
 
     local partyW, partyH = GetFrameDimensions("party")
@@ -4012,23 +4060,23 @@ local function UpdateFrameScaling(forceUpdate)
 
     local partyHeader = QUI_GF.headers.party
     if partyHeader then
-        _state.SetHeaderAttributeIfChanged(partyHeader, "_initialAttribute-unit-width", partyW)
-        _state.SetHeaderAttributeIfChanged(partyHeader, "_initialAttribute-unit-height", partyH)
+        _state.SetHeaderAttributeIfChanged(partyHeader, "qui-unit-width", partyW)
+        _state.SetHeaderAttributeIfChanged(partyHeader, "qui-unit-height", partyH)
     end
     local selfHeader = QUI_GF.headers.self
     if selfHeader then
-        _state.SetHeaderAttributeIfChanged(selfHeader, "_initialAttribute-unit-width", partyW)
-        _state.SetHeaderAttributeIfChanged(selfHeader, "_initialAttribute-unit-height", partyH)
+        _state.SetHeaderAttributeIfChanged(selfHeader, "qui-unit-width", partyW)
+        _state.SetHeaderAttributeIfChanged(selfHeader, "qui-unit-height", partyH)
     end
     local raidHeader = QUI_GF.headers.raid
     if raidHeader then
-        _state.SetHeaderAttributeIfChanged(raidHeader, "_initialAttribute-unit-width", raidW)
-        _state.SetHeaderAttributeIfChanged(raidHeader, "_initialAttribute-unit-height", raidH)
+        _state.SetHeaderAttributeIfChanged(raidHeader, "qui-unit-width", raidW)
+        _state.SetHeaderAttributeIfChanged(raidHeader, "qui-unit-height", raidH)
     end
     for _, header in ipairs(QUI_GF.raidGroupHeaders) do
         if header then
-            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-width", raidW)
-            _state.SetHeaderAttributeIfChanged(header, "_initialAttribute-unit-height", raidH)
+            _state.SetHeaderAttributeIfChanged(header, "qui-unit-width", raidW)
+            _state.SetHeaderAttributeIfChanged(header, "qui-unit-height", raidH)
         end
     end
 
@@ -4683,6 +4731,7 @@ local function OnEvent(self, event, arg1, ...)
         _state.EnsureCombatVisibleRoots()
         wipe(_range.cache)
         wipe(_range.cacheTime)
+        _state.HideUnitTooltipOnCombatStart()
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         wipe(_range.cache)
@@ -5001,9 +5050,11 @@ function QUI_GF:RefreshAllFrames(_reason)
         for i = 1, #list do
             local frame = list[i]
             if frame and frame:IsShown() then
-                if frame.healthBar then ApplyStatusBarTexture(frame.healthBar) end
-                if frame.healPredictionBar then ApplyStatusBarTexture(frame.healPredictionBar) end
-                if frame.powerBar then ApplyStatusBarTexture(frame.powerBar) end
+                if not rosterRefresh then
+                    if frame.healthBar then ApplyStatusBarTexture(frame.healthBar) end
+                    if frame.healPredictionBar then ApplyStatusBarTexture(frame.healPredictionBar) end
+                    if frame.powerBar then ApplyStatusBarTexture(frame.powerBar) end
+                end
                 local auraDirty = not rosterRefresh or frame._quiRosterAuraDirty
                 local auraCacheRender = auraCacheAvailable and auraDirty
                     and (not GFA.HasActiveConsumersForFrame or GFA:HasActiveConsumersForFrame(frame))
@@ -5084,6 +5135,8 @@ function QUI_GF:RefreshSettings()
         end
     end
 
+    _state.EnsureRaidHeaders()
+
     if self.headers.party then ConfigurePartyHeader(self.headers.party) end
     if UseRaidSectionHeaders(db) then
         ConfigureRaidGroupHeaders()
@@ -5150,7 +5203,7 @@ function QUI_GF:RefreshSettings()
     if PartyTargets then PartyTargets:Configure(self) end
 end
 
-local function ApplyHUDLayering()
+function _state.ApplyHUDLayering()
     local profile = QUI.db and QUI.db.profile
     local layering = profile and profile.hudLayering
     local level = layering and layering.groupFrames or 4
@@ -5184,7 +5237,7 @@ function QUI_GF:Initialize()
 
     RegisterEvents()
 
-    ApplyHUDLayering()
+    _state.ApplyHUDLayering()
 
     UpdateHeaderVisibility()
     UpdateFrameScaling(true)

@@ -599,10 +599,8 @@ local function GetHealthBarColor(unit, settings)
 
     if useClassColor and UnitIsPlayer(unit) then
         local _, class = UnitClass(unit)
-        -- @secret-policy: collapse-only — fall through to hostility/default color
-        if issecretvalue and issecretvalue(class) then class = nil end
         if type(class) == "string" then
-            local color = RAID_CLASS_COLORS[class]
+            local color = C_ClassColor.GetClassColor(class)
             if color then
                 return color.r, color.g, color.b, 1
             end

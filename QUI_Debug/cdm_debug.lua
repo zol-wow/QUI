@@ -2210,18 +2210,6 @@ local function CDMItemAuraStopWatch(silent)
     end
 end
 
-local function CDMItemAuraHasOpaqueValue(value)
-    if CDMGCDIsSecret(value) then return true end
-    return value ~= nil
-end
-
-local function CDMItemAuraField(owner, key)
-    if not owner or CDMGCDIsSecret(owner) then return nil end
-    local ok, value = pcall(function() return owner[key] end)
-    if ok then return value end
-    return nil
-end
-
 local function CDMItemAuraResolveItem(entry)
     if not entry then return nil, nil, nil end
     local itemID, slotID, itemSpellID = EventTraceResolveItemCooldownIdentity(entry)
@@ -2238,34 +2226,6 @@ local function CDMItemAuraSnapshot(icon, elapsed)
         itemStart, itemDuration, itemEnabled = Sources.QueryItemCooldown(itemID)
     end
 
-    local scanner = QUI and QUI.SpellScanner
-    local scannerItemActive, scannerExpiration, scannerDuration, scannerAuraInstanceID, scannerAuraUnit
-    if scanner and scanner.IsItemActive and itemID then
-        local ok, active, expiration, duration, auraInstanceID, auraUnit =
-            pcall(scanner.IsItemActive, itemID)
-        if ok then
-            scannerItemActive = active
-            scannerExpiration = expiration
-            scannerDuration = duration
-            scannerAuraInstanceID = auraInstanceID
-            scannerAuraUnit = auraUnit
-        end
-    end
-
-    local scanned
-    if Sources and Sources.QueryScannedItemAuraInfo and itemID then
-        scanned = Sources.QueryScannedItemAuraInfo(itemID, itemSpellID)
-    end
-
-    local auraUnit = (scanned and scanned.auraUnit) or scannerAuraUnit or "player"
-    local auraInstanceID = scanned and scanned.auraInstanceID or scannerAuraInstanceID
-    local auraData
-    local spellData = ns.CDMSpellData
-    if CDMItemAuraHasOpaqueValue(auraInstanceID) and spellData
-        and spellData.GetCapturedAuraDataByInstanceID then
-        auraData = spellData:GetCapturedAuraDataByInstanceID(auraUnit, auraInstanceID)
-    end
-
     local resolvedState = CDMGCDResolveCooldownState(icon)
     local auraDurObj = resolvedState and resolvedState.durObj
     local cd = icon.Cooldown
@@ -2276,19 +2236,8 @@ local function CDMItemAuraSnapshot(icon, elapsed)
         "slot=" .. CDMGCDValue(slotID),
         "use=" .. CDMGCDValue(itemSpellID),
         "itemCd=" .. CDMGCDValue(itemStart) .. "/" .. CDMGCDValue(itemDuration) .. "/" .. CDMGCDValue(itemEnabled),
-        "scan=" .. CDMGCDValue(scannerItemActive) .. " " .. CDMGCDValue(scannerExpiration) .. "/" .. CDMGCDValue(scannerDuration),
-        "scanInst=" .. tostring(CDMItemAuraHasOpaqueValue(scannerAuraInstanceID)),
-        "scanned=" .. CDMGCDValue(scanned and scanned.active)
-            .. " src=" .. CDMGCDValue(scanned and scanned.source)
-            .. " buff=" .. CDMGCDValue(scanned and scanned.buffSpellID)
-            .. " use=" .. CDMGCDValue(scanned and scanned.useSpellID)
-            .. " exp=" .. CDMGCDValue(scanned and scanned.expiration)
-            .. " dur=" .. CDMGCDValue(scanned and scanned.duration)
-            .. " inst=" .. tostring(CDMItemAuraHasOpaqueValue(scanned and scanned.auraInstanceID)),
+        "nativeAura=" .. tostring(entry._useManagedAura == true or icon._customAuraOverlayPrepared == true),
         "auraObj=" .. CDMGCDValue(auraDurObj),
-        "auraData=" .. CDMGCDValue(auraData)
-            .. " exp=" .. CDMGCDValue(CDMItemAuraField(auraData, "expirationTime"))
-            .. " dur=" .. CDMGCDValue(CDMItemAuraField(auraData, "duration")),
         "resolver=" .. CDMGCDValue(resolvedState and resolvedState.mode)
             .. " src=" .. CDMGCDValue(resolvedState and resolvedState.sourceID)
             .. " active=" .. CDMGCDValue(resolvedState and resolvedState.active)

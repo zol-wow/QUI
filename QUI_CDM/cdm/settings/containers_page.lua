@@ -1909,6 +1909,10 @@ local function RenderEffectsSection(sectionHost, ctx)
         return nil
     end
 
+    local function RefreshGlowEligibility()
+        RefreshGlows(containerKey)
+    end
+
     if containerType == "auraBar" then
         return RenderInfoMessage(
             sectionHost,
@@ -1947,10 +1951,10 @@ local function RenderEffectsSection(sectionHost, ctx)
         local buffSwipeCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showBuffIconSwipe", profile.cooldownSwipe, RefreshSwipe, {
             description = ns.L["Play a swipe animation on buff/debuff icons in this container to represent remaining duration."],
         })
-        local pandemicDebuffCheckbox = gui:CreateFormCheckbox(card.frame, nil, "buffPandemicDebuffEnabled", profile.customGlow, RefreshGlows, {
+        local pandemicDebuffCheckbox = gui:CreateFormCheckbox(card.frame, nil, "buffPandemicDebuffEnabled", profile.customGlow, RefreshGlowEligibility, {
             description = ns.L["Emit a refresh glow during the pandemic window (last ~30% remaining) of harmful auras like DoTs and debuffs."],
         })
-        local pandemicBuffCheckbox = gui:CreateFormCheckbox(card.frame, nil, "buffPandemicBuffEnabled", profile.customGlow, RefreshGlows, {
+        local pandemicBuffCheckbox = gui:CreateFormCheckbox(card.frame, nil, "buffPandemicBuffEnabled", profile.customGlow, RefreshGlowEligibility, {
             description = ns.L["Emit a refresh glow during the pandemic window (last ~30% remaining) of helpful auras like HoTs and self-buffs."],
         })
         card.AddRow(
@@ -2107,9 +2111,6 @@ local function RenderEffectsSection(sectionHost, ctx)
     local glowXOffsetKey = effectsCtx.glowPrefix .. "XOffset"
     local glowYOffsetKey = effectsCtx.glowPrefix .. "YOffset"
     local glowWidgets = {}
-    local function RefreshGlowEligibility()
-        RefreshGlows(containerKey)
-    end
     local function UpdateGlowWidgetStates()
         local enabled = effectsCtx.glowDB[glowEnabledKey] ~= false
         local glowType = effectsCtx.glowDB[glowTypeKey] or "Pixel Glow"
@@ -2150,12 +2151,12 @@ local function RenderEffectsSection(sectionHost, ctx)
         glowWidgets.pandemicBuffRow
     )
     local glowTypeDropdown = gui:CreateFormDropdown(glowCard.frame, nil, GLOW_TYPE_OPTIONS, glowTypeKey, effectsCtx.glowDB, function()
-        RefreshGlows()
+        RefreshGlowEligibility()
         UpdateGlowWidgetStates()
     end, {
         description = ns.L["Which LibCustomGlow style to render. Pixel/Autocast support line count and thickness; Button/Flash/Hammer ignore those controls."],
     })
-    local glowColorPicker = gui:CreateFormColorPicker(glowCard.frame, nil, glowColorKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowColorPicker = gui:CreateFormColorPicker(glowCard.frame, nil, glowColorKey, effectsCtx.glowDB, RefreshGlowEligibility, nil, {
         description = ns.L["Color used for the custom glow effect."],
     })
     glowWidgets.typeRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Glow Type"], glowTypeDropdown)
@@ -2164,10 +2165,10 @@ local function RenderEffectsSection(sectionHost, ctx)
         glowWidgets.typeRow,
         glowWidgets.colorRow
     )
-    local glowLinesSlider = gui:CreateFormSlider(glowCard.frame, nil, 1, 30, 1, glowLinesKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowLinesSlider = gui:CreateFormSlider(glowCard.frame, nil, 1, 30, 1, glowLinesKey, effectsCtx.glowDB, RefreshGlowEligibility, nil, {
         description = ns.L["Number of glow particles/lines. Only used by Pixel Glow and Autocast Shine."],
     })
-    local glowThicknessSlider = gui:CreateFormSlider(glowCard.frame, nil, 1, 10, 1, glowThicknessKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowThicknessSlider = gui:CreateFormSlider(glowCard.frame, nil, 1, 10, 1, glowThicknessKey, effectsCtx.glowDB, RefreshGlowEligibility, nil, {
         description = ns.L["Thickness of each glow line. Only used by Pixel Glow."],
     })
     glowWidgets.linesRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Lines"], glowLinesSlider)
@@ -2176,10 +2177,10 @@ local function RenderEffectsSection(sectionHost, ctx)
         glowWidgets.linesRow,
         glowWidgets.thicknessRow
     )
-    local glowScaleSlider = gui:CreateFormSlider(glowCard.frame, nil, 0.5, 3.0, 0.1, glowScaleKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowScaleSlider = gui:CreateFormSlider(glowCard.frame, nil, 0.5, 3.0, 0.1, glowScaleKey, effectsCtx.glowDB, RefreshGlowEligibility, nil, {
         description = ns.L["Size multiplier for the Autocast Shine glow."],
     })
-    local glowFrequencySlider = gui:CreateFormSlider(glowCard.frame, nil, 0.1, 2.0, 0.05, glowFrequencyKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowFrequencySlider = gui:CreateFormSlider(glowCard.frame, nil, 0.1, 2.0, 0.05, glowFrequencyKey, effectsCtx.glowDB, RefreshGlowEligibility, nil, {
         description = ns.L["How fast the glow animates. Higher values rotate/pulse faster."],
     })
     glowWidgets.scaleRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Shine Scale"], glowScaleSlider)
@@ -2188,10 +2189,10 @@ local function RenderEffectsSection(sectionHost, ctx)
         glowWidgets.scaleRow,
         glowWidgets.frequencyRow
     )
-    local glowXOffsetSlider = gui:CreateFormSlider(glowCard.frame, nil, -20, 20, 1, glowXOffsetKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowXOffsetSlider = gui:CreateFormSlider(glowCard.frame, nil, -20, 20, 1, glowXOffsetKey, effectsCtx.glowDB, RefreshGlowEligibility, nil, {
         description = ns.L["Horizontal pixel offset for the glow effect. Ignored by Button Glow and texture glows."],
     })
-    local glowYOffsetSlider = gui:CreateFormSlider(glowCard.frame, nil, -20, 20, 1, glowYOffsetKey, effectsCtx.glowDB, RefreshGlows, nil, {
+    local glowYOffsetSlider = gui:CreateFormSlider(glowCard.frame, nil, -20, 20, 1, glowYOffsetKey, effectsCtx.glowDB, RefreshGlowEligibility, nil, {
         description = ns.L["Vertical pixel offset for the glow effect. Ignored by Button Glow and texture glows."],
     })
     glowWidgets.xOffsetRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["X Offset"], glowXOffsetSlider)

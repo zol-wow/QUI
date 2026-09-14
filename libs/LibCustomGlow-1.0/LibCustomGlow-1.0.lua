@@ -6,7 +6,7 @@ https://www.wowace.com/projects/libbuttonglow-1-0
 -- luacheck: globals CreateFromMixins ObjectPoolMixin CreateTexturePool CreateFramePool
 
 local MAJOR_VERSION = "LibCustomGlow-1.0"
-local MINOR_VERSION = 26
+local MINOR_VERSION = 27
 if not LibStub then error(MAJOR_VERSION .. " requires LibStub.") end
 local lib, oldversion = LibStub:NewLibrary(MAJOR_VERSION, MINOR_VERSION)
 if not lib then return end
@@ -35,6 +35,21 @@ lib.startList = {}
 lib.stopList = {}
 
 local GlowParent = UIParent
+local function GetGlowSize(frame)
+    local size = frame._quiGlowSize
+    if size then
+        return size.width + (frame._quiGlowWidthOffset or 0),
+            size.height + (frame._quiGlowHeightOffset or 0)
+    end
+    return frame:GetSize()
+end
+
+local function SetGlowSizeSource(frame, parent, widthOffset, heightOffset)
+    frame._quiGlowSize = parent._quiGlowSize
+    frame._quiGlowWidthOffset = widthOffset
+    frame._quiGlowHeightOffset = heightOffset
+end
+
 local GlowMaskPool = {
     createFunc = function(self)
         return self.parent:CreateMaskTexture()
@@ -140,6 +155,7 @@ local function addFrameAndTex(r,color,name,key,N,xOffset,yOffset,texture,texCoor
         r[name..key].name = name..key
     end
     local f = r[name..key]
+    SetGlowSizeSource(f, r, xOffset * 2 - 0.05, yOffset * 2)
 	f:SetFrameLevel(r:GetFrameLevel()+frameLevel)
     f:SetPoint("TOPLEFT",r,"TOPLEFT",-xOffset+0.05,yOffset+0.05)
     f:SetPoint("BOTTOMRIGHT",r,"BOTTOMRIGHT",xOffset,-yOffset+0.05)
@@ -213,7 +229,7 @@ local  pUpdate = function(self,elapsed)
         self.timer = self.timer%1
     end
     local progress = self.timer
-    local width,height = self:GetSize()
+    local width,height = GetGlowSize(self)
     if width ~= self.info.width or height ~= self.info.height then
         local perimeter = 2*(width+height)
         if not (perimeter>0) then
@@ -289,7 +305,7 @@ function lib.PixelGlow_Start(r,color,N,frequency,length,th,xOffset,yOffset,borde
     else
         period = 4
     end
-    local width,height = r:GetSize()
+    local width,height = GetGlowSize(r)
     length = length or math.floor((width+height)*(2/N-0.1))
     length = min(length,min(width,height))
     th = th or 1
@@ -373,7 +389,7 @@ lib.stopList["Pixel Glow"] = lib.PixelGlow_Stop
 
 --Autocast Glow Functions--
 local function acUpdate(self,elapsed)
-    local width,height = self:GetSize()
+    local width,height = GetGlowSize(self)
     if width ~= self.info.width or height ~= self.info.height then
         if width*height == 0 then return end -- Avoid division by zero
         self.info.width = width
@@ -518,7 +534,7 @@ end
 
 local function AnimIn_OnPlay(group)
     local frame = group:GetParent()
-    local frameWidth, frameHeight = frame:GetSize()
+    local frameWidth, frameHeight = GetGlowSize(frame)
     frame.spark:SetSize(frameWidth, frameHeight)
     frame.spark:SetAlpha(not(frame.color) and 1.0 or 0.3*frame.color[4])
     frame.innerGlow:SetSize(frameWidth / 2, frameHeight / 2)
@@ -534,7 +550,7 @@ end
 
 local function AnimIn_OnFinished(group)
     local frame = group:GetParent()
-    local frameWidth, frameHeight = frame:GetSize()
+    local frameWidth, frameHeight = GetGlowSize(frame)
     frame.spark:SetAlpha(0)
     frame.innerGlow:SetAlpha(0)
     frame.innerGlow:SetSize(frameWidth, frameHeight)
@@ -547,7 +563,7 @@ end
 
 local function AnimIn_OnStop(group)
     local frame = group:GetParent()
-    local frameWidth, frameHeight = frame:GetSize()
+    local frameWidth, frameHeight = GetGlowSize(frame)
     frame.spark:SetAlpha(0)
     frame.innerGlow:SetAlpha(0)
     frame.innerGlowOver:SetAlpha(0.0)
@@ -684,7 +700,8 @@ function lib.ButtonGlow_Start(r,color,frequency,frameLevel)
     end
     if r._ButtonGlow then
         local f = r._ButtonGlow
-        local width,height = r:GetSize()
+        local width,height = GetGlowSize(r)
+        SetGlowSizeSource(f, r, width * 0.4, height * 0.4)
         f:SetFrameLevel(r:GetFrameLevel()+frameLevel)
         f:SetSize(width*1.4 , height*1.4)
         f:SetPoint("TOPLEFT", r, "TOPLEFT", -width * 0.2, height * 0.2)
@@ -731,7 +748,8 @@ function lib.ButtonGlow_Start(r,color,frequency,frameLevel)
             updateAlphaAnim(f,color and color[4] or 1)
         end
         r._ButtonGlow = f
-        local width,height = r:GetSize()
+        local width,height = GetGlowSize(r)
+        SetGlowSizeSource(f, r, width * 0.4, height * 0.4)
         f:SetParent(r)
         f:SetFrameLevel(r:GetFrameLevel()+frameLevel)
         f:SetSize(width * 1.4, height * 1.4)
@@ -899,7 +917,7 @@ i wish you'r ok, if you wonder where are this constants coming from, check:
 https://github.com/Gethe/wow-ui-source/blob/eb4459c679a1bd8919cad92934ea83c4f5e77e8b/Interface/FrameXML/ActionButton.lua#L816
 https://github.com/Gethe/wow-ui-source/blob/d8e8ebf572c3b28237cf83e8fc5c0583b5453a2b/Interface/FrameXML/ActionButtonTemplate.xml#L5-L14
                 ]]
-                local width, height = self:GetSize()
+                local width, height = GetGlowSize(self)
                 self.ProcStart:SetSize((width / 42 * 150) / 1.4, (height / 42 * 150) / 1.4)
                 self.ProcStart:Show()
                 self.ProcLoop:Hide()
@@ -960,9 +978,10 @@ function lib.ProcGlow_Start(r, options)
     f:SetParent(r)
     f:SetFrameLevel(r:GetFrameLevel() + options.frameLevel)
 
-    local width, height = r:GetSize()
+    local width, height = GetGlowSize(r)
     local xOffset = options.xOffset + width * 0.2
     local yOffset = options.yOffset + height * 0.2
+    SetGlowSizeSource(f, r, xOffset * 2, yOffset * 2)
     f:SetPoint("TOPLEFT", r, "TOPLEFT", -xOffset, yOffset)
     f:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", xOffset, -yOffset)
 

@@ -391,118 +391,36 @@ function CDMSources.QueryItemCooldown(itemID)
     return nil
 end
 
-local function QueryScannerActive(scanner, spellID, itemID)
-    local active, expiration, duration, auraInstanceID, auraUnit
-    if itemID and scanner.IsItemActive then
-        local ok, a, e, d, instID, unit = ns.SafeCall("chain-next", scanner.IsItemActive, itemID)
-        if ok then
-            active, expiration, duration, auraInstanceID, auraUnit = a, e, d, instID, unit
+function CDMSources.GetItemAuraSpellIDs(itemID, itemSpellID)
+    local ids, seen = {}, {}
+    local function add(id)
+        if type(id) == "number" and not (WoW_IsSecretValue and WoW_IsSecretValue(id))
+            and id > 0 and not seen[id] then
+            seen[id] = true
+            ids[#ids + 1] = id
         end
     end
-    if active ~= true and spellID and scanner.IsSpellActive then
-        local ok, a, e, d, instID, unit = ns.SafeCall("chain-next", scanner.IsSpellActive, spellID)
-        if ok then
-            active, expiration, duration, auraInstanceID, auraUnit = a, e, d, instID, unit
-        end
+    if not itemSpellID and itemID then
+        local _, id = CDMSources.QueryItemSpell(itemID)
+        itemSpellID = id
     end
-    return active == true, expiration, duration, auraInstanceID, auraUnit
-end
-
-local _scannerAuraInfoScratch = {}
-
-local function CopyScannerAuraInfo(data, active, expiration, duration, source, sourceItemID, sourceSpellID,
-                                   auraInstanceID, auraUnit)
-    if not data and not active then return nil end
-    local s = _scannerAuraInfoScratch
-    s.active = active == true
-    s.expiration = expiration
-    s.duration = duration or (data and data.duration)
-    s.auraInstanceID = auraInstanceID
-    s.auraUnit = auraUnit
-    s.useSpellID = data and data.useSpellID or sourceSpellID
-    s.buffSpellID = data and data.buffSpellID or nil
-    s.icon = data and data.icon or nil
-    s.name = data and data.name or nil
-    s.source = source
-    s.sourceItemID = sourceItemID
-    s.sourceSpellID = sourceSpellID
-    return s
-end
-
-local function QueryScannedItemInfo(scanner, itemID)
-    if not itemID or not scanner.GetScannedItemInfo then return nil end
-    local ok, data = ns.SafeCall("best-effort-style", scanner.GetScannedItemInfo, itemID)
-    if ok and type(data) == "table" then
-        return data
-    end
-    return nil
-end
-
-local function QueryScannedSpellInfo(scanner, spellID)
-    if not spellID or not scanner.GetScannedSpellInfo then return nil end
-    local ok, data = ns.SafeCall("best-effort-style", scanner.GetScannedSpellInfo, spellID)
-    if ok and type(data) == "table" then
-        return data
-    end
-    return nil
-end
-
-local function RegisterScannerItemUseSpell(scanner, itemID, spellID)
-    if not itemID or not spellID or not scanner.RegisterItemUseSpell then return end
-    -- (@secret-policy: reject-secret-ids, cdm_sources.lua:279) before this
-    ns.SafeCall("report", scanner.RegisterItemUseSpell, itemID, spellID)
-end
-
-function CDMSources.QueryScannedItemAuraInfo(itemID, itemSpellID)
-    if not itemID and not itemSpellID then return nil end
-
-    local root = _G and _G.QUI or QUI
+    add(itemSpellID)
+    local root = _G.QUI
     local scanner = root and root.SpellScanner
-    if not scanner then return nil end
-
-    local resolvedItemSpellID = itemSpellID
-    if not resolvedItemSpellID and itemID and CDMSources.QueryItemSpell then
-        local _, spellID = CDMSources.QueryItemSpell(itemID)
-        resolvedItemSpellID = spellID
-    end
-    RegisterScannerItemUseSpell(scanner, itemID, resolvedItemSpellID)
-
-    local data = QueryScannedItemInfo(scanner, itemID)
-    local sourceItemID = itemID
-    if not data and itemID then
-        local consumables = ns.ConsumableMacros
-        local getVariantOrder = consumables and consumables.GetVariantOrderForItem
-        local variants = getVariantOrder and getVariantOrder(itemID)
-        if type(variants) == "table" then
-            for _, variantID in ipairs(variants) do
-                if type(variantID) == "number" then
-                    data = QueryScannedItemInfo(scanner, variantID)
-                    if data then
-                        sourceItemID = variantID
-                        break
-                    end
-                end
+    if scanner then
+        local data = scanner.GetScannedItemInfo and itemID and scanner.GetScannedItemInfo(itemID)
+        if not data and scanner.GetScannedItemInfo and itemID then
+            local consumables = ns.ConsumableMacros
+            local variants = consumables and consumables.GetVariantOrderForItem
+                and consumables.GetVariantOrderForItem(itemID)
+            for _, variantID in ipairs(variants or {}) do
+                data = scanner.GetScannedItemInfo(variantID)
+                if data then break end
             end
         end
+        if data then add(data.buffSpellID) end
+        data = scanner.GetScannedSpellInfo and itemSpellID and scanner.GetScannedSpellInfo(itemSpellID)
+        if data then add(data.buffSpellID) end
     end
-    if data then
-        local useSpellID = data.useSpellID or resolvedItemSpellID
-        local active, expiration, duration, auraInstanceID, auraUnit =
-            QueryScannerActive(scanner, useSpellID, sourceItemID)
-        return CopyScannerAuraInfo(data, active, expiration, duration, "item",
-            sourceItemID, useSpellID, auraInstanceID, auraUnit)
-    end
-
-    data = QueryScannedSpellInfo(scanner, resolvedItemSpellID)
-    if data then
-        local active, expiration, duration, auraInstanceID, auraUnit =
-            QueryScannerActive(scanner, resolvedItemSpellID, nil)
-        return CopyScannerAuraInfo(data, active, expiration, duration, "spell",
-            itemID, resolvedItemSpellID, auraInstanceID, auraUnit)
-    end
-
-    local active, expiration, duration, auraInstanceID, auraUnit =
-        QueryScannerActive(scanner, resolvedItemSpellID, itemID)
-    return CopyScannerAuraInfo(nil, active, expiration, duration, "active",
-        itemID, resolvedItemSpellID, auraInstanceID, auraUnit)
+    return ids
 end

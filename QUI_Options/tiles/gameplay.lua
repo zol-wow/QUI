@@ -75,6 +75,18 @@ function V2.Register(frame)
                 sectionNav = true,
                 featureId = "preyTrackerPage",
             },
+            {
+                id = "reminders",
+                name = ns.L["Reminders"],
+                sectionNav = true,
+                featureId = "remindersPage",
+                searchContext = {
+                    tileId = "gameplay",
+                    tabName = ns.L["Gameplay"],
+                    subPageIndex = 9,
+                    subTabName = ns.L["Reminders"],
+                },
+            },
         },
     })
 end
