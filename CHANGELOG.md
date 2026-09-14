@@ -4,6 +4,49 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.1 - 2026-09-14
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+QUI 5.3.1 brings the beta improvements to the stable release, including defensive
+reminders, Bonus Roll filters, and more reliable cooldown, aura, chat, and raid UI.
+
+### Added
+
+- **Optional defensive Reminders** suggest a ready defensive from your per-spec
+  priority list when BigWigs, DBM, or Blizzard's encounter timeline announces an
+  upcoming boss ability. Enable the module under Module Addons and preview it
+  with `/qui reminders test`.
+- **Bonus Roll filters** can hide prompts by raid difficulty, boss, dungeon,
+  Delve, or minimum Mythic+ key level. Recover an unexpired hidden offer with
+  `/qui bonusroll show`, its chat link, or the settings page.
+- **Group Frames can hide tooltips during combat and raid groups 7 and 8 in
+  Mythic raids.**
+
+### Improved
+
+- **Options load on demand and Group Frames allocate raid headers as needed**,
+  reducing repeated startup and roster styling work.
+- **Cooldown Manager custom auras use native tracking and rendering**, with
+  improved refresh handling and reusable glow animations. Native aura sound and
+  text-to-speech settings remain managed through Blizzard's Cooldown Manager.
+
+### Fixed
+
+- **Cooldown Manager preserves distinct native buff slots, centered aura rows,
+  and group spacing through combat.** Target and focus auras refresh when units
+  change, pandemic glows honor settings, and Rotation Helper clears stale hints.
+- **Chat preserves native whisper recipients, reply routing, realm formatting,
+  and achievement links** when WoW restricts message information. Input follows
+  the active QUI window, and channel menus create filtered chat tabs.
+- **Castbar and minimap anchors retain their intended behavior**, including
+  protected followers, Danders frames, frame scale, and saved datatext positions.
+- **New raid members use configured frame dimensions**, arena target health
+  bars retain class colors, and click-cast editing preserves imported macro names.
+- **Bags preserve item levels for upgraded variants**, and pinning unchanged
+  settings avoids unnecessary full-addon refreshes.
+
 ## v5.3.1-beta11 - 2026-09-14
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
