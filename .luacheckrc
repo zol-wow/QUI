@@ -85,6 +85,7 @@ globals = {
 
 -- WoW client globals — read-only from addon code.
 read_globals = {
+    "AcceptResurrect", "ResurrectHasSickness", "ResurrectHasTimer", "C_InstanceEncounter",
     -- Frame creation / UI primitives
     "CreateFrame", "CreateFont", "EnumerateFrames", "UIParent", "WorldFrame", "GameTooltip",
     "QuickKeybindFrame", "ShowUIPanel", "UIFrameFadeOut", "Settings",

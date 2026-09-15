@@ -268,6 +268,12 @@ local defaults = {
             autoRoleAccept = true,
             autoAcceptInvites = "all",
             autoAcceptSummons = "off",
+            autoAcceptResurrection = {
+                dungeon = "off",
+                raid = "off",
+                pvp = "off",
+                world = "off",
+            },
             autoAcceptQuest = true,
             autoTurnInQuest = true,
             questHoldShift = true,

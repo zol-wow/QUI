@@ -751,6 +751,69 @@ local function OnPartyInvite(inviterName)
     end
 end
 
+local resurrectionRequestID = 0
+local resurrectionScopes = { party = "dungeon", raid = "raid", pvp = "pvp", arena = "pvp" }
+
+local function ResurrectionIsOutOfCombat(offerer)
+    if InCombatLockdown() or UnitAffectingCombat("player") or C_InstanceEncounter.IsEncounterInProgress() then return false end
+    if Helpers.IsSecretValue(offerer) or type(offerer) ~= "string" or offerer == "" then return false end
+
+    local function MatchesOfferer(unit)
+        local name, realm = UnitFullName(unit)
+        if Helpers.IsSecretValue(name) or Helpers.IsSecretValue(realm) then return nil end -- @secret-policy: reject-secret-resurrector
+        if not name then return false end
+        return offerer == name or (realm and realm ~= "" and offerer == name .. "-" .. realm)
+    end
+
+    local inRaid = IsInRaid()
+    local prefix = inRaid and "raid" or "party"
+    local count = inRaid and GetNumGroupMembers() or 4
+    local resurrector
+    for i = 1, count do
+        local unit = prefix .. i
+        if UnitExists(unit) then
+            if UnitAffectingCombat(unit) then return false end
+            local matches = MatchesOfferer(unit)
+            if matches == nil then return false end
+            if matches then
+                if resurrector then return false end
+                resurrector = unit
+            end
+        end
+    end
+    if not resurrector and UnitExists("target") and MatchesOfferer("target") then
+        resurrector = "target"
+    end
+    return resurrector ~= nil and UnitIsConnected(resurrector)
+        and not UnitIsDeadOrGhost(resurrector) and not UnitAffectingCombat(resurrector)
+end
+
+local function ShouldAcceptResurrection(offerer)
+    local settings = GetSettings()
+    local modes = settings and settings.autoAcceptResurrection
+    if type(modes) ~= "table" or IsShiftKeyDown() or not UnitIsDeadOrGhost("player") then return false end
+    local inInstance, instanceType = IsInInstance()
+    local scope = resurrectionScopes[instanceType]
+    if not inInstance then scope = "world" end
+    local mode = scope and modes[scope]
+    if mode ~= "always" and mode ~= "outOfCombat" then return false end
+    if ResurrectHasSickness() or ResurrectHasTimer() then return false end
+    return mode == "always" or ResurrectionIsOutOfCombat(offerer)
+end
+
+local function OnResurrectRequest(offerer)
+    resurrectionRequestID = resurrectionRequestID + 1
+    local requestID = resurrectionRequestID
+    if not ShouldAcceptResurrection(offerer) then return end
+    local inInstance, instanceType = IsInInstance()
+    C_Timer.After(0, function()
+        if requestID ~= resurrectionRequestID or not StaticPopup_Visible("RESURRECT_NO_TIMER") then return end
+        local currentInInstance, currentType = IsInInstance()
+        if currentInInstance ~= inInstance or currentType ~= instanceType then return end
+        if ShouldAcceptResurrection(offerer) then AcceptResurrect() end
+    end)
+end
+
 local summonAcceptPending = false
 local PlayerCanTeleport = _G.PlayerCanTeleport
 
@@ -1384,6 +1447,7 @@ qolFrame:RegisterEvent("MERCHANT_SHOW")
 qolFrame:RegisterEvent("LFG_ROLE_CHECK_SHOW")
 qolFrame:RegisterEvent("PARTY_INVITE_REQUEST")
 qolFrame:RegisterEvent("CONFIRM_SUMMON")
+qolFrame:RegisterEvent("RESURRECT_REQUEST")
 qolFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 qolFrame:RegisterEvent("DUEL_REQUESTED")
 qolFrame:RegisterEvent("PET_BATTLE_PVP_DUEL_REQUESTED")
@@ -1410,6 +1474,8 @@ qolFrame:SetScript("OnEvent", function(self, event, ...)
         OnPartyInvite(...)
     elseif event == "CONFIRM_SUMMON" then
         OnConfirmSummon()
+    elseif event == "RESURRECT_REQUEST" then
+        OnResurrectRequest(...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         TryAcceptPendingSummon()
     elseif event == "DUEL_REQUESTED" then
@@ -1417,6 +1483,7 @@ qolFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PET_BATTLE_PVP_DUEL_REQUESTED" then
         OnPetBattleDuelRequested()
     elseif event == "PLAYER_DEAD" then
+        resurrectionRequestID = resurrectionRequestID + 1
         OnPlayerDead()
     elseif event == "QUEST_DETAIL" then
         OnQuestDetail()
@@ -1433,10 +1500,12 @@ qolFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "CHALLENGE_MODE_COMPLETED" or event == "CHALLENGE_MODE_RESET" then
         ScheduleMythicPlusUpdate(5)
     elseif event == "PLAYER_ENTERING_WORLD" then
+        resurrectionRequestID = resurrectionRequestID + 1
         ScheduleMythicPlusUpdate(2)
         C_Timer.After(2, UpdateRaidAutoLogging)
         C_Timer.After(2, RefreshPopupBlocker)
     elseif event == "ZONE_CHANGED_NEW_AREA" then
+        resurrectionRequestID = resurrectionRequestID + 1
         UpdateMythicPlusAutoLogging()
         UpdateRaidAutoLogging()
     elseif event == "AUCTION_HOUSE_SHOW" then
