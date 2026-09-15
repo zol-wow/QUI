@@ -4,6 +4,28 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-ptr-alpha5 - 2026-09-14
+
+> ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
+> not load on the live 12.1 client.
+
+Includes the stable 5.3.1 fixes while retaining PTR features.
+
+### Fixed
+
+- **Cooldown Manager keeps native buff slots distinct and correctly placed in
+  combat**, hides duplicate base icons, and keeps mixed aura rows centered.
+- **Target and focus auras refresh when you switch units**, including native
+  buff mirrors, custom aura containers, and unit-frame auras.
+- **Pandemic glows honor the selected style and settings**, preserve the size
+  of resized and non-square native icons, and retain PTR pulse and flash styles.
+  Native proc and cast-highlight glows also avoid restricted-size errors.
+- **New party and raid members use the configured Group Frame dimensions**,
+  including separate raid groups, self frames, and spotlights.
+- **Chat honors realm-name preferences for restricted senders**, upgraded bag
+  items keep the correct item level, and imported click-cast macros retain
+  their names when edited or saved.
+
 ## v5.5.0-ptr-alpha4 - 2026-09-12
 
 > ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
