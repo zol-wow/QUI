@@ -2737,9 +2737,10 @@ function C_CinematicList.GetUICinematicList(...) end
 
 C_ClassColor = {}
 ---@param className? string
+---@param tintColor? number
 ---@param ... any
 ---@return number classColor
-function C_ClassColor.GetClassColor(className, ...) end
+function C_ClassColor.GetClassColor(className, tintColor, ...) end
 
 C_ClassTalents = {}
 --- Returns true only if the player has staged changes and can commit their talents in their current state.
@@ -11718,7 +11719,14 @@ function C_PvP.GetRandomEpicBGRewards(...) end
 ---@return table itemRewards
 ---@return table currencyRewards
 ---@return any roleShortageBonus
-function C_PvP.GetRandomTrainingGroundRewards(...) end
+function C_PvP.GetRandomTrainingGroundArenaRewards(...) end
+---@param ... any
+---@return number honor
+---@return number experience
+---@return table itemRewards
+---@return table currencyRewards
+---@return any roleShortageBonus
+function C_PvP.GetRandomTrainingGroundBGRewards(...) end
 ---@param ... any
 ---@return number honor
 ---@return number experience
@@ -11805,8 +11813,11 @@ function C_PvP.HasArenaSkirmishWinToday(...) end
 ---@return boolean hasStarted
 function C_PvP.HasMatchStarted(...) end
 ---@param ... any
----@return boolean hasRandomTrainingGroundWinToday
-function C_PvP.HasRandomTrainingGroundWinToday(...) end
+---@return boolean hasRandomTrainingGroundArenaWinToday
+function C_PvP.HasRandomTrainingGroundArenaWinToday(...) end
+---@param ... any
+---@return boolean hasRandomTrainingGroundBGWinToday
+function C_PvP.HasRandomTrainingGroundBGWinToday(...) end
 ---@param ... any
 ---@return boolean isActiveBattlefield
 function C_PvP.IsActiveBattlefield(...) end
@@ -11900,7 +11911,7 @@ function C_PvP.JoinBrawl(isSpecialBrawl, ...) end
 ---@param ... any
 function C_PvP.JoinRandomTrainingGroundArena(...) end
 ---@param ... any
-function C_PvP.JoinRandomTrainingGroundBattleground(...) end
+function C_PvP.JoinRandomTrainingGroundBG(...) end
 ---@param ... any
 function C_PvP.JoinRatedBGBlitz(...) end
 ---@param trainingGroundID? number
@@ -18244,6 +18255,7 @@ function GetPlayerFacing(...) end
 ---@return number sex
 ---@return string name
 ---@return string realmName
+---@return number level
 function GetPlayerInfoByGUID(guid, ...) end
 ---@param ... any
 ---@return number basePowerRegen
