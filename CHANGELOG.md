@@ -4,6 +4,33 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-ptr-alpha6 - 2026-09-17
+
+> **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** This package supports
+> interfaces 120105 and 16001. It does not target the live 12.1 client.
+
+### Added
+
+- **Initial WoW Forever support in the same download as the PTR build**, with
+  client-aware API handling, bank tab ranges, and primary resource tracking.
+- **Profile exports identify their client**, and imports reject profiles tagged
+  for a different client. Existing untagged exports remain compatible.
+
+### Changed
+
+- **Forever build 69893 keeps Blizzard's secure action buttons and party/raid
+  controls**, with QUI action-bar styling, positioning, microbar and bag controls.
+  Native paging, flyouts, bindings, and casting remain available.
+- **Forever keeps its native bank and Edit Mode behavior.** Secondary resource
+  bars and defensive-spell suggestions requiring LibOpenRaid data are unavailable
+  on Forever in this initial alpha. On build 69893, QUI clickcasting, Quick Salvage,
+  GSE integration, and protected-frame mover placement are also unavailable.
+
+### Fixed
+
+- **Forever Collections tabs switch without the unsupported OnClick error**,
+  retain their icons, and highlight the selected tab correctly.
+
 ## v5.5.0-ptr-alpha5 - 2026-09-14
 
 > ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
