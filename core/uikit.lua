@@ -2783,12 +2783,13 @@ function SkinBase.ClampTextureHidden(tex)
     end
 end
 
-function SkinBase.ClampAllTextures(frame)
+function SkinBase.ClampAllTextures(frame, preserveIcon)
     if not frame or not frame.GetNumRegions then return end
     local regions = { frame:GetRegions() }
     for i = 1, #regions do
         local region = regions[i]
-        if region and region.IsObjectType and region:IsObjectType("Texture") then
+        if region and region.IsObjectType and region:IsObjectType("Texture")
+            and not (preserveIcon and (region == frame.Icon or region == frame.Mask)) then
             SkinBase.ClampTextureHidden(region)
         end
     end
@@ -2981,7 +2982,7 @@ end
 
 local function ReassertTabSkin(tab)
     if not tab or not SkinBase.GetFrameData(tab, "qTabArtClamped") then return end
-    SkinBase.ClampAllTextures(tab)
+    SkinBase.ClampAllTextures(tab, true)
     local hl = tab.GetHighlightTexture and tab:GetHighlightTexture()
     if hl then SkinBase.ClampTextureHidden(hl) end
     SkinBase.RefreshTabSelected(tab, SkinBase.GetFrameData(tab, "skinTabOwner"))
@@ -3013,7 +3014,7 @@ function SkinBase.SkinTabButton(tab, opts)
     if not tab or SkinBase.IsStyled(tab) then return end
     opts = opts or {}
 
-    SkinBase.ClampAllTextures(tab)
+    SkinBase.ClampAllTextures(tab, true)
     local highlight = tab.GetHighlightTexture and tab:GetHighlightTexture()
     SkinBase.ClampTextureHidden(highlight)
     SkinBase.SetFrameData(tab, "qTabArtClamped", true)
@@ -3042,6 +3043,8 @@ end
 -- no signal claims. PanelTemplates disables the selected tab, so checking the
 -- disabled flag first greyed out the active tab of every skinned window.
 local function IsTabSelected(tab, owner)
+    local checked = SkinBase.GetFrameData(tab, "tabChecked")
+    if checked ~= nil then return checked end
     if tab.IsSelected and tab:IsSelected() then return true end
     if tab.isSelected then return true end
     if owner then
@@ -3193,6 +3196,14 @@ function SkinBase.SkinTab(tab, owner, opts)
     if opts.selectedTextColor ~= nil then SkinBase.SetFrameData(tab, "tabSelectedTextColor", opts.selectedTextColor) end
     if opts.disabledTextColor ~= nil then SkinBase.SetFrameData(tab, "tabDisabledTextColor", opts.disabledTextColor) end
     if opts.variant ~= nil then SkinBase.SetFrameData(tab, "tabVariant", opts.variant) end
+    if tab.SetChecked and tab.SelectedTexture and not SkinBase.GetFrameData(tab, "qTabCheckedHooked") then
+        SkinBase.SetFrameData(tab, "tabChecked", tab.SelectedTexture:IsShown())
+        hooksecurefunc(tab, "SetChecked", function(self, checked)
+            SkinBase.SetFrameData(self, "tabChecked", checked and true or false)
+            SkinBase.RefreshTabSelected(self, SkinBase.GetFrameData(self, "skinTabOwner"))
+        end)
+        SkinBase.SetFrameData(tab, "qTabCheckedHooked", true)
+    end
     SkinBase.SkinTabButton(tab, opts)
     if tab.SetTabSelected and not SkinBase.GetFrameData(tab, "qTabStateHooked") then
         hooksecurefunc(tab, "SetTabSelected", ReassertTabSkin)
@@ -3231,7 +3242,8 @@ function SkinBase.SkinTabGroup(tabs, owner, opts)
 
     for _, tab in ipairs(tabs) do
         if not SkinBase.GetFrameData(tab, "qTabSelHooked") then
-            tab:HookScript("OnClick", refreshAll)
+            local script = tab.HasScript and not tab:HasScript("OnClick") and "OnMouseUp" or "OnClick"
+            tab:HookScript(script, refreshAll)
             SkinBase.SetFrameData(tab, "qTabSelHooked", true)
         end
     end
