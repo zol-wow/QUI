@@ -1,3 +1,5 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 do
 -- Inlined from containers_page_model.lua
 local _, ns = ...

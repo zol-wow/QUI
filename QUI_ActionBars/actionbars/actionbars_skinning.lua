@@ -154,6 +154,7 @@ function SuppressProcVisualFrame(frame)
 end
 
 local function ShouldSuppressNativeProc()
+    if ActionBarsOwned.useNativeButtons then return false end
     local db = GetDB()
     local source = db and db.global and db.global.glowSource or "QUI"
     return source ~= "Skin" and source ~= "Off"
@@ -242,6 +243,10 @@ end
 ActionBarsOwned.GetButtonRegions = GetButtonRegions
 
 SkinButton = function(button, settings)
+    if ActionBarsOwned.useNativeButtons and InCombatLockdown() then
+        ActionBarsOwned.pendingRefresh = true
+        return
+    end
     if not button or not settings then
         return
     end

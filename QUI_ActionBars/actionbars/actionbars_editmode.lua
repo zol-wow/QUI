@@ -102,6 +102,7 @@ function IsPetBattleActive()
 end
 
 function ApplyBarOverrideBindings(barKey)
+    if ActionBarsOwned.useNativeButtons then return end
     if InCombatLockdown() and not inInitSafeWindow then
         ActionBarsOwned.pendingBindings = true
         return

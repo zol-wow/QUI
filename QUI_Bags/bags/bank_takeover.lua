@@ -20,7 +20,12 @@ function BankTakeover.IsLive()
     return live
 end
 
+local function UsesPlayerBags()
+    return C_Bank.ShouldUsePlayerBagsInBank and C_Bank.ShouldUsePlayerBagsInBank()
+end
+
 function BankTakeover.Suppress()
+    if UsesPlayerBags() then return end
     if suppressed then return end
     local bankFrame = BankFrame
     if not bankFrame then return end
@@ -41,12 +46,14 @@ function BankTakeover.Suppress()
 end
 
 function BankTakeover.OnBankOpened()
+    if UsesPlayerBags() then return end
     live = true
     Bags.BankWindow.ShowLive()
     Bags.Takeover.OpenForFrame(BANK_OPENER)
 end
 
 function BankTakeover.OnBankClosed()
+    if not live then return end
     closing = false
     live = false
     Bags.BankWindow.OnBankClosed()

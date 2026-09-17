@@ -242,6 +242,7 @@ local function GetPlayerClassID()
 end
 
 local function ResolveSpecIDByIndex(specIndex)
+    local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
     if type(specIndex) ~= "number" then
         specIndex = tonumber(specIndex)
     end
@@ -257,6 +258,7 @@ local function ResolveSpecIDByIndex(specIndex)
 end
 
 local function ResolveSpecIDByName(specName)
+    local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
     if type(specName) ~= "string" or specName == "" then return nil end
     if not (C_SpecializationInfo and C_SpecializationInfo.GetNumSpecializationsForClassID and GetSpecializationInfo) then
         return nil

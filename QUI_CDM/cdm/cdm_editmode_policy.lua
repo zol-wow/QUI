@@ -118,3 +118,33 @@ enforceFrame:SetScript("OnEvent", function(self, event)
     end
     CDMEditModePolicy.Enforce()
 end)
+
+if ns.Client and ns.Client.isForever and tostring(ns.Client.build) == "69893" then
+    local previewIcons
+    local function GetPreviewTexture(item)
+        if not item:HasEditModeData() then return nil end
+        if not previewIcons then
+            previewIcons = _G.CreateAndInitFromMixin(_G.IconDataProviderMixin, _G.IconDataProviderExtraType.Spellbook, true)
+        end
+        local index = (item.editModeIndex - 1) % previewIcons:GetNumIcons() + 1
+        return previewIcons:GetIconByIndex(index)
+    end
+
+    local function InstallPreviewTexture(_, item)
+        item.GetFallbackSpellTexture = GetPreviewTexture
+    end
+
+    _G.EventUtil.ContinueOnAddOnLoaded("Blizzard_CooldownViewer", function()
+        for _, name in ipairs({
+            "EssentialCooldownViewer", "UtilityCooldownViewer", "BuffIconCooldownViewer", "BuffBarCooldownViewer",
+        }) do
+            local viewer = _G[name]
+            if viewer then
+                hooksecurefunc(viewer, "OnAcquireItemFrame", InstallPreviewTexture)
+                for item in viewer.itemFramePool:EnumerateActive() do
+                    InstallPreviewTexture(viewer, item)
+                end
+            end
+        end
+    end)
+end

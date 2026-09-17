@@ -1,4 +1,4 @@
-## Interface: 120105
+## Interface: 120105, 16001
 ## Title: |cFF30D1FFQUI|r Action Bars
 ## Notes: QUI module. Requires the QUI core addon.
 ## Author: Zol and Drew
@@ -25,6 +25,7 @@ actionbars\actionbars_skinning.lua
 actionbars\actionbars_usability.lua
 actionbars\actionbars_mouseover.lua
 actionbars\actionbars_flyout.lua
+actionbars\actionbars_native.lua
 actionbars\actionbars_public.lua
 actionbars\actionbars_per_bar_builders.lua
 actionbars\gse_compat.lua

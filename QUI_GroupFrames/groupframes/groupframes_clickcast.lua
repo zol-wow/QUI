@@ -1049,6 +1049,7 @@ QUI_GFCC._test = {
 }
 
 function QUI_GFCC:Initialize()
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     MigrateProfileClickCastToChar()
 
     local db = GetDB()
@@ -1119,6 +1120,7 @@ function QUI_GFCC:RegisterUnitFrames()
 end
 
 function QUI_GFCC:RefreshBindings()
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     if InCombatLockdown() then return end
 
     local db = GetDB()

@@ -3451,6 +3451,7 @@ local function DestroySpotlightHeader()
 end
 
 function QUI_GF:RecreateSpotlightHeader()
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     if InCombatLockdown() then return end
     DestroySpotlightHeader()
     CreateSpotlightHeader()
@@ -4156,6 +4157,8 @@ local _range = {
 }
 
 local function ResolveRangeSpells()
+    local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+    local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
     if not _range.playerClass then
         _range.playerClass = select(2, UnitClass("player"))
     end
@@ -5086,6 +5089,7 @@ function QUI_GF:RefreshAllFrames(_reason)
 end
 
 function QUI_GF:RefreshSettings()
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     InvalidateCache()
     RefreshCachedEnabled()
 
@@ -5229,6 +5233,7 @@ function _state.ApplyHUDLayering()
 end
 
 function QUI_GF:Initialize()
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     local db = GetSettings()
     if not db or not db.enabled then return end
 
@@ -5339,6 +5344,7 @@ function QUI_GF:UpdateAnchorFrames()
 end
 
 function QUI_GF:IsEnabled()
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then return false end
     local db = GetSettings()
     return db and db.enabled
 end

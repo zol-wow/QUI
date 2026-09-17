@@ -300,6 +300,8 @@ jobs:
             }
           done
 
+          python3 tools/toc_game_versions.py build/QUI/QUI.toc build/*/QUI_*.toc > game_versions.json
+
           # create the zip from inside build/ so the paths are QUI/... QUI_Options/... etc.
           rm -f QUI-${{ needs.meta.outputs.version }}.zip
           cd build
@@ -351,6 +353,7 @@ jobs:
           path: |
             QUI-${{ needs.meta.outputs.version }}.zip
             release_notes.txt
+            game_versions.json
           if-no-files-found: error
           retention-days: 30
 
@@ -399,53 +402,20 @@ jobs:
           set -euo pipefail
           CHANGELOG=$(cat release_notes.txt)
 
-          # Resolve the CurseForge game-version ID for the client build the
-          # TOC actually declares (## Interface: 120105 -> "12.1.5"), so the
-          # upload never silently advertises a stale patch. If the lookup
-          # fails (CF is flaky — never block a release on it), fall back to
-          # gameVersionNames with the SAME TOC-derived name: the Upload API
-          # resolves names server-side, so a transient lookup failure can
-          # never republish under an older patch's static IDs.
-          INTERFACE=$(grep -m1 '^## Interface:' QUI.toc | tr -d '\r' | awk '{print $3}')
-          MAJOR=$((INTERFACE / 10000))
-          MINOR=$(((INTERFACE / 100) % 100))
-          PATCHV=$((INTERFACE % 100))
-          VERSION_NAME="${MAJOR}.${MINOR}.${PATCHV}"
-          echo "TOC interface ${INTERFACE} -> game version ${VERSION_NAME}"
-
-          GAME_VERSIONS=$(curl -sf -H "X-Api-Token: ${CF_API_TOKEN}" \
-            "https://wow.curseforge.com/api/game/versions" \
-            | jq -c --arg v "$VERSION_NAME" '[.[] | select(.name == $v) | .id]' 2>/dev/null || echo '[]')
-          if [ -z "$GAME_VERSIONS" ] || [ "$(printf '%s' "$GAME_VERSIONS" | jq 'length')" -eq 0 ]; then
-            echo "::warning::CurseForge game-version lookup for ${VERSION_NAME} failed; falling back to gameVersionNames"
-            METADATA=$(jq -cn \
-              --arg changelog "$CHANGELOG" \
-              --arg name "QUI-${{ needs.meta.outputs.version }}" \
-              --arg reltype "${{ needs.meta.outputs.release_type }}" \
-              --arg vname "$VERSION_NAME" \
-              '{
-                changelog: $changelog,
-                changelogType: "markdown",
-                displayName: $name,
-                gameVersionNames: [$vname],
-                releaseType: $reltype
-              }')
-            echo "Publishing with gameVersionNames=[\"${VERSION_NAME}\"]"
-          else
-            echo "Publishing with gameVersions=${GAME_VERSIONS}"
-            METADATA=$(jq -cn \
-              --arg changelog "$CHANGELOG" \
-              --arg name "QUI-${{ needs.meta.outputs.version }}" \
-              --arg reltype "${{ needs.meta.outputs.release_type }}" \
-              --argjson versions "$GAME_VERSIONS" \
-              '{
-                changelog: $changelog,
-                changelogType: "markdown",
-                displayName: $name,
-                gameVersions: $versions,
-                releaseType: $reltype
-              }')
-          fi
+          VERSION_NAMES=$(jq -ce 'if type == "array" and length > 0 and all(.[]; type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$")) then . else error("Invalid packaged game versions") end' game_versions.json)
+          echo "Publishing with gameVersionNames=${VERSION_NAMES}"
+          METADATA=$(jq -cn \
+            --arg changelog "$CHANGELOG" \
+            --arg name "QUI-${{ needs.meta.outputs.version }}" \
+            --arg reltype "${{ needs.meta.outputs.release_type }}" \
+            --argjson versions "$VERSION_NAMES" \
+            '{
+              changelog: $changelog,
+              changelogType: "markdown",
+              displayName: $name,
+              gameVersionNames: $versions,
+              releaseType: $reltype
+            }')
 
           printf '%s\n' "$METADATA" | jq -e . >/dev/null
 

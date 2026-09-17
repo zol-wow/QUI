@@ -11,6 +11,7 @@ local ToggleProfessionsBook = _G.ToggleProfessionsBook
 local ToggleQuestLog = _G.ToggleQuestLog
 local ToggleEncounterJournal = _G.ToggleEncounterJournal
 local C_Texture = _G.C_Texture
+local isForever = ns.Client and ns.Client.isForever or false
 
 local ATLAS_PREFIX = "UI-HUD-MicroMenu-"
 
@@ -52,8 +53,15 @@ local BUTTONS = {
         onClick = function() ToggleProfessionsBook() end,
     },
     {
-        key = "achievements", label = ns.L["Achievements"], atlas = "Achievements",
+        key = "achievements", label = ns.L["Achievements"], atlas = "Achievements", forever = false,
         onClick = function() ToggleAchievementFrame() end,
+    },
+    {
+        key = "legacy", label = ns.L["Legacy"], atlas = "Legacy", forever = true,
+        onClick = function()
+            local button = _G.LegacyMicroButton
+            if button and button:IsEnabled() and _G.ToggleLegacySystemUI then _G.ToggleLegacySystemUI() end
+        end,
     },
     {
         key = "questlog", label = ns.L["Quest Log"], atlas = "Questlog",
@@ -65,7 +73,7 @@ local BUTTONS = {
     },
     {
         key = "lfg", label = ns.L["Group Finder"], atlas = "Groupfinder",
-        onClick = function() PVEFrame_ToggleFrame() end,
+        onClick = function() (_G.ToggleGroupFinderFrame or _G.PVEFrame_ToggleFrame)() end,
     },
     {
         key = "adventureguide", label = ns.L["Adventure Guide"], atlas = "AdventureGuide",
@@ -88,7 +96,23 @@ local BUTTONS = {
     },
 }
 
+local FOREVER_DISABLED_RULES = {
+    character = "CharacterPanelDisabled",
+    professions = "ProfessionsPanelDisabled",
+    questlog = "QuestLogMicrobuttonDisabled",
+    housing = "HousingDashboardDisabled",
+    lfg = "FinderPanelDisabled",
+    collections = "CollectionsPanelDisabled",
+    help = "HelpPanelDisabled",
+    shop = "StoreDisabled",
+}
+
 local function IsButtonEnabled(key)
+    if isForever then
+        local rule = FOREVER_DISABLED_RULES[key]
+        if rule and _G.C_GameRules.IsGameRuleActive(Enum.GameRule[rule]) then return false end
+        if key == "adventureguide" and _G.GameRulesUtil.EJIsDisabled() then return false end
+    end
     local db = QUICore.db and QUICore.db.profile
     local mm = db and db.infobar and db.infobar.micromenu
     local buttons = mm and mm.buttons
@@ -148,7 +172,7 @@ Datatexts:Register("micromenu", {
         local x = inset
         local count = 0
         for _, def in ipairs(BUTTONS) do
-            if IsButtonEnabled(def.key) then
+            if (def.forever == nil or def.forever == isForever) and IsButtonEnabled(def.key) then
                 local btn = CreateIconButton(frame, def, size)
                 btn:SetPoint("LEFT", frame, "LEFT", x, 0)
                 x = x + btn:GetWidth() + gap

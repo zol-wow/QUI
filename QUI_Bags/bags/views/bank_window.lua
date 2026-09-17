@@ -14,8 +14,8 @@ end
 local BankWindow = {}
 Bags.BankWindow = BankWindow
 
-local CHAR_FIRST, CHAR_LAST = 6, 11
-local WB_FIRST, WB_LAST = 12, 16
+local CHAR_FIRST, CHAR_LAST = Storage.ScanBank.GetBagRange(Enum.BankType.Character)
+local WB_FIRST, WB_LAST = Storage.ScanBank.GetBagRange(Enum.BankType.Account)
 local SEGMENT_H = 22
 local SEGMENT_GAP = 4
 local TAB_H = 22

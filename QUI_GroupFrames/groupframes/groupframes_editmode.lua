@@ -1,3 +1,5 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
 local function CJKFont(fs, p, s, f)
     if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
@@ -1660,6 +1662,7 @@ function QUI_GFEM:NudgeHeader(headerKey, dx, dy)
 end
 
 function QUI_GFEM:CreateSpotlightHeader()
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     local db = GetDB()
     local spot = db and db.raid and db.raid.spotlight
     if not spot or not spot.enabled then return end

@@ -79,6 +79,7 @@ jobs:
         run: |
           lua tests/api-docs/extract_test.lua
           lua tools/lua_defs_gen_test.lua
+          python3 tools/test_toc_game_versions.py
       # Same split as the search cache above: regen-i18n-base.yml auto-commits
       # the locale base on beta and alpha, so gate everywhere except those two.
       # The old version of this gate ran unconditionally and flickered red then

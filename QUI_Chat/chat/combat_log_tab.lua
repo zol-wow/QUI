@@ -71,7 +71,7 @@ function SecureShowCycle(cf)
         QueueRegenCycle()
         return
     end
-    if not secureShowDriver and _G.CreateFrame then
+    if not secureShowDriver and _G.CreateFrame and not (ns.Client and ns.Client.restrictedExecutionUnavailable) then
         local ok, drv = ns.SafeCall("best-effort-style", _G.CreateFrame, "Frame", "QUI_CombatLogSecureShow",
             nil, "SecureHandlerBaseTemplate")
         if ok and drv then secureShowDriver = drv end

@@ -1,4 +1,5 @@
 local addonName, ns = ...
+if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
 local Helpers = ns.Helpers
 
 local QuickSalvage = {}

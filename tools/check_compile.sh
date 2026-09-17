@@ -49,7 +49,7 @@ done < <(
       git -C tests ls-files --cached --others --exclude-standard '*.lua' \
         | sed 's#^#tests/#'
     fi
-  } | grep -viE '^libs/|^Libs/|^tests/framexml/|^tests/api-docs/|^\.luarocks/'
+  } | grep -viE '^libs/|^Libs/|^tests/framexml/|^tests/api-docs/|^tests/clients/|^\.luarocks/'
 )
 
 libcount=0

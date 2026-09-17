@@ -1,3 +1,5 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
@@ -2507,7 +2509,7 @@ Datatexts:Register("lootspec", {
             if button == "LeftButton" then
                 if IsShiftKeyDown() then
                     if not InCombatLockdown() then
-                        TogglePlayerSpellsFrame()
+                        PlayerSpellsUtil.ToggleClassTalentOrSpecFrame()
                     end
                 else
                     local currentSpec = GetSpecialization()
@@ -3021,7 +3023,7 @@ Datatexts:Register("mythickey", {
         slotFrame:SetScript("OnClick", function(self, button)
             if InCombatLockdown() then return end
             if button == "LeftButton" then
-                PVEFrame_ToggleFrame("GroupFinderFrame", LFDParentFrame)
+                (_G.ToggleGroupFinderFrame or _G.PVEFrame_ToggleFrame)("GroupFinderFrame", LFDParentFrame)
             end
         end)
 
@@ -3048,8 +3050,9 @@ Datatexts:Register("playerspec", {
         local iconString = "|T%s:14:14:0:0:64:64:4:60:4:60|t"
         frame.activeLoadoutID = nil
 
+        local isForever = ns.Client and ns.Client.isForever
         local TLM = TalentLoadoutManagerAPI
-        local hasTLM = TLM and TLM.GlobalAPI and TLM.CharacterAPI and TLM.Event
+        local hasTLM = not isForever and TLM and TLM.GlobalAPI and TLM.CharacterAPI and TLM.Event
 
         local function GetActiveLoadoutInfo(specID)
             if hasTLM then
@@ -3063,6 +3066,16 @@ Datatexts:Register("playerspec", {
         end
 
         local function GetAllLoadouts(specID)
+            if isForever then
+                local loadouts = {}
+                for group = 1, _G.GetNumSpecGroups() do
+                    loadouts[#loadouts + 1] = {
+                        id = group,
+                        name = group == 1 and _G.DUAL_SPEC_PRIMARY or _G.DUAL_SPEC_SECONDARY,
+                    }
+                end
+                return loadouts
+            end
             if hasTLM then
                 return TLM.GlobalAPI:GetLoadouts(specID) or {}
             end
@@ -3085,6 +3098,11 @@ Datatexts:Register("playerspec", {
         end
 
         local function LoadLoadout(loadoutID)
+            if InCombatLockdown() then return end
+            if isForever then
+                C_SpecializationInfo.SetActiveSpecGroup(loadoutID)
+                return
+            end
             if hasTLM then
                 TLM.CharacterAPI:LoadLoadout(loadoutID, true)
                 return
@@ -3106,6 +3124,10 @@ Datatexts:Register("playerspec", {
 
         local function GetLoadoutName(specID)
             if not PlayerUtil.CanUseClassTalents() then return nil end
+            if isForever then
+                frame.activeLoadoutID = C_SpecializationInfo.GetActiveSpecGroup()
+                return frame.activeLoadoutID == 1 and _G.DUAL_SPEC_PRIMARY or _G.DUAL_SPEC_SECONDARY
+            end
 
             if C_ClassTalents.GetHasStarterBuild() and C_ClassTalents.GetStarterBuildActive() then
                 frame.activeLoadoutID = nil
@@ -3172,6 +3194,7 @@ Datatexts:Register("playerspec", {
         frame:RegisterEvent("PLAYER_ENTERING_WORLD")
         frame:RegisterEvent("PLAYER_TALENT_UPDATE")
         frame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+        frame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
         frame:RegisterEvent("PLAYER_LOOT_SPEC_UPDATED")
         frame:RegisterEvent("TRAIT_CONFIG_UPDATED")
         frame:RegisterEvent("TRAIT_CONFIG_DELETED")
@@ -3225,12 +3248,12 @@ Datatexts:Register("playerspec", {
                 local specID = GetSpecializationInfo(currentSpec)
                 if specID then
                     local loadouts = GetAllLoadouts(specID)
-                    if #loadouts > 0 or C_ClassTalents.GetHasStarterBuild() then
+                    if #loadouts > 0 or (not isForever and C_ClassTalents.GetHasStarterBuild()) then
                         GameTooltip:AddLine(" ")
                         local headerText = hasTLM and ns.L["Loadouts (TLM)"] or ns.L["Loadouts"]
                         GameTooltip:AddLine(headerText, ar, ag, ab)
 
-                        if C_ClassTalents.GetHasStarterBuild() then
+                        if not isForever and C_ClassTalents.GetHasStarterBuild() then
                             local isActive = C_ClassTalents.GetStarterBuildActive()
                             local status = isActive and " " .. activeColor .. ns.L["(Active)"] .. "|r" or ""
                             GameTooltip:AddLine("|cff0070DD" .. ns.L["Starter Build"] .. "|r" .. status, 1, 1, 1)
@@ -3287,9 +3310,9 @@ Datatexts:Register("playerspec", {
             if button == "LeftButton" then
                 if IsShiftKeyDown() then
                     if not InCombatLockdown() then
-                        TogglePlayerSpellsFrame()
+                        PlayerSpellsUtil.ToggleClassTalentOrSpecFrame()
                     end
-                elseif IsControlKeyDown() then
+                elseif IsControlKeyDown() or isForever then
                     local specID = GetSpecializationInfo(specIndex)
                     if not specID or not PlayerUtil.CanUseClassTalents() then return end
 
@@ -3297,7 +3320,7 @@ Datatexts:Register("playerspec", {
                         local titleText = hasTLM and ns.L["Switch Loadout (TLM)"] or ns.L["Switch Loadout"]
                         root:CreateTitle(titleText)
 
-                        if C_ClassTalents.GetHasStarterBuild() then
+                        if not isForever and C_ClassTalents.GetHasStarterBuild() then
                             local isActive = C_ClassTalents.GetStarterBuildActive()
                             root:CreateButton("|cff0070DD" .. ns.L["Starter Build"] .. "|r" .. (isActive and activeMarker or ""), function()
                                 if not _G.PlayerSpellsFrame then

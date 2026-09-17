@@ -23,6 +23,7 @@ do
         local FORM_ROW = U and U.FORM_ROW or 32
 
         local function RefreshActionBars()
+            if ActionBarsOwned.useNativeButtons then return ActionBarsOwned:RefreshNativeBars() end
             InvalidateEffectiveSettingsCache()
 
             for _, bk in ipairs(ALL_MANAGED_BAR_KEYS) do
@@ -303,6 +304,7 @@ do
             local DEFER = { deferOnDrag = true }
 
             local function PreviewBarSize()
+                if ActionBarsOwned.useNativeButtons and InCombatLockdown() then return end
                 local container = ActionBarsOwned.containers and ActionBarsOwned.containers[dbKey]
                 if not container or not layout then return end
                 local btnSize = layout.buttonSize or 36
@@ -324,7 +326,7 @@ do
             local DEFER_SIZE = { deferOnDrag = true, onDragPreview = PreviewBarSize }
 
             local function ApplyBarEnabledState(val)
-                if not InCombatLockdown() then
+                if not ActionBarsOwned.useNativeButtons and not InCombatLockdown() then
                     local container = ActionBarsOwned.containers and ActionBarsOwned.containers[dbKey]
                     if container then
                         container:SetAttribute("qui-user-shown", val and true or false)
@@ -382,6 +384,17 @@ do
             if hasLayout and layout then
                 local isMicroBag = (dbKey == "microbar" or dbKey == "bags")
                 local maxButtons = BUTTON_COUNTS[dbKey] or (dbKey == "microbar" and 12 or (dbKey == "bags" and 6 or 12))
+                if isMicroBag and ns.Client and ns.Client.isForever then
+                    maxButtons = math.max(1, #GetBarButtons(dbKey))
+                end
+                local visibleButtonsDescription = ns.L["How many buttons on this bar are visible. Hidden buttons are still keybindable but not drawn."]
+                if ActionBarsOwned.useNativeButtons and not isMicroBag then
+                    local nativeBar = GetBarFrame(dbKey)
+                    if nativeBar and type(nativeBar.numButtonsShowable) == "number" then
+                        maxButtons = math.max(1, math.min(maxButtons, nativeBar.numButtonsShowable))
+                    end
+                    visibleButtonsDescription = ns.L["On this Forever build, Blizzard Edit Mode sets the maximum button count and visibility. QUI controls layout and appearance. Increase the native button count in Edit Mode to show more buttons here."]
+                end
                 local extraRows = 1
                 if barKey == "bar1" then extraRows = extraRows + 1 end
                 if FLYOUT_BARS[barKey] then extraRows = extraRows + 1 end
@@ -446,7 +459,7 @@ do
 
                     sy = P(GUI:CreateFormSlider(body, ns.L["Visible Buttons"],
                         1, maxButtons, 1, "iconCount", layout, RefreshActionBars, DEFER_SIZE,
-                        { description = ns.L["How many buttons on this bar are visible. Hidden buttons are still keybindable but not drawn."] }), body, sy)
+                        { description = visibleButtonsDescription }), body, sy)
 
                     sy = P(GUI:CreateFormSlider(body, ns.L["Button Size"],
                         20, 64, 1, "buttonSize", layout, RefreshActionBars, DEFER_SIZE,
