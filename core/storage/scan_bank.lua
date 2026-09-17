@@ -4,8 +4,20 @@ local Storage = ns.Storage or {}; ns.Storage = Storage
 local ScanBank = {}
 Storage.ScanBank = ScanBank
 
-local CHAR_FIRST, CHAR_LAST = 6, 11
-local WB_FIRST, WB_LAST = 12, 16
+function ScanBank.GetBagRange(bankType)
+    local prefix = bankType == Enum.BankType.Account and "AccountBankTab_" or "CharacterBankTab_"
+    local first = Enum.BagIndex[prefix .. "1"]
+    local last = first
+    for name, bagID in pairs(Enum.BagIndex) do
+        if name:match("^" .. prefix .. "%d+$") then
+            last = math.max(last, bagID)
+        end
+    end
+    return first, last
+end
+
+local CHAR_FIRST, CHAR_LAST = ScanBank.GetBagRange(Enum.BankType.Character)
+local WB_FIRST, WB_LAST = ScanBank.GetBagRange(Enum.BankType.Account)
 
 local dirtyChar, dirtyWarband = {}, {}
 local hasDirty = false

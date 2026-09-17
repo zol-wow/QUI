@@ -1,4 +1,4 @@
-## Interface: 120105
+## Interface: 120105, 16001
 ## Title: |cFF30D1FFQUI (Midnight)|r
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## AddonCompartmentFunc: QUI_CompartmentClick
@@ -19,6 +19,7 @@
 # Order is load-bearing.
 
 # == libs/libs.xml ==
+core\client.lua
 libs\LibStub\LibStub.lua
 libs\AceConsole-3.0\AceConsole-3.0.lua
 libs\AceDB-3.0\AceDB-3.0.lua

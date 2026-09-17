@@ -483,8 +483,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
         mm.AddRow(row(mm.frame, ns.L["Character"], mmCheckbox("character", ns.L["Character"])),
             row(mm.frame, ns.L["Spellbook"], mmCheckbox("spellbook", ns.L["Spellbook"])))
+        local progressKey = ns.Client and ns.Client.isForever and "legacy" or "achievements"
+        local progressLabel = progressKey == "legacy" and ns.L["Legacy"] or ns.L["Achievements"]
         mm.AddRow(row(mm.frame, ns.L["Talents"], mmCheckbox("talents", ns.L["Talents"])),
-            row(mm.frame, ns.L["Achievements"], mmCheckbox("achievements", ns.L["Achievements"])))
+            row(mm.frame, progressLabel, mmCheckbox(progressKey, progressLabel)))
         mm.AddRow(row(mm.frame, ns.L["Professions"], mmCheckbox("professions", ns.L["Professions"])),
             row(mm.frame, ns.L["Quest Log"], mmCheckbox("questlog", ns.L["Quest Log"])))
         mm.AddRow(row(mm.frame, ns.L["Collections"], mmCheckbox("collections", ns.L["Collections"])),

@@ -1,3 +1,5 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local LSM = ns.LSM
@@ -726,11 +728,10 @@ local function AdvanceRenewingMistRecharge(seconds)
     end
 end
 
-local tocVersion = select(4, GetBuildInfo())
 local HAS_UNIT_POWER_PERCENT = type(UnitPowerPercent) == "function"
 
 local function GetPowerPct(unit, powerType, usePredicted)
-    if (tonumber(tocVersion) or 0) >= 120000 and HAS_UNIT_POWER_PERCENT then
+    if HAS_UNIT_POWER_PERCENT then
         local ok, pct
         if CurveConstants and CurveConstants.ScaleTo100 then
             ok, pct = pcall(UnitPowerPercent, unit, powerType, usePredicted, CurveConstants.ScaleTo100)
@@ -1441,6 +1442,9 @@ local primaryResources = {
 }
 
 local function GetPrimaryResource()
+    if ns.Client and ns.Client.isForever then
+        return UnitPowerType("player") or Enum.PowerType.Mana
+    end
     local _, playerClass = UnitClass("player")
     -- @secret-policy: collapse-only — secret class renders the Mana default (matches
     if issecretvalue and issecretvalue(playerClass) then playerClass = nil end
@@ -1504,6 +1508,7 @@ local secondaryResources = {
 }
 
 local function GetSecondaryResource()
+    if ns.Client and ns.Client.isForever then return nil end
     local _, playerClass = UnitClass("player")
     -- @secret-policy: collapse-only — secret class shows no secondary bar (matches
     if issecretvalue and issecretvalue(playerClass) then playerClass = nil end

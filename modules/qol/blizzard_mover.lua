@@ -557,6 +557,7 @@ local securePositioner
 local secureAnchor
 
 local function ensureSecurePositioner()
+	if ns.Client and ns.Client.restrictedExecutionUnavailable then return nil end
 	if securePositioner then return securePositioner end
 	if type(CreateFrame) ~= "function" then return nil end
 	secureAnchor = CreateFrame("Frame", "QUI_MoverSecureAnchor", UIParent, "SecureFrameTemplate")

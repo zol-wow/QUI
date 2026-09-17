@@ -12,7 +12,7 @@ spellFlyoutSkinHooked = false
 
 do
 
-USE_OWNED_FLYOUT = (WOW_PROJECT_ID == WOW_PROJECT_MAINLINE)
+USE_OWNED_FLYOUT = (WOW_PROJECT_ID == WOW_PROJECT_MAINLINE) and not ActionBarsOwned.restrictedExecutionUnavailable
 ActionBarsOwned.useOwnedFlyout = USE_OWNED_FLYOUT
 
 env.__declared.ownedFlyout = true
@@ -733,6 +733,7 @@ function SchedulePageArrowVisibilityRetry()
 end
 
 ApplyPageArrowVisibility = function(hide)
+    if ActionBarsOwned.useNativeButtons then return ActionBarsOwned:RefreshNativeBars() end
     local frames = CollectPageArrowFrames()
     if #frames == 0 then
         if hide then

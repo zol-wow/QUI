@@ -1,3 +1,4 @@
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
 local QUI = QUI
 

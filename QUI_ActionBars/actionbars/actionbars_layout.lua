@@ -157,6 +157,10 @@ AnchorHelpTicketButton = function()
 end
 
 LayoutNativeButtons = function(barKey)
+    if ActionBarsOwned.useNativeButtons and InCombatLockdown() then
+        ActionBarsOwned.pendingRefresh = true
+        return
+    end
     local container = ActionBarsOwned.containers[barKey]
     local buttons = ActionBarsOwned.nativeButtons[barKey]
     if not container or not buttons or #buttons == 0 then return end
@@ -175,8 +179,20 @@ LayoutNativeButtons = function(barKey)
     local isVertical = (orientation == "vertical")
 
     local numVisible = math.min(iconCount, #buttons)
+    if ActionBarsOwned.useNativeButtons then
+        local nativeBar = GetBarFrame(barKey)
+        if nativeBar and type(nativeBar.numButtonsShowable) == "number" then
+            numVisible = math.min(numVisible, nativeBar.numButtonsShowable)
+        end
+    end
     ActionBarsOwned._visibleButtonCounts[barKey] = numVisible
     if numVisible == 0 then
+        if ActionBarsOwned.useNativeButtons and SKINNABLE_BAR_KEYS[barKey] then
+            for _, button in ipairs(buttons) do SetNativeButtonLayoutVisible(button, false) end
+        elseif not SKINNABLE_BAR_KEYS[barKey] then
+            for _, button in ipairs(buttons) do button:Hide() end
+            if barKey == "microbar" and _G.HelpMicroButton then _G.HelpMicroButton:Hide() end
+        end
         for _, btn in ipairs(buttons) do
             ActionBarsOwned._activeButtons[btn] = nil
             ActionBarsOwned._activeStandardButtons[btn] = nil
@@ -284,7 +300,7 @@ LayoutNativeButtons = function(barKey)
                 local idx = i - 1
                 local col, row = ComputeGridColRow(idx, isVertical, numCols, numRows)
                 btn:SetPoint(anchor, container, anchor, col * xStep * xDir, row * yStep * yDir)
-                btn:Show()
+                btn:SetShown(barKey ~= "microbar" or btn ~= _G.StoreMicroButton or ActionBarsOwned._storeNativeShown ~= false)
             else
                 btn:Hide()
             end
@@ -296,19 +312,21 @@ LayoutNativeButtons = function(barKey)
     if barKey == "microbar" then
         local helpBtn = _G.HelpMicroButton
         local storeBtn = _G.StoreMicroButton
-        if helpBtn and storeBtn then
+        if helpBtn and storeBtn and (not (ns.Client and ns.Client.isForever) or (helpBtn.layoutIndex and storeBtn.layoutIndex)) then
             helpBtn:ClearAllPoints()
             helpBtn:SetAllPoints(storeBtn)
-            if storeBtn:IsShown() then
-                helpBtn:Hide()
-            else
-                helpBtn:Show()
+            local storeInLayout = false
+            for i = 1, numVisible do
+                if buttons[i] == storeBtn then storeInLayout = true; break end
             end
+            local microSettings = GetBarSettings("microbar")
+            helpBtn:EnableMouse(not (microSettings and microSettings.clickthrough))
+            helpBtn:SetShown(storeInLayout and not storeBtn:IsShown())
         end
         AnchorHelpTicketButton()
     end
 
-    if container.MarkClean then
+    if container.MarkClean and not ActionBarsOwned.useNativeButtons then
         container:MarkClean()
     end
 
@@ -361,7 +379,7 @@ function SaveContainerPosition(barKey)
     if type(entry) ~= "table" then entry = nil end
     if entry and entry.parent and entry.parent ~= "screen" then return end
 
-    if not entry and not ContainerMovedFromBarFrame(barKey, container) then return end
+    if not entry and not ActionBarsOwned.useNativeButtons and not ContainerMovedFromBarFrame(barKey, container) then return end
 
     local point, relPoint, x, y
     if core.SnapFramePosition then
@@ -482,8 +500,12 @@ function SetOwnedBarAlpha(barKey, alpha)
     local buttons = ActionBarsOwned.nativeButtons[barKey]
 
     container:SetAlpha(alpha)
+    if ActionBarsOwned.useNativeButtons and SKINNABLE_BAR_KEYS[barKey] then
+        local nativeBar = GetBarFrame(barKey)
+        if nativeBar then nativeBar:SetAlpha(alpha) end
+    end
 
-    if buttons then
+    if buttons and not ActionBarsOwned.useNativeButtons then
         for _, btn in ipairs(buttons) do
             local state = GetFrameState(btn)
             local hidden = alpha <= 0 or state.hiddenEmpty

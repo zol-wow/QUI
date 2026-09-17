@@ -1,3 +1,4 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
 local _, ns = ...
 local Helpers = ns.Helpers
 local QUICore = ns.Addon

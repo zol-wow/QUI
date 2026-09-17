@@ -1,4 +1,5 @@
 local ADDON_NAME, ns = ...
+if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
 local Helpers = ns.Helpers
 local GetCore = Helpers and Helpers.GetCore
 local GetActionBarsDB = Helpers and Helpers.CreateDBGetter and Helpers.CreateDBGetter("actionBars")

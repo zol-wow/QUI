@@ -58,10 +58,8 @@ else
 end
 
 do
-    local USE_DURATION_OBJECTS = IS_MIDNIGHT
-        and C_ActionBar ~= nil
-        and C_ActionBar.GetActionCooldownDuration ~= nil
-        and (tonumber((select(2, GetBuildInfo()))) or 0) >= 66562
+    local USE_DURATION_OBJECTS = C_ActionBar ~= nil
+        and type(C_ActionBar.GetActionCooldownDuration) == "function"
 
     local DEFAULT_CD_INFO  = { startTime = 0, duration = 0, isEnabled = false, isActive = false, modRate = 0 }
     local DEFAULT_LOC_INFO = { startTime = 0, duration = 0, modRate = 0, isActive = false, shouldReplaceNormalCooldown = false }

@@ -86,7 +86,7 @@ else -- Primary/secondary system
 	specNames[2] = TALENT_SPEC_SECONDARY
 end
 
-local GetSpecialization = isSpecBased and GetSpecialization or C_SpecializationInfo.GetActiveSpecGroup
+local GetSpecialization = isSpecBased and (C_SpecializationInfo.GetSpecialization or GetSpecialization) or C_SpecializationInfo.GetActiveSpecGroup
 local CanPlayerUseTalentSpecUI = C_SpecializationInfo.CanPlayerUseTalentSpecUI or function()
 	return true, HELPFRAME_CHARACTER_BULLET5
 end

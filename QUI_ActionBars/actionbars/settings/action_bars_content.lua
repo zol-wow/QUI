@@ -436,6 +436,10 @@ local function BuildMasterSettingsTab(tabContent)
 
     local keybindBtn = GUI:CreateButton(s3.frame, ns.L["Toggle Keybind Mode"], 160, 24, function()
         if InCombatLockdown() then return end
+        if ns.ActionBarsOwned and ns.ActionBarsOwned.useNativeButtons then
+            if QuickKeybindFrame then QuickKeybindFrame:Show() end
+            return
+        end
         local LibKeyBound = LibStub("LibKeyBound-1.0", true)
         if LibKeyBound then LibKeyBound:Toggle()
         elseif QuickKeybindFrame then ShowUIPanel(QuickKeybindFrame) end

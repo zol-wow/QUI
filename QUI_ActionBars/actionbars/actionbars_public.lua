@@ -10,12 +10,26 @@ local function PurgeOverrideBarShownExternal()
     PurgeShownExternalTaint(_G.OverrideActionBar)
 end
 
+function ActionBarsOwned:InitializeTooltipSuppression()
+    if self._tooltipSuppressionHooked then return end
+    self._tooltipSuppressionHooked = true
+    hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
+        local global = GetGlobalSettings()
+        if not global or global.showTooltips ~= false then return end
+        if not parent or not self.skinnedButtons[parent] then return end
+        tooltip:Hide()
+        tooltip:SetOwner(UIParent, "ANCHOR_NONE")
+        tooltip:ClearLines()
+    end)
+end
+
 function ActionBarsOwned:Initialize()
     if self.initialized then return end
+    if self.useNativeButtons then return self:InitializeNativeBars() end
 
     self.initialized = true
 
-    PatchLibKeyBoundForMidnight()
+    PatchLibKeyBoundForOwnedButtons()
 
     ownedEventFrame:RegisterEvent("ACTIONBAR_PAGE_CHANGED")
     ownedEventFrame:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
@@ -76,7 +90,7 @@ function ActionBarsOwned:Initialize()
     ownedEventFrame:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
     ownedEventFrame:RegisterEvent("START_AUTOREPEAT_SPELL")
     ownedEventFrame:RegisterEvent("STOP_AUTOREPEAT_SPELL")
-    if IS_MIDNIGHT then
+    if C_EventUtils and C_EventUtils.IsEventValid("LEARNED_SPELL_IN_SKILL_LINE") then
         ownedEventFrame:RegisterEvent("LEARNED_SPELL_IN_SKILL_LINE")
     end
     ownedEventFrame:Show()
@@ -221,20 +235,7 @@ function ActionBarsOwned:Initialize()
         core:RegisterEditModeExit(OnEditModeExit)
     end
 
-    ActionBarsOwned._suppressTooltips = false
-    function ActionBarsOwned:RefreshTooltipSuppressCache()
-        local global = GetGlobalSettings()
-        self._suppressTooltips = global and global.showTooltips == false
-    end
-    ActionBarsOwned:RefreshTooltipSuppressCache()
-
-    hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip, parent)
-        if not ActionBarsOwned._suppressTooltips then return end
-        if not parent or not ActionBarsOwned.skinnedButtons[parent] then return end
-        tooltip:Hide()
-        tooltip:SetOwner(UIParent, "ANCHOR_NONE")
-        tooltip:ClearLines()
-    end)
+    self:InitializeTooltipSuppression()
 
     ActionBarsOwned.EnsureSpellBookVisibilityHooks()
     ActionBarsOwned.HookSpellBookToggleFunction("ToggleSpellBook")
@@ -290,6 +291,7 @@ function ActionBarsOwned:Initialize()
 end
 
 function ActionBarsOwned:Refresh()
+    if self.useNativeButtons then return self:RefreshNativeBars() end
     if not self.initialized then return end
 
     InvalidateEffectiveSettingsCache()
@@ -307,7 +309,7 @@ function ActionBarsOwned:Refresh()
         BuildBar(barKey)
     end
 
-    PatchLibKeyBoundForMidnight()
+    PatchLibKeyBoundForOwnedButtons()
 
     if not ActionBarsOwned._refreshHooksInstalled then
         ActionBarsOwned._refreshHooksInstalled = true
@@ -369,7 +371,6 @@ function ActionBarsOwned:Refresh()
     UpdateStanceBarLayout()
 
     ActionBarsOwned.UpdateUsabilityPolling()
-    if self.RefreshTooltipSuppressCache then self:RefreshTooltipSuppressCache() end
 end
 
 _G.QUI_RefreshActionBars = function()
@@ -384,6 +385,7 @@ _G.QUI_RefreshActionBars = function()
 end
 
 _G.QUI_ApplyUseOnKeyDown = function()
+    if ActionBarsOwned.restrictedExecutionUnavailable then return end
     if InCombatLockdown() then
         ActionBarsOwned.pendingUseOnKeyDownUpdate = true
         return
@@ -443,6 +445,10 @@ end
 initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:SetScript("OnEvent", function(self, event, addonName)
+    if ActionBarsOwned.useNativeButtons then
+        if GetDB() then ActionBarsOwned:InitializeNativeBars(); ActionBarsOwned:RefreshNativeBars() end
+        return
+    end
     if addonName == ADDON_NAME then
         if not GetDB() then return end
         ActionBarsOwned:Initialize()
@@ -527,7 +533,9 @@ do
                     local old = barDB.enabled ~= false
                     barDB.enabled = val
                     local container = ActionBarsOwned.containers and ActionBarsOwned.containers[containerKey]
-                    if container then
+                    if container and ActionBarsOwned.useNativeButtons then
+                        ActionBarsOwned:RefreshNativeBars()
+                    elseif container then
                         container:SetAttribute("qui-user-shown", val and true or false)
                         if val then
                             container:Show()
@@ -568,6 +576,10 @@ do
                 setGameplayHidden = function(hide)
                     local container = ActionBarsOwned.containers and ActionBarsOwned.containers[containerKey]
                     if not container then return end
+                    if ActionBarsOwned.useNativeButtons then
+                        SetNativeBarShown(container, not hide)
+                        return
+                    end
                     container:SetAttribute("qui-user-shown", (not hide) and true or false)
                     if hide then
                         if ActionBarsOwned.HideOwnedFlyout then

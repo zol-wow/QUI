@@ -134,27 +134,34 @@ echo "== gate 1/9: compile check (luac 5.1) =="
 bash tools/check_compile.sh || fail=1
 
 echo "== gate 2/9: taint analyzer (strict, $JOBS shards) =="
-shard_dir=$(mktemp -d)
-for s in $(seq 1 "$JOBS"); do
-    (
-        "$LUA_BIN" tools/test_taint.lua --strict-only --shard "$s/$JOBS" \
-            >"$shard_dir/$s.out" 2>"$shard_dir/$s.err"
-        echo $? >"$shard_dir/$s.rc"
-    ) &
-done
-wait
-taint_strict_shards=0
-for s in $(seq 1 "$JOBS"); do
-    cat "$shard_dir/$s.out"
-    cat "$shard_dir/$s.err" >&2
-    if [ "$(cat "$shard_dir/$s.rc" 2>/dev/null || echo 2)" -ne 0 ]; then
-        taint_strict_shards=$((taint_strict_shards + 1))
-        fail=1
+for client in retail forever; do
+    index_args=()
+    if [ "$client" = forever ]; then
+        index_args=(--index tests/clients/forever/api-docs/api-index.lua)
     fi
+    echo "Taint contracts: $client"
+    shard_dir=$(mktemp -d)
+    for s in $(seq 1 "$JOBS"); do
+        (
+            "$LUA_BIN" tools/test_taint.lua "${index_args[@]}" --strict-only --shard "$s/$JOBS" \
+                >"$shard_dir/$s.out" 2>"$shard_dir/$s.err"
+            echo $? >"$shard_dir/$s.rc"
+        ) &
+    done
+    wait
+    taint_strict_shards=0
+    for s in $(seq 1 "$JOBS"); do
+        cat "$shard_dir/$s.out"
+        cat "$shard_dir/$s.err" >&2
+        if [ "$(cat "$shard_dir/$s.rc" 2>/dev/null || echo 2)" -ne 0 ]; then
+            taint_strict_shards=$((taint_strict_shards + 1))
+            fail=1
+        fi
+    done
+    rm -rf "$shard_dir"
+    [ "$taint_strict_shards" -gt 0 ] \
+        && echo "taint ($client): strict findings in $taint_strict_shards of $JOBS shards" >&2
 done
-rm -rf "$shard_dir"
-[ "$taint_strict_shards" -gt 0 ] \
-    && echo "taint: strict findings in $taint_strict_shards of $JOBS shards" >&2
 
 echo "== gate 3/9: taint analyzer unit tests (tests/taint/) =="
 run_lua_tests "taint tests" \
@@ -178,6 +185,7 @@ run_lua_tests "tooling tests" \
 # through overlay_source and requires byte equality. Python-only; skipped with
 # a warning rather than failing a Lua-only environment.
 if command -v python3 >/dev/null 2>&1; then
+    python3 tools/test_toc_game_versions.py || fail=1
     if python3 tools/i18n/test_overlay_roundtrip.py >/dev/null 2>&1; then
         echo "locale overlays: match their writer"
     else
@@ -209,6 +217,14 @@ else
     echo "WARNING: python3 not installed — locale overlay round-trip and enUS" \
          "parser agreement NOT checked." >&2
 fi
+
+check_stale "Retail API derived files" \
+    '"$LUA_BIN" tools/test_taint.lua --update-index && "$LUA_BIN" tools/generate_lua_definitions.lua' \
+    tests/api-docs/api-index.lua meta/wow-api.lua meta/wow-widgets.lua meta/wow-globals.lua || fail=1
+check_stale "Forever API derived files" \
+    '"$LUA_BIN" tools/test_taint.lua --update-index --corpus tests/clients/forever/api-docs/blizzard --index tests/clients/forever/api-docs/api-index.lua && "$LUA_BIN" tools/generate_lua_definitions.lua --docs tests/clients/forever/api-docs/blizzard --out tests/clients/forever/meta --globals none' \
+    tests/clients/forever/api-docs/api-index.lua tests/clients/forever/meta/wow-api.lua \
+    tests/clients/forever/meta/wow-widgets.lua tests/clients/forever/meta/wow-globals.lua || fail=1
 
 echo "== gate 7/9: luacheck (CI lint scope) =="
 if command -v luacheck >/dev/null 2>&1; then

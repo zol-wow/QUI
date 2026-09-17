@@ -62,6 +62,10 @@ LIB_OPEN_RAID_CAN_LOAD = false
 
 local versionString, revision, launchDate, gameVersion = GetBuildInfo()
 
+if type(versionString) == "string" and versionString:match("^1%.60%.") then
+    return
+end
+
 local isExpansion_Dragonflight = function()
 	if (gameVersion >= 100000) then
 		return true

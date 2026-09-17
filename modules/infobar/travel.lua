@@ -122,7 +122,7 @@ local function UpdateFlyoutCooldowns(frame)
 end
 
 local function BuildFlyout(frame, slotFrame)
-    local flyout = CreateFrame("Frame", nil, frame, "SecureHandlerStateTemplate")
+    local flyout = CreateFrame("Frame", nil, frame, "SecureFrameTemplate")
     frame._flyout = flyout
 
     flyout:SetFrameStrata("DIALOG")
@@ -130,12 +130,7 @@ local function BuildFlyout(frame, slotFrame)
         flyout:SetFixedFrameStrata(true)
     end
 
-    flyout:SetAttribute("_onstate-combat", [[
-        if newstate == "true" then
-            self:Hide()
-        end
-    ]])
-    RegisterStateDriver(flyout, "combat", "[combat] true; false")
+    RegisterStateDriver(flyout, "visibility", "[combat] hide; ignore")
 
     local bg = flyout:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
@@ -145,7 +140,7 @@ local function BuildFlyout(frame, slotFrame)
     frame._flyoutButtons = {}
     for _, entry in ipairs(GetTeleportEntries()) do
         local spellID, label = entry[1], entry[2]
-        if IsSpellKnown(spellID) then
+        if C_SpellBook.IsSpellInSpellBook(spellID, Enum.SpellBookSpellBank.Player, false) then
             rows = rows + 1
             local row = CreateFrame("Button", nil, flyout, "SecureActionButtonTemplate")
             row:SetSize(ROW_WIDTH, ROW_HEIGHT)
@@ -201,7 +196,7 @@ local function ShowFlyout(frame)
     if not flyout or InCombatLockdown() then return end
     if frame._flyoutDirty then
         frame._flyoutDirty = false
-        UnregisterStateDriver(flyout, "combat")
+        UnregisterStateDriver(flyout, "visibility")
         flyout:Hide()
         flyout:SetParent(nil)
         BuildFlyout(frame, frame._slot)
@@ -297,7 +292,9 @@ Datatexts:Register("travel", {
         end
         if slotFrame._quiOnWidthDirty then slotFrame._quiOnWidthDirty() end
 
-        frame:RegisterEvent("LEARNED_SPELL_IN_SKILL_LINE")
+        if _G.C_EventUtils and _G.C_EventUtils.IsEventValid("LEARNED_SPELL_IN_SKILL_LINE") then
+            frame:RegisterEvent("LEARNED_SPELL_IN_SKILL_LINE")
+        end
         frame:RegisterEvent("CHALLENGE_MODE_MAPS_UPDATE")
         frame:RegisterEvent("SPELL_UPDATE_COOLDOWN")
         frame:SetScript("OnEvent", function(self, event)
@@ -339,12 +336,12 @@ Datatexts:Register("travel", {
                     self:UnregisterAllEvents()
                     self:SetScript("OnEvent", nil)
                     if self._flyout then
-                        UnregisterStateDriver(self._flyout, "combat")
+                        UnregisterStateDriver(self._flyout, "visibility")
                         self._flyout:Hide()
                     end
                 end)
             else
-                UnregisterStateDriver(frame._flyout, "combat")
+                UnregisterStateDriver(frame._flyout, "visibility")
                 frame._flyout:Hide()
             end
         end

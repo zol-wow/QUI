@@ -140,10 +140,8 @@ local POWER_COLORS = {
     [13] = { 0.4, 0, 0.8 },
 }
 
-local tocVersion = tonumber((select(4, GetBuildInfo()))) or 0
-
 local function GetHealthPct(unit, usePredicted)
-    if tocVersion >= 120000 and type(UnitHealthPercent) == "function"
+    if type(UnitHealthPercent) == "function"
        and CurveConstants and CurveConstants.ScaleTo100 then
         local ok, pct = pcall(UnitHealthPercent, unit, usePredicted, CurveConstants.ScaleTo100)
         if ok then return pct end
@@ -156,7 +154,7 @@ local function GetHealthPct(unit, usePredicted)
 end
 
 local function GetPowerPct(unit, powerType, usePredicted)
-    if tocVersion >= 120000 and type(UnitPowerPercent) == "function" then
+    if type(UnitPowerPercent) == "function" then
         local ok, pct
         if CurveConstants and CurveConstants.ScaleTo100 then
             ok, pct = pcall(UnitPowerPercent, unit, powerType, usePredicted, CurveConstants.ScaleTo100)
