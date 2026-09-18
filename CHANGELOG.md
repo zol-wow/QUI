@@ -4,6 +4,19 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.2-beta3 - 2026-09-18
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Damage Meter text is easier to read without font outlines.** Bright bar
+  fills, including priest-white and rogue-yellow, automatically darken behind
+  light text while preserving their hue and configured opacity. Unoutlined
+  window text also receives a black shadow; existing dark-text and outlined
+  bar styles keep their original fills.
+
 ## v5.3.2-beta2 - 2026-09-14
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
