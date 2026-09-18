@@ -4,6 +4,29 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-ptr-alpha9 - 2026-09-18
+
+> **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
+> interfaces 120105 and 16001. Forever support remains experimental.
+
+### Changed
+
+- **Restored the original account-wide saving for Forever.** QUI settings,
+  profiles, and tracked data again use the account-wide database. The temporary
+  character-only storage workaround from alpha8 has been removed.
+  **Retail continues using its normal account-wide storage.**
+- This rollback does not fix the reported Forever client persistence issue;
+  that issue remains unresolved. Other alpha8 features are unchanged.
+
+### Upgrading from Alpha8 on Forever
+
+- **Before updating, export any profile you want to keep and back up your WTF
+  folder.** Settings and tracked data saved in alpha8's character-local files
+  are **not automatically migrated** into the account-wide database.
+- After updating, import your same-client profile export if needed. Profile
+  exports preserve settings; retain the WTF backup for character-local tracked
+  data. Your previous account-wide settings may differ from your alpha8 setup.
+
 ## v5.5.0-ptr-alpha8 - 2026-09-18
 
 > **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
