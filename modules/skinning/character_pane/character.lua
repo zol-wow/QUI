@@ -445,6 +445,20 @@ end
 
 local function StyleSidebarTabs()
     local tabs = { _G.PaperDollSidebarTab1, _G.PaperDollSidebarTab2, _G.PaperDollSidebarTab3 }
+    if ns.Client and ns.Client.isForever and CharacterFrame and CharacterFrame.RightPaneHost then
+        if PaperDollSidebarTabs then
+            PaperDollSidebarTabs:ClearAllPoints()
+            PaperDollSidebarTabs:SetPoint("TOP", CharacterFrame.RightPaneHost, "TOP", 0, -4)
+            PaperDollSidebarTabs:SetSize(CharacterFrame.RightPaneHost:GetWidth(), 85)
+        end
+        for _, tab in ipairs(tabs) do
+            tab:SetSize(42, 42)
+        end
+        if _G.PaperDollFrame_UpdateSidebarTabLayout then
+            _G.PaperDollFrame_UpdateSidebarTabLayout()
+        end
+        return
+    end
 
     if not sidebarTabBaseWidth or not sidebarTabBaseHeight then
         local refTab = tabs[1]
@@ -1637,19 +1651,29 @@ end
 
 local function PositionStatsPanelForLayout()
     local settings = GetSettings()
+    local chrome = GetChrome()
+    local nativePane = chrome and chrome.GetNativeStatsPane and chrome.GetNativeStatsPane()
+    local useNativeLayout = ns.Client and ns.Client.isForever and nativePane
 
     local justCreated = false
     if not statsPanel then
-        statsPanel = CreateStatsPanel(CharacterFrame, "player")
+        statsPanel = CreateStatsPanel(useNativeLayout and CharacterFrame.RightPaneHost or CharacterFrame, "player")
         justCreated = true
     end
 
     if statsPanel then
         statsPanel:ClearAllPoints()
-        statsPanel:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 42, -70)
-        statsPanel:SetPoint("BOTTOMRIGHT", CharacterFrame, "BOTTOMRIGHT", 42, -45)
-        statsPanel:SetWidth(160)
-        statsPanel:SetFrameLevel(10)
+        if useNativeLayout then
+            statsPanel:SetScale(1)
+            statsPanel:SetPoint("TOPLEFT", nativePane, "TOPLEFT", 5, 0)
+            statsPanel:SetPoint("BOTTOMRIGHT", nativePane, "BOTTOMRIGHT", -5, 0)
+            statsPanel:SetFrameLevel(nativePane:GetFrameLevel() + 10)
+        else
+            statsPanel:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 42, -70)
+            statsPanel:SetPoint("BOTTOMRIGHT", CharacterFrame, "BOTTOMRIGHT", 42, -45)
+            statsPanel:SetWidth(160)
+            statsPanel:SetFrameLevel(10)
+        end
         statsPanel:Show()
 
         if justCreated then
@@ -1792,6 +1816,14 @@ CreateStatsPanel = function(parent, unit)
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
     scrollChild:SetSize(130, 1)
     scrollFrame:SetScrollChild(scrollChild)
+    if ns.Client and ns.Client.isForever then
+        scrollFrame:SetScript("OnSizeChanged", function(_, width)
+            scrollChild:SetWidth(width)
+            for _, row in ipairs(scrollChild.statRowPool or EMPTY) do
+                row:SetWidth(width - 10)
+            end
+        end)
+    end
 
     -- Shared scroll contract (eased wheel + thin proportional bar) from the
     -- chrome owner; the stats panel used to jump 20 px with no visible bar.
@@ -1945,6 +1977,10 @@ local function ShowStatTooltip(self)
     if not settings.showTooltips then
         return
     end
+    if self.onEnterFunc then
+        self:onEnterFunc()
+        return
+    end
     if not self.tooltip then
         return
     end
@@ -1966,6 +2002,9 @@ local function CreateStatRow(parent, yOffset)
     local statsColor = settings.statsTextColor or {0.953, 0.957, 0.965}
     local rowHeight = 14
     local fontSize = math.max(statsSize - 1, 8)
+    if ns.Client and ns.Client.isForever then
+        rowHeight = math.max(rowHeight, fontSize + 4)
+    end
 
     parent.statRowPool = parent.statRowPool or {}
     parent.statRowUsed = (parent.statRowUsed or 0) + 1
@@ -1976,12 +2015,21 @@ local function CreateStatRow(parent, yOffset)
         row.label:SetPoint("LEFT", row, "LEFT", 0, 0)
         row.value = row:CreateFontString(nil, "OVERLAY")
         row.value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        if ns.Client and ns.Client.isForever then
+            row.label:SetPoint("RIGHT", row.value, "LEFT", -6, 0)
+            row.label:SetJustifyH("LEFT")
+            row.value:SetJustifyH("RIGHT")
+            row.label:SetWordWrap(false)
+            row.value:SetWordWrap(false)
+        end
         parent.statRowPool[parent.statRowUsed] = row
     end
 
     row:SetSize(parent:GetWidth() - 10, rowHeight)
     row:SetPoint("TOPLEFT", 5, yOffset)
-    row.tooltip, row.tooltip2, row.tooltip3 = nil, nil, nil
+    row.Label, row.Value = row.label, row.value
+    row.tooltip, row.tooltip2, row.tooltip3, row.tooltip4 = nil, nil, nil, nil
+    row.onEnterFunc, row.UpdateTooltip, row.numericValue, row.tooltipLabel = nil, nil, nil, nil
 
     if settings.showTooltips then
         row:EnableMouse(true)
@@ -2015,6 +2063,9 @@ local function CreateSectionHeader(parent, text, yOffset)
     local headerSize = settings.headerTextSize or 12
     local fontSize = math.max(headerSize - 2, 10)
     local headerHeight = 14
+    if ns.Client and ns.Client.isForever then
+        headerHeight = math.max(headerHeight, fontSize + 4)
+    end
     local headerColor
     if settings.headerClassColor then
         local _, class = UnitClass("player")
@@ -2131,11 +2182,53 @@ local function CreateStatBar(parent, yOffset, color)
     return row
 end
 
+local function UpdateForeverStatsPanel(scrollChild, unit, y)
+    for _, category in ipairs(_G.PAPERDOLL_STATCATEGORIES) do
+        if not category.unit or category.unit == unit then
+            local hasHeader = false
+            for _, stat in ipairs(category.stats) do
+                if (not stat.unit or stat.unit == unit) and (not stat.showFunc or stat.showFunc()) then
+                    local row = CreateStatRow(scrollChild, y)
+                    local value = _G.PAPERDOLL_STATINFO[stat.stat].updateFunc(row, unit, stat.id)
+                    if row:IsShown() and (stat.hideAt == nil or value ~= stat.hideAt) then
+                        if not hasHeader then
+                            local _, headerHeight = CreateSectionHeader(scrollChild, category.categoryName, y)
+                            y = y - headerHeight
+                            hasHeader = true
+                        end
+                        row:SetPoint("TOPLEFT", 5, y)
+                        y = y - row:GetHeight()
+                    else
+                        row:Hide()
+                    end
+                end
+            end
+            if hasHeader then y = y - 5 end
+        end
+    end
+
+    if unit == "player" or unit == "pet" then
+        local _, headerHeight = CreateSectionHeader(scrollChild, _G.STAT_CATEGORY_RESISTANCE, y)
+        y = y - headerHeight
+        for _, school in ipairs({ Enum.Damageclass.Arcane, Enum.Damageclass.Fire,
+            Enum.Damageclass.Frost, Enum.Damageclass.Nature, Enum.Damageclass.Shadow }) do
+            local row = CreateStatRow(scrollChild, y)
+            local name = _G["DAMAGE_SCHOOL" .. (school + 1)]
+            local _, effectiveResistance = _G.UnitResistance(unit, school)
+            row.label:SetText(name)
+            row.value:SetText(BreakUpLargeNumbers(effectiveResistance))
+            _G.PaperDollFrame_SetResistanceTooltips(row, name, effectiveResistance, unit, school)
+            y = y - row:GetHeight()
+        end
+    end
+    return y
+end
+
 local function FinalizeStatsPanelLayout(panel, scrollChild, yOffset)
     local contentHeight = math.abs(yOffset) + 20
     scrollChild:SetHeight(contentHeight)
 
-    panel:SetScale(0.92)
+    panel:SetScale(ns.Client and ns.Client.isForever and 1 or 0.92)
 
     local scrollFrame = panel.scrollFrame
     if scrollFrame then
@@ -2152,6 +2245,11 @@ local function FinalizeStatsPanelLayout(panel, scrollChild, yOffset)
 end
 
 local function MaskNativeStatsPane()
+    local chrome = GetChrome()
+    if chrome and chrome.MaskNativeStatsPane then
+        chrome.MaskNativeStatsPane()
+        return
+    end
     if not CharacterStatsPane then return end
     ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "Show")
     ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "SetAlpha", 0)
@@ -2164,6 +2262,14 @@ ns.QUI_MaskNativeStatsPane = MaskNativeStatsPane
 
 local function UpdateStatsPanel(panel, unit)
     if not panel or not panel.scrollChild then return end
+    if ns.Client and ns.Client.isForever and (unit or panel.unit or "player") == "player" then
+        local chrome = GetChrome()
+        local nativePane = chrome and chrome.GetNativeStatsPane and chrome.GetNativeStatsPane()
+        if nativePane and not nativePane:IsShown() then
+            panel:Hide()
+            return
+        end
+    end
 
     if InCombatLockdown() then
         pendingStatsPanelRefresh = true
@@ -2211,10 +2317,14 @@ local function UpdateStatsPanel(panel, unit)
         scrollChild.sectionHeaderUsed = 0
 
         local y = -5
-        local ROW_HEIGHT = 14
+        local ROW_HEIGHT = ns.Client and ns.Client.isForever and math.max(14, (settings.statsTextSize or 11) + 3) or 14
         local SECTION_GAP = 8
         local BAR_HEIGHT = 16
+        local _, row, headerHeight
 
+        if ns.Client and ns.Client.isForever then
+            y = UpdateForeverStatsPanel(scrollChild, unit, y)
+        else
         local statPolicy = GetSkinBase().CreateSecretAwareStatPolicy({
             unit = unit,
             secretDetector = AreCharacterStatsSecretsDisabled,
@@ -2230,7 +2340,7 @@ local function UpdateStatsPanel(panel, unit)
         end
         local secretsOff = statPolicy.secretsRestricted
 
-        local row = CreateStatRow(scrollChild, y)
+        row = CreateStatRow(scrollChild, y)
         row.label:SetText(ns.L["Health"])
         do
             local hOk, healthMax = pcall(UnitHealthMax, unit)
@@ -2269,7 +2379,7 @@ local function UpdateStatsPanel(panel, unit)
 
         y = y - 5
 
-        local _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Attributes"], y)
+        _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Attributes"], y)
         y = y - headerHeight
 
         local stats = {
@@ -2865,6 +2975,8 @@ local function UpdateStatsPanel(panel, unit)
         end
     end
 
+        end
+
         if settings.showGemSummary then
             y = y - 5
             _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Gems"], y)
@@ -2922,7 +3034,10 @@ local function UpdateStatsPanel(panel, unit)
 
     if not success then
         if panel then ns.SafeCallMethod("best-effort-style", panel, "Hide") end
-        if CharacterStatsPane then
+        local chrome = GetChrome()
+        if chrome and chrome.RestoreNativeStatsPane then
+            chrome.RestoreNativeStatsPane()
+        elseif CharacterStatsPane then
             ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "SetAlpha", 1)
             ns.SafeCallMethodIfPresent("best-effort-style", CharacterStatsPane, "EnableMouse", true)
             if CharacterStatsPane.ClassBackground then
@@ -3218,14 +3333,28 @@ local function HookCharacterFrame()
         RestoreCharacterPanePopouts()
     end)
 
-    if CharacterStatsPane then
-        hooksecurefunc(CharacterStatsPane, "Show", function()
+    local chrome = GetChrome()
+    local nativeStatsPane = chrome and chrome.GetNativeStatsPane and chrome.GetNativeStatsPane() or CharacterStatsPane
+    if nativeStatsPane then
+        if ns.Client and ns.Client.isForever then
+            nativeStatsPane:HookScript("OnHide", function()
+                if statsPanel then statsPanel:Hide() end
+            end)
+        end
+        hooksecurefunc(nativeStatsPane, "Show", function()
             C_Timer.After(0, function()
                 local settings = GetSettings()
-                if settings.enabled and CharacterStatsPane then
+                if settings.enabled then
                     MaskNativeStatsPane()
+                    if ns.Client and ns.Client.isForever then ScheduleUpdate() end
                 end
             end)
+        end)
+    end
+
+    if ns.Client and ns.Client.isForever and type(_G.PaperDollFrame_UpdateStats) == "function" then
+        hooksecurefunc("PaperDollFrame_UpdateStats", function()
+            if GetSettings().enabled then ScheduleUpdate() end
         end)
     end
 
@@ -3241,12 +3370,15 @@ local function HookCharacterFrame()
         GetState(CharacterFrame).sidebarSkinHooked = true
     end
 
-    if PaperDollSidebarTab3 and not (frameState[PaperDollSidebarTab3] or EMPTY).hooked then
-        PaperDollSidebarTab3:HookScript("OnClick", function()
+    local equipmentTab = ns.Client and ns.Client.isForever and PaperDollSidebarTab2 or PaperDollSidebarTab3
+    if equipmentTab and not (frameState[equipmentTab] or EMPTY).hooked then
+        equipmentTab:HookScript("OnClick", function()
             local settings = GetSettings()
             if not settings.enabled then return end
 
             RestoreCharacterPanePopouts()
+
+            if ns.Client and ns.Client.isForever and statsPanel then statsPanel:Hide() end
 
             local popup = CreateEquipMgrPopup()
 
@@ -3277,10 +3409,10 @@ local function HookCharacterFrame()
             end
 
         end)
-        GetState(PaperDollSidebarTab3).hooked = true
+        GetState(equipmentTab).hooked = true
     end
 
-    if PaperDollSidebarTab2 and not (frameState[PaperDollSidebarTab2] or EMPTY).hooked then
+    if not (ns.Client and ns.Client.isForever) and PaperDollSidebarTab2 and not (frameState[PaperDollSidebarTab2] or EMPTY).hooked then
         PaperDollSidebarTab2:HookScript("OnClick", function()
             local settings = GetSettings()
             if not settings.enabled then return end
@@ -3316,6 +3448,16 @@ local function HookCharacterFrame()
             end
         end)
         GetState(PaperDollSidebarTab2).hooked = true
+    end
+
+    if ns.Client and ns.Client.isForever and PaperDollSidebarTab3 and not (frameState[PaperDollSidebarTab3] or EMPTY).hooked then
+        PaperDollSidebarTab3:HookScript("OnClick", function()
+            local settings = GetSettings()
+            if not settings.enabled then return end
+            RestoreCharacterPanePopouts()
+            if statsPanel then statsPanel:Hide() end
+        end)
+        GetState(PaperDollSidebarTab3).hooked = true
     end
 
     if GearManagerPopupFrame then
@@ -3445,7 +3587,11 @@ local function HookCharacterFrame()
                 end
                 RunAfterCharacterPaneLayoutTick(function()
                     if statsPanel then
-                        statsPanel:Show()
+                        if ns.Client and ns.Client.isForever then
+                            UpdateStatsPanel(statsPanel, "player")
+                        else
+                            statsPanel:Show()
+                        end
                     end
                 end)
             end
