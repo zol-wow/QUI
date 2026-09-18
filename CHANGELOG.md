@@ -4,6 +4,48 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-ptr-alpha8 - 2026-09-18
+
+> **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
+> interfaces 120105 and 16001. Forever support remains experimental.
+
+### Added
+
+- **Forever native swing timers** for main hand, off hand, and ranged weapons,
+  with Gameplay settings and Layout Mode controls for position, size, texture,
+  labels, and visibility. Blizzard continues to handle swing timing.
+- **More Forever features are available:** QUI bank and group frames,
+  mouse-button clickcasting, Quick Salvage outside combat, and position controls
+  for supported open Blizzard panels.
+- **Forever resource bars support native combo points and druid mana**, and
+  defensive-spell suggestions include known spells from class metadata.
+
+### Fixed
+
+- **Forever character stats use the native stat catalog and correct viewport**,
+  including resistance labels, stat refreshes, and Character/Equipment navigation.
+- **Swing timer drawer controls no longer overlap** when choosing a bar texture
+  or font size.
+
+### Temporary Forever Storage Workaround
+
+- **Forever saves QUI settings and stored data per character** to work around
+  the reported client persistence issue. Existing account-wide data is not
+  automatically migrated, and settings/storage are not shared across characters.
+  **Retail retains its normal account-wide storage.** This workaround is intended
+  to be reverted after Blizzard fixes the underlying issue.
+- Back up your WTF folder before updating and retain those backups for the
+  eventual storage transition. A successful Forever persistence probe has been
+  reported; complete live validation remains pending.
+
+### Alpha Limits
+
+- Forever GSE integration and hover keyboard/wheel clickcasting remain
+  unavailable. Protected placement covers supported registered panels, not
+  arbitrary protected frames or protected scaling.
+- Automated checks cover both clients; combat behavior, feature visuals, and
+  defensive-spell coverage still need live verification.
+
 ## v5.5.0-ptr-alpha7 - 2026-09-18
 
 > **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
