@@ -331,6 +331,10 @@ local function BuildClickCastGeneral(L, cc, refreshClickCast, state)
     L.headerAt(ns.L["Settings"])
     L.intro(ns.L["Note: If Clique addon is loaded, QUI click-casting is disabled by default to avoid conflicts."])
 
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then
+        L.intro(ns.L["Forever supports mouse buttons with modifiers. Hover keyboard and scroll-wheel bindings are unavailable; saved bindings are retained."])
+    end
+
     local s = L.sectionAt()
     local enableW = GUI:CreateFormCheckbox(s.frame, nil, "enabled", cc, refreshClickCast,
         { description = ns.L["Master toggle for QUI's click-cast system. When on, clicks and key presses on raid/party/unit frames fire the bindings configured below instead of just targeting."] })
@@ -890,6 +894,11 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         { value = "ScrollUp",     text = ns.L["Scroll Up"] },
         { value = "ScrollDown",   text = ns.L["Scroll Down"] },
     }
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then
+        table.remove(BINDING_TYPE_OPTIONS, 2)
+        table.remove(BUTTON_OPTIONS, 7)
+        table.remove(BUTTON_OPTIONS, 6)
+    end
     local MOD_OPTIONS = {
         { value = "",              text = ns.L["None"] },
         { value = "shift",         text = ns.L["Shift"] },

@@ -1662,7 +1662,6 @@ function QUI_GFEM:NudgeHeader(headerKey, dx, dy)
 end
 
 function QUI_GFEM:CreateSpotlightHeader()
-    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     local db = GetDB()
     local spot = db and db.raid and db.raid.spotlight
     if not spot or not spot.enabled then return end
@@ -1710,7 +1709,7 @@ function QUI_GFEM:CreateSpotlightHeader()
         spotlightHeader:SetAttribute("qui-unit-width", w)
         spotlightHeader:SetAttribute("qui-unit-height", h)
         spotlightHeader:SetAttribute("template", "SecureUnitButtonTemplate, BackdropTemplate")
-        spotlightHeader:SetAttribute("initialConfigFunction", initConfigFunc)
+        ns.QUI_GroupFrameIconLayout.ConfigureHeaderInitialization(spotlightHeader, initConfigFunc)
         spotlightHeader:SetAttribute("showRaid", true)
         spotlightHeader:SetAttribute("showParty", true)
         spotlightHeader:SetPoint("TOPLEFT")
@@ -1722,6 +1721,7 @@ function QUI_GFEM:CreateSpotlightHeader()
     end
 
     spotlightContainer:Show()
+    ns.QUI_GroupFrameIconLayout.PreallocateHeaderChildren(spotlightHeader, 40)
 
     local filterMode = spot.filterMode or "ROLE"
     local spacing = spot.spacing or 2

@@ -1,6 +1,6 @@
 local addonName, ns = ...
-if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
 local Helpers = ns.Helpers
+local useNativeActions = ns.Client and ns.Client.restrictedExecutionUnavailable
 
 local QuickSalvage = {}
 ns.QuickSalvage = QuickSalvage
@@ -95,7 +95,8 @@ end
 local function RebuildSalvageLookup()
     if SalvageLookupBuilding then return end
     if InCombatLockdown() then return end
-    if not (C_TradeSkillUI and C_TradeSkillUI.GetAllRecipeIDs and C_TradeSkillUI.GetRecipeSchematic) then return end
+    local getRecipeIDs = C_TradeSkillUI and (C_TradeSkillUI.GetAllRecipeIDs or C_TradeSkillUI.GetFilteredRecipeIDs)
+    if not (getRecipeIDs and C_TradeSkillUI.GetRecipeSchematic) then return end
     if C_TradeSkillUI.IsTradeSkillReady and not C_TradeSkillUI.IsTradeSkillReady() then return end
     if not EnsureProfessionsUI() then return end
     local now = GetTime and GetTime() or 0
@@ -106,7 +107,7 @@ local function RebuildSalvageLookup()
 
     local ok = pcall(function()
         table.wipe(SalvageLookup)
-        local recipeIDs = C_TradeSkillUI.GetAllRecipeIDs() or {}
+        local recipeIDs = getRecipeIDs() or {}
         local salvageRecipeType = Enum.TradeskillRecipeType and Enum.TradeskillRecipeType.Salvage
         local itemRecipeType = Enum.TradeskillRecipeType and Enum.TradeskillRecipeType.Item
 
@@ -114,7 +115,7 @@ local function RebuildSalvageLookup()
             local schematic = C_TradeSkillUI.GetRecipeSchematic(recipeID, false)
             if schematic and (schematic.recipeType == salvageRecipeType or schematic.recipeType == itemRecipeType) then
                 local recipeInfo = C_TradeSkillUI.GetRecipeInfo and C_TradeSkillUI.GetRecipeInfo(recipeID)
-                local recipeSpellID = (recipeInfo and recipeInfo.recipeSpellID) or schematic.recipeSpellID
+                local recipeSpellID = schematic.recipeID
                 if recipeSpellID then
                     local isLearned = (recipeInfo and recipeInfo.learned) or IsPlayerSpell(recipeSpellID)
                     if isLearned then
@@ -187,7 +188,9 @@ local function GetSettings()
 end
 
 local function PlayerHasSpell(spellID)
-    return IsPlayerSpell(spellID)
+    if IsPlayerSpell(spellID) then return true end
+    local recipe = C_TradeSkillUI.GetRecipeInfo(spellID)
+    return recipe and recipe.learned and not recipe.disabled
 end
 
 local function IsModifierActive()
@@ -255,7 +258,8 @@ local TEMPLATES = {
     'SecureHandlerEnterLeaveTemplate',
 }
 
-local SalvageButton = CreateFrame("Button", "QUI_QuickSalvageButton", UIParent, table.concat(TEMPLATES, ','))
+local SalvageButton = CreateFrame("Button", "QUI_QuickSalvageButton", UIParent,
+    useNativeActions and "InsecureActionButtonTemplate" or table.concat(TEMPLATES, ','))
 SalvageButton:SetFrameStrata("TOOLTIP")
 SalvageButton:EnableMouse(true)
 SalvageButton:RegisterForClicks("AnyUp", "AnyDown")
@@ -355,6 +359,7 @@ local function ApplyOwnerRect(self, ownerRect)
 end
 
 function SalvageButton:ApplySpell(bagID, slotID, itemLink, spellID, color, ownerRect)
+    if InCombatLockdown() then return end
     self:SetAttribute('target-bag', bagID)
     self:SetAttribute('target-slot', slotID)
     self.itemLink = itemLink
@@ -375,7 +380,8 @@ function SalvageButton:ApplySpell(bagID, slotID, itemLink, spellID, color, owner
         typePrefix = "alt-"
     end
 
-    local spellSlot = FindSpellBookSlotBySpellID and FindSpellBookSlotBySpellID(spellID)
+    local findSpellSlot = C_SpellBook.FindSpellBookSlotForSpell or FindSpellBookSlotBySpellID
+    local spellSlot = findSpellSlot and findSpellSlot(spellID)
 
     if spellSlot then
         self:SetAttribute('spell', spellID)
@@ -402,9 +408,11 @@ function SalvageButton:UpdateAttributeDriver()
     local settings = GetSettings()
     if not settings or not settings.enabled then
         UnregisterStateDriver(self, 'visibility')
+        self:Hide()
         return
     end
 
+    self:Hide()
     currentModifier = settings.modifier or "ALT"
     UnregisterStateDriver(self, 'visibility')
 end
@@ -417,20 +425,27 @@ SalvageButton:HookScript('OnShow', function(self)
     self:SetAttribute('_entered', true)
 end)
 
-SalvageButton:SetAttribute('_onleave', 'self:ClearAllPoints();self:Hide()')
+if useNativeActions then
+    SalvageButton:HookScript('OnLeave', function(self)
+        self:Hide()
+        self:ClearAllPoints()
+    end)
+else
+    SalvageButton:SetAttribute('_onleave', 'self:ClearAllPoints();self:Hide()')
 
-SalvageButton:SetAttribute('_onattributechanged', [[
+    SalvageButton:SetAttribute('_onattributechanged', [[
     if name == 'visibility' and value == 'hide' and self:IsShown() then
         self:ClearAllPoints()
         self:Hide()
     end
-]])
+    ]])
+end
 
 SalvageButton:HookScript('OnHide', function(self)
     self.itemLink = nil
     self.spellID = nil
     self._ownerRect = nil
-    if not InCombatLockdown() then
+    if useNativeActions or not InCombatLockdown() then
         self:SetAttribute('target-bag', nil)
         self:SetAttribute('target-slot', nil)
         self:SetAttribute('_entered', false)
@@ -547,6 +562,7 @@ end
 local eventFrame = CreateFrame("Frame")
 
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+if useNativeActions then eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED") end
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("MODIFIER_STATE_CHANGED")
 eventFrame:RegisterEvent("TRADE_SKILL_SHOW")
@@ -554,7 +570,9 @@ eventFrame:RegisterEvent("TRADE_SKILL_LIST_UPDATE")
 eventFrame:RegisterEvent("TRADE_SKILL_DATA_SOURCE_CHANGED")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "BAG_UPDATE_DELAYED" then
+    if event == "PLAYER_REGEN_DISABLED" then
+        SalvageButton:Hide()
+    elseif event == "BAG_UPDATE_DELAYED" then
         if SalvageButton:IsShown() and not InCombatLockdown() then
             SalvageButton:Hide()
         end

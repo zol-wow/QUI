@@ -13,6 +13,7 @@
 bootstrap.lua
 reminders\bossmods.lua
 reminders\journal.lua
+reminders\defensive_spell_classes.lua
 reminders\defensives.lua
 reminders\callout.lua
 reminders\engine.lua

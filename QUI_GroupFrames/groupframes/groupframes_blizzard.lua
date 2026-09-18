@@ -23,7 +23,6 @@ local hideRefreshPending
 local StripBlizzardGroupEvents
 
 local function ShouldHide()
-    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     local db = GetDB()
     return db and db.enabled
 end
