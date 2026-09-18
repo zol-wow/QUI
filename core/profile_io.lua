@@ -1302,6 +1302,7 @@ local PROFILE_IMPORT_CATEGORIES = {
             "totemBar",
             "preyTracker",
             "incomingCasts",
+            "swingTimers",
         },
     },
     {

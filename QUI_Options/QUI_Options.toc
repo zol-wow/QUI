@@ -115,6 +115,7 @@ aura_elements_editor.lua
 ..\QUI\modules\qol\settings\consumables.lua
 ..\QUI\modules\qol\settings\combat_timer.lua
 ..\QUI\modules\qol\settings\lust_timer.lua
+..\QUI\modules\qol\settings\swing_timers_content.lua
 ..\QUI\modules\qol\settings\tooltip_anchor.lua
 ..\QUI\modules\qol\settings\provider_panels.lua
 ..\QUI\modules\qol\settings\action_tracker.lua

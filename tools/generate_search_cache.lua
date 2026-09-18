@@ -783,6 +783,9 @@ _G.C_CVar = {
         return _G.SetCVar(cvar, value)
     end,
 }
+_G.CVarCallbackRegistry = {
+    GetCVarValueBool = function(_, cvar) return _G.GetCVarBool(cvar) end,
+}
 _G.C_NamePlateManager = {
     SetNamePlateSimplified = function() end,
 }
@@ -1084,14 +1087,14 @@ ns.AddonLoader = {
     SetModuleAddonEnabled = function() return "reload" end,
 }
 
-local function load_script(path)
+local function load_script(path, script_ns)
     local chunk, load_err = loadfile(path)
     if not chunk then
         return false, load_err
     end
 
     return xpcall(function()
-        return chunk(ADDON_NAME, ns)
+        return chunk(ADDON_NAME, script_ns or ns)
     end, debug.traceback)
 end
 
@@ -1102,6 +1105,21 @@ collect_qui_options_scripts(scripts, script_xml_seen)
 
 local failures = {}
 local loaded_count = 0
+
+do
+    local swing_ns = setmetatable({
+        Client = { isForever = true },
+        WhenLoggedIn = function() end,
+        Registry = { Register = function() end },
+    }, { __index = ns })
+    local path = "modules/skinning/gameplay/swing_timers.lua"
+    local ok, err = load_script(path, swing_ns)
+    if ok then
+        ns.SwingTimers = swing_ns.SwingTimers
+    else
+        failures[#failures + 1] = { path = path, error = err }
+    end
+end
 
 -- groupframes_aura_model.lua is now a compatibility shim: `local E =
 -- ns.AuraElements` captured at file scope, delegating every constructor to the
@@ -3201,6 +3219,13 @@ clear_non_plain_arrays_before_route_seed()
 
 if type(GUI.SeedStaticSearchRoutesFromTiles) == "function" then
     GUI:SeedStaticSearchRoutesFromTiles(frame)
+end
+
+local swing_route = ns.Settings.Registry:GetFeature("swingTimersPage").nav
+for _, entry in ipairs(GUI.StaticNavigationRegistry) do
+    if entry.tileId == swing_route.tileId and entry.subPageIndex == swing_route.subPageIndex then
+        entry.featureId = entry.featureId or "swingTimersPage"
+    end
 end
 
 -- Phase 1+ Modules Control Center: emit moduleToggle navigation entries

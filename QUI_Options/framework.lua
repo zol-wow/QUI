@@ -746,11 +746,14 @@ function GUI:ApplyGeneratedSearchCache(cache, schema)
     end
 
     local order = type(schema) == "table" and schema or {}
+    local function IsAvailable(entry)
+        return ns.SwingTimers or not (type(entry.featureId) == "string" and entry.featureId:match("^swingTimer"))
+    end
     for _, entry in ipairs(RehydrateSearchRows(cache.navigation, order.navigation)) do
-        self:RegisterStaticNavigationEntry(entry)
+        if IsAvailable(entry) then self:RegisterStaticNavigationEntry(entry) end
     end
     for _, entry in ipairs(RehydrateSearchRows(cache.settings, order.settings)) do
-        self:RegisterStaticSettingEntry(entry)
+        if IsAvailable(entry) then self:RegisterStaticSettingEntry(entry) end
     end
 
     self._generatedSearchCacheVersion = cache.version
