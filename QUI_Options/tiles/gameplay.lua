@@ -9,7 +9,7 @@ function V2.Register(frame)
         return
     end
 
-    Opts.RegisterFeatureTile(frame, {
+    local tile = {
         id = "gameplay",
         icon = "G",
         name = ns.L["Gameplay"],
@@ -88,5 +88,13 @@ function V2.Register(frame)
                 },
             },
         },
-    })
+    }
+    if ns.SwingTimers then
+        tile.subPages[#tile.subPages + 1] = {
+            id = "swingTimers",
+            name = ns.L["Swing Timers"],
+            featureId = "swingTimersPage",
+        }
+    end
+    Opts.RegisterFeatureTile(frame, tile)
 end

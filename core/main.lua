@@ -703,6 +703,7 @@ function QUICore:HookEditMode()
             "OverrideActionBar", "MainMenuBarVehicleLeaveButton",
             "ObjectiveTrackerFrame",
             "DurabilityFrame",
+            "SwingTimerMainHandFrame", "SwingTimerOffHandFrame", "SwingTimerRangedFrame",
             "PlayerCastingBarFrame",
             "GameTooltipDefaultContainer",
         }

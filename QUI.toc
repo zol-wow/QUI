@@ -6,9 +6,10 @@
 ## AddonCompartmentFuncOnLeave: QUI_CompartmentOnLeave
 ## Notes: Comprehensive UI customization addon
 ## Author: Zol and Drew
-## Version: 5.5.0-ptr-alpha7
+## Version: 5.5.0-ptr-alpha7-svchar-test
 ## Category: User Interface
-## SavedVariables: QUIDB, QUI_StorageDB
+## SavedVariables: QUIDB, QUI_StorageDB [ExcludeLoadGameType camelot]
+## SavedVariablesPerCharacter: QUIDB, QUI_StorageDB [AllowLoadGameType camelot]
 ## LoadSavedVariablesFirst: 1
 ## OptionalDeps: DandersFrames, BigWigs
 
@@ -218,6 +219,7 @@ modules\skinning\frames\character.lua
 modules\skinning\frames\statustracking.lua
 modules\skinning\frames\inspect.lua
 modules\skinning\gameplay\powerbaralt.lua
+modules\skinning\gameplay\swing_timers.lua
 modules\skinning\notifications\readycheck.lua
 modules\skinning\system\gamemenu.lua
 modules\skinning\system\popups.lua

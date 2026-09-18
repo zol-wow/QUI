@@ -3994,7 +3994,25 @@ local defaults = {
             groupFrames = 4,
             groupPetFrames = 3,
         },
+        swingTimers = {
+            ["*"] = {
+                width = 250, height = 20, texture = "Flat", fontSize = 11,
+                showTitle = true, showTime = true, visibility = 0,
+            },
+        },
         frameAnchoring = {
+            swingTimerMainHand = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = -180,
+            },
+            swingTimerOffHand = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = -206,
+            },
+            swingTimerRanged = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = -232,
+            },
             primaryPower = {
                 point = "TOP", parent = "cdmEssential", relative = "BOTTOM",
                 offsetX = 0, offsetY = 0,
