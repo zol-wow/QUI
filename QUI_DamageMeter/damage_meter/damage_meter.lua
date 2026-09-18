@@ -1358,6 +1358,32 @@ local function ApplyRowBackgroundVisibility(row, windowID)
 end
 QUI_DamageMeter.ApplyRowBackgroundVisibility = ApplyRowBackgroundVisibility
 
+local function SetRowBarColor(row, r, g, b, a)
+    local gui = _G.QUI.GUI
+    local _, _, nameOutline = row.Name:GetFont()
+    local _, _, valueOutline = row.Value:GetFont()
+    if not nameOutline or nameOutline == "" or not valueOutline or valueOutline == "" then
+        local nr, ng, nb = row.Name:GetTextColor()
+        local vr, vg, vb = row.Value:GetTextColor()
+        local textLuminance = math.min(gui:GetRelativeLuminance(nr, ng, nb),
+            gui:GetRelativeLuminance(vr, vg, vb))
+        local ceiling = (textLuminance + 0.05) / 4.5 - 0.05
+        if textLuminance >= 0.45 and gui:GetRelativeLuminance(r, g, b) > ceiling then
+            local lo, hi = 0, 1
+            for _ = 1, 12 do
+                local mid = (lo + hi) / 2
+                if gui:GetRelativeLuminance(r * mid, g * mid, b * mid) > ceiling then
+                    hi = mid
+                else
+                    lo = mid
+                end
+            end
+            r, g, b = r * lo, g * lo, b * lo
+        end
+    end
+    row.Bar:SetStatusBarColor(r, g, b, a)
+end
+
 local function FindLocalPlayerInSources(sources)
     if not sources then return nil end
     for i, src in ipairs(sources) do
@@ -1693,19 +1719,19 @@ function Window:_SetRowSource(row, source, maxAmount)
     if ResolveAppearance(windowID, "useClassColor") and source.classFilename and RAID_CLASS_COLORS then
         local c = Helpers.GetClassColorTable(source.classFilename)
         if c then
-            row.Bar:SetStatusBarColor(c.r, c.g, c.b, alpha)
+            SetRowBarColor(row, c.r, c.g, c.b, alpha)
         else
-            row.Bar:SetStatusBarColor(0.5, 0.5, 0.5, alpha)
+            SetRowBarColor(row, 0.5, 0.5, 0.5, alpha)
         end
     elseif ResolveAppearance(windowID, "barColorAccent") then
         local ar, ag, ab = GetAccentColor()
-        row.Bar:SetStatusBarColor(ar, ag, ab, alpha)
+        SetRowBarColor(row, ar, ag, ab, alpha)
     else
         local bc = ResolveAppearance(windowID, "barColor")
         if bc then
-            row.Bar:SetStatusBarColor(bc[1] or 0.35, bc[2] or 0.55, bc[3] or 0.8, alpha)
+            SetRowBarColor(row, bc[1] or 0.35, bc[2] or 0.55, bc[3] or 0.8, alpha)
         else
-            row.Bar:SetStatusBarColor(0.35, 0.55, 0.8, alpha)
+            SetRowBarColor(row, 0.35, 0.55, 0.8, alpha)
         end
     end
 
@@ -1802,6 +1828,9 @@ function Window:_ApplyFonts()
         else
             fs:SetFont(p, s, o)
         end
+        local shadow = o == "" and 1 or 0
+        fs:SetShadowColor(0, 0, 0, shadow)
+        fs:SetShadowOffset(shadow, -shadow)
     end
 
     do
@@ -2966,10 +2995,10 @@ function Breakdown:_SetSpellRow(row, spell, maxAmount, totalAmount)
     local alpha = ResolveAppearance(self.parentWindowID, "barFillAlpha") or 1
     if ResolveAppearance(self.parentWindowID, "barColorAccent") then
         local ar, ag, ab = GetAccentColor()
-        row.Bar:SetStatusBarColor(ar, ag, ab, alpha)
+        SetRowBarColor(row, ar, ag, ab, alpha)
     else
         local bc = ResolveAppearance(self.parentWindowID, "barColor") or { 0.35, 0.55, 0.8, 1 }
-        row.Bar:SetStatusBarColor(bc[1] or 0.35, bc[2] or 0.55, bc[3] or 0.8, alpha)
+        SetRowBarColor(row, bc[1] or 0.35, bc[2] or 0.55, bc[3] or 0.8, alpha)
     end
 end
 
@@ -3085,9 +3114,9 @@ function Breakdown:_SetDeathRow(row, event, maxHealth, deathTime)
 
     local alpha = ResolveAppearance(self.parentWindowID, "barFillAlpha") or 1
     if isHeal then
-        row.Bar:SetStatusBarColor(0.10, 0.50, 0.10, alpha)
+        SetRowBarColor(row, 0.10, 0.50, 0.10, alpha)
     else
-        row.Bar:SetStatusBarColor(0.60, 0.08, 0.08, alpha)
+        SetRowBarColor(row, 0.60, 0.08, 0.08, alpha)
     end
 end
 
@@ -3137,13 +3166,13 @@ function Breakdown:_SetTargetRow(row, target, maxAmount)
     local alpha = ResolveAppearance(self.parentWindowID, "barFillAlpha") or 1
     if target.classFilename and RAID_CLASS_COLORS and RAID_CLASS_COLORS[target.classFilename] then
         local c = Helpers.GetClassColorTable(target.classFilename)
-        row.Bar:SetStatusBarColor(c.r, c.g, c.b, alpha)
+        SetRowBarColor(row, c.r, c.g, c.b, alpha)
     elseif ResolveAppearance(self.parentWindowID, "barColorAccent") then
         local ar, ag, ab = GetAccentColor()
-        row.Bar:SetStatusBarColor(ar, ag, ab, alpha)
+        SetRowBarColor(row, ar, ag, ab, alpha)
     else
         local bc = ResolveAppearance(self.parentWindowID, "barColor") or { 0.35, 0.55, 0.8, 1 }
-        row.Bar:SetStatusBarColor(bc[1] or 0.35, bc[2] or 0.55, bc[3] or 0.8, alpha)
+        SetRowBarColor(row, bc[1] or 0.35, bc[2] or 0.55, bc[3] or 0.8, alpha)
     end
 end
 
