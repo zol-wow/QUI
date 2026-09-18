@@ -4,6 +4,48 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-ptr-alpha7 - 2026-09-18
+
+> **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
+> interfaces 120105 and 16001. Forever support remains experimental.
+
+### Added
+
+- **Optional automatic resurrection acceptance** under Quality of Life →
+  Automation, with separate Off, Out of Combat, and Always modes for dungeons,
+  raids, PvP, and the open world. All locations default to Off; hold Shift to
+  keep an incoming offer manual.
+
+### Changed
+
+- **Damage Meter improves readability on bright bars without text outlines**,
+  automatically darkening their fills while preserving hue and configured
+  transparency. Text without an outline also receives a black shadow.
+- **Forever compatibility workarounds now apply across Forever builds**,
+  including native action-bar fallback and Cooldown Manager Edit Mode previews.
+
+### Fixed
+
+- **Forever reload buttons and confirmation dialogs reload correctly**,
+  including module toggles in the settings sidebar.
+- **Forever preserves existing character settings and profile selection across
+  the character-identity update.** Invalid profile names show an error instead
+  of interrupting profile controls; automatic spec switching skips invalid
+  saved mappings without deleting their data.
+- **Forever Character and Reputation panels avoid anchor and progress-bar
+  errors**, main action-bar divider artwork stays hidden, and the Info Bar
+  Legacy button follows the native keyboard-toggle behavior.
+- **Loot windows, roll prompts, previews, and bag tooltips use the supported
+  item-quality color API**, fixing missing-function errors.
+
+### Alpha Limits
+
+- Forever retains native bank and group controls. QUI clickcasting, Quick
+  Salvage, GSE integration, protected-frame mover placement, secondary resource
+  bars, and automatic defensive-spell suggestions remain unavailable there.
+- This release has automated coverage for both clients. Combat behavior and
+  visual changes still need live testing; back up your WTF folder before updating.
+
 ## v5.5.0-ptr-alpha6 - 2026-09-17
 
 > **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** This package supports
