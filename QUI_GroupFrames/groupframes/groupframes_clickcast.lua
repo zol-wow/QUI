@@ -203,6 +203,7 @@ local CLEAR_HEADER_BINDINGS_SNIPPET = [[
 ]]
 
 local function WrapFrameSecureHandlers(frame)
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     if secureWrappedFrames[frame] then return end
     if InCombatLockdown() then return end
 
@@ -227,6 +228,7 @@ end
 local KeyboardContextUnresolved
 
 local function UpdateHeaderKeyAttributes()
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     local header = GetBindingHeader()
     if InCombatLockdown() then return end
 
@@ -567,7 +569,8 @@ local function ResolveBindings()
         end
         local spellName = (actionType == "spell") and ResolveSpellName(binding) or binding.spell
 
-        if binding.key and hasAction then
+        local hoverKeysAvailable = not (ns.Client and ns.Client.restrictedExecutionUnavailable)
+        if binding.key and hasAction and hoverKeysAvailable then
             table_insert(globalKeyBindings, {
                 key = binding.key,
                 modifiers = binding.modifiers or "",
@@ -581,7 +584,7 @@ local function ResolveBindings()
             })
         elseif binding.button and hasAction then
             local scrollKey = SCROLL_WHEEL_KEYS[binding.button]
-            if scrollKey then
+            if scrollKey and hoverKeysAvailable then
                 table_insert(keyboardBindings, {
                     key = scrollKey,
                     modifiers = binding.modifiers or "",
@@ -593,7 +596,7 @@ local function ResolveBindings()
                     friend = binding.friend,
                     enemy = binding.enemy,
                 })
-            else
+            elseif not scrollKey then
                 table_insert(activeBindings, {
                     button = binding.button,
                     modifiers = binding.modifiers or "",
@@ -1049,7 +1052,6 @@ QUI_GFCC._test = {
 }
 
 function QUI_GFCC:Initialize()
-    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     MigrateProfileClickCastToChar()
 
     local db = GetDB()
@@ -1120,7 +1122,6 @@ function QUI_GFCC:RegisterUnitFrames()
 end
 
 function QUI_GFCC:RefreshBindings()
-    if ns.Client and ns.Client.restrictedExecutionUnavailable then return end
     if InCombatLockdown() then return end
 
     local db = GetDB()

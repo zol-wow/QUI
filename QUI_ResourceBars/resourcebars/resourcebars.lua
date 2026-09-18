@@ -1,3 +1,4 @@
+-- luacheck: read globals GetComboPoints
 local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
 local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
@@ -594,7 +595,12 @@ local RenewingMistChargeState = {
 local SafeNumberOrNil = Helpers.SafeNumberOrNil
 
 local function ReadPlayerPowerPair(resource, unmodified)
-    local current = UnitPower("player", resource, unmodified)
+    local current
+    if ns.Client and ns.Client.isForever and resource == Enum.PowerType.ComboPoints then
+        current = GetComboPoints("player", "target")
+    else
+        current = UnitPower("player", resource, unmodified)
+    end
     local max = UnitPowerMax("player", resource, unmodified)
     if Helpers.IsSecretValue(current) or Helpers.IsSecretValue(max) then
         return current, max, true -- @secret-policy: report-secret-detected
@@ -1508,11 +1514,19 @@ local secondaryResources = {
 }
 
 local function GetSecondaryResource()
-    if ns.Client and ns.Client.isForever then return nil end
     local _, playerClass = UnitClass("player")
     -- @secret-policy: collapse-only — secret class shows no secondary bar (matches
     if issecretvalue and issecretvalue(playerClass) then playerClass = nil end
     if not playerClass then return nil end
+    if ns.Client and ns.Client.isForever then
+        if playerClass == "ROGUE" then return Enum.PowerType.ComboPoints end
+        if playerClass == "DRUID" then
+            local primary = UnitPowerType("player")
+            if primary == Enum.PowerType.Energy then return Enum.PowerType.ComboPoints end
+            if primary ~= nil and primary ~= Enum.PowerType.Mana then return Enum.PowerType.Mana end
+        end
+        return nil
+    end
     local spec = GetSpecialization()
     if not spec then return nil end
     local specID = GetSpecializationInfo(spec)
