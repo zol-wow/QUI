@@ -136,23 +136,35 @@ end
 ---------------------------------------------------------------------------
 -- Native stats pane (mask for the enhancement, legible chrome-only otherwise)
 ---------------------------------------------------------------------------
-local function MaskNativeStatsPane()
-    if not CharacterStatsPane then return end
-    ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "SetAlpha", 0)
-    ns.SafeCallMethodIfPresent("best-effort-style", CharacterStatsPane, "EnableMouse", false)
-    if CharacterStatsPane.ClassBackground then
-        ns.SafeCallMethod("best-effort-style", CharacterStatsPane.ClassBackground, "SetAlpha", 0)
+function CharacterChrome.GetNativeStatsPane()
+    if CharacterFrame and type(CharacterFrame.GetStatsPane) == "function" then
+        local pane = CharacterFrame:GetStatsPane()
+        if pane then return pane end
     end
+    return CharacterStatsPane
 end
 
-local function RestoreNativeStatsPane()
-    if not CharacterStatsPane then return end
-    ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "SetAlpha", 1)
-    ns.SafeCallMethodIfPresent("best-effort-style", CharacterStatsPane, "EnableMouse", true)
-    if CharacterStatsPane.ClassBackground then
-        ns.SafeCallMethod("best-effort-style", CharacterStatsPane.ClassBackground, "SetAlpha", 1)
+local function MaskNativeStatsPane()
+    local pane = CharacterChrome.GetNativeStatsPane()
+    if not pane then return end
+    ns.SafeCallMethod("best-effort-style", pane, "SetAlpha", 0)
+    ns.SafeCallMethodIfPresent("best-effort-style", pane, "EnableMouse", false)
+    if pane.ClassBackground then
+        ns.SafeCallMethod("best-effort-style", pane.ClassBackground, "SetAlpha", 0)
     end
 end
+CharacterChrome.MaskNativeStatsPane = MaskNativeStatsPane
+
+local function RestoreNativeStatsPane()
+    local pane = CharacterChrome.GetNativeStatsPane()
+    if not pane then return end
+    ns.SafeCallMethod("best-effort-style", pane, "SetAlpha", 1)
+    ns.SafeCallMethodIfPresent("best-effort-style", pane, "EnableMouse", true)
+    if pane.ClassBackground then
+        ns.SafeCallMethod("best-effort-style", pane.ClassBackground, "SetAlpha", 1)
+    end
+end
+CharacterChrome.RestoreNativeStatsPane = RestoreNativeStatsPane
 
 local function SkinStatRow(statFrame)
     if not statFrame then return end
@@ -181,22 +193,23 @@ local statRowHookInstalled = false
 -- legible on the dark shell (fonts + no parchment atlases). Row fonts ride a
 -- post-hook on the label writer so pooled rows are covered as they appear.
 local function ApplyNativeStatsPaneChrome()
-    if not CharacterStatsPane then return end
+    local pane = CharacterChrome.GetNativeStatsPane()
+    if not pane then return end
     RestoreNativeStatsPane()
-    if CharacterStatsPane.ClassBackground then
-        ns.SafeCallMethod("best-effort-style", CharacterStatsPane.ClassBackground, "SetAlpha", 0)
+    if pane.ClassBackground then
+        ns.SafeCallMethod("best-effort-style", pane.ClassBackground, "SetAlpha", 0)
     end
-    SkinStatCategory(CharacterStatsPane.ItemLevelCategory)
-    SkinStatCategory(CharacterStatsPane.AttributesCategory)
-    SkinStatCategory(CharacterStatsPane.EnhancementsCategory)
-    local ilvlFrame = CharacterStatsPane.ItemLevelFrame
+    SkinStatCategory(pane.ItemLevelCategory)
+    SkinStatCategory(pane.AttributesCategory)
+    SkinStatCategory(pane.EnhancementsCategory)
+    local ilvlFrame = pane.ItemLevelFrame
     if ilvlFrame then
         if ilvlFrame.Background then ilvlFrame.Background:SetAlpha(0) end
         if ilvlFrame.Value then
             SkinBase.SkinFontString(ilvlFrame.Value, { size = 15, outline = "OUTLINE", color = Token("tabSelectedText") })
         end
     end
-    local pool = CharacterStatsPane.statsFramePool
+    local pool = pane.statsFramePool
     if pool and pool.EnumerateActive then
         for statFrame in pool:EnumerateActive() do
             SkinStatRow(statFrame)
