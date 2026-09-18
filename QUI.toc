@@ -8,8 +8,7 @@
 ## Author: Zol and Drew
 ## Version: 5.5.0-ptr-alpha8
 ## Category: User Interface
-## SavedVariables: QUIDB, QUI_StorageDB [ExcludeLoadGameType camelot]
-## SavedVariablesPerCharacter: QUIDB, QUI_StorageDB [AllowLoadGameType camelot]
+## SavedVariables: QUIDB, QUI_StorageDB
 ## LoadSavedVariablesFirst: 1
 ## OptionalDeps: DandersFrames, BigWigs
 
