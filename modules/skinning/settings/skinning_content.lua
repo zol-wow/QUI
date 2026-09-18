@@ -123,6 +123,7 @@ end
 
 local function ReloadConfirm()
     GUI:ShowConfirmation({
+        reload = true,
         title = ns.L["Reload UI?"],
         message = ns.L["Skinning changes require a reload to take effect."],
         acceptText = ns.L["Reload"],

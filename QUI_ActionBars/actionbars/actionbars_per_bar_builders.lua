@@ -227,6 +227,7 @@ do
                 local gui = QUI and QUI.GUI
                 if gui and gui.ShowConfirmation then
                     gui:ShowConfirmation({
+                        reload = true,
                         title = ns.L["Reload UI?"],
                         message = ns.L["Enabling or disabling this special button requires a UI reload to fully take effect."],
                         acceptText = ns.L["Reload"],
@@ -360,6 +361,7 @@ do
                 local GUI = QUI and QUI.GUI
                 if GUI and GUI.ShowConfirmation then
                     GUI:ShowConfirmation({
+                        reload = true,
                         title = ns.L["Reload UI?"],
                         message = ns.L["Enabling or disabling an action bar requires a UI reload to fully take effect."],
                         acceptText = ns.L["Reload"],

@@ -117,6 +117,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local G2 = Q and Q.GUI
             if G2 and type(G2.ShowConfirmation) == "function" then
                 G2:ShowConfirmation({
+                    reload = true,
                     title      = ns.L["Reload UI?"],
                     message    = ns.L["This change takes full effect after a reload."],
                     acceptText = ns.L["Reload"],

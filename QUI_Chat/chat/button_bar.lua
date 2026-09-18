@@ -252,6 +252,9 @@ local function createButton(parent, def, customAction)
         btn:SetAttribute("macrotext", macroText)
     else
         btn:SetScript("OnClick", customAction or def.action or function() end)
+        if def == BUILTINS.reload and _G.QUI and _G.QUI.BindReloadButton then
+            _G.QUI:BindReloadButton(btn)
+        end
     end
 
     if hasIcon then

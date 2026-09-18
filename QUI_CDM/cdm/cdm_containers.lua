@@ -351,24 +351,8 @@ local function ClearPendingClassTalentSwitchIntent()
 end
 
 local function GetCurrentCharacterKey()
-    if not UnitName then return nil end
-    local name, realm = UnitName("player")
-    if issecretvalue and issecretvalue(name) then return nil end -- @secret-policy: reject-secret-ids
-    if issecretvalue and issecretvalue(realm) then realm = nil end
-    if type(name) ~= "string" or name == "" then
-        return nil
-    end
-    if type(realm) ~= "string" or realm == "" then
-        realm = nil
-        if GetRealmName then
-            realm = GetRealmName()
-            if issecretvalue and issecretvalue(realm) then realm = nil end
-        end
-    end
-    if type(realm) ~= "string" or realm == "" then
-        return name
-    end
-    return name .. " - " .. realm
+    local db = QUICore and QUICore.db
+    return db and db.keys and db.keys.char
 end
 
 local function GetCurrentProfileName()
@@ -976,6 +960,20 @@ local function ScheduleInitialSpecTrackingRetry(attempt, retryToken)
 end
 
 local function InitSpecTracking()
+    local charDB = GetCharNcdmDB(false)
+    local characterKey = GetCurrentCharacterKey()
+    local previousKey = charDB and charDB._lastSpecCharKey
+    if characterKey and previousKey and previousKey ~= characterKey then
+        local db = QUICore.db
+        for _, profile in pairs(db.sv and db.sv.profiles or {}) do
+            local ncdm = profile.ncdm
+            if ncdm and ncdm._lastSpecCharKey == previousKey then
+                ncdm._lastSpecCharKey = characterKey
+            end
+        end
+        charDB._lastSpecCharKey = characterKey
+    end
+
     specTrackingReady = false
     specTrackingPendingRefresh = false
     _previousSpecID = GetCurrentSpecID()

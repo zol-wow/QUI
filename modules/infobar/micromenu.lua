@@ -58,10 +58,7 @@ local BUTTONS = {
     },
     {
         key = "legacy", label = ns.L["Legacy"], atlas = "Legacy", forever = true,
-        onClick = function()
-            local button = _G.LegacyMicroButton
-            if button and button:IsEnabled() and _G.ToggleLegacySystemUI then _G.ToggleLegacySystemUI() end
-        end,
+        onClick = function() _G.ToggleLegacySystemUI() end,
     },
     {
         key = "questlog", label = ns.L["Quest Log"], atlas = "Questlog",

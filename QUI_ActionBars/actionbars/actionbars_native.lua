@@ -89,6 +89,15 @@ end
 
 local nativeContainers = {}
 
+local function HideNativeDividers(frame)
+    for _, key in ipairs({ "HorizontalDividersPool", "VerticalDividersPool" }) do
+        local pool = frame[key]
+        if pool then
+            for divider in pool:EnumerateActive() do divider:SetAlpha(0) end
+        end
+    end
+end
+
 local function EnsureNativeBarContainer(barKey)
     local existing = ActionBarsOwned.containers[barKey]
     if existing then return existing end
@@ -172,6 +181,10 @@ function BuildNativeBar(barKey)
         for _, key in ipairs({ "EndCaps", "BorderArt", "Background" }) do
             local art = frame[key]
             if art then art:SetAlpha(0) end
+        end
+        HideNativeDividers(frame)
+        if not hookedBars[frame] and type(frame.UpdateDividers) == "function" then
+            hooksecurefunc(frame, "UpdateDividers", HideNativeDividers)
         end
     end
 

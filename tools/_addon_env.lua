@@ -53,6 +53,10 @@ strsub   = string.sub
 strlower = string.lower
 strupper = string.upper
 strrep   = string.rep
+_G.strlenutf8 = function(s)
+    local _, count = s:gsub("[^\128-\191]", "")
+    return count
+end
 strtrim  = function(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 strjoin  = function(sep, ...)
     local n = select("#", ...)
@@ -112,6 +116,8 @@ function UnitFactionGroup()  return "Alliance"            end
 -- drive locale-aware loads through the shared harness; defaults to "enUS".
 function GetLocale()         return _G.QUI_TEST_LOCALE or "enUS" end
 function GetCurrentRegion()  return 1                      end
+_G.GetCurrentRegionName = function() return "US" end
+_G.GetBuildInfo = function() return "12.1.5", "69848", "", 120105 end
 
 -- Combat-secret APIs (12.0+).
 -- Default behavior is unchanged: nothing is secret. Tests can create

@@ -372,6 +372,7 @@ local function RenderEnableSection(sectionHost, ctx)
             end
             RefreshNameplates()
             gui:ShowConfirmation({
+                reload = true,
                 title = ns.L["Reload UI?"],
                 message = ns.L["Nameplates load at login: changing the enabled state requires a UI reload to install or remove the nameplate hooks."],
                 acceptText = ns.L["Reload"],

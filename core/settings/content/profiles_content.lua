@@ -276,6 +276,13 @@ function ProfileCopyOptions.CreateCard(parent, opts)
     }
 end
 
+local function ValidateProfileName(name)
+    local length = type(name) == "string" and _G.strlenutf8(name) or 0
+    if length > 0 and length <= 50 and not name:find("^ +$") then return true end
+    print("|cffff0000QUI:|r " .. ns.L["Profile names must be between 1 and 50 characters and cannot contain only spaces."])
+    return false
+end
+
 local function BuildSpecProfilesContent(content)
     local PAD = PADDING
     local y = -10
@@ -442,6 +449,7 @@ local function BuildSpecProfilesContent(content)
     factoryLabel:SetTextColor(errText[1], errText[2], errText[3], errText[4])
     local factoryBtn = GUI:CreateButton(factoryCell, ns.L["Erase All"], 100, 22, function()
         GUI:ShowConfirmation({
+            reload = true,
             title = ns.L["Reset All Data?"], message = ns.L["Erase ALL QUI data and restore fresh-install defaults?"],
             warningText = ns.L["Deletes every profile, all global data, and character data. Cannot be undone."],
             acceptText = ns.L["Erase Everything"], cancelText = ns.L["Cancel"], isDestructive = true,
@@ -469,6 +477,10 @@ local function BuildSpecProfilesContent(content)
         if freshDB and value and value ~= "" then
             local current = freshDB:GetCurrentProfile()
             if value == current then return end
+            if not ValidateProfileName(value) then
+                RefreshProfileDisplay()
+                return
+            end
 
             local preset = presetsByName[value]
             if preset then
@@ -551,6 +563,7 @@ local function BuildSpecProfilesContent(content)
         local core = GetCore(); local dbRef = core and core.db
         local newName = newProfileInput.editBox and newProfileInput.editBox:GetText()
         if newName and newName ~= "" and dbRef then
+            if not ValidateProfileName(newName) then return end
             dbRef:SetProfile(newName)
             if currentProfileName then currentProfileName:SetText(newName) end
             if profileDropdown and profileDropdown.SetValue then profileDropdown:SetValue(newName, true) end
@@ -614,9 +627,14 @@ local function BuildSpecProfilesContent(content)
                 local displayName = specName .. (i == currentSpec and ns.L[" (Active)"] or "")
                 local currentSpecProfile = specDB:GetDualSpecProfile(i) or ""
                 local specWrapper = { selected = currentSpecProfile }
-                local specDropdown = GUI:CreateFormDropdown(specCard.frame, nil, GetProfileList(), "selected", specWrapper, function(value)
+                local specDropdown
+                specDropdown = GUI:CreateFormDropdown(specCard.frame, nil, GetProfileList(), "selected", specWrapper, function(value)
                     local core = GetCore(); local dbRef = core and core.db
                     if dbRef and dbRef.SetDualSpecProfile and value and value ~= "" then
+                        if not ValidateProfileName(value) then
+                            specDropdown:SetValue(dbRef:GetDualSpecProfile(i) or "", true)
+                            return
+                        end
                         dbRef:SetDualSpecProfile(value, i)
                         print("|cff60A5FAQUI:|r " .. specName .. ns.L[" will use profile: "] .. value)
                     end

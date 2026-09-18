@@ -52,6 +52,41 @@ local function EnsureReloadEventFrame(self)
     return self.__reloadEventFrame
 end
 
+local function ReloadClientUI()
+    if ns.Client and ns.Client.isForever and type(_G.UIReload) == "function" then
+        _G.UIReload()
+    else
+        ReloadUI()
+    end
+end
+
+function QUI:BindReloadButton(button)
+    if not (ns.Client and ns.Client.isForever) then return end
+    local onClick = button:GetScript("OnClick")
+    if type(onClick) ~= "function" then return end
+    local onMouseDown = button:GetScript("OnMouseDown")
+    local onMouseUp = button:GetScript("OnMouseUp")
+
+    button._quiReloadPressed = nil
+    button:SetScript("OnClick", nil)
+    button:SetScript("OnMouseDown", function(self, mouseButton)
+        if onMouseDown then onMouseDown(self, mouseButton) end
+        self._quiReloadPressed = mouseButton == "LeftButton" and self:IsEnabled()
+    end)
+    button:SetScript("OnMouseUp", function(self, mouseButton)
+        local pressed = self._quiReloadPressed
+        self._quiReloadPressed = nil
+        if onMouseUp then onMouseUp(self, mouseButton) end
+        if pressed and mouseButton == "LeftButton" and self:IsEnabled() and self:IsMouseOver() then
+            onClick(self, mouseButton)
+        end
+    end)
+    if not button._quiReloadHideHooked then
+        button._quiReloadHideHooked = true
+        button:HookScript("OnHide", function(self) self._quiReloadPressed = nil end)
+    end
+end
+
 function QUICore:SafeReload()
     if InCombatLockdown() and not (QUI.db and QUI.db.profile and QUI.db.profile.general and QUI.db.profile.general.allowReloadInCombat) then
         if not self.__pendingReload then
@@ -60,7 +95,7 @@ function QUICore:SafeReload()
             EnsureReloadEventFrame(self)
         end
     else
-        ReloadUI()
+        ReloadClientUI()
     end
 end
 
@@ -71,7 +106,8 @@ function QUICore:ShowReloadPopup()
             message = ns.L["Combat ended. Click to reload the UI."],
             acceptText = ns.L["Reload Now"],
             cancelText = ns.L["Later"],
-            onAccept = function() ReloadUI() end,
+            reload = true,
+            onAccept = function() self:SafeReload() end,
         })
     else
         print("|cFF30D1FFQUI:|r " .. ns.L["Combat ended. Type /reload to reload."])
@@ -85,7 +121,7 @@ function QUI:SafeReload()
         if InCombatLockdown() and not (self.db and self.db.profile and self.db.profile.general and self.db.profile.general.allowReloadInCombat) then
             print("|cFF30D1FFQUI:|r " .. ns.L["Cannot reload during combat."])
         else
-            ReloadUI()
+            ReloadClientUI()
         end
     end
 end
@@ -132,7 +168,7 @@ end
 function QUICore:OnInitialize()
     ns._freshInstall = rawget(_G, "QUIDB") == nil
 
-    self.db = LibStub("AceDB-3.0"):New("QUIDB", defaults, true)
+    self.db = ns.Compatibility.CreateDatabase(defaults)
     QUI.db = self.db
 
     self.db.RegisterCallback(self, "OnNewProfile", "SeedNewProfile")

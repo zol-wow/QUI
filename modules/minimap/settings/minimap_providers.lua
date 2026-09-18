@@ -39,6 +39,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local confGUI = QUI and QUI.GUI
             if confGUI and type(confGUI.ShowConfirmation) == "function" then
                 confGUI:ShowConfirmation({
+                    reload = true,
                     title      = ns.L["Reload UI?"],
                     message    = ns.L["This change takes full effect after a reload."],
                     acceptText = ns.L["Reload"],

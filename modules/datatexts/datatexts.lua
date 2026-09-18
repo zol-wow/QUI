@@ -2630,7 +2630,7 @@ Datatexts:Register("bags", {
                         local invID = C_Container.ContainerIDToInventoryID(i)
                         local icon = GetInventoryItemTexture("player", invID)
                         local quality = GetInventoryItemQuality("player", invID) or 1
-                        local r1, g1, b1 = GetItemQualityColor(quality)
+                        local r1, g1, b1 = C_Item.GetItemQualityColor(quality)
 
                         GameTooltip:AddDoubleLine(
                             string.format(iconString, icon or "", bagName),

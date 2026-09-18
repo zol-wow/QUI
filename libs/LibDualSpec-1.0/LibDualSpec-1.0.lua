@@ -31,7 +31,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 --]]
 
-local MAJOR, MINOR = "LibDualSpec-1.0", 32
+local MAJOR, MINOR = "LibDualSpec-1.0", 33
 assert(LibStub, MAJOR.." requires LibStub")
 local lib, minor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
@@ -198,6 +198,8 @@ function mixin:CheckDualSpecState()
 	if lib.currentSpec == 0 then return end
 
 	local profileName = self:GetDualSpecProfile()
+	local profileNameLength = type(profileName) == "string" and strlenutf8(profileName) or 0
+	if profileNameLength == 0 or profileNameLength > 50 or profileName:find("^ +$") then return end
 	if profileName ~= self:GetCurrentProfile() then
 		self:SetProfile(profileName)
 	end

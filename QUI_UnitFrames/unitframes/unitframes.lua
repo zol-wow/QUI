@@ -3930,6 +3930,7 @@ do
                         local GUI = QUI and QUI.GUI
                         if GUI and GUI.ShowConfirmation then
                             GUI:ShowConfirmation({
+                                reload = true,
                                 title = "Reload UI?",
                                 message = "Enabling or disabling unit frames requires a UI reload to take effect.",
                                 acceptText = "Reload",
@@ -3984,6 +3985,7 @@ do
                     local GUI = QUI and QUI.GUI
                     if GUI and GUI.ShowConfirmation then
                         GUI:ShowConfirmation({
+                            reload = true,
                             title = "Reload UI?",
                             message = "Enabling or disabling unit frames requires a UI reload to take effect.",
                             acceptText = "Reload",

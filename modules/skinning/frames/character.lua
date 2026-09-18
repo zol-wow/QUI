@@ -170,8 +170,13 @@ local function SkinReputationEntry(child)
 
     local ReputationBar = child.Content and child.Content.ReputationBar
     if ReputationBar then
-        ReputationBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
-        UIKit.DisablePixelSnap(ReputationBar)
+        if ReputationBar.SetStatusBarTexture then
+            ReputationBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+            UIKit.DisablePixelSnap(ReputationBar)
+        elseif ReputationBar.Fill then
+            ReputationBar.Fill:SetTexture("Interface\\Buttons\\WHITE8x8")
+            UIKit.DisablePixelSnap(ReputationBar.Fill)
+        end
 
         if ReputationBar.LeftTexture then
             ReputationBar.LeftTexture:SetTexture(nil)
@@ -185,9 +190,10 @@ local function SkinReputationEntry(child)
             ReputationBar.Background:Hide()
         end
 
-        if ReputationBar.BarText then
-            CJKFont(ReputationBar.BarText, fontPath, 10, "")
-            ReputationBar.BarText:SetTextColor(COLORS.text[1], COLORS.text[2], COLORS.text[3], 1)
+        local barText = ReputationBar.BarText or ReputationBar.Text
+        if barText then
+            CJKFont(barText, fontPath, 10, "")
+            barText:SetTextColor(COLORS.text[1], COLORS.text[2], COLORS.text[3], 1)
         end
 
         if not SkinBase.GetFrameData(ReputationBar, "backdrop") then

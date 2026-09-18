@@ -3368,6 +3368,7 @@ do
                         local GUI = QUI and QUI.GUI
                         if GUI then
                             GUI:ShowConfirmation({
+                                reload = true,
                                 title = ns.L["Reload UI?"],
                                 message = ns.L["This change requires a reload to take effect."],
                                 acceptText = ns.L["Reload"],

@@ -470,9 +470,12 @@ local function StyleSidebarTabs()
         end
 
         if PaperDollSidebarTabs and tabs[1] and tabs[3] then
+            local pixelSize = QUICore:GetPixelSize(tabs[3])
             PaperDollSidebarTabs:ClearAllPoints()
-            PaperDollSidebarTabs:SetPoint("TOPLEFT", tabs[1], "TOPLEFT", 0, 0)
-            PaperDollSidebarTabs:SetPoint("BOTTOMRIGHT", tabs[3], "BOTTOMRIGHT", 0, 0)
+            PaperDollSidebarTabs:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", leftX, topY)
+            PaperDollSidebarTabs:SetPoint("BOTTOMRIGHT", CharacterFrame, "TOPRIGHT",
+                leftX + totalWidth - sidebarTabBaseWidth + sidebarTabBaseWidth * pixelSize,
+                topY - sidebarTabBaseHeight * pixelSize)
         end
     end
 

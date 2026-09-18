@@ -280,7 +280,7 @@ local function OnLootOpened(autoLoot)
             slot.icon:SetTexture(texture)
             slot.name:SetText(name or "")
 
-            local r, g, b = GetItemQualityColor(quality or 1)
+            local r, g, b = C_Item.GetItemQualityColor(quality or 1)
             Helpers.SetFrameBackdropBorderColor(slot.iconBorder, r, g, b, 1)
             slot.name:SetTextColor(r, g, b)
 
@@ -575,7 +575,7 @@ StartRoll = function(rollID, rollTime)
     frame.icon:SetTexture(texture)
     frame.name:SetText(name or "")
 
-    local r, g, b = GetItemQualityColor(quality or 1)
+    local r, g, b = C_Item.GetItemQualityColor(quality or 1)
     Helpers.SetFrameBackdropBorderColor(frame.iconBorder, r, g, b, 1)
     frame.name:SetTextColor(r, g, b)
 
@@ -1153,7 +1153,7 @@ function Loot:ShowLootPreview()
         slot.slotIndex = nil
         slot.icon:SetTexture(item.texture)
         slot.name:SetText(item.name)
-        local r, g, b = GetItemQualityColor(item.quality)
+        local r, g, b = C_Item.GetItemQualityColor(item.quality)
         Helpers.SetFrameBackdropBorderColor(slot.iconBorder, r, g, b, 1)
         slot.name:SetTextColor(r, g, b)
         if item.count and item.count > 1 then
@@ -1230,7 +1230,7 @@ function Loot:ShowRollPreview()
         frame.rollID = nil
         frame.icon:SetTexture(item.texture)
         frame.name:SetText(item.name)
-        local r, g, b = GetItemQualityColor(item.quality)
+        local r, g, b = C_Item.GetItemQualityColor(item.quality)
         Helpers.SetFrameBackdropBorderColor(frame.iconBorder, r, g, b, 1)
         frame.name:SetTextColor(r, g, b)
 
