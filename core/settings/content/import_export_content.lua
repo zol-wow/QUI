@@ -513,6 +513,7 @@ local function BuildImportExportTab(tabContent)
 
     local function ShowReloadPrompt(message)
         GUI:ShowConfirmation({
+            reload = true,
             title = ns.L["Reload UI?"],
             message = message or ns.L["Import complete. Reload UI to apply all changes?"],
             acceptText = ns.L["Reload"],

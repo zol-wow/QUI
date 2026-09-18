@@ -3468,6 +3468,7 @@ do
                         local GUI = QUI and QUI.GUI
                         if GUI and GUI.ShowConfirmation then
                             GUI:ShowConfirmation({
+                                reload = true,
                                 title = "Reload UI?",
                                 message = "Enabling or disabling castbars requires a UI reload to take effect.",
                                 acceptText = "Reload",

@@ -34,6 +34,7 @@ local function ShowReloadPrompt()
     local GUI = QUI and QUI.GUI
     if GUI and type(GUI.ShowConfirmation) == "function" then
         GUI:ShowConfirmation({
+            reload = true,
             title      = ns.L["Reload UI?"],
             message    = ns.L["This change takes full effect after a reload."],
             acceptText = ns.L["Reload"],

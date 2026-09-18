@@ -435,6 +435,7 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
             end
             RefreshGroupFrames(groupFrames.contextMode)
             gui:ShowConfirmation({
+                reload = true,
                 title = ns.L["Reload UI?"],
                 message = ns.L["Changing the QUI Group Frames enabled state requires a UI reload to take full effect."],
                 acceptText = ns.L["Reload"],

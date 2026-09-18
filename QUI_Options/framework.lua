@@ -1938,11 +1938,19 @@ function GUI:ShowConfirmation(options)
     confirmDialog.cancelBtn.text:SetText(options.cancelText or ns.L["Cancel"])
 
     confirmDialog._onCancel = options.onCancel
+    confirmDialog._options = options
 
+    confirmDialog.acceptBtn:SetScript("OnMouseDown", nil)
+    confirmDialog.acceptBtn:SetScript("OnMouseUp", nil)
     confirmDialog.acceptBtn:SetScript("OnClick", function()
-        confirmDialog:Hide()
+        local hideAfterAccept = options.reload and ns.Client and ns.Client.isForever
+        if not hideAfterAccept then confirmDialog:Hide() end
         if options.onAccept then options.onAccept() end
+        if hideAfterAccept and confirmDialog._options == options then confirmDialog:Hide() end
     end)
+    if options.reload and QUI.BindReloadButton then
+        QUI:BindReloadButton(confirmDialog.acceptBtn)
+    end
 
     confirmDialog.cancelBtn:SetScript("OnClick", function()
         confirmDialog:Hide()
@@ -5647,6 +5655,7 @@ function GUI:CreateMainFrame()
         langDropText:SetText(LOCALE_NAMES[code] or code)
         if QUI.GUI and QUI.GUI.ShowConfirmation then
             QUI.GUI:ShowConfirmation({
+                reload = true,
                 title = ns.L["Reload Required"],
                 message = ns.L["Reload the UI to apply the new language?"],
                 acceptText = ns.L["Reload Now"],
@@ -5887,6 +5896,7 @@ function GUI:CreateMainFrame()
         end
     end, "ghost")
     reloadBtn:SetPoint("LEFT", resetBtn, "RIGHT", 8, 0)
+    if QUI and QUI.BindReloadButton then QUI:BindReloadButton(reloadBtn) end
     frame._footerReloadBtn = reloadBtn
 
     local subTabBar = CreateFrame("Frame", nil, frame)

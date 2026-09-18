@@ -119,7 +119,7 @@ enforceFrame:SetScript("OnEvent", function(self, event)
     CDMEditModePolicy.Enforce()
 end)
 
-if ns.Client and ns.Client.isForever and tostring(ns.Client.build) == "69893" then
+if ns.Client and ns.Client.isForever then
     local previewIcons
     local function GetPreviewTexture(item)
         if not item:HasEditModeData() then return nil end

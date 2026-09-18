@@ -976,6 +976,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local s1 = L.sectionAt()
         local skinW = GUI:CreateFormCheckbox(s1.frame, nil, "skinTooltips", tooltip, function()
             GUI:ShowConfirmation({
+                reload = true,
                 title = ns.L["Reload UI?"],
                 message = ns.L["Skinning changes require a reload to take effect."],
                 acceptText = ns.L["Reload"],

@@ -4,6 +4,35 @@ local DeepCopy = ns.Helpers.DeepCopy
 local GLOBAL_SHIPPED_DEFAULTS_KEY = "_shippedProfileDefaults"
 ns.Compatibility = ns.Compatibility or {}
 
+function ns.Compatibility.CreateDatabase(defaults)
+    local isForever = ns.Client and ns.Client.isForever
+    local previousProfiles = isForever and QUIDB and DeepCopy(QUIDB.profileKeys or {})
+    local db = LibStub("AceDB-3.0"):New("QUIDB", defaults, true)
+    if not isForever then return db end
+
+    local characterKey = db.keys.char
+    local legacyKey = characterKey:sub(1, #characterKey - #db.keys.realm) .. GetRealmName()
+    if legacyKey == characterKey then return db end
+
+    local function CopyCharacter(store)
+        local characters = store.char
+        if characters and characters[characterKey] == nil and type(characters[legacyKey]) == "table" then
+            characters[characterKey] = DeepCopy(characters[legacyKey])
+        end
+    end
+    CopyCharacter(db.sv)
+    for _, namespace in pairs(db.sv.namespaces or {}) do
+        CopyCharacter(namespace)
+    end
+
+    local profile = previousProfiles and previousProfiles[legacyKey]
+    if previousProfiles and previousProfiles[characterKey] == nil and type(profile) == "string"
+        and _G.strlenutf8(profile) > 0 and _G.strlenutf8(profile) <= 50 and not profile:find("^ +$") then
+        db:SetProfile(profile)
+    end
+    return db
+end
+
 local StampOldDefaults
 
 local function DeepEqual(a, b)
