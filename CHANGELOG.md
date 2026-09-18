@@ -165,6 +165,28 @@ hardening.
   suppresses native buff bars before data readiness, avoiding tainted callbacks
   and startup flicker.
 
+## v5.3.2-beta2 - 2026-09-14
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Optional automatic resurrection acceptance** under Quality of Life →
+  Automation, with separate Off, Out of Combat, and Always modes for dungeons,
+  raids, PvP, and the open world. All locations default to Off; hold Shift to
+  keep an incoming offer manual.
+
+## v5.3.2-beta1 - 2026-09-14
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Beta Line
+
+- Starts the 5.3.2 beta line from stable 5.3.1.
+- Updates release versions only; runtime behavior is unchanged from 5.3.1.
+
 ## v5.3.1 - 2026-09-14
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and

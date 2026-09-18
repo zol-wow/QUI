@@ -365,6 +365,26 @@ local function BuildAutomation(L, generalDB)
         { description = ns.L["Automatically confirm role checks in LFG using the role you already had selected."] })
     s.AddRow(row(s.frame, ns.L["Auto Accept Summons"], summonW), row(s.frame, ns.L["Auto Accept Role Check"], roleW))
 
+    if type(generalDB.autoAcceptResurrection) ~= "table" then generalDB.autoAcceptResurrection = {} end
+    local resurrectionDB = generalDB.autoAcceptResurrection
+    local resurrectionOptions = {
+        { value = "off", text = ns.L["Off"] },
+        { value = "outOfCombat", text = ns.L["Out of Combat"] },
+        { value = "always", text = ns.L["Always"] },
+    }
+    local resurrectionHelp = ns.L["Out of Combat accepts only when encounter, group, and resurrector combat checks are clear. Always includes battle resurrections. Hold Shift when an offer arrives to accept manually. Offers with resurrection sickness or a recovery delay stay manual."]
+    local dungeonResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "dungeon", resurrectionDB, nil,
+        { description = ns.L["Automatically accept resurrection offers in dungeons, including Mythic+."] .. "\n\n" .. resurrectionHelp })
+    local raidResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "raid", resurrectionDB, nil,
+        { description = ns.L["Automatically accept resurrection offers in raid instances."] .. "\n\n" .. resurrectionHelp })
+    s.AddRow(row(s.frame, ns.L["Auto Accept Resurrection in Dungeons"], dungeonResW), row(s.frame, ns.L["Auto Accept Resurrection in Raids"], raidResW))
+
+    local pvpResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "pvp", resurrectionDB, nil,
+        { description = ns.L["Automatically accept resurrection offers in battlegrounds and arenas. Spirit-healer queues remain Blizzard-controlled."] .. "\n\n" .. resurrectionHelp })
+    local worldResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "world", resurrectionDB, nil,
+        { description = ns.L["Automatically accept resurrection offers outside instances. Delves and scenarios stay manual."] .. "\n\n" .. resurrectionHelp })
+    s.AddRow(row(s.frame, ns.L["Auto Accept Resurrection in PvP"], pvpResW), row(s.frame, ns.L["Auto Accept Resurrection in Open World"], worldResW))
+
     local questW = GUI:CreateFormCheckbox(s.frame, nil, "autoAcceptQuest", generalDB, nil,
         { description = ns.L["Automatically accept quests from NPCs without requiring a click."] })
     local turnInW = GUI:CreateFormCheckbox(s.frame, nil, "autoTurnInQuest", generalDB, nil,
