@@ -372,7 +372,7 @@ local function BuildAutomation(L, generalDB)
         { value = "outOfCombat", text = ns.L["Out of Combat"] },
         { value = "always", text = ns.L["Always"] },
     }
-    local resurrectionHelp = ns.L["Out of Combat accepts only when encounter, group, and resurrector combat checks are clear. Always includes battle resurrections. Hold Shift when an offer arrives to accept manually. Offers with resurrection sickness or a recovery delay stay manual."]
+    local resurrectionHelp = ns.L["Out of Combat skips offers from a resurrector known to be in combat. Offers from an unidentified resurrector are accepted. Always includes battle resurrections. Hold Shift when an offer arrives to accept manually. Offers with resurrection sickness or a recovery delay stay manual."]
     local dungeonResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "dungeon", resurrectionDB, nil,
         { description = ns.L["Automatically accept resurrection offers in dungeons, including Mythic+."] .. "\n\n" .. resurrectionHelp })
     local raidResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "raid", resurrectionDB, nil,
