@@ -28,7 +28,6 @@ local CreateFrame      = CreateFrame
 local type             = type
 
 local DEFAULT_ICON_SIZE      = 39
-local MAX_RECYCLE_POOL_SIZE  = 20
 
 local function IsMouseoverRevealContext(context)
     local core = ns.Addon
@@ -553,14 +552,12 @@ function CDMIconFactory:ReleaseIcon(icon)
         icon:SetParent(UIParent)
         recycleRestrictedProtectedPool[#recycleRestrictedProtectedPool + 1] = icon
     elseif icon._quiLayoutRestricted then
-        if #recycleRestrictedPool < MAX_RECYCLE_POOL_SIZE then
-            icon:SetParent(UIParent)
-            recycleRestrictedPool[#recycleRestrictedPool + 1] = icon
-        end
+        icon:SetParent(UIParent)
+        recycleRestrictedPool[#recycleRestrictedPool + 1] = icon
     elseif icon.clickButton ~= nil then
         icon:SetParent(UIParent)
         recycleProtectedPool[#recycleProtectedPool + 1] = icon
-    elseif #recyclePool < MAX_RECYCLE_POOL_SIZE then
+    else
         icon:SetParent(UIParent)
         recyclePool[#recyclePool + 1] = icon
     end
