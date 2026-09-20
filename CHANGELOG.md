@@ -4,6 +4,34 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.2-beta4 - 2026-09-20
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Optional appearance-buff removal** under Quality of Life → Automation lets
+  you choose which supported transformations and profession outfits to remove.
+  The feature defaults to Off.
+  Removal waits until combat and aura restrictions end, and fishing outfits
+  stay active while casting. Equipped transmog and class forms are unchanged.
+
+### Fixed
+
+- **Resurrection automation accepts eligible raid offers reliably**, including
+  offers without a visible popup. Out of Combat mode checks the resurrector's
+  combat state, accepts unidentified offerers, and preserves the Shift override
+  and recovery exclusions.
+- **Cooldown Manager reuses released icons**, preventing abandoned frames from
+  accumulating during repeated layout changes. Hiding the Blizzard player
+  castbar also preserves the geometry needed by Edit Mode.
+- **Movable Blizzard panels stay in front when selected**, including during
+  merchant updates. Party keystones follow the instance window, the lust timer
+  stays below other panels, and extra ability buttons retain safe layout ownership.
+- **Battle.net friend invite menus hide disabled entries for other games**,
+  keeping the available invite choices easier to find.
+
 ## v5.3.2-beta3 - 2026-09-18
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
