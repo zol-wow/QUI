@@ -323,6 +323,74 @@ local function BuildCombatText(L, db)
     end
 end
 
+local function BuildAppearanceChanges(L, generalDB)
+    if type(generalDB.autoRemoveAppearanceChanges) ~= "table" then generalDB.autoRemoveAppearanceChanges = {} end
+    local db = generalDB.autoRemoveAppearanceChanges
+    local function Refresh()
+        if ns.RefreshAppearanceChanges then ns.RefreshAppearanceChanges() end
+    end
+
+    L.headerAt(ns.L["Auto Remove Appearance Changes"])
+    L.intro(ns.L["Choose which appearance buffs to remove automatically. Removal waits until combat and aura restrictions end. Fishing outfits stay on until you finish casting. Your equipped transmog and class forms are unchanged."])
+    local s = L.sectionAt()
+    local enabled = GUI:CreateFormCheckbox(s.frame, nil, "enabled", db, Refresh,
+        { description = ns.L["Automatically cancel the selected appearance buffs. Each effect below can be included separately."] })
+    s.AddRow(row(s.frame, ns.L["Auto Remove Appearance Changes"], enabled))
+    L.closeSection(s)
+
+    local categories = {
+        { title = ns.L["Profession Outfits"], effects = {
+            { "blacksmithing", ns.L["Blacksmithing"] },
+            { "jewelcrafting", ns.L["Jewelcrafting"] },
+            { "tailoring", ns.L["Tailoring"] },
+            { "engineering", ns.L["Engineering"] },
+            { "enchanting", ns.L["Enchanting"] },
+            { "alchemy", ns.L["Alchemy"] },
+            { "inscription", ns.L["Inscription"] },
+            { "leatherworking", ns.L["Leatherworking"] },
+            { "herbalism", ns.L["Herbalism"] },
+            { "mining", ns.L["Mining"] },
+            { "skinning", ns.L["Skinning"] },
+            { "cooking", ns.L["Cooking (Chef's Hat)"] },
+            { "fishing", ns.L["Fishing"] },
+        } },
+        { title = ns.L["Holiday Costumes"], effects = {
+            { "lantern", ns.L["Weighted Jack-o'-Lantern"] },
+            { "hallowed", ns.L["Hallowed Wand"] },
+            { "noblebunny", ns.L["Noblegarden Bunny"] },
+            { "turkey", ns.L["Pilgrim's Turkey"] },
+        } },
+        { title = ns.L["Toy Transformations"], effects = {
+            { "aqir", ns.L["Aqir Egg Cluster"] },
+            { "atomic", ns.L["Atomically Recalibrator"] },
+            { "atomgoblin", ns.L["Atomically Regoblinator"] },
+            { "blight", ns.L["Detoxified Blight Grenade"] },
+            { "witch", ns.L["Lucille's Sewing Needle"] },
+            { "spraybots", ns.L["Spraybots"] },
+        } },
+        { title = ns.L["Consumables & Items"], effects = {
+            { "pickaxe", ns.L["Cursed Pickaxe"] },
+            { "noggenfogger", ns.L["Noggenfogger Elixir"], ns.L["Remove the skeleton and shrinking buffs, including the skeleton's underwater breathing effect. Keep the Slow Fall buff."] },
+            { "prism", ns.L["Reflecting Prism"] },
+        } },
+    }
+    for _, category in ipairs(categories) do
+        L.headerAt(category.title)
+        s = L.sectionAt()
+        for i = 1, #category.effects, 2 do
+            local cells = {}
+            for j = i, math.min(i + 1, #category.effects) do
+                local effect = category.effects[j]
+                local widget = GUI:CreateFormCheckbox(s.frame, nil, effect[1], db, Refresh,
+                    { description = effect[3] or ns.L["Remove this appearance buff while Auto Remove Appearance Changes is enabled."] })
+                cells[#cells + 1] = row(s.frame, effect[2], widget)
+            end
+            s.AddRow(cells[1], cells[2])
+        end
+        L.closeSection(s)
+    end
+end
+
 local function BuildAutomation(L, generalDB)
     if not generalDB then return end
 
@@ -531,6 +599,7 @@ local function BuildAutomation(L, generalDB)
         { description = ns.L["Pre-fill the word DELETE into the confirmation box when destroying a rare or higher item."] })
     s.AddRow(row(s.frame, ns.L["Lock Audio Output Device"], audioW), row(s.frame, ns.L["Auto-Fill DELETE Confirmation Text"], delW))
     L.closeSection(s)
+    BuildAppearanceChanges(L, generalDB)
 end
 
 local function BuildNotifications(L, generalDB)

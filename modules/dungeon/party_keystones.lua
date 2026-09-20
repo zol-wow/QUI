@@ -174,8 +174,15 @@ local function ApplySkinColors()
 end
 
 local function PositionKeyTracker()
+    if InCombatLockdown() then return end
+    if _G.QUI_IsLayoutModeActive and _G.QUI_IsLayoutModeActive() then return end
     KeyTrackerFrame:ClearAllPoints()
     if PVEFrame then
+        KeyTrackerFrame:SetIgnoreParentScale(true)
+        KeyTrackerFrame:SetScale(UIParent:GetEffectiveScale())
+        if KeyTrackerFrame:GetParent() ~= PVEFrame then
+            KeyTrackerFrame:SetParent(PVEFrame)
+        end
         KeyTrackerFrame:SetFrameStrata(PVEFrame:GetFrameStrata())
         local s = GetSettings()
         local point = s and s.keyTrackerPoint or "TOPRIGHT"
@@ -585,6 +592,8 @@ end
 
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("UI_SCALE_CHANGED")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("GROUP_JOINED")
@@ -609,6 +618,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 RequestKeystones()
             end
         end)
+    elseif event == "PLAYER_REGEN_ENABLED" or event == "UI_SCALE_CHANGED" then
+        if _G.QUI_IsLayoutModeActive and _G.QUI_IsLayoutModeActive() then return end
+        RefreshKeyTracker()
+        UpdateVisibility()
     elseif event == "GROUP_ROSTER_UPDATE" or event == "GROUP_JOINED" then
         C_Timer.After(GROUP_CHANGE_DELAY, function()
             if not InCombatLockdown() then

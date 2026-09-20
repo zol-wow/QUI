@@ -419,6 +419,7 @@ local PROFILE_QOL_GENERAL_KEYS = {
     "autoAcceptInvites",
     "autoAcceptSummons",
     "autoAcceptResurrection",
+    "autoRemoveAppearanceChanges",
     "autoAcceptQuest",
     "autoTurnInQuest",
     "questHoldShift",

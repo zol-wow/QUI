@@ -1509,3 +1509,122 @@ end)
 if C_AddOns.IsAddOnLoaded("Blizzard_ProfessionsCustomerOrders") then
     C_Timer.After(0.1, SetupCraftingOrderFilter)
 end
+
+
+do
+    local appearanceEffects = {
+        blacksmithing = { 388658 },
+        jewelcrafting = { 394015 },
+        tailoring = { 391312 },
+        engineering = { 394007 },
+        enchanting = { 394008 },
+        alchemy = { 394003 },
+        inscription = { 394016 },
+        leatherworking = { 394001 },
+        herbalism = { 394005 },
+        mining = { 394006 },
+        skinning = { 394011 },
+        cooking = { 391775 },
+        fishing = { 394009 },
+        lantern = { 44212 },
+        hallowed = {
+            172010, 218132, 191703, 24732, 191210, 172015, 24735, 24736,
+            191698, 191700, 172008, 24712, 24713, 191701, 191211, 24710,
+            24711, 191686, 191688, 24708, 24709, 173958, 173959, 191682,
+            191683, 24723, 191702, 172003, 172020, 191208, 24740,
+        },
+        noblebunny = { 61734, 61716 },
+        turkey = { 61781 },
+        aqir = { 318452 },
+        atomic = { 399502 },
+        atomgoblin = { 1215363 },
+        blight = { 290224 },
+        witch = { 279509 },
+        spraybots = { 301892, 301893, 301894 },
+        pickaxe = { 454405 },
+        noggenfogger = { 16591, 16595, 1223629, 1223631 },
+        prism = { 163267 },
+    }
+    local selected = {}
+    local selectedSettings
+    local frame = CreateFrame("Frame")
+    local pending = false
+
+    local function RemoveAppearances()
+        local general = GetSettings()
+        local settings = general and general.autoRemoveAppearanceChanges
+        if not settings or settings ~= selectedSettings or not settings.enabled or not next(selected) then return end
+        if InCombatLockdown() or UnitAffectingCombat("player") then return end
+        if C_Secrets.ShouldAurasBeSecret() then return end
+
+        local auras = C_UnitAuras.GetUnitAuras("player", "HELPFUL|CANCELABLE")
+        if issecretvalue(auras) then return end
+        for _, aura in ipairs(auras) do
+            if not issecretvalue(aura) then
+                local spellID, instanceID = aura.spellId, aura.auraInstanceID
+                if not issecretvalue(spellID) and not issecretvalue(instanceID)
+                    and type(spellID) == "number" and type(instanceID) == "number"
+                    and selected[spellID] then
+                    local canRemove = true
+                    if spellID == 394009 then
+                        local _, _, _, _, _, _, _, channelID = UnitChannelInfo("player")
+                        if issecretvalue(channelID) then
+                            canRemove = false
+                        else
+                            canRemove = channelID ~= 131476
+                        end
+                    end
+                    if canRemove then
+                        C_UnitAuras.CancelAuraByInstanceID("player", instanceID)
+                    end
+                end
+            end
+        end
+    end
+
+    frame:SetScript("OnEvent", function(_, event, _, state)
+        if event == "ADDON_RESTRICTION_STATE_CHANGED" then
+            if issecretvalue(state) or state ~= Enum.AddOnRestrictionState.Inactive then return end
+        end
+        if pending then return end
+        if InCombatLockdown() or UnitAffectingCombat("player") then return end
+        if C_Secrets.ShouldAurasBeSecret() then return end
+        pending = true
+        C_Timer.After(0, function()
+            pending = false
+            RemoveAppearances()
+        end)
+    end)
+
+    local function RefreshAppearanceChanges()
+        frame:UnregisterAllEvents()
+        wipe(selected)
+        local general = GetSettings()
+        local settings = general and general.autoRemoveAppearanceChanges
+        selectedSettings = settings
+        if not settings or not settings.enabled then return end
+        for key, spellIDs in pairs(appearanceEffects) do
+            if settings[key] then
+                for _, spellID in ipairs(spellIDs) do
+                    selected[spellID] = true
+                end
+            end
+        end
+        if not next(selected) then return end
+        frame:RegisterUnitEvent("UNIT_AURA", "player")
+        frame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", "player")
+        frame:RegisterEvent("PLAYER_REGEN_ENABLED")
+        frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+        frame:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
+        RemoveAppearances()
+    end
+
+    ns.RefreshAppearanceChanges = RefreshAppearanceChanges
+    ns.WhenLoggedIn(RefreshAppearanceChanges)
+    ns.Registry:Register("appearanceChanges", {
+        refresh = RefreshAppearanceChanges,
+        priority = 30,
+        group = "qol",
+        importCategories = { "qol" },
+    })
+end

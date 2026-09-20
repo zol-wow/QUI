@@ -361,24 +361,28 @@ local foregroundFrame
 local foregroundRaiseQueued = false
 local foregroundWatcher
 
+local function raiseForeground()
+	local frame = foregroundFrame
+	local c = frame and rootContext[frame]
+	if not c or not panelIsActive(c.panel) or InCombatLockdown() then return end
+	local ok, shown = ns.SafeCallMethod("secret-probe", frame, "IsShown")
+	if not ok or (issecretvalue and issecretvalue(shown)) or not shown then return end
+	frame:Raise()
+end
+
 local function queueForegroundRaise()
 	if foregroundRaiseQueued or not foregroundFrame then return end
 	foregroundRaiseQueued = true
-	local function raiseForeground()
+	local function runRaise()
 		foregroundRaiseQueued = false
-		local frame = foregroundFrame
-		local c = frame and rootContext[frame]
-		if not c or not panelIsActive(c.panel) or InCombatLockdown() then return end
-		local ok, shown = ns.SafeCallMethod("secret-probe", frame, "IsShown")
-		if not ok or (issecretvalue and issecretvalue(shown)) or not shown then return end
-		frame:Raise()
+		raiseForeground()
 	end
 	if RunNextFrame then
-		RunNextFrame(raiseForeground)
+		RunNextFrame(runRaise)
 	elseif C_Timer and C_Timer.After then
-		C_Timer.After(0, raiseForeground)
+		C_Timer.After(0, runRaise)
 	else
-		raiseForeground()
+		runRaise()
 	end
 end
 
@@ -409,10 +413,22 @@ local function installForegroundTracking()
 		end
 	end)
 	if type(_G.UpdateUIPanelPositions) == "function" then
-		hooksecurefunc("UpdateUIPanelPositions", queueForegroundRaise)
+		hooksecurefunc("UpdateUIPanelPositions", raiseForeground)
 	end
 	if type(_G.UpdateScaleForFitForOpenPanels) == "function" then
-		hooksecurefunc("UpdateScaleForFitForOpenPanels", queueForegroundRaise)
+		hooksecurefunc("UpdateScaleForFitForOpenPanels", raiseForeground)
+	end
+	if type(_G.ContainerFrameItemButton_OnClick) == "function" then
+		hooksecurefunc("ContainerFrameItemButton_OnClick", function(_, button)
+			if button ~= "RightButton" or InCombatLockdown() then return end
+			local frame = _G.MerchantFrame
+			local c = frame and rootContext[frame]
+			if not c or not panelIsActive(c.panel) then return end
+			local ok, shown = ns.SafeCallMethod("secret-probe", frame, "IsShown")
+			if not ok or (issecretvalue and issecretvalue(shown)) or not shown then return end
+			selectForegroundFrame(frame)
+			raiseForeground()
+		end)
 	end
 	if type(ShowUIPanel) == "function" then
 		hooksecurefunc("ShowUIPanel", function(frame)
