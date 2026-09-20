@@ -643,8 +643,19 @@ function HookExtraButtonPositioning()
 
     if ExtraAbilityContainer and not extraBtnState.extraAbilityContainerSetParentHooked then
         extraBtnState.extraAbilityContainerSetParentHooked = true
-        hooksecurefunc(ExtraAbilityContainer, "SetParent", function()
+        hooksecurefunc(ExtraAbilityContainer, "SetParent", function(self, newParent)
             if extraBtnState.hookingSetParent then return end
+            local holder = extraBtnState.extraActionHolder
+            if newParent == holder then return end
+            if holder and ShouldOwnExtraAbilityContainer() then
+                if InCombatLockdown() and not inInitSafeWindow then
+                    ActionBarsOwned.pendingExtraButtonRefresh = true
+                else
+                    extraBtnState.hookingSetParent = true
+                    self:SetParent(holder)
+                    extraBtnState.hookingSetParent = false
+                end
+            end
             C_Timer.After(0, function()
                 if extraBtnState.hookingSetParent then return end
                 QueueManagedExtraButtonReanchor("extraActionButton")

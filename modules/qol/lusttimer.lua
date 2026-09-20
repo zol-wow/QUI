@@ -79,7 +79,7 @@ local function CreateTimerFrame()
     local frame = CreateFrame("Frame", "QUI_LustTimer", UIParent)
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, -120)
     frame:SetSize(160, 22)
-    frame:SetFrameStrata("HIGH")
+    frame:SetFrameStrata("LOW")
     frame:SetFrameLevel(50)
 
     local container = CreateFrame("AuraContainer", nil, frame, "CustomAuraContainerTemplate")

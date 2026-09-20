@@ -126,7 +126,6 @@ local function GetPlayerScoreInfo(unit)
 end
 
 local KeyTrackerFrame = CreateFrame("Frame", "QUIKeyTrackerFrame", UIParent, "BackdropTemplate")
-KeyTrackerFrame:SetFrameStrata("HIGH")
 KeyTrackerFrame:SetSize(GetFrameWidth(), HEADER_HEIGHT)
 
 local function GetKeyTrackerPixelSize()
@@ -177,6 +176,7 @@ end
 local function PositionKeyTracker()
     KeyTrackerFrame:ClearAllPoints()
     if PVEFrame then
+        KeyTrackerFrame:SetFrameStrata(PVEFrame:GetFrameStrata())
         local s = GetSettings()
         local point = s and s.keyTrackerPoint or "TOPRIGHT"
         local relPoint = s and s.keyTrackerRelPoint or "BOTTOMRIGHT"
