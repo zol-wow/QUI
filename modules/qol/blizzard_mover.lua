@@ -436,7 +436,7 @@ local function installForegroundTracking()
 			local ok, shown = ns.SafeCallMethod("secret-probe", frame, "IsShown")
 			if ok and not (issecretvalue and issecretvalue(shown)) and shown then
 				local c = rootContext[frame]
-				if c and c.panel.secureFrame then c.foregroundShowHandled = true end
+				if c and c.panel and c.panel.secureFrame then c.foregroundShowHandled = true end
 				selectForegroundFrame(frame)
 			end
 		end)
