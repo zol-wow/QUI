@@ -729,7 +729,7 @@ end
             end
 
             if (bit.band(flags, CONST_COMM_SENDTO_GUILD)) then --send to guild
-                if (IsInGuild()) then
+                if (IsInGuild() and C_GuildInfo.CanSpeakInGuildChat()) then
                     --Guild has no 10 msg restriction so send it directly
                     sendData(dataEncoded, "GUILD");
                 end
