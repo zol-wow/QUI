@@ -4,6 +4,24 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.2-beta5 - 2026-09-23
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Action-bar range indicators avoid duplicate full-bar scans** on clients with
+  native range events. Range tint remains active when usability coloring is off,
+  and configured hidden buttons are tracked before they become visible.
+- **Chat skips channel notices that have no valid destination**, matching native
+  chat routing while preserving invitations and system errors.
+- **Guild addon communication respects speaking permissions**, avoiding automatic
+  guild messages when you cannot speak in guild chat. Group communication remains
+  available.
+- **Opening Talents avoids a panel-initialization error** when movable-panel
+  setup is disabled or deferred.
+
 ## v5.3.2-beta4 - 2026-09-20
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
