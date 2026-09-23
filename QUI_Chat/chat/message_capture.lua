@@ -383,6 +383,14 @@ local function OnCaptureEvent(_, event, ...)
     local line, p, secretBody = Format.BuildEventLineFromArgs(event, a1, a2, a3, a4, a5, a6, a7,
         a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18)
 
+    if (typeKey == "CHANNEL_NOTICE" or typeKey == "CHANNEL_NOTICE_USER")
+        and p.zoneID == 0 and p.chNum == 0
+        and not IsSecret(a9) and not p.chBase
+        and not IsSecret(p.text)
+        and (typeKey ~= "CHANNEL_NOTICE_USER" or p.text ~= "INVITE") then
+        return
+    end
+
     MaybeAutoAddChannel(event, p)
 
     local colorKey = typeKey

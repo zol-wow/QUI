@@ -189,8 +189,7 @@ function RefreshUsabilityButtons()
             if barButtons then
                 for _, button in ipairs(barButtons) do
                     UpdateButtonUsability(button, settings)
-                    if (not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(button, barKey))
-                        and (not button.IsVisible or button:IsVisible()) then
+                    if not IsButtonInsideVisibleLayout or IsButtonInsideVisibleLayout(button, barKey) then
                         local action = GetSafeActionSlot(button)
                         if action and SafeHasAction(action) then
                             local buttons = buttonsBySlot[action]
@@ -386,7 +385,7 @@ function UpdateUsabilityPolling()
         RefreshUsabilityButtons()
     end
 
-    if rangeEnabled then
+    if rangeEnabled and not (C_ActionBar and type(C_ActionBar.EnableActionRangeCheck) == "function") then
         usabilityState.rangePollingActive = true
         checkFrame:SetScript("OnUpdate", UsabilityCheckFrameOnUpdate)
         checkFrame:Show()
@@ -394,7 +393,7 @@ function UpdateUsabilityPolling()
         usabilityState.rangePollingActive = false
         checkFrame:SetScript("OnUpdate", nil)
         checkFrame.elapsed = 0
-        if not usabilityEnabled then
+        if not usabilityEnabled and not rangeEnabled then
             checkFrame:Hide()
             ResetAllButtonTints()
         end
