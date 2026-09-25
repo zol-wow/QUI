@@ -4,6 +4,17 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.2-beta6 - 2026-09-25
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Gold tooltips no longer double-count characters whose realm name changed
+  punctuation or spacing**, such as Kelthuzad and Kel'Thuzad. Removing a
+  character also clears matching legacy entries so they stay removed.
+
 ## v5.3.2-beta5 - 2026-09-23
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
