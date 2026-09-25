@@ -31,6 +31,13 @@ function AltsData.LegacyToStorageKey(goldKey)
     return name .. "-" .. realm:gsub("[%s%-']", "")
 end
 
+local function ComparisonKey(key)
+    if not key then return nil end
+    local name, realm = key:match("^(.-)%-(.+)$")
+    if not realm then return key end
+    return name .. "-" .. realm:gsub("[%s%-']", ""):lower()
+end
+
 function AltsData.MergeLegacyGold(rows, goldData)
     rows = rows or {}
     if type(goldData) ~= "table" then
@@ -39,12 +46,13 @@ function AltsData.MergeLegacyGold(rows, goldData)
     end
 
     local seen = {}
-    for _, r in ipairs(rows) do seen[r.key] = true end
+    for _, r in ipairs(rows) do seen[ComparisonKey(r.key)] = true end
 
     for key, entry in pairs(goldData) do
         local synthKey = AltsData.LegacyToStorageKey(key)
         if synthKey then
-            if not seen[synthKey] then
+            local comparisonKey = ComparisonKey(synthKey)
+            if not seen[comparisonKey] then
                 local money, class
                 if type(entry) == "number" then
                     money = entry
@@ -62,7 +70,7 @@ function AltsData.MergeLegacyGold(rows, goldData)
                     ilvl = nil,
                     money = money or 0,
                 }
-                seen[synthKey] = true
+                seen[comparisonKey] = true
             end
         end
     end
@@ -73,9 +81,10 @@ end
 
 function AltsData.PurgeLegacyFor(goldData, storageKey)
     if type(goldData) ~= "table" or not storageKey then return 0 end
+    local comparisonKey = ComparisonKey(storageKey)
     local removed = 0
     for key in pairs(goldData) do
-        if AltsData.LegacyToStorageKey(key) == storageKey then
+        if ComparisonKey(AltsData.LegacyToStorageKey(key)) == comparisonKey then
             goldData[key] = nil
             removed = removed + 1
         end
