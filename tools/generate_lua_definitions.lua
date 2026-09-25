@@ -162,8 +162,9 @@ local function generateApi(tables, defined)
             if not ns and tbl.Name and isNamespaceLikeName(tbl.Name) then ns = tbl.Name end
             for _, fn in ipairs(tbl.Functions) do
                 if type(fn) == "table" and fn.Name then
-                    if ns then
-                        ensureNs(ns)[#namespaces[ns] + 1] = Gen.emitFunction(fn, ns)
+                    local namespace = fn.Namespace or ns
+                    if namespace and namespace ~= "" then
+                        ensureNs(namespace)[#namespaces[namespace] + 1] = Gen.emitFunction(fn, namespace)
                     elseif not globals[fn.Name] then
                         globals[fn.Name] = Gen.emitFunction(fn, nil)
                         globalOrder[#globalOrder + 1] = fn.Name

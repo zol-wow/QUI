@@ -559,6 +559,15 @@ C_AdventureMap = {}
 ---@param ... any
 ---@return any adventureMapTextureKit
 function C_AdventureMap.GetAdventureMapTextureKit(...) end
+---@param ... any
+---@return number numMapInsets
+function C_AdventureMap.GetNumMapInsets(...) end
+---@param ... any
+---@return number numQuestOffers
+function C_AdventureMap.GetNumQuestOffers(...) end
+---@param ... any
+---@return number numZoneChoices
+function C_AdventureMap.GetNumZoneChoices(...) end
 ---@param questID? number
 ---@param ... any
 ---@return any info
@@ -12792,9 +12801,6 @@ function C_RestrictedActions.CheckAllowProtectedFunctions(object, silent, ...) e
 ---@param ... any
 ---@return any state
 function C_RestrictedActions.GetAddOnRestrictionState(type, ...) end
----@param ... any
----@return boolean inCombatLockdown
-function C_RestrictedActions.InCombatLockdown(...) end
 --- Returns true if an addon restriction type is in an active state. Will always return false during dispatch of ADDON_RESTRICTION_STATE_CHANGED.
 ---@param type? any
 ---@param ... any
@@ -14165,6 +14171,10 @@ function C_StorePublic.EventStoreUISetShown(newShown, contextKey, ...) end
 function C_StorePublic.IsEnabled(...) end
 
 C_StringUtil = {}
+---@param locale? any
+---@param ... any
+---@return table breakpoints
+function C_StringUtil.GetDefaultAbbreviationBreakpoints(locale, ...) end
 --- Creates a numeric formatter that converts numbers to abbreviated strings, eg. 123456 -> '123k'.
 ---@param ... any
 ---@return any formatter
@@ -16721,6 +16731,13 @@ function C_UnitAuras.GetHiddenGroupBuffs(...) end
 ---@param ... any
 ---@return any aura
 function C_UnitAuras.GetPlayerAuraBySpellID(spellID, ...) end
+--- Returns the client-predicted amount of time that a new spellcast of the same spell would carry over to the new application of that aura. Takes an optional spellID to use as the new duration if that cannot be derived from the aura, if that value isn't supplied the aura's spellID will be used
+---@param auraInstanceUnit? any
+---@param auraInstanceID? number
+---@param spellID? any
+---@param ... any
+---@return number newDuration
+function C_UnitAuras.GetRefreshCarryOverDuration(auraInstanceUnit, auraInstanceID, spellID, ...) end
 --- Returns the client-predicted new duration of this aura if it were cast again right now. Takes an optional spellID to use as the new duration if that cannot be derived from the aura, if that value isn't supplied the aura's spellID will be used
 ---@param auraInstanceUnit? any
 ---@param auraInstanceID? number
@@ -17791,6 +17808,11 @@ function GetAreaSpiritHealerTime(...) end
 ---@param ... any
 ---@return string text
 function GetAreaText(...) end
+---@param index? number
+---@param ... any
+---@return number specializationID
+---@return number gender
+function GetArenaOpponentSpec(index, ...) end
 ---@param stat? number
 ---@param value? number
 ---@param ... any
@@ -17925,10 +17947,6 @@ function GetCursorMoney(...) end
 ---@return number posX
 ---@return number posY
 function GetCursorPosition(...) end
----@param locale? any
----@param ... any
----@return table breakpoints
-function GetDefaultAbbreviationBreakpoints(locale, ...) end
 ---@param ... any
 ---@return number scale
 function GetDefaultScale(...) end
@@ -18615,6 +18633,9 @@ function HasSPEffectsAttackPower(...) end
 ---@param ... any
 ---@return boolean inCinematic
 function InCinematic(...) end
+---@param ... any
+---@return boolean inCombatLockdown
+function InCombatLockdown(...) end
 ---@param ... any
 ---@return boolean result
 function InitiateRolePoll(...) end
