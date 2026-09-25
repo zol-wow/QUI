@@ -89,12 +89,18 @@ do
     end
     write([[local value = Constants.Test.Maximum + 1
 APIDocumentation:AddDocumentationTable({Namespace = "C_ClientFixture", Functions = {
-    {Name = "Read", Arguments = {{Name = "value", Type = "number", Default = value}}}
+    {Name = "Read", Arguments = {{Name = "value", Type = "number", Default = value}}},
+    {Name = "ReadGlobal", Namespace = ""},
+    {Name = "ReadOverride", Namespace = "C_Override"}
 }})]])
     local args = {"--docs", dir, "--out", dir .. "/meta"}
     assert(generate(args))
     local api = read("wow-api.lua")
     assert(api:find("function C_ClientFixture.Read", 1, true), "selected corpus emitted")
+    assert(api:find("function ReadGlobal(...)", 1, true), "empty namespace emits global")
+    assert(api:find("function C_Override.ReadOverride(...)", 1, true), "named namespace override emitted")
+    assert(not api:find("function C_ClientFixture.ReadGlobal", 1, true), "global override replaces system namespace")
+    assert(not api:find("function C_ClientFixture.ReadOverride", 1, true), "named override replaces system namespace")
     assert(not api:find("C_CooldownViewer", 1, true), "Retail docs must not leak")
     assert(not read("wow-globals.lua"):find("UIParent", 1, true), "Retail globals must not leak")
     for _, source in ipairs({"local =", "error('broken documentation')"}) do
