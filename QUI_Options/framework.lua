@@ -4293,8 +4293,8 @@ local function IndexSearchText(index, text, entry)
     if type(text) ~= "string" or text == "" then return end
     for token in text:gmatch("%S+") do
         AddSearchPosting(index, token, entry)
-        local limit = math.min(#token, SEARCH_INDEX_MAX_PREFIX)
-        for length = SEARCH_INDEX_MIN_TOKEN, limit - 1 do
+        local limit = math.min(#token - 1, SEARCH_INDEX_MAX_PREFIX)
+        for length = SEARCH_INDEX_MIN_TOKEN, limit do
             AddSearchPosting(index, token:sub(1, length) .. "*", entry)
         end
     end

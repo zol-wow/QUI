@@ -1283,7 +1283,9 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Timers / Widgets",
         description = "M+ timer, combat timers, XP tracker, and other utility widgets.",
         recommended = true,
+        frameAnchorPrefixes = { "spellReminder:" },
         topLevelKeys = {
+            "spellReminders",
             "mplusTimer",
             "mplusProgress",
             "combatText",

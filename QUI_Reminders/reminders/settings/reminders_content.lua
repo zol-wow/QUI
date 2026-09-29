@@ -22,7 +22,7 @@ local ROW_H = 26
 local ROW_GAP = 2
 local SECTION_GAP = 14
 local HEADER_H = 26
-local SUBPAGE_INDEX = 9
+local SUBPAGE_INDEX = 1
 local FALLBACK_ICON = 134400
 
 local ROLE_COLORS = {
@@ -236,7 +236,7 @@ local function BuildGeneral(L, db)
         { description = ns.L["Call out which defensive to press when a boss mod says an ability is coming."] })
     local sourceW = GUI:CreateFormDropdown(s.frame, nil, SourceOptions(), "source", db, Refresh,
         { description = ns.L["Which boss timer source drives the callouts. Automatic uses BigWigs, then DBM, then Blizzard's encounter timeline."] })
-    s.AddRow(row(s.frame, ns.L["Enable Reminders"], enableW), row(s.frame, ns.L["Boss Mod Source"], sourceW))
+    s.AddRow(row(s.frame, ns.L["Enable Defensive Reminders"], enableW), row(s.frame, ns.L["Boss Mod Source"], sourceW))
 
     local dungeonsW = GUI:CreateFormCheckbox(s.frame, nil, "inDungeons", db, Refresh,
         { description = ns.L["Call out defensives in dungeons."] })
@@ -840,7 +840,7 @@ if Registry and Schema and RenderAdapters
         moverKey = "remindersCallout",
         lookupKeys = { "reminders", "remindersCallout" },
         category = "qol",
-        nav = { tileId = "gameplay", subPageIndex = SUBPAGE_INDEX },
+        nav = { tileId = "reminders", subPageIndex = SUBPAGE_INDEX },
         sections = {
             Schema.Section({
                 id = "settings",
