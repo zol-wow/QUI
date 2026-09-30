@@ -178,6 +178,7 @@ run_lua_tests "tooling tests" \
 # through overlay_source and requires byte equality. Python-only; skipped with
 # a warning rather than failing a Lua-only environment.
 if command -v python3 >/dev/null 2>&1; then
+    python3 .github/scripts/test_route_codex_context.py || fail=1
     if python3 tools/i18n/test_overlay_roundtrip.py >/dev/null 2>&1; then
         echo "locale overlays: match their writer"
     else
