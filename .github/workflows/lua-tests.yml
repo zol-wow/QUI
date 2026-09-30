@@ -72,6 +72,7 @@ jobs:
           # Format-parity gates. These only READ committed files, so unlike the
           # staleness gate below they carry no branch exclusion — a locale
           # format drift must not be able to reach any branch unseen.
+          python3 .github/scripts/test_route_codex_context.py
           python3 tools/i18n/test_overlay_roundtrip.py
           python3 tools/i18n/test_enus_parser_agreement.py
           python3 tools/i18n/test_translate_codex_provider.py
