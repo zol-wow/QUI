@@ -13144,6 +13144,8 @@ function C_SocialQueue.IsSystemSupported(...) end
 
 C_SocialRestrictions = {}
 ---@param ... any
+function C_SocialRestrictions.AcknowledgeAgeVerificationRestriction(...) end
+---@param ... any
 function C_SocialRestrictions.AcknowledgeRegionalChatDisabled(...) end
 --- Returns true if the player meets all conditions that allow them to receive chat messages.
 ---@param ... any
@@ -13153,6 +13155,14 @@ function C_SocialRestrictions.CanReceiveChat(...) end
 ---@param ... any
 ---@return boolean canSendChat
 function C_SocialRestrictions.CanSendChat(...) end
+--- Returns true if the account is restricted by the Age Verification feature.
+---@param ... any
+---@return boolean restricted
+function C_SocialRestrictions.IsAgeVerificationRestricted(...) end
+--- Returns true if the Age Verification restriction is because the account belongs to a minor, as opposed to an adult who has not yet verified their age.
+---@param ... any
+---@return boolean isMinor
+function C_SocialRestrictions.IsAgeVerificationRestrictedMinor(...) end
 ---@param ... any
 ---@return boolean disabled
 function C_SocialRestrictions.IsChatDisabled(...) end
@@ -16609,6 +16619,7 @@ function C_UIWidgetManager.SetProcessingUnitGuid(unit, ...) end
 function C_UIWidgetManager.UnregisterUnitForWidgetUpdates(unitToken, isGuid, ...) end
 
 C_UnitAuras = {}
+--- Registers a sound for an aura event. The sound is stopped after five seconds of playback. The throttleSeconds value must be between 0 and 5 seconds, inclusive.
 ---@param trigger? any
 ---@param sound? any
 ---@param ... any
