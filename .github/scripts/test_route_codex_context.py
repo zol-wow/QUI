@@ -23,8 +23,15 @@ class RoutingTests(unittest.TestCase):
     def test_current_shipped_toc_version_is_recognized(self):
         toc = Path(__file__).resolve().parents[2] / "QUI.toc"
         version = next(line.split(":", 1)[1].strip() for line in toc.read_text().splitlines() if line.startswith("## Version:"))
-        expected = "alpha" if "alpha" in version.lower() else "beta"
-        self.assertEqual(resolve({"body": f"Version: {version}"})["base_ref"], expected)
+        for reported in (version, "5.3.1"):
+            with self.subTest(version=reported):
+                result = resolve({"body": f"Version: {reported}"})
+                if "alpha" in reported.lower():
+                    self.assertEqual(result["base_ref"], "alpha")
+                elif "beta" in reported.lower():
+                    self.assertEqual(result["base_ref"], "beta")
+                else:
+                    self.assertEqual(result["allowed"], "false")
 
     def test_ptr_alpha_and_beta_evidence_is_conflicting(self):
         self.assertEqual(resolve({"body": "Version: 5.5.0-ptr-alpha9; older 5.3.2-beta6"})["allowed"], "false")
