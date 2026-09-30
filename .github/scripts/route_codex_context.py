@@ -26,7 +26,7 @@ def resolve(item, pull=None, repository="zol-wow/QUI"):
     # Explicit issue-form fields and reported prerelease versions provide branch
     # context. Arbitrary instructions such as "run on beta" do not select a ref.
     reported = set(re.findall(r"(?im)^\s*(?:\*\*)?(?:affected\s+)?branch(?:\*\*)?\s*:\s*(alpha|beta)\b", body))
-    reported.update(re.findall(r"(?i)\bv?\d+\.\d+(?:\.\d+)?[-.](alpha|beta)\d*\b", body + " " + str(item.get("title") or "")))
+    reported.update(re.findall(r"(?i)\bv?\d+\.\d+(?:\.\d+)?[-.](?:ptr[-.])?(alpha|beta)\d*\b", body + " " + str(item.get("title") or "")))
     reported = {branch.lower() for branch in reported}
     if len(reported) != 1:
         return {"allowed": "false", "reason": "ambiguous-release-context"}
