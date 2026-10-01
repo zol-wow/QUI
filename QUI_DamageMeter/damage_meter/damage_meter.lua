@@ -1964,6 +1964,14 @@ local function ChatReportText(value)
     return value
 end
 
+local function ResolveChatReportRows(windowID)
+    local settings = GetSettings()
+    local windowState = settings and settings.windows and settings.windows[windowID]
+    local rows = windowState and windowState.shareResultsRows
+    if rows == 3 or rows == 10 or rows == BAR_POOL_SIZE then return rows end
+    return 5
+end
+
 function Window:_BuildChatReport()
     local sources = self._renderSources
     if not sources or #sources == 0 then return nil end
@@ -1975,7 +1983,7 @@ function Window:_BuildChatReport()
     if not lines[1] then return nil end
     local numberFormat = ResolveAppearance(self.windowID, "numberFormat") or "compact"
     local secondary = ResolveAppearance(self.windowID, "showSecondaryValue") ~= false
-    for i = 1, math.min(#sources, BAR_POOL_SIZE) do
+    for i = 1, math.min(#sources, ResolveChatReportRows(self.windowID)) do
         local source = sources[i]
         local primary, extra = source.totalAmount, source.amountPerSecond
         if IsPerSecondType(self.damageMeterType) then primary, extra = extra, primary end
@@ -2089,6 +2097,17 @@ function Window:_OpenConfigMenu()
         root:CreateDivider()
         root:CreateTitle(ns.L["Data"])
         local share = root:CreateButton(ns.L["Share Results"])
+        local rows = share:CreateButton(ns.L["Rows"])
+        local function AddRowChoice(label, count)
+            rows:CreateRadio(label,
+                function() return ResolveChatReportRows(self.windowID) == count end,
+                function() windowState.shareResultsRows = count end)
+        end
+        AddRowChoice(ns.L["Top 3"], 3)
+        AddRowChoice(ns.L["Top 5"], 5)
+        AddRowChoice(ns.L["Top 10"], 10)
+        AddRowChoice(ns.L["All"], BAR_POOL_SIZE)
+        share:CreateDivider()
         local party = share:CreateButton(ns.L["Party"], function() self:_ShareChatReport("PARTY") end)
         party:SetEnabled(ResolveChatReportChannel("PARTY") ~= nil)
         local raid = share:CreateButton(ns.L["Raid"], function() self:_ShareChatReport("RAID") end)
@@ -2592,6 +2611,7 @@ function Window.New(windowID)
             autoSwapChallengeSessions = false,
             mythicStartDMType = false,
             hideTimer = false,
+            shareResultsRows = 5,
         }
     end
 
@@ -3649,6 +3669,7 @@ function WindowManager:SpawnNew()
         autoSwapChallengeSessions = false,
         mythicStartDMType = false,
         hideTimer = false,
+        shareResultsRows = 5,
     }
     s.windowCount = (s.windowCount or 0) + 1
 
