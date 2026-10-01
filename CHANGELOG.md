@@ -4,6 +4,32 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.2-beta7 - 2026-10-01
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Share damage-meter results to Party, Raid or Whisper** from the meter header's
+  **Share Results** menu. **Rows → Top 3 / Top 5 / Top 10 / All** defaults to five
+  data rows plus the heading and remembers your choice per window. All is capped
+  at 40 rows. Reports use the selected metric and segment, route instance groups
+  to instance chat, and use the shared chat-throttling queue.
+- **Keystone reroll reminder** shows a large “Re-roll key?” prompt after a
+  non-practice dungeon completion when the completed key level is at least your
+  refreshed owned key level. The reminder expires after 15 seconds.
+
+### Fixed
+
+- **Consumable-check layout waits until combat ends**, including ready checks,
+  avoiding protected UI work during combat.
+
+### Maintenance
+
+- **GitHub coding automation selects alpha or beta from the reported context**
+  while preserving the branch of an existing pull request.
+
 ## v5.3.2-beta6 - 2026-09-25
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
