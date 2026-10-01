@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from route_codex_context import resolve
 
 
@@ -14,6 +15,26 @@ class RoutingTests(unittest.TestCase):
     def test_beta_version_and_alpha_version_route_contextually(self):
         for branch in ("alpha", "beta"):
             self.assertEqual(resolve({"body": f"Version: 5.3.2-{branch}6\nframes fail"})["base_ref"], branch)
+
+    def test_ptr_prerelease_versions_route_contextually(self):
+        for version, branch in (("5.5.0-ptr-alpha9", "alpha"), ("5.5.0-ptr-beta1", "beta")):
+            self.assertEqual(resolve({"body": f"Version: {version}"})["base_ref"], branch)
+
+    def test_current_shipped_toc_version_is_recognized(self):
+        toc = Path(__file__).resolve().parents[2] / "QUI.toc"
+        version = next(line.split(":", 1)[1].strip() for line in toc.read_text().splitlines() if line.startswith("## Version:"))
+        for reported in (version, "5.3.1"):
+            with self.subTest(version=reported):
+                result = resolve({"body": f"Version: {reported}"})
+                if "alpha" in reported.lower():
+                    self.assertEqual(result["base_ref"], "alpha")
+                elif "beta" in reported.lower():
+                    self.assertEqual(result["base_ref"], "beta")
+                else:
+                    self.assertEqual(result["allowed"], "false")
+
+    def test_ptr_alpha_and_beta_evidence_is_conflicting(self):
+        self.assertEqual(resolve({"body": "Version: 5.5.0-ptr-alpha9; older 5.3.2-beta6"})["allowed"], "false")
 
     def test_confirmed_maintainer_label_selects_target_fix_branch(self):
         self.assertEqual(resolve({"labels": [{"name": "branch:beta"}], "body": "Reported on 5.3.2-alpha4"})["base_ref"], "beta")
