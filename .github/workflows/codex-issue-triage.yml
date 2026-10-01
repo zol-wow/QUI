@@ -29,17 +29,52 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout routing policy
+        uses: actions/checkout@v6
         with:
-          ref: alpha
+          # Load executable policy only from this trusted release branch.
+          ref: beta
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Resolve issue branch
+        id: context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/issues/$NUMBER" > "$RUNNER_TEMP/codex-item.json"
+          if jq -e '.pull_request != null' "$RUNNER_TEMP/codex-item.json" >/dev/null; then
+            gh api "repos/$GITHUB_REPOSITORY/pulls/$NUMBER" > "$RUNNER_TEMP/codex-pull.json"
+          fi
+          python3 .github/scripts/route_codex_context.py \
+            "$RUNNER_TEMP/codex-item.json" "$RUNNER_TEMP/codex-pull.json" \
+            "$GITHUB_REPOSITORY" >> "$GITHUB_OUTPUT"
+          echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Ask for branch context
+        if: steps.context.outputs.allowed == 'false' && steps.context.outputs.reason != 'fork'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.context.outputs.number }}
+        run: |
+          gh issue comment "$NUMBER" --body "Please confirm whether this change belongs on alpha or beta, with the reported version and reproduction details. A maintainer can apply one branch:alpha or branch:beta label, then ask @codex to continue. No fix was started because the branch context is ambiguous."
+
+      - uses: actions/checkout@v6
+        if: steps.context.outputs.allowed == 'true'
+        with:
+          ref: ${{ steps.context.outputs.checkout_ref }}
           fetch-depth: 0
           submodules: true
           persist-credentials: false
 
       - name: Record base revision
+        if: steps.context.outputs.allowed == 'true'
         run: echo "CODEX_BASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Prepare issue context
+        if: steps.context.outputs.allowed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -49,13 +84,17 @@ jobs:
             --json number,title,state,labels,url > .codex-context/issues.json
 
       - uses: leafo/gh-actions-lua@v13
+        if: steps.context.outputs.allowed == 'true'
         with:
           luaVersion: "5.1"
       - uses: leafo/gh-actions-luarocks@v4
+        if: steps.context.outputs.allowed == 'true'
       - name: Install luacheck
+        if: steps.context.outputs.allowed == 'true'
         run: luarocks install luacheck
 
       - name: Enable Codex sandbox
+        if: steps.context.outputs.allowed == 'true'
         run: |
           printf '/.lua/\n/.luarocks/\n' >> .git/info/exclude
           userns=$(sysctl -n kernel.unprivileged_userns_clone 2>/dev/null || true)
@@ -68,6 +107,7 @@ jobs:
           fi
 
       - name: Restore Codex auth
+        if: steps.context.outputs.allowed == 'true'
         env:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
@@ -79,6 +119,7 @@ jobs:
             "$CODEX_HOME/auth.json" >/dev/null
 
       - name: Run Codex triage
+        if: steps.context.outputs.allowed == 'true'
         id: run_codex
         env:
           CODEX_HOME: ${{ runner.temp }}/codex-home
@@ -115,6 +156,11 @@ jobs:
             documentation. Add duplicate only after comparing the issue with
             .codex-context/issues.json. Never close, retitle, or remove labels.
 
+            The checkout is the resolved issue target. Confirm that the affected
+            code and reported reproduction belong here before editing. If branch
+            evidence conflicts or another branch is required, set open_pr false
+            and ask for clarification; never silently choose another target.
+
             Investigate the actual module from source. Use vendored WoW API
             documentation under tests/api-docs and tests/framexml. If this is a
             question, answer from code and do not edit. If information is
@@ -146,7 +192,7 @@ jobs:
             -o "$CODEX_OUTPUT" -
 
       - name: Persist refreshed Codex auth
-        if: ${{ always() && steps.run_codex.outcome != 'skipped' }}
+        if: ${{ steps.context.outputs.allowed == 'true' && (always() && steps.run_codex.outcome != 'skipped') }}
         env:
           GH_TOKEN: ${{ secrets.CODEX_AUTH_WRITER_TOKEN }}
           CODEX_HOME: ${{ runner.temp }}/codex-home
@@ -158,7 +204,7 @@ jobs:
 
       - name: Validate Codex triage
         id: validate
-        if: steps.run_codex.outcome == 'success'
+        if: ${{ steps.context.outputs.allowed == 'true' && (steps.run_codex.outcome == 'success') }}
         continue-on-error: true
         env:
           RESULT: ${{ runner.temp }}/codex-triage.json
@@ -191,7 +237,7 @@ jobs:
           bash tools/test.sh
 
       - name: Report validation failure
-        if: ${{ always() && steps.validate.outcome == 'failure' }}
+        if: ${{ steps.context.outputs.allowed == 'true' && (always() && steps.validate.outcome == 'failure') }}
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ github.event.issue.number }}
@@ -200,10 +246,11 @@ jobs:
           exit 1
 
       - name: Publish triage
-        if: steps.validate.outcome == 'success'
+        if: ${{ steps.context.outputs.allowed == 'true' && (steps.validate.outcome == 'success') }}
         env:
           GH_TOKEN: ${{ github.token }}
           NUMBER: ${{ github.event.issue.number }}
+          BASE_REF: ${{ steps.context.outputs.base_ref }}
           RESULT: ${{ runner.temp }}/codex-triage.json
         run: |
           set -euo pipefail
@@ -245,7 +292,7 @@ jobs:
           trap 'git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"' EXIT
           git push -u origin "$branch"
 
-          if ! pr_url=$(gh pr create --draft --base alpha --head "$branch" \
+          if ! pr_url=$(gh pr create --draft --base "$BASE_REF" --head "$branch" \
               --title "$title" --body-file "$RUNNER_TEMP/codex-pr.md"); then
             gh issue comment "$NUMBER" --body "$comment"$'\n\n'"The branch \`$branch\` was pushed, but GitHub refused to create the draft pull request."
             exit 1
