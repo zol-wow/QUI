@@ -15,6 +15,49 @@ local function CloseBags()
     end
 end
 
+-- Keep the reminder separate from the keystone insertion UI and its settings.
+local reminderEvents = CreateFrame("Frame")
+local reminder
+local completionGeneration = 0
+reminderEvents:RegisterEvent("CHALLENGE_MODE_COMPLETED")
+reminderEvents:RegisterEvent("CHALLENGE_MODE_START")
+reminderEvents:RegisterEvent("CHALLENGE_MODE_RESET")
+reminderEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+reminderEvents:SetScript("OnEvent", function(_, event)
+    completionGeneration = completionGeneration + 1
+    if reminder then reminder:Hide() end
+    if event ~= "CHALLENGE_MODE_COMPLETED" then return end
+
+    local info = C_ChallengeMode.GetChallengeCompletionInfo()
+    if not info or info.practiceRun or not info.level or info.level <= 0 then return end
+    local completedLevel = info.level
+    local generation = completionGeneration
+    -- Allow the owned keystone to refresh after completion before comparing it.
+    C_Timer.After(1, function()
+        if generation ~= completionGeneration then return end
+        local ownedLevel = C_MythicPlus.GetOwnedKeystoneLevel()
+        if not ownedLevel or ownedLevel <= 0 or completedLevel < ownedLevel then return end
+
+        if not reminder then
+            reminder = CreateFrame("Frame", nil, UIParent)
+            reminder:SetSize(400, 70)
+            reminder:SetPoint("CENTER", UIParent, "CENTER", 0, 160)
+            reminder:SetFrameStrata("DIALOG")
+            local text = reminder:CreateFontString(nil, "OVERLAY")
+            text:SetAllPoints()
+            text:SetFont(STANDARD_TEXT_FONT, 32, "OUTLINE")
+            text:SetTextColor(1, 0.82, 0)
+            text:SetText("Re-roll key?")
+            reminder:SetScript("OnUpdate", function(self, elapsed)
+                self.remaining = self.remaining - elapsed
+                if self.remaining <= 0 then self:Hide() end
+            end)
+        end
+        reminder.remaining = 15
+        reminder:Show()
+    end)
+end)
+
 local function FindKeystoneInBags()
     for bag = 0, NUM_BAG_FRAMES do
         local slots = C_Container.GetContainerNumSlots(bag)
