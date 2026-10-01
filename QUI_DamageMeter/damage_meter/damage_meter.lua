@@ -1994,18 +1994,33 @@ function Window:_BuildChatReport()
     return lines
 end
 
+local function ResolveChatReportChannel(channel)
+    if channel == "PARTY" then
+        if IsInGroup(_G.LE_PARTY_CATEGORY_HOME) then return "PARTY" end
+        if IsInGroup(_G.LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
+    elseif channel == "RAID" then
+        if IsInRaid(_G.LE_PARTY_CATEGORY_HOME) then return "RAID" end
+        if IsInRaid(_G.LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
+    elseif channel == "WHISPER" then
+        return channel
+    end
+end
+
 local function SendChatReport(lines, channel, target)
-    local send = (_G.C_ChatInfo and _G.C_ChatInfo.SendChatMessage) or _G.SendChatMessage
-    if not send then return end
-    if channel == "PARTY" and not IsInGroup() then return end
-    if channel == "RAID" and not IsInRaid() then return end
+    local throttle = _G.ChatThrottleLib
+    if not throttle or not throttle.SendChatMessage then return end
+    channel = ResolveChatReportChannel(channel)
+    if not channel then return end
     if channel == "WHISPER" then
         target = ChatReportText(target)
         if not target then return end
         target = target:match("^%s*(.-)%s*$")
         if target == "" or target:find("%s") then return end
     end
-    for _, line in ipairs(lines) do send(line, channel, nil, target) end
+    -- One ordered queue shares the bundled library's global bandwidth budget.
+    for _, line in ipairs(lines) do
+        throttle:SendChatMessage("NORMAL", "QUI_DAMAGE_METER", line, channel, nil, target, "QUI_DAMAGE_METER")
+    end
 end
 
 function Window:_ShareChatReport(channel)
@@ -2075,9 +2090,9 @@ function Window:_OpenConfigMenu()
         root:CreateTitle(ns.L["Data"])
         local share = root:CreateButton(ns.L["Share Results"])
         local party = share:CreateButton(ns.L["Party"], function() self:_ShareChatReport("PARTY") end)
-        party:SetEnabled(IsInGroup())
+        party:SetEnabled(ResolveChatReportChannel("PARTY") ~= nil)
         local raid = share:CreateButton(ns.L["Raid"], function() self:_ShareChatReport("RAID") end)
-        raid:SetEnabled(IsInRaid())
+        raid:SetEnabled(ResolveChatReportChannel("RAID") ~= nil)
         share:CreateButton(ns.L["Whisper"], function() self:_ShareChatReport("WHISPER") end)
         root:CreateButton(ns.L["Reset Data"], function()
             if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
