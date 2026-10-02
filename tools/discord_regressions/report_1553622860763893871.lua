@@ -1,12 +1,19 @@
 -- Behavioral regression for the keystone completion reminder (Lua 5.1).
 local frames, timers = {}, {}
 local completion, ownedLevel
+local ownedReads = 0
+local now = 0
 UIParent = {}
 STANDARD_TEXT_FONT = "Fonts\\FRIZQT__.TTF"
 C_AddOns = { IsAddOnLoaded = function() return false end }
 C_ChallengeMode = { GetChallengeCompletionInfo = function() return completion end }
-C_MythicPlus = { GetOwnedKeystoneLevel = function() return ownedLevel end }
-C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
+C_MythicPlus = { GetOwnedKeystoneLevel = function()
+    ownedReads = ownedReads + 1
+    return ownedLevel
+end }
+C_Timer = { After = function(delay, callback)
+    timers[#timers + 1] = { at = now + delay, callback = callback }
+end }
 
 function CreateFrame()
     local frame = { events = {}, scripts = {}, shown = true }
@@ -42,10 +49,25 @@ local function dispatch(event)
     end
 end
 
+local function advance(seconds)
+    local target = now + seconds
+    while true do
+        local nextIndex
+        for index, timer in ipairs(timers) do
+            if timer.at <= target and (not nextIndex or timer.at < timers[nextIndex].at) then
+                nextIndex = index
+            end
+        end
+        if not nextIndex then break end
+        local timer = table.remove(timers, nextIndex)
+        now = timer.at
+        timer.callback()
+    end
+    now = target
+end
+
 local function flushTimers()
-    local pending = timers
-    timers = {}
-    for _, callback in ipairs(pending) do callback() end
+    advance(1)
 end
 
 local function visibleReminder()
@@ -98,5 +120,53 @@ for _, event in ipairs({ "CHALLENGE_MODE_START", "CHALLENGE_MODE_RESET", "PLAYER
     flushTimers()
     assert(not visibleReminder(), event .. " must cancel a pending reminder")
 end
+
+-- Model an allowed unavailable API result followed by eligible owned-key data.
+-- This proves recovery logic; it does not establish native refresh timing.
+assert(not finish(17, nil))
+ownedLevel = 17
+advance(1)
+assert(visibleReminder(), "temporarily unavailable owned key must be checked again")
+
+assert(not finish(17, 0))
+ownedLevel = 16
+advance(1)
+assert(visibleReminder(), "zero owned level must recover when an eligible key becomes available")
+
+local reads = ownedReads
+assert(not finish(17, nil))
+advance(20)
+assert(not visibleReminder(), "absent key must never show a reminder")
+assert(ownedReads - reads == 5 and #timers == 0, "unavailable key polling must stop after five checks")
+
+reads = ownedReads
+assert(not finish(17, 18))
+advance(20)
+assert(not visibleReminder() and ownedReads - reads == 1,
+    "available ineligible key must not be polled or produce a reminder")
+
+assert(not finish(17, nil))
+ownedLevel = 18
+advance(1)
+assert(not visibleReminder(), "a late higher owned key must still suppress the reminder")
+advance(20)
+assert(#timers == 0, "higher owned key must end polling")
+
+for _, event in ipairs({ "CHALLENGE_MODE_START", "CHALLENGE_MODE_RESET", "PLAYER_ENTERING_WORLD" }) do
+    assert(not finish(17, nil))
+    reads = ownedReads
+    dispatch(event)
+    ownedLevel = 17
+    advance(10)
+    assert(not visibleReminder() and ownedReads == reads,
+        event .. " must cancel late-key polling before another API read")
+end
+
+-- A newer completion owns the reminder even if an older retry is pending.
+assert(not finish(17, nil))
+completion, ownedLevel = { level = 16 }, 17
+dispatch("CHALLENGE_MODE_COMPLETED")
+advance(10)
+assert(not visibleReminder(), "an older eligible completion must not override a newer ineligible one")
 
 print("keystone completion reminder regression: ok")

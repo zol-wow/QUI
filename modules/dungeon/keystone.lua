@@ -32,11 +32,17 @@ reminderEvents:SetScript("OnEvent", function(_, event)
     if not info or info.practiceRun or not info.level or info.level <= 0 then return end
     local completedLevel = info.level
     local generation = completionGeneration
+    local attempts = 0
     -- Allow the owned keystone to refresh after completion before comparing it.
-    C_Timer.After(1, function()
+    local function CheckOwnedKeystone()
         if generation ~= completionGeneration then return end
+        attempts = attempts + 1
         local ownedLevel = C_MythicPlus.GetOwnedKeystoneLevel()
-        if not ownedLevel or ownedLevel <= 0 or completedLevel < ownedLevel then return end
+        if not ownedLevel or ownedLevel <= 0 then
+            if attempts < 5 then C_Timer.After(1, CheckOwnedKeystone) end
+            return
+        end
+        if completedLevel < ownedLevel then return end
 
         if not reminder then
             reminder = CreateFrame("Frame", nil, UIParent)
@@ -55,7 +61,8 @@ reminderEvents:SetScript("OnEvent", function(_, event)
         end
         reminder.remaining = 15
         reminder:Show()
-    end)
+    end
+    C_Timer.After(1, CheckOwnedKeystone)
 end)
 
 local function FindKeystoneInBags()
