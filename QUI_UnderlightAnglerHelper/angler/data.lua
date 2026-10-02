@@ -18,7 +18,8 @@ Angler.ROD_ITEM_ID = 133755          -- Underlight Angler
 Angler.LEGION_FISHING_SKILL_LINE = 2586
 Angler.REQUIRED_SKILL = 100
 Angler.ROOT_POWER_ID = 1021          -- Undercurrent, present only in this artifact
--- Any step of the Luminous Pearl chain being done means the pearl was fished up.
+-- Any step of the Luminous Pearl chain being done or in the log means the pearl
+-- was fished up.
 Angler.PEARL_QUEST_IDS = { 40960, 40961, 41010 }
 
 -- powerID -> spell, English fallback name, max rank, position on the art (0..1).
@@ -78,7 +79,7 @@ end
 -- Legion Fishing skill, or nil when the client will not say. The skill-line
 -- query works with the profession window closed. The child-profession query is
 -- the standalone addon's method, kept as the fallback: it answers for whichever
--- Fishing page is open, so it only helps with the Legion page in front.
+-- page is open, so it only counts while that page is Legion Fishing.
 function Angler.GetLegionFishingSkill()
     local api = C_TradeSkillUI
     if not api then return nil, nil end
@@ -91,8 +92,7 @@ function Angler.GetLegionFishingSkill()
     end
     if api.GetChildProfessionInfo then
         local info = api.GetChildProfessionInfo()
-        local fishing = Enum and Enum.Profession and Enum.Profession.Fishing
-        if type(info) == "table" and fishing and info.profession == fishing
+        if type(info) == "table" and info.professionID == Angler.LEGION_FISHING_SKILL_LINE
             and type(info.skillLevel) == "number" and type(info.maxSkillLevel) == "number"
             and info.maxSkillLevel > 0 then
             return info.skillLevel, info.maxSkillLevel
@@ -108,8 +108,10 @@ end
 
 local function HasPearlProgress()
     if not (C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted) then return false end
+    local isOnQuest = C_QuestLog.IsOnQuest
     for _, questID in ipairs(Angler.PEARL_QUEST_IDS) do
         if C_QuestLog.IsQuestFlaggedCompleted(questID) then return true end
+        if isOnQuest and isOnQuest(questID) then return true end
     end
     return false
 end
