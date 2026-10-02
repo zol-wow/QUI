@@ -471,6 +471,9 @@ local function BuildAutomation(L, generalDB)
         { description = ns.L["Close your bags after the keystone is auto-inserted. Requires Auto Insert M+ Keys."] })
     s.AddRow(row(s.frame, ns.L["Auto Insert M+ Keys"], keyW), row(s.frame, ns.L["Close Bags After Inserting Key"], closeBagsKeyW))
 
+    local rerollW = GUI:CreateFormCheckbox(s.frame, nil, "keystoneRerollReminder", generalDB, nil,
+        { description = ns.L["Show a reminder for 15 seconds after completing a Mythic+ run at or above your owned keystone's level."] })
+
     local logMW = GUI:CreateFormCheckbox(s.frame, nil, "autoCombatLog", generalDB, function()
         if _G.QUI_RefreshAutoCombatLogging then _G.QUI_RefreshAutoCombatLogging() end
     end, { description = ns.L["Turn on combat logging automatically when a Mythic+ run starts, and off when it ends."] })
@@ -598,6 +601,7 @@ local function BuildAutomation(L, generalDB)
     local delW = GUI:CreateFormCheckbox(s.frame, nil, "autoDeleteConfirm", generalDB, nil,
         { description = ns.L["Pre-fill the word DELETE into the confirmation box when destroying a rare or higher item."] })
     s.AddRow(row(s.frame, ns.L["Lock Audio Output Device"], audioW), row(s.frame, ns.L["Auto-Fill DELETE Confirmation Text"], delW))
+    s.AddRow(row(s.frame, ns.L["Keystone Reroll Reminder"], rerollW))
     L.closeSection(s)
     BuildAppearanceChanges(L, generalDB)
 end
