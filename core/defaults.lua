@@ -201,6 +201,7 @@ local defaults = {
             disableScrollingCombatText = false,
             autoInsertKey = true,
             closeBagsOnKeystoneInsert = false,
+            keystoneRerollReminder = true,
             skinKeystoneFrame = true,
             skinGameMenu = true,
             skinContextMenus = true,

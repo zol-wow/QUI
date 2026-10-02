@@ -28,15 +28,25 @@ reminderEvents:SetScript("OnEvent", function(_, event)
     if reminder then reminder:Hide() end
     if event ~= "CHALLENGE_MODE_COMPLETED" then return end
 
+    local settings = GetSettings()
+    if not settings or settings.keystoneRerollReminder == false then return end
     local info = C_ChallengeMode.GetChallengeCompletionInfo()
     if not info or info.practiceRun or not info.level or info.level <= 0 then return end
     local completedLevel = info.level
     local generation = completionGeneration
+    local attempts = 0
     -- Allow the owned keystone to refresh after completion before comparing it.
-    C_Timer.After(1, function()
+    local function CheckOwnedKeystone()
         if generation ~= completionGeneration then return end
+        local currentSettings = GetSettings()
+        if not currentSettings or currentSettings.keystoneRerollReminder == false then return end
+        attempts = attempts + 1
         local ownedLevel = C_MythicPlus.GetOwnedKeystoneLevel()
-        if not ownedLevel or ownedLevel <= 0 or completedLevel < ownedLevel then return end
+        if not ownedLevel or ownedLevel <= 0 then
+            if attempts < 5 then C_Timer.After(1, CheckOwnedKeystone) end
+            return
+        end
+        if completedLevel < ownedLevel then return end
 
         if not reminder then
             reminder = CreateFrame("Frame", nil, UIParent)
@@ -50,12 +60,14 @@ reminderEvents:SetScript("OnEvent", function(_, event)
             text:SetText("Re-roll key?")
             reminder:SetScript("OnUpdate", function(self, elapsed)
                 self.remaining = self.remaining - elapsed
-                if self.remaining <= 0 then self:Hide() end
+                local activeSettings = GetSettings()
+                if self.remaining <= 0 or not activeSettings or activeSettings.keystoneRerollReminder == false then self:Hide() end
             end)
         end
         reminder.remaining = 15
         reminder:Show()
-    end)
+    end
+    C_Timer.After(1, CheckOwnedKeystone)
 end)
 
 local function FindKeystoneInBags()
