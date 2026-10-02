@@ -4,6 +4,24 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.2-beta8 - 2026-10-02
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Underlight Angler Helper** adds an unlock checklist, a restored artifact
+  trait tree with purchase confirmations, and fishing tips for alts. Open it
+  with `/angler` or `/quiangler`; configure the module under **Module Addons**.
+- **Keystone Reroll Reminder** can now be toggled under **Quality of Life →
+  Automation**. It remains enabled by default.
+
+### Fixed
+
+- **Keystone reroll reminders retry unavailable key data for up to five seconds**
+  after completion instead of stopping after the first check.
+
 ## v5.3.2-beta7 - 2026-10-01
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
