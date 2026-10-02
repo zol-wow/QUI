@@ -126,7 +126,7 @@ read_globals = {
     "GetTotemDuration", "GetTotemInfo", "GetNumTotemSlots",
 
     -- C_* namespace tables (whitelisted whole — methods accessed via dot/colon)
-    "C_ActionBar", "C_AddOnProfiler", "C_AddOns", "C_AssistedCombat",
+    "C_ActionBar", "C_AddOnProfiler", "C_AddOns", "C_ArtifactUI", "C_AssistedCombat",
     "C_PartyInfo", "C_Spell", "C_Timer", "C_UnitAuras", "C_TooltipInfo",
     "C_NamePlate", "C_NamePlateManager", "C_ItemCallbacks", "C_Secrets",
     "C_ChallengeMode", "C_ClassTalents", "C_Container", "C_CooldownViewer",
