@@ -33,13 +33,18 @@ local launcher
 
 local function UpdateLauncher()
     if not launcher then return end
-    launcher:SetShown(Angler.IsArtifactOpen())
+    local artifactFrame = _G.ArtifactFrame
+    launcher:SetShown(artifactFrame and artifactFrame:IsShown() and Angler.IsArtifactOpen() or false)
 end
 
-local function CreateLauncher()
-    local artifactFrame = _G.ArtifactFrame
-    if launcher or not artifactFrame then return end
+-- Which artifact is open changed, or none is any more: the launcher and an
+-- open helper window both read state that is only settled a frame later.
+local function OnArtifactChanged()
+    C_Timer.After(0, UpdateLauncher)
+    Angler.Window.QueueRefresh()
+end
 
+local function CreateLauncher(artifactFrame)
     launcher = UIKit.CreateButton(artifactFrame, {
         text = ns.L["Underlight Angler Tree"], width = 210, height = 28,
         onClick = function() Angler.Window.Toggle("tree") end,
@@ -47,17 +52,26 @@ local function CreateLauncher()
     launcher:SetPoint("TOPRIGHT", artifactFrame, "TOPRIGHT", -165, -88)
     launcher:SetFrameLevel(artifactFrame:GetFrameLevel() + 20)
     launcher:Hide()
+end
 
-    -- The artifact's power list is not readable until the frame after OnShow.
-    artifactFrame:HookScript("OnShow", function()
-        C_Timer.After(0, UpdateLauncher)
-    end)
-    artifactFrame:HookScript("OnHide", function()
-        launcher:Hide()
-    end)
+local watcher
+
+-- Blizzard's artifact window swaps artifacts while shown (ARTIFACT_UPDATE) and
+-- clears the artifact data from its OnHide without a closing event, so both
+-- the events and the frame scripts are watched.
+local function WatchArtifactFrame()
+    local artifactFrame = _G.ArtifactFrame
+    if watcher or not artifactFrame then return end
+
+    if not standalone then CreateLauncher(artifactFrame) end
+
+    watcher = CreateFrame("Frame")
+    watcher:RegisterEvent("ARTIFACT_UPDATE")
+    watcher:RegisterEvent("ARTIFACT_CLOSE")
+    watcher:SetScript("OnEvent", OnArtifactChanged)
+    artifactFrame:HookScript("OnShow", OnArtifactChanged)
+    artifactFrame:HookScript("OnHide", OnArtifactChanged)
     if artifactFrame:IsShown() then UpdateLauncher() end
 end
 
-if not standalone then
-    ns.SkinBase.OnAddOnLoaded("Blizzard_ArtifactUI", CreateLauncher)
-end
+ns.SkinBase.OnAddOnLoaded("Blizzard_ArtifactUI", WatchArtifactFrame)
