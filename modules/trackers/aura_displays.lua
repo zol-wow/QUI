@@ -1363,8 +1363,13 @@ local function GridExtent(profile)
     local cols = math.min(perRow, profile.maxIcons)
     if cols < 1 then cols = 1 end
     local rows = math.ceil(profile.maxIcons / cols)
+    local rowGap = (profile.rowSpacing and profile.rowSpacing > 0)
+        and profile.rowSpacing or profile.spacing
     local w = cols * profile.iconSize + math.max(0, cols - 1) * profile.spacing
-    local h = rows * profile.iconSize + math.max(0, rows - 1) * profile.spacing
+    local h = rows * profile.iconSize + math.max(0, rows - 1) * rowGap
+    if profile.grow == "UP" or profile.grow == "DOWN" then
+        return h, w
+    end
     return w, h
 end
 
