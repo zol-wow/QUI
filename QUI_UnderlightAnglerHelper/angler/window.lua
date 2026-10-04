@@ -4,6 +4,10 @@
 -- acquisition checklist, the artifact trait tree, and tips for repeating the
 -- unlock on an alt. It is built on first open and listens to the client only
 -- while it is shown.
+--
+-- It lives in one of two places. Free-standing, it is a movable window in the
+-- middle of the screen. Embedded, it is a child of Blizzard's artifact window
+-- and covers it, so opening the Underlight Angler shows the tree in place.
 local ADDON_NAME, ns = ...
 
 local Helpers = ns.Helpers
@@ -26,6 +30,13 @@ local TREE_X, TREE_Y, TREE_W, TREE_H = 65, 18, 850, 525
 local NODE_SIZE, RING_SIZE, GLOW_SIZE = 42, 48, 54
 local MAP_W, MAP_H, MAP_TEX_BOTTOM = 500, 377, 773 / 1024
 local REFRESH_DELAY = 0.1
+-- A purchased rank is not readable straight away; the tree is repainted until
+-- it is, or this many times.
+local PURCHASE_SYNC_TRIES = 25
+-- Above everything Blizzard's artifact window draws in the same strata, and
+-- below the DIALOG strata the purchase confirmation appears in.
+local EMBED_STRATA, EMBED_LEVEL = "HIGH", 5000
+local HOST_TABS = { "PerksTabButton", "AppearancesTabButton" }
 
 local ROUTE_COLORS = {
     [1] = { 1, 0.08, 0.03, 0.92 },
@@ -54,6 +65,7 @@ local EVENTS = {
 local VIEW_ORDER = { "checklist", "tree", "tips" }
 
 local win
+local host
 local views = {}
 local tabs = {}
 local activeView = "checklist"
@@ -225,6 +237,15 @@ local function PowerInfo(powerID)
     return C_ArtifactUI.GetPowerInfo(powerID)
 end
 
+local function SyncPurchasedRank(powerID, oldRank, tries)
+    Window.QueueRefresh()
+    if tries >= PURCHASE_SYNC_TRIES then return end
+    local info = PowerInfo(powerID)
+    if info and info.currentRank == oldRank then
+        C_Timer.After(REFRESH_DELAY, function() SyncPurchasedRank(powerID, oldRank, tries + 1) end)
+    end
+end
+
 local function EnsureBuyPopup()
     if StaticPopupDialogs[BUY_POPUP] then return end
     StaticPopupDialogs[BUY_POPUP] = {
@@ -233,12 +254,14 @@ local function EnsureBuyPopup()
         button2 = _G.NO,
         OnAccept = function(_, powerID)
             if InCombatLockdown() or not Angler.IsArtifactOpen() then return end
+            local before = C_ArtifactUI.GetPowerInfo(powerID)
             if C_ArtifactUI.AddPower(powerID) then
                 Print(ns.L["Purchased %s."]:format(Angler.TraitName(powerID)))
+                SyncPurchasedRank(powerID, before and before.currentRank, 1)
             else
                 Print(ns.L["The game rejected the trait purchase."])
+                Window.QueueRefresh()
             end
-            Window.QueueRefresh()
         end,
         timeout = 0,
         whileDead = true,
@@ -521,15 +544,49 @@ local function SelectView(id)
     views[id].Refresh()
 end
 
+-- Blizzard's own tab buttons hang below its window, outside the overlay. They
+-- are faded, not hidden: Blizzard shows and hides them itself.
+local function MuteHostTabs(muted)
+    if not host then return end
+    for _, key in ipairs(HOST_TABS) do
+        local tab = host[key]
+        if tab then
+            tab:SetAlpha(muted and 0 or 1)
+            tab:EnableMouse(not muted)
+        end
+    end
+end
+
+-- The content is laid out for one size, so the embedded window is scaled to
+-- cover its host and is not stretched to it.
+local function ApplyPlacement()
+    win:SetParent(host or UIParent)
+    win:ClearAllPoints()
+    win:SetFrameStrata(EMBED_STRATA)
+    if host then
+        local scale = math.max(host:GetWidth() / win:GetWidth(), host:GetHeight() / win:GetHeight())
+        win:SetScale(scale > 0 and scale or 1)
+        win:SetPoint("CENTER", host, "CENTER")
+        win:SetFrameLevel(EMBED_LEVEL)
+    else
+        win:SetScale(1)
+        win:SetPoint("CENTER")
+        win:SetFrameLevel(1)
+    end
+    win:SetToplevel(not host)
+    win:SetClampedToScreen(not host)
+    -- Escape closes the free-standing window itself. Embedded, it closes the
+    -- host and the overlay goes with it.
+    tDeleteItem(UISpecialFrames, FRAME_NAME)
+    if not host then tinsert(UISpecialFrames, FRAME_NAME) end
+end
+
 local function Build()
     win = CreateFrame("Frame", FRAME_NAME, UIParent)
     win:SetSize(BODY_W + PAD * 2, HEADER_H + PAD + BODY_H + PAD)
-    win:SetPoint("CENTER")
-    win:SetFrameStrata("HIGH")
-    win:SetToplevel(true)
     win:SetMovable(true)
     win:EnableMouse(true)
-    win:SetClampedToScreen(true)
+    ApplyPlacement()
     if win.SetDontSavePosition then win:SetDontSavePosition(true) end
     win:Hide()
 
@@ -545,7 +602,9 @@ local function Build()
     header:SetHeight(HEADER_H)
     header:EnableMouse(true)
     header:RegisterForDrag("LeftButton")
-    header:SetScript("OnDragStart", function() win:StartMoving() end)
+    header:SetScript("OnDragStart", function()
+        if not host then win:StartMoving() end
+    end)
     header:SetScript("OnDragStop", function() win:StopMovingOrSizing() end)
 
     win._title = Text(header, 14)
@@ -554,7 +613,11 @@ local function Build()
 
     win._close = UIKit.CreateCloseButton(header, {
         point = "RIGHT", x = -8, y = 0,
-        onClick = function() win:Hide() end,
+        -- Embedded, the overlay is the artifact window as far as the player
+        -- can tell, so closing it closes both.
+        onClick = function()
+            if host then HideUIPanel(host) else win:Hide() end
+        end,
     })
 
     local labels = ViewLabels()
@@ -600,16 +663,14 @@ local function Build()
     win:SetScript("OnEvent", function() Window.QueueRefresh() end)
     win:SetScript("OnShow", function(self)
         for _, event in ipairs(EVENTS) do self:RegisterEvent(event) end
+        MuteHostTabs(true)
     end)
     win:SetScript("OnHide", function(self)
         self:StopMovingOrSizing()
         self:UnregisterAllEvents()
         StaticPopup_Hide(BUY_POPUP)
+        MuteHostTabs(false)
     end)
-
-    if not tContains(UISpecialFrames, FRAME_NAME) then
-        tinsert(UISpecialFrames, FRAME_NAME)
-    end
 end
 
 -- Quest-log and bag events arrive in bursts; one repaint per burst is plenty.
@@ -620,6 +681,21 @@ function Window.QueueRefresh()
         refreshQueued = false
         if win and win:IsShown() then views[activeView].Refresh() end
     end)
+end
+
+-- Embeds the window in `frame`, or frees it again when `frame` is nil.
+function Window.SetHost(frame)
+    if frame == host then return end
+    MuteHostTabs(false)
+    host = frame
+    if not win then return end
+    win:StopMovingOrSizing()
+    ApplyPlacement()
+    if win:IsVisible() then MuteHostTabs(true) end
+end
+
+function Window.IsEmbedded()
+    return host ~= nil
 end
 
 function Window.IsShown()
