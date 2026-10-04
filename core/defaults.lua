@@ -202,6 +202,7 @@ local defaults = {
             autoInsertKey = true,
             closeBagsOnKeystoneInsert = false,
             keystoneRerollReminder = true,
+            keystoneRerollReminderDuration = 15,
             skinKeystoneFrame = true,
             skinGameMenu = true,
             skinContextMenus = true,

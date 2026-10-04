@@ -411,6 +411,7 @@ local PROFILE_QOL_GENERAL_KEYS = {
     "autoInsertKey",
     "closeBagsOnKeystoneInsert",
     "keystoneRerollReminder",
+    "keystoneRerollReminderDuration",
     "consumableMacros",
     "consumablePersistent",
     "craftingOrderExpansionFilter",
