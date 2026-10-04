@@ -64,7 +64,8 @@ reminderEvents:SetScript("OnEvent", function(_, event)
                 if self.remaining <= 0 or not activeSettings or activeSettings.keystoneRerollReminder == false then self:Hide() end
             end)
         end
-        reminder.remaining = 15
+        local duration = currentSettings.keystoneRerollReminderDuration
+        reminder.remaining = (duration == 30 or duration == 60) and duration or 15
         reminder:Show()
     end
     C_Timer.After(1, CheckOwnedKeystone)
