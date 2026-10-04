@@ -199,12 +199,12 @@ local function LayoutElement(host, pool, poolCursor, element, resolve, opts)
     local grow = p.grow
     local column = (grow == "UP" or grow == "DOWN")
     local left = (grow == "LEFT")
+    if column and p.crossEnd ~= nil then left = (p.crossEnd == true) end
     local up
     if column then up = (grow == "UP") else up = (p.wrap == "UP") end
     local corner = pinCorner or ((up and "BOTTOM" or "TOP") .. (left and "RIGHT" or "LEFT"))
 
     local perRow = (p.maxPerRow and p.maxPerRow > 0) and p.maxPerRow or count
-    if column then perRow = 1 end
     local centered = (grow == "CENTER")
 
     local size, gap = p.iconSize, p.spacing
@@ -225,7 +225,7 @@ local function LayoutElement(host, pool, poolCursor, element, resolve, opts)
     local w = barVertical and barThick or barLong
     local h = barVertical and barLong or barThick
     local rowGap = (p.rowSpacing and p.rowSpacing > 0) and p.rowSpacing or gap
-    local stepX = w + gap
+    local stepX = w + (column and rowGap or gap)
     local stepY = h + (column and gap or rowGap)
     local color = element.color
 
@@ -253,9 +253,9 @@ local function LayoutElement(host, pool, poolCursor, element, resolve, opts)
             local lineSpan = lineCount * w + math.max(lineCount - 1, 0) * gap
             dx = col * stepX - lineSpan / 2
         else
-            dx = (col * stepX) * (left and -1 or 1)
+            dx = ((column and row or col) * stepX) * (left and -1 or 1)
         end
-        local dy = (row * stepY) * (up and 1 or -1)
+        local dy = ((column and col or row) * stepY) * (up and 1 or -1)
         f:ClearAllPoints()
         f:SetPoint(corner, anchorTo, framePoint, offX + dx, offY + dy)
         f:SetAlpha(element.enabled ~= false and 1 or 0.35)

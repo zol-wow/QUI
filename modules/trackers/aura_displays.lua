@@ -1990,6 +1990,33 @@ function AD.ReflowGroups(displays)
     return true
 end
 
+local LAYOUT_FEATURE_ID = "auraDisplayLayout"
+
+local function RegisterLayoutSettings(anchorKey)
+    local Settings = ns.Settings
+    local Registry = Settings and Settings.Registry
+    local Schema = Settings and Settings.Schema
+    local RenderAdapters = Settings and Settings.RenderAdapters
+    if not Registry or not Schema or not RenderAdapters then return end
+    if not Registry:GetFeature(LAYOUT_FEATURE_ID) then
+        Registry:RegisterFeature(Schema.Feature({
+            id = LAYOUT_FEATURE_ID,
+            nav = { tileId = "auras", subPageIndex = 6 },
+            render = {
+                layout = function(host, options)
+                    return RenderAdapters.RenderLayoutRoute(host, options and options.providerKey)
+                end,
+            },
+        }))
+    end
+    Registry:RegisterLookupKey(LAYOUT_FEATURE_ID, anchorKey)
+end
+
+local function UnregisterLayoutSettings(anchorKey)
+    local Registry = ns.Settings and ns.Settings.Registry
+    if Registry then Registry:UnregisterLookupKey(LAYOUT_FEATURE_ID, anchorKey) end
+end
+
 function AD.RegisterLayoutElement(display)
     if GroupKey(display.group) ~= nil then return end
     local um = ns.QUI_LayoutMode
@@ -2023,6 +2050,7 @@ function AD.RegisterLayoutElement(display)
             return host and host._naturalW, host and host._naturalH
         end,
     })
+    RegisterLayoutSettings(AD.ANCHOR_PREFIX .. id)
     if _G.QUI_RegisterFrameResolver then
         _G.QUI_RegisterFrameResolver(AD.ANCHOR_PREFIX .. id, {
             resolver = function() return hosts[id] end,
@@ -2063,6 +2091,7 @@ function AD.RegisterGroupLayoutElement(groupName, group)
             return groupHosts[group.id]
         end,
     })
+    RegisterLayoutSettings(anchorKey)
     if _G.QUI_RegisterFrameResolver then
         _G.QUI_RegisterFrameResolver(anchorKey, {
             resolver = function() return groupHosts[group.id] end,
@@ -2078,6 +2107,7 @@ function AD.UnregisterLayoutElement(id, keepHost)
     if um and type(um.UnregisterElement) == "function" then
         um:UnregisterElement(AD.ANCHOR_PREFIX .. id)
     end
+    UnregisterLayoutSettings(AD.ANCHOR_PREFIX .. id)
     if _G.QUI_UnregisterFrameResolver then
         _G.QUI_UnregisterFrameResolver(AD.ANCHOR_PREFIX .. id)
     end
@@ -2098,6 +2128,7 @@ function AD.UnregisterGroupLayoutElement(groupOrName, keepHost)
     if um and type(um.UnregisterElement) == "function" then
         um:UnregisterElement(anchorKey)
     end
+    UnregisterLayoutSettings(anchorKey)
     if _G.QUI_UnregisterFrameResolver then
         _G.QUI_UnregisterFrameResolver(anchorKey)
     end
@@ -2209,10 +2240,19 @@ local function ShowPreviewForDisplay(display)
         resolve = function(element)
             local profile = layout.profiles[element] or DisplayElementProfile(element)
             local placement = layout.placements[element]
+            local width, height = ElementExtent(element, profile)
+            local corner = AuraSkin.LayoutAnchor(profile)
+            local offsetX = placement and placement.offsetX or element.offsetX or 0
+            local offsetY = placement and placement.offsetY or element.offsetY or 0
+            if profile.grow == "CENTER" then
+                corner = profile.wrap == "UP" and "BOTTOMLEFT" or "TOPLEFT"
+                offsetX = offsetX + width / 2
+            elseif corner:find("RIGHT", 1, true) then
+                offsetX = offsetX + width
+            end
+            if corner:find("BOTTOM", 1, true) then offsetY = offsetY - height end
             return profile, placement and placement.relativePoint or element.anchor or "TOPLEFT",
-                placement and placement.offsetX or element.offsetX or 0,
-                placement and placement.offsetY or element.offsetY or 0,
-                placement and placement.pinCorner
+                offsetX, offsetY, corner
         end,
     })
     if _G.QUI_LayoutModeSyncHandle then
