@@ -49,7 +49,8 @@ local function ConfigureRecord(record, config, member)
         and record.width == width and record.height == height then return end
     local pi = config.pi
     if record.alert then
-        record.view = P.AuraIcon(record.slot, record.parent, config, member and member.name or "", pi, record.index, record.view)
+        local name = record.unit == "focus" and ns.L["Focus"] or member and member.name or ""
+        record.view = P.AuraIcon(record.slot, record.parent, config, name, pi, record.index, record.view)
         -- Duration is a separate slot so it can be toggled independently of
         -- glows and alert icons without touching the protected art in combat.
     else
@@ -138,19 +139,18 @@ function T.Discover()
     for _, member in ipairs(R.roster) do
         if not member.self then
             count = count + 1
-            local record = T.alerts[count] or CreateRecord(host, true, count)
+            local record = T.alerts[count] or CreateRecord(host, true, count + 1)
             T.alerts[count] = record
             record.unit = member.unit
             ConfigureRecord(record, config, member)
         end
     end
     for i = count + 1, #T.alerts do T.alerts[i].unit = nil end
-    local focus = R.Focus()
-    if focus and focus.outsideGroup then
-        T.focusAlert = T.focusAlert or CreateRecord(host, true, 1)
-        T.focusAlert.unit = "focus"
-        ConfigureRecord(T.focusAlert, config, focus)
-    elseif T.focusAlert then T.focusAlert.unit = nil end
+    -- Reserve the first position even without a focus. Its stable label and
+    -- focus token can follow combat target changes without rewriting artwork.
+    T.focusAlert = T.focusAlert or CreateRecord(host, true, 1)
+    T.focusAlert.unit = "focus"
+    ConfigureRecord(T.focusAlert, config)
     T.Update()
 end
 
@@ -199,7 +199,8 @@ end
 local function Apply(record, member, scope, config, live, request)
     local pi = config and config.pi
     local watch = pi and scope and pi[scope]
-    local valid = member and watch and live and (not record.alert or member.guid == record.guid)
+    local valid = member and watch and live
+        and (not record.alert or record.unit == "focus" or member.guid == record.guid)
     if valid and (record.scope ~= scope or record.filterRevision ~= R.revision) then
         local ids = M.BuffIDs(pi, scope)
         local filters = next(ids) and { includeSpellIDs = ids } or { maxDuration = 0 }
