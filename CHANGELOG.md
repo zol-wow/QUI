@@ -55,14 +55,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   messages respect speaking permissions, and gold tooltips deduplicate legacy
   realm aliases.
 
-### Alpha Limits
-
-- Account-wide storage remains restored on Forever; the reported persistence
-  issue is still unresolved. Alpha8 character-local data is not automatically
-  migrated; retain your WTF backup and import saved same-client profiles if needed.
-- Automated checks cover both clients; native gameplay and visual verification
-  remain pending.
-
 ## v5.5.0-ptr-alpha9 - 2026-09-18
 
 > **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
