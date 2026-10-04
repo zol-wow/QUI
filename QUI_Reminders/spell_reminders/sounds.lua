@@ -53,10 +53,10 @@ end
 local function Targets(pi)
     local R, M = ns.SpellReminders, ns.SpellReminderModel
     local targets = {}
-    if pi.focusSound and pi.focus.enabled then targets.focus = "focus" end
+    local focus = R.Focus()
+    if pi.focusSound and pi.focus.enabled and focus then targets.focus = "focus" end
     local content = IsInRaid() and "raid" or "party"
     if not pi[content .. "Sound"] then return targets end
-    local focus = R.Focus()
     local focusGUID = focus and not focus.outsideGroup and focus.guid
     for _, member in ipairs(R.roster) do
         if M.WatchScope(pi, member, content, focusGUID) == content then
@@ -73,35 +73,37 @@ function S.Reconcile(pi, enabled)
         or (pi.raidSound and pi.raid.enabled)) then S.Clear(); return end
     local sound = S.Resolve(pi.sound)
     if not sound then S.Clear(); return end
-    -- Registrations cannot be added during combat or a restricted encounter.
-    -- Keep working registrations when a new configuration cannot be installed.
-    -- Aura secrecy lasts for the whole key, but sound registration is allowed
-    -- between pulls. Use the restrictions on AddAuraSound itself.
-    if Locked() then return end
-    local desired, pending = {}, {}
+    local desired = {}
     for unit, scope in pairs(Targets(pi)) do
         for id in pairs(ns.SpellReminderModel.BuffIDs(pi, scope)) do
             local key = unit .. ":" .. id .. ":" .. tostring(sound) .. ":" .. pi.soundChannel
-            desired[key] = true
-            if not S.registrations[key] then
-                local info = { unitToken = unit, spellID = id, outputChannel = pi.soundChannel }
-                if type(sound) == "number" then info.soundFileID = sound else info.soundFileName = sound end
-                local ok, registration = pcall(C_UnitAuras.AddAuraSound, Enum.UnitAuraSoundTrigger.Added, info)
-                if not ok or not registration then
-                    for _, added in pairs(pending) do C_UnitAuras.RemoveAuraSound(added.id) end
-                    return
-                end
-                pending[key] = { id = registration }
-            end
+            local info = { unitToken = unit, spellID = id, outputChannel = pi.soundChannel }
+            if type(sound) == "number" then info.soundFileID = sound else info.soundFileName = sound end
+            desired[key] = info
         end
     end
-    for key, record in pairs(pending) do S.registrations[key] = record end
+    -- Removing sounds is allowed during combat and encounters. Retire stale
+    -- recipients and settings immediately, even when replacements must wait.
     for key, record in pairs(S.registrations) do
         if not desired[key] then
             C_UnitAuras.RemoveAuraSound(record.id)
             S.registrations[key] = nil
         end
     end
+    -- AddAuraSound can resume between pulls while aura artwork is still secret.
+    if Locked() then return end
+    local pending = {}
+    for key, info in pairs(desired) do
+        if not S.registrations[key] then
+            local ok, registration = pcall(C_UnitAuras.AddAuraSound, Enum.UnitAuraSoundTrigger.Added, info)
+            if not ok or not registration then
+                for _, added in pairs(pending) do C_UnitAuras.RemoveAuraSound(added.id) end
+                return
+            end
+            pending[key] = { id = registration }
+        end
+    end
+    for key, record in pairs(pending) do S.registrations[key] = record end
 end
 
 local function PIReady()
