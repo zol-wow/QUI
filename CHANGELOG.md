@@ -4,6 +4,65 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-ptr-alpha10 - 2026-10-04
+
+> **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
+> interfaces 120105 and 16001. Forever support remains experimental.
+
+### Added
+
+- **Underlight Angler Helper** provides an unlock checklist, artifact trait tree
+  with purchase confirmations, and fishing tips for alts. Open it with
+  `/angler` or `/quiangler`; enable the module under **Module Addons**.
+- **Damage Meter result sharing** sends selected rows to Party, Raid, or Whisper.
+  Choose Top 3, Top 5, Top 10, or All from **Share Results**; the default is five
+  data rows, All is capped at 40, and reports use the chat-throttling queue.
+- **Mythic+ keystone reroll reminders** show a temporary “Re-roll key?” prompt
+  after eligible dungeon completions. The reminder defaults to enabled with a
+  15-second duration; Quality of Life → Automation offers Off and 15/30/60-second
+  duration controls. Missing owned-key data is retried for up to five seconds.
+- **Optional appearance-buff removal** lets you select supported transformations
+  and profession outfits to remove. It defaults to Off, waits until combat and
+  aura restrictions end, and keeps fishing outfits while casting.
+- **Optional Forever Legacy System and Pet Stable skins** follow the native
+  windows while preserving challenge lists, pet selection, and purchase controls.
+
+### Improved and Fixed
+
+- **Forever compatibility follows current native UI contracts.** Shared secure
+  UI paths and QUI-owned flyouts are available on the current client; character
+  sidebar tabs open the correct pages and popouts. Quick Salvage retains native
+  callbacks, and GSE integration remains unavailable on Forever.
+- **Blizzard window skins follow loaded panels and native controls**, including
+  Collections, Spellbook/Talents, guild charters, professions, and world maps.
+  Loot notifications refresh changed or emptied slots correctly; loot windows
+  preserve scroll position and native click controls, and roll timers follow
+  native remaining time. Encounter power bars retain native timers. Skin choices
+  remain selectable through profile imports and search.
+- **Aura Displays and action-bar previews match their live layouts.** Vertical
+  aura growth, wrapping, outlines, and spacing are corrected. Right-clicking an
+  aura display or group in Layout Mode opens Position/Anchor To controls;
+  action-bar buttons update while dragging size and spacing settings.
+- **Layout Mode and bags update consistently.** Shift-drag aligns chosen frame
+  edges; anchored movement/nudges preserve precision and detached frames stay
+  detached. Category bag views honor sort key/reverse settings and refresh after
+  sorting, item-detail updates, and stack changes.
+- **Combat and interface behavior is more reliable.** Consumable-check layout
+  waits until combat ends; resurrection automation accepts eligible raid offers
+  while retaining Shift override. Cooldown Manager reuses released icons, hidden
+  castbars preserve Edit Mode geometry, and selected movable panels stay in front.
+  Range indicators avoid duplicate scans, chat skips unroutable notices, guild
+  messages respect speaking permissions, and gold tooltips deduplicate legacy
+  realm aliases.
+
+### Alpha Limits
+
+- Account-wide storage remains restored on Forever; the reported persistence
+  issue is still unresolved. Alpha8 character-local data is not automatically
+  migrated; retain your WTF backup and import saved same-client profiles if needed.
+- Automated checks cover both clients; native gameplay and visual verification
+  remain pending.
+
 ## v5.5.0-ptr-alpha9 - 2026-09-18
 
 > **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
