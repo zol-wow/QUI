@@ -662,6 +662,7 @@ local function SkinTitleManagerPane()
     if skinnedEntries[pane] then return end
 
     if pane.Bg then pane.Bg:Hide() end
+    if pane.Border then pane.Border:Hide() end
 
     if pane.ScrollBox then
         SkinBase.HookScrollBoxAcquired(pane.ScrollBox, function(row)

@@ -1,6 +1,6 @@
 local addonName, ns = ...
 local Helpers = ns.Helpers
-local useNativeActions = ns.Client and ns.Client.restrictedExecutionUnavailable
+local useNativeActions = ns.Client and (ns.Client.isForever or ns.Client.restrictedExecutionUnavailable)
 
 local QuickSalvage = {}
 ns.QuickSalvage = QuickSalvage

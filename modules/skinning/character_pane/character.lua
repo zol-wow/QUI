@@ -435,7 +435,7 @@ local function StyleSidebarTab(tab, index, uniformWidth, uniformHeight)
     end)
     tab:HookScript("OnClick", function()
         C_Timer.After(0, function()
-            for i = 1, 3 do
+            for i = 1, 4 do
                 UpdateSidebarTabBorder(_G["PaperDollSidebarTab" .. i])
             end
         end)
@@ -446,6 +446,7 @@ end
 local function StyleSidebarTabs()
     local tabs = { _G.PaperDollSidebarTab1, _G.PaperDollSidebarTab2, _G.PaperDollSidebarTab3 }
     if ns.Client and ns.Client.isForever and CharacterFrame and CharacterFrame.RightPaneHost then
+        tabs[4] = _G.PaperDollSidebarTab4
         if PaperDollSidebarTabs then
             PaperDollSidebarTabs:ClearAllPoints()
             PaperDollSidebarTabs:SetPoint("TOP", CharacterFrame.RightPaneHost, "TOP", 0, -4)
@@ -3287,8 +3288,9 @@ local function SelectCharacterStatsSidebarTab()
     SetSidebarTabSelected(PaperDollSidebarTab1, true)
     SetSidebarTabSelected(PaperDollSidebarTab2, false)
     SetSidebarTabSelected(PaperDollSidebarTab3, false)
+    SetSidebarTabSelected(_G.PaperDollSidebarTab4, false)
 
-    for i = 1, 3 do
+    for i = 1, 4 do
         UpdateSidebarTabBorder(_G["PaperDollSidebarTab" .. i])
     end
 end
@@ -3412,12 +3414,16 @@ local function HookCharacterFrame()
         GetState(equipmentTab).hooked = true
     end
 
-    if not (ns.Client and ns.Client.isForever) and PaperDollSidebarTab2 and not (frameState[PaperDollSidebarTab2] or EMPTY).hooked then
-        PaperDollSidebarTab2:HookScript("OnClick", function()
+    local titlesTab = PaperDollSidebarTab2
+    if ns.Client and ns.Client.isForever then titlesTab = _G.PaperDollSidebarTab4 and PaperDollSidebarTab3 end
+    if titlesTab and not (frameState[titlesTab] or EMPTY).hooked then
+        titlesTab:HookScript("OnClick", function()
             local settings = GetSettings()
             if not settings.enabled then return end
 
             RestoreCharacterPanePopouts()
+
+            if ns.Client and ns.Client.isForever and statsPanel then statsPanel:Hide() end
 
             local popup = CreateTitlesPopup()
 
@@ -3447,17 +3453,18 @@ local function HookCharacterFrame()
                 end
             end
         end)
-        GetState(PaperDollSidebarTab2).hooked = true
+        GetState(titlesTab).hooked = true
     end
 
-    if ns.Client and ns.Client.isForever and PaperDollSidebarTab3 and not (frameState[PaperDollSidebarTab3] or EMPTY).hooked then
-        PaperDollSidebarTab3:HookScript("OnClick", function()
+    local petTab = _G.PaperDollSidebarTab4 or PaperDollSidebarTab3
+    if ns.Client and ns.Client.isForever and petTab and not (frameState[petTab] or EMPTY).hooked then
+        petTab:HookScript("OnClick", function()
             local settings = GetSettings()
             if not settings.enabled then return end
             RestoreCharacterPanePopouts()
             if statsPanel then statsPanel:Hide() end
         end)
-        GetState(PaperDollSidebarTab3).hooked = true
+        GetState(petTab).hooked = true
     end
 
     if GearManagerPopupFrame then
