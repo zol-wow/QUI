@@ -271,6 +271,142 @@ hardening.
 - **Cooldown Manager leaves the native viewer enable state to Blizzard** and
   suppresses native buff bars before data readiness, avoiding tainted callbacks
   and startup flicker.
+## v5.3.2-beta9 - 2026-10-04
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Improved
+
+- **Keystone Reroll Reminder duration** can be set to 15, 30, or 60 seconds
+  under **Quality of Life → Automation**. The default remains 15 seconds.
+
+### Fixed
+
+- **Layout Mode Shift-drag anchors align flush with their target**, preserving
+  precise positions when nudging or moving anchored groups. Detaching an
+  element clears its pending anchor so saving does not restore it.
+- **Aura Display previews and outlines honor vertical wrapping and row
+  spacing.** Aura displays and groups now expose **Anchor To**, attachment
+  points, and offsets in Layout Mode's right-click settings.
+- **Action-bar size changes update the buttons during slider previews**,
+  keeping the visible layout aligned with its mover outside combat.
+- **Category bags honor the selected sort order and reverse setting**,
+  refreshing their layout when sorting settings or item details change.
+
+## v5.3.2-beta8 - 2026-10-02
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Underlight Angler Helper** adds an unlock checklist, a restored artifact
+  trait tree with purchase confirmations, and fishing tips for alts. Open it
+  with `/angler` or `/quiangler`; configure the module under **Module Addons**.
+- **Keystone Reroll Reminder** can now be toggled under **Quality of Life →
+  Automation**. It remains enabled by default.
+
+### Fixed
+
+- **Keystone reroll reminders retry unavailable key data for up to five seconds**
+  after completion instead of stopping after the first check.
+
+## v5.3.2-beta7 - 2026-10-01
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Share damage-meter results to Party, Raid or Whisper** from the meter header's
+  **Share Results** menu. **Rows → Top 3 / Top 5 / Top 10 / All** defaults to five
+  data rows plus the heading and remembers your choice per window. All is capped
+  at 40 rows. Reports use the selected metric and segment, route instance groups
+  to instance chat, and use the shared chat-throttling queue.
+- **Keystone reroll reminder** shows a large “Re-roll key?” prompt after a
+  non-practice dungeon completion when the completed key level is at least your
+  refreshed owned key level. The reminder expires after 15 seconds.
+
+### Fixed
+
+- **Consumable-check layout waits until combat ends**, including ready checks,
+  avoiding protected UI work during combat.
+
+### Maintenance
+
+- **GitHub coding automation selects alpha or beta from the reported context**
+  while preserving the branch of an existing pull request.
+
+## v5.3.2-beta6 - 2026-09-25
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Gold tooltips no longer double-count characters whose realm name changed
+  punctuation or spacing**, such as Kelthuzad and Kel'Thuzad. Removing a
+  character also clears matching legacy entries so they stay removed.
+
+## v5.3.2-beta5 - 2026-09-23
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Action-bar range indicators avoid duplicate full-bar scans** on clients with
+  native range events. Range tint remains active when usability coloring is off,
+  and configured hidden buttons are tracked before they become visible.
+- **Chat skips channel notices that have no valid destination**, matching native
+  chat routing while preserving invitations and system errors.
+- **Guild addon communication respects speaking permissions**, avoiding automatic
+  guild messages when you cannot speak in guild chat. Group communication remains
+  available.
+- **Opening Talents avoids a panel-initialization error** when movable-panel
+  setup is disabled or deferred.
+
+## v5.3.2-beta4 - 2026-09-20
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Optional appearance-buff removal** under Quality of Life → Automation lets
+  you choose which supported transformations and profession outfits to remove.
+  The feature defaults to Off.
+  Removal waits until combat and aura restrictions end, and fishing outfits
+  stay active while casting. Equipped transmog and class forms are unchanged.
+
+### Fixed
+
+- **Resurrection automation accepts eligible raid offers reliably**, including
+  offers without a visible popup. Out of Combat mode checks the resurrector's
+  combat state, accepts unidentified offerers, and preserves the Shift override
+  and recovery exclusions.
+- **Cooldown Manager reuses released icons**, preventing abandoned frames from
+  accumulating during repeated layout changes. Hiding the Blizzard player
+  castbar also preserves the geometry needed by Edit Mode.
+- **Movable Blizzard panels stay in front when selected**, including during
+  merchant updates. Party keystones follow the instance window, the lust timer
+  stays below other panels, and extra ability buttons retain safe layout ownership.
+- **Battle.net friend invite menus hide disabled entries for other games**,
+  keeping the available invite choices easier to find.
+
+## v5.3.2-beta3 - 2026-09-18
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Fixed
+
+- **Damage Meter text is easier to read without font outlines.** Bright bar
+  fills, including priest-white and rogue-yellow, automatically darken behind
+  light text while preserving their hue and configured opacity. Unoutlined
+  window text also receives a black shadow; existing dark-text and outlined
+  bar styles keep their original fills.
 
 ## v5.3.2-beta2 - 2026-09-14
 

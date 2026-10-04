@@ -358,6 +358,92 @@ local function ctx(root)
 	return t
 end
 
+local foregroundFrame
+local foregroundRaiseQueued = false
+local foregroundWatcher
+
+local function raiseForeground()
+	local frame = foregroundFrame
+	local c = frame and rootContext[frame]
+	if not c or not panelIsActive(c.panel) or InCombatLockdown() then return end
+	local ok, shown = ns.SafeCallMethod("secret-probe", frame, "IsShown")
+	if not ok or (issecretvalue and issecretvalue(shown)) or not shown then return end
+	frame:Raise()
+end
+
+local function queueForegroundRaise()
+	if foregroundRaiseQueued or not foregroundFrame then return end
+	foregroundRaiseQueued = true
+	local function runRaise()
+		foregroundRaiseQueued = false
+		raiseForeground()
+	end
+	if RunNextFrame then
+		RunNextFrame(runRaise)
+	elseif C_Timer and C_Timer.After then
+		C_Timer.After(0, runRaise)
+	else
+		runRaise()
+	end
+end
+
+local function selectForegroundFrame(frame)
+	local c = frame and rootContext[frame]
+	foregroundFrame = c and panelIsActive(c.panel) and frame or nil
+	queueForegroundRaise()
+end
+
+local function installForegroundTracking()
+	if foregroundWatcher then return end
+	foregroundWatcher = CreateFrame("Frame")
+	foregroundWatcher:RegisterEvent("GLOBAL_MOUSE_DOWN")
+	foregroundWatcher:SetScript("OnEvent", function()
+		foregroundFrame = nil
+		if not db or not db.enabled or InCombatLockdown() or not GetMouseFoci then return end
+		local frame = GetMouseFoci()[1]
+		while frame do
+			if issecretvalue and issecretvalue(frame) then return end
+			if IsFrameHandle and IsFrameHandle(frame) then return end
+			local forbidden = frame.IsForbidden and frame:IsForbidden()
+			if (issecretvalue and issecretvalue(forbidden)) or forbidden then return end
+			if rootContext[frame] then
+				selectForegroundFrame(frame)
+				return
+			end
+			frame = frame.GetParent and frame:GetParent()
+		end
+	end)
+	if type(_G.UpdateUIPanelPositions) == "function" then
+		hooksecurefunc("UpdateUIPanelPositions", raiseForeground)
+	end
+	if type(_G.UpdateScaleForFitForOpenPanels) == "function" then
+		hooksecurefunc("UpdateScaleForFitForOpenPanels", raiseForeground)
+	end
+	if type(_G.ContainerFrameItemButton_OnClick) == "function" then
+		hooksecurefunc("ContainerFrameItemButton_OnClick", function(_, button)
+			if button ~= "RightButton" or InCombatLockdown() then return end
+			local frame = _G.MerchantFrame
+			local c = frame and rootContext[frame]
+			if not c or not panelIsActive(c.panel) then return end
+			local ok, shown = ns.SafeCallMethod("secret-probe", frame, "IsShown")
+			if not ok or (issecretvalue and issecretvalue(shown)) or not shown then return end
+			selectForegroundFrame(frame)
+			raiseForeground()
+		end)
+	end
+	if type(ShowUIPanel) == "function" then
+		hooksecurefunc("ShowUIPanel", function(frame)
+			if not frame then return end
+			local ok, shown = ns.SafeCallMethod("secret-probe", frame, "IsShown")
+			if ok and not (issecretvalue and issecretvalue(shown)) and shown then
+				local c = rootContext[frame]
+				if c and c.panel and c.panel.secureFrame then c.foregroundShowHandled = true end
+				selectForegroundFrame(frame)
+			end
+		end)
+	end
+end
+
 function M.functions.deferApply(frame, entry)
 	if frame then M.variables.pendingApply[frame] = entry or true end
 end
@@ -892,6 +978,7 @@ function M.functions.createHooks(root, entry)
 	c.panel = panel
 	c.hooksInstalled = true
 	M.variables.combatQueue[root] = nil
+	installForegroundTracking()
 
 	local partners = {}
 	local stripAnchors = {}
@@ -1255,23 +1342,9 @@ function M.functions.createHooks(root, entry)
 	end
 
 	local function raiseShownFrame(frame)
+		if not panelIsActive(panel) then return end
 		if not InCombatLockdown() and frame.Raise then frame:Raise() end
-	end
-
-	local openAllMail = panel.id == "MailFrame" and _G.OpenAllMail
-	if openAllMail and openAllMail.HookScript then
-		local function raiseActiveMailFrame()
-			if panelIsActive(panel) then raiseShownFrame(root) end
-		end
-		openAllMail:HookScript("OnClick", function()
-			if RunNextFrame then
-				RunNextFrame(raiseActiveMailFrame)
-			elseif C_Timer and C_Timer.After then
-				C_Timer.After(0, raiseActiveMailFrame)
-			else
-				raiseActiveMailFrame()
-			end
-		end)
+		selectForegroundFrame(frame)
 	end
 
 	if panel.secureFrame then
@@ -1317,7 +1390,7 @@ function M.functions.createHooks(root, entry)
 				reconcileOpenPositionOnShow(panel, root)
 				if not c.blizzardAnchors then rememberAnchors(root) end
 				M.functions.applyFrameSettings(root, panel)
-				raiseShownFrame(root)
+				if not c.foregroundShowHandled then raiseShownFrame(root) end
 				reassertTicks = 5
 			elseif becameHidden then
 				clearOpenPosition(panel, root)
@@ -1335,6 +1408,7 @@ function M.functions.createHooks(root, entry)
 					c.applyingLayout = false
 				end
 			end
+			c.foregroundShowHandled = nil
 			if reassertTicks > 0 then
 				reassertTicks = reassertTicks - 1
 				if refreshDynamicHandles then refreshDynamicHandles() end

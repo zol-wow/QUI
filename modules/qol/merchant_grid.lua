@@ -67,6 +67,15 @@ local function SafePanelUpdate()
 end
 
 -- <<< QUI_TEST_EXTRACT buyback_anchor
+local function ResizeMerchantFrame(width, height)
+    local frame = _G.MerchantFrame
+    local oldWidth, oldHeight = frame:GetSize()
+    if not (issecretvalue and (issecretvalue(oldWidth) or issecretvalue(oldHeight)))
+        and oldWidth == width and oldHeight == height then return end
+    frame:SetSize(width, height)
+    SafePanelUpdate()
+end
+
 local function BuybackRefIndex(cols, rows)
     return (rows - 1) * cols + 2
 end
@@ -92,7 +101,6 @@ local function ApplyGrid(cols, rows)
 
     local w = BASE_W + (cols - MIN_COLS) * COL_STRIDE
     local h = BASE_H + (rows - MIN_ROWS) * ROW_STRIDE
-    frame:SetSize(w, h)
 
     local nextBtn = _G.MerchantNextPageButton
     if nextBtn then
@@ -107,7 +115,7 @@ local function ApplyGrid(cols, rows)
         buyback:SetPoint("TOPLEFT", ref, "BOTTOMLEFT", BUYBACK_ANCHOR_X, BUYBACK_ANCHOR_Y)
     end
 
-    SafePanelUpdate()
+    ResizeMerchantFrame(w, h)
 end
 
 local function RestoreVanilla()
@@ -125,7 +133,6 @@ local function RestoreVanilla()
         local b = _G["MerchantItem" .. i]
         if b then b:Hide() end
     end
-    frame:SetSize(BASE_W, BASE_H)
     local nextBtn = _G.MerchantNextPageButton
     if nextBtn then
         nextBtn:ClearAllPoints()
@@ -137,7 +144,7 @@ local function RestoreVanilla()
         buyback:ClearAllPoints()
         buyback:SetPoint("TOPLEFT", item10, "BOTTOMLEFT", BUYBACK_ANCHOR_X, BUYBACK_ANCHOR_Y)
     end
-    SafePanelUpdate()
+    ResizeMerchantFrame(BASE_W, BASE_H)
 end
 -- <<< QUI_TEST_EXTRACT buyback_anchor
 

@@ -288,9 +288,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         L.headerAt(ns.L["Behavior"])
         local s2 = L.sectionAt()
-        local sortKeyW = GUI:CreateFormDropdown(s2.frame, nil, sortOptions, "sortKey", behavior, nil,
+        local sortKeyW = GUI:CreateFormDropdown(s2.frame, nil, sortOptions, "sortKey", behavior, Refresh,
             { description = ns.L["Primary ordering the Sort button uses. Quality sorts best-first; the other keys fall back to quality within equal groups. Right-clicking a Sort button changes this too."] })
-        local sortRevW = GUI:CreateFormCheckbox(s2.frame, nil, "sortReverse", behavior, nil,
+        local sortRevW = GUI:CreateFormCheckbox(s2.frame, nil, "sortReverse", behavior, Refresh,
             { description = ns.L["Flip the chosen sort order wholesale (worst-first quality, Z-A names, lowest item level first, ...)."] })
         s2.AddRow(row(s2.frame, ns.L["Sort Items By"], sortKeyW), row(s2.frame, ns.L["Reverse Sort Order"], sortRevW))
 
