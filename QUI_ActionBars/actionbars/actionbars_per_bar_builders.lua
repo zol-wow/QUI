@@ -302,24 +302,14 @@ do
             local function relayout() U.StandardRelayout(content, sections) end
             local DEFER = { deferOnDrag = true }
 
+            local previewQueued = false
             local function PreviewBarSize()
-                local container = ActionBarsOwned.containers and ActionBarsOwned.containers[dbKey]
-                if not container or not layout then return end
-                local btnSize = layout.buttonSize or 36
-                local spacing = layout.buttonSpacing or 2
-                local cols = layout.columns or 12
-                local visible = layout.iconCount or (BUTTON_COUNTS[dbKey] or 12)
-                local rows = math.ceil(visible / math.max(cols, 1))
-                local isVertical = layout.orientation == "vertical"
-                local w, h
-                if isVertical then
-                    w = rows * btnSize + math.max(rows - 1, 0) * spacing
-                    h = math.min(visible, cols) * btnSize + math.max(math.min(visible, cols) - 1, 0) * spacing
-                else
-                    w = math.min(visible, cols) * btnSize + math.max(math.min(visible, cols) - 1, 0) * spacing
-                    h = rows * btnSize + math.max(rows - 1, 0) * spacing
-                end
-                container:SetSize(math.max(w, 1), math.max(h, 1))
+                if previewQueued or InCombatLockdown() then return end
+                previewQueued = true
+                C_Timer.After(0, function()
+                    previewQueued = false
+                    if not InCombatLockdown() then LayoutNativeButtons(dbKey) end
+                end)
             end
             local DEFER_SIZE = { deferOnDrag = true, onDragPreview = PreviewBarSize }
 
