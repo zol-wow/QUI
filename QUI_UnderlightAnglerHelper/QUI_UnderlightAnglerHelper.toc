@@ -3,7 +3,7 @@
 ## Notes: QUI module. Requires the QUI core addon. Based on Underlight Angler UI by CoreMeeko2.
 ## Author: Zol and Drew
 ## X-Credits: CoreMeeko2 (Underlight Angler UI)
-## Version: 5.3.2-beta8
+## Version: 5.3.2-beta9
 ## Category: User Interface
 ## Group: QUI
 ## Dependencies: QUI
