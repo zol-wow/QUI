@@ -830,6 +830,7 @@ ConsumablesFrame.buttons = {}
 
 local consumableCombatDeferFrame
 local hideConsumablesAfterCombat = false
+local showConsumablesAfterCombat = false
 
 local function HideConsumablesFrameNow()
     if not ConsumablesFrame then return end
@@ -868,6 +869,7 @@ RequestHideConsumablesFrame = function()
     if settings and settings.consumablePersistent and settings.consumableCheckEnabled ~= false then
         return
     end
+    showConsumablesAfterCombat = false
     if InCombatLockdown() then
         hideConsumablesAfterCombat = true
         if ConsumablesFrame:IsShown() then
@@ -1591,9 +1593,7 @@ ConsumablesFrame:SetScript("OnHide", function(self)
 end)
 
 local function PositionConsumablesFrame()
-    if not InCombatLockdown() then
-        ConsumablesFrame:SetScale(GetConsumableScale())
-    end
+    ConsumablesFrame:SetScale(GetConsumableScale())
     ConsumablesFrame:SetParent(UIParent)
     ConsumablesFrame:SetFrameStrata("DIALOG")
     local anchoring = ns.QUI_Anchoring
@@ -1618,15 +1618,18 @@ local function IsInRaidInstance()
 end
 
 local function ShowConsumablesStandalone()
-    HideConsumablePicker()
-    InitializeButtons()
-    UpdateConsumables()
-    if not InCombatLockdown() then
-        ConsumablesFrame:SetScale(GetConsumableScale())
+    if InCombatLockdown() then
+        showConsumablesAfterCombat = true
+        return
     end
+    showConsumablesAfterCombat = false
+    hideConsumablesAfterCombat = false
+    HideConsumablePicker()
+    if not next(ConsumablesFrame.buttons) or ConsumablesFrame.buttonSize ~= GetButtonSize() then
+        InitializeButtons()
+    end
+    UpdateConsumables()
     ConsumablesFrame:SetAlpha(1)
-    ConsumablesFrame:SetParent(UIParent)
-    ConsumablesFrame:SetFrameStrata("DIALOG")
     PositionConsumablesFrame()
     ConsumablesFrame:Show()
 end
@@ -1636,11 +1639,7 @@ local function OnReadyCheck(starter, timer)
     if not settings or settings.consumableCheckEnabled == false then return end
     if settings.consumableOnReadyCheck == false then return end
 
-    HideConsumablePicker()
-    PositionConsumablesFrame()
-    UpdateConsumables()
-    ConsumablesFrame:SetAlpha(1)
-    ConsumablesFrame:Show()
+    ShowConsumablesStandalone()
 end
 
 local function OnReadyCheckFinished()
@@ -1877,6 +1876,13 @@ combatFrame:SetScript("OnEvent", function(self, event)
         end
         snapshotCache.lastStates = nil
     elseif event == "PLAYER_REGEN_ENABLED" then
+        if showConsumablesAfterCombat then
+            showConsumablesAfterCombat = false
+            local settings = GetSettings()
+            if settings and settings.consumableCheckEnabled ~= false then
+                ShowConsumablesStandalone()
+            end
+        end
         if hideConsumablesAfterCombat then
             return
         end

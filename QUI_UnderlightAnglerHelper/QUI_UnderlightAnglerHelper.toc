@@ -1,0 +1,16 @@
+## Interface: 120105, 16001
+## Title: |cFF30D1FFQUI|r Underlight Angler Helper
+## Notes: QUI module. Requires the QUI core addon. Based on Underlight Angler UI by CoreMeeko2.
+## Author: Zol and Drew
+## X-Credits: CoreMeeko2 (Underlight Angler UI)
+## Version: 5.5.0-ptr-alpha9
+## Category: User Interface
+## Group: QUI
+## Dependencies: QUI
+## IconTexture: Interface\AddOns\QUI\assets\QUI
+## LoadOnDemand: 1
+
+bootstrap.lua
+angler\data.lua
+angler\window.lua
+angler\angler.lua

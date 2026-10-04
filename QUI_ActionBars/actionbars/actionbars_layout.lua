@@ -161,6 +161,7 @@ LayoutNativeButtons = function(barKey)
         ActionBarsOwned.pendingRefresh = true
         return
     end
+    if barKey == "microbar" and ActionBarsOwned._microOwnedByUI then return end
     local container = ActionBarsOwned.containers[barKey]
     local buttons = ActionBarsOwned.nativeButtons[barKey]
     if not container or not buttons or #buttons == 0 then return end

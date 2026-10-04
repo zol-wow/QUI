@@ -14,6 +14,7 @@ local MANIFEST = {
     { folder = "QUI_DamageMeter",  class = "lod",                                                    sources = { "modules/damage_meter" } },
     { folder = "QUI_Bags",         class = "lod", legacyFlag = { "bags", "enabled" }, loadPolicy = "profile", sources = { "modules/bags" } },
     { folder = "QUI_Reminders",    class = "lod",                                                    sources = {} },
+    { folder = "QUI_UnderlightAnglerHelper", class = "lod",                                          sources = {} },
 }
 
 local ADDON_NAME, ns = ...

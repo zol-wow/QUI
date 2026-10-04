@@ -323,6 +323,74 @@ local function BuildCombatText(L, db)
     end
 end
 
+local function BuildAppearanceChanges(L, generalDB)
+    if type(generalDB.autoRemoveAppearanceChanges) ~= "table" then generalDB.autoRemoveAppearanceChanges = {} end
+    local db = generalDB.autoRemoveAppearanceChanges
+    local function Refresh()
+        if ns.RefreshAppearanceChanges then ns.RefreshAppearanceChanges() end
+    end
+
+    L.headerAt(ns.L["Auto Remove Appearance Changes"])
+    L.intro(ns.L["Choose which appearance buffs to remove automatically. Removal waits until combat and aura restrictions end. Fishing outfits stay on until you finish casting. Your equipped transmog and class forms are unchanged."])
+    local s = L.sectionAt()
+    local enabled = GUI:CreateFormCheckbox(s.frame, nil, "enabled", db, Refresh,
+        { description = ns.L["Automatically cancel the selected appearance buffs. Each effect below can be included separately."] })
+    s.AddRow(row(s.frame, ns.L["Auto Remove Appearance Changes"], enabled))
+    L.closeSection(s)
+
+    local categories = {
+        { title = ns.L["Profession Outfits"], effects = {
+            { "blacksmithing", ns.L["Blacksmithing"] },
+            { "jewelcrafting", ns.L["Jewelcrafting"] },
+            { "tailoring", ns.L["Tailoring"] },
+            { "engineering", ns.L["Engineering"] },
+            { "enchanting", ns.L["Enchanting"] },
+            { "alchemy", ns.L["Alchemy"] },
+            { "inscription", ns.L["Inscription"] },
+            { "leatherworking", ns.L["Leatherworking"] },
+            { "herbalism", ns.L["Herbalism"] },
+            { "mining", ns.L["Mining"] },
+            { "skinning", ns.L["Skinning"] },
+            { "cooking", ns.L["Cooking (Chef's Hat)"] },
+            { "fishing", ns.L["Fishing"] },
+        } },
+        { title = ns.L["Holiday Costumes"], effects = {
+            { "lantern", ns.L["Weighted Jack-o'-Lantern"] },
+            { "hallowed", ns.L["Hallowed Wand"] },
+            { "noblebunny", ns.L["Noblegarden Bunny"] },
+            { "turkey", ns.L["Pilgrim's Turkey"] },
+        } },
+        { title = ns.L["Toy Transformations"], effects = {
+            { "aqir", ns.L["Aqir Egg Cluster"] },
+            { "atomic", ns.L["Atomically Recalibrator"] },
+            { "atomgoblin", ns.L["Atomically Regoblinator"] },
+            { "blight", ns.L["Detoxified Blight Grenade"] },
+            { "witch", ns.L["Lucille's Sewing Needle"] },
+            { "spraybots", ns.L["Spraybots"] },
+        } },
+        { title = ns.L["Consumables & Items"], effects = {
+            { "pickaxe", ns.L["Cursed Pickaxe"] },
+            { "noggenfogger", ns.L["Noggenfogger Elixir"], ns.L["Remove the skeleton and shrinking buffs, including the skeleton's underwater breathing effect. Keep the Slow Fall buff."] },
+            { "prism", ns.L["Reflecting Prism"] },
+        } },
+    }
+    for _, category in ipairs(categories) do
+        L.headerAt(category.title)
+        s = L.sectionAt()
+        for i = 1, #category.effects, 2 do
+            local cells = {}
+            for j = i, math.min(i + 1, #category.effects) do
+                local effect = category.effects[j]
+                local widget = GUI:CreateFormCheckbox(s.frame, nil, effect[1], db, Refresh,
+                    { description = effect[3] or ns.L["Remove this appearance buff while Auto Remove Appearance Changes is enabled."] })
+                cells[#cells + 1] = row(s.frame, effect[2], widget)
+            end
+            s.AddRow(cells[1], cells[2])
+        end
+        L.closeSection(s)
+    end
+end
+
 local function BuildAutomation(L, generalDB)
     if not generalDB then return end
 
@@ -372,7 +440,7 @@ local function BuildAutomation(L, generalDB)
         { value = "outOfCombat", text = ns.L["Out of Combat"] },
         { value = "always", text = ns.L["Always"] },
     }
-    local resurrectionHelp = ns.L["Out of Combat accepts only when encounter, group, and resurrector combat checks are clear. Always includes battle resurrections. Hold Shift when an offer arrives to accept manually. Offers with resurrection sickness or a recovery delay stay manual."]
+    local resurrectionHelp = ns.L["Out of Combat skips offers from a resurrector known to be in combat. Offers from an unidentified resurrector are accepted. Always includes battle resurrections. Hold Shift when an offer arrives to accept manually. Offers with resurrection sickness or a recovery delay stay manual."]
     local dungeonResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "dungeon", resurrectionDB, nil,
         { description = ns.L["Automatically accept resurrection offers in dungeons, including Mythic+."] .. "\n\n" .. resurrectionHelp })
     local raidResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "raid", resurrectionDB, nil,
@@ -402,6 +470,21 @@ local function BuildAutomation(L, generalDB)
     local closeBagsKeyW = GUI:CreateFormCheckbox(s.frame, nil, "closeBagsOnKeystoneInsert", generalDB, nil,
         { description = ns.L["Close your bags after the keystone is auto-inserted. Requires Auto Insert M+ Keys."] })
     s.AddRow(row(s.frame, ns.L["Auto Insert M+ Keys"], keyW), row(s.frame, ns.L["Close Bags After Inserting Key"], closeBagsKeyW))
+
+    local rerollW = GUI:CreateFormCheckbox(s.frame, nil, "keystoneRerollReminder", generalDB, nil,
+        { description = ns.L["Show a reminder after completing a Mythic+ run at or above your owned keystone's level."] })
+
+    local rerollDuration = generalDB.keystoneRerollReminderDuration
+    if rerollDuration ~= 15 and rerollDuration ~= 30 and rerollDuration ~= 60 then
+        generalDB.keystoneRerollReminderDuration = 15
+    end
+    local rerollDurationOptions = {
+        { value = 15, text = ns.L["15 seconds"] },
+        { value = 30, text = ns.L["30 seconds"] },
+        { value = 60, text = ns.L["60 seconds"] },
+    }
+    local rerollDurationW = GUI:CreateFormDropdown(s.frame, nil, rerollDurationOptions, "keystoneRerollReminderDuration", generalDB, nil,
+        { description = ns.L["How long the keystone reroll reminder stays visible. Changes apply to the next reminder."] })
 
     local logMW = GUI:CreateFormCheckbox(s.frame, nil, "autoCombatLog", generalDB, function()
         if _G.QUI_RefreshAutoCombatLogging then _G.QUI_RefreshAutoCombatLogging() end
@@ -530,7 +613,9 @@ local function BuildAutomation(L, generalDB)
     local delW = GUI:CreateFormCheckbox(s.frame, nil, "autoDeleteConfirm", generalDB, nil,
         { description = ns.L["Pre-fill the word DELETE into the confirmation box when destroying a rare or higher item."] })
     s.AddRow(row(s.frame, ns.L["Lock Audio Output Device"], audioW), row(s.frame, ns.L["Auto-Fill DELETE Confirmation Text"], delW))
+    s.AddRow(row(s.frame, ns.L["Keystone Reroll Reminder"], rerollW), row(s.frame, ns.L["Reminder Duration"], rerollDurationW))
     L.closeSection(s)
+    BuildAppearanceChanges(L, generalDB)
 end
 
 local function BuildNotifications(L, generalDB)

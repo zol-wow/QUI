@@ -31,31 +31,32 @@ function CategoryLayout.Categorize(details)
     return CLASS_BUCKET[details.classID] or "misc"
 end
 
-function CategoryLayout.Group(cells, buildDetails)
+function CategoryLayout.Group(cells, buildDetails, opts)
     local buckets = {}
-    for _, cell in ipairs(cells) do
+    for seq, cell in ipairs(cells) do
         if cell.entry then
             local details = buildDetails(cell.entry)
             local key = cell.recent and "recent" or CategoryLayout.Categorize(details)
             local b = buckets[key]
             if not b then b = {}; buckets[key] = b end
             b[#b + 1] = cell
-            cell._sortDetails = details
+            cell._sortDetails = {
+                entry = {
+                    quality = (details and details.quality) or cell.entry.quality,
+                    sortClass = details and details.classID,
+                    sortSubClass = details and details.subClassID,
+                    ilvl = details and details.ilvl,
+                    name = details and details.name,
+                    expacID = details and details.expacID,
+                    itemID = cell.entry.itemID,
+                },
+                count = cell.entry.count or 1,
+                seq = seq,
+            }
         end
     end
-    local function less(a, b)
-        local da, db = a._sortDetails, b._sortDetails
-        local qa = (da and da.quality) or (a.entry.quality) or -1
-        local qb = (db and db.quality) or (b.entry.quality) or -1
-        if qa ~= qb then return qa > qb end
-        local na, nb = da and da.name, db and db.name
-        if na ~= nb then
-            if na == nil then return false end
-            if nb == nil then return true end
-            return na < nb
-        end
-        return (a.entry.itemID or 0) < (b.entry.itemID or 0)
-    end
+    local compare = Bags.SortPlanner.MakeComparator(opts)
+    local function less(a, b) return compare(a._sortDetails, b._sortDetails) end
     local groups = {}
     for _, def in ipairs(CategoryLayout.CATEGORIES) do
         local b = buckets[def.key]

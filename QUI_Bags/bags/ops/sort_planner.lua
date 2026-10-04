@@ -16,12 +16,18 @@ local CHAINS = {
                   { "name" }, { "itemID" } },
 }
 
+function SortPlanner.ResolveKey(key)
+    return CHAINS[key] and key or "quality"
+end
+
 local function fieldValue(cell, field)
     if field == "count" then return cell.count end
     return cell.entry[field]
 end
 
-local function makeComparator(chain, reverse)
+function SortPlanner.MakeComparator(opts)
+    local chain = CHAINS[SortPlanner.ResolveKey(opts and opts.key)]
+    local reverse = (opts and opts.reverse) and true or false
     return function(a, b)
         for i = 1, #chain do
             local step = chain[i]
@@ -65,8 +71,6 @@ local function Fits(cell, family, reagent)
 end
 
 function SortPlanner.Plan(containers, opts)
-    local chain = CHAINS[opts and opts.key] or CHAINS.quality
-    local reverse = (opts and opts.reverse) and true or false
     local fillFromBottom = (opts and opts.fillFromBottom) and true or false
 
     local virtual = {}
@@ -146,7 +150,7 @@ function SortPlanner.Plan(containers, opts)
     for _, cell in ipairs(cells) do
         if not cell.dead then sorted[#sorted + 1] = cell end
     end
-    table.sort(sorted, makeComparator(chain, reverse))
+    table.sort(sorted, SortPlanner.MakeComparator(opts))
 
     local specialtyTargets, regularTargets = {}, {}
     local familyOf = {}
