@@ -309,6 +309,7 @@ local _pending = {
     resizeForce = false,
     refreshSettings = false,
     visibilityUpdate = false,
+    headerRosterRefresh = false,
     registerClicks = false,
     groupReflow = false,
     anchorUpdate = false,
@@ -3857,6 +3858,13 @@ _state.EnsureCombatVisibleRoots = function()
     end
 end
 
+_state.RefreshHeaderRoster = function(header)
+    if not header or not header:IsShown() then return end
+    -- Unchanged layout attributes do not trigger a secure membership update.
+    -- Toggle a dedicated attribute so FrameXML re-reads units after world entry.
+    header:SetAttribute("qui-roster-refresh", not header:GetAttribute("qui-roster-refresh"))
+end
+
 local function UpdateHeaderVisibility(skipDeferredRefresh)
     if InCombatLockdown() and not _state.inInitSafeWindow then
         _state.EnsureCombatVisibleRoots()
@@ -3960,6 +3968,17 @@ local function UpdateHeaderVisibility(skipDeferredRefresh)
     end
 
     UpdateHeaderSizes()
+
+    if _pending.headerRosterRefresh then
+        _pending.headerRosterRefresh = false
+        for _, header in pairs(QUI_GF.headers) do
+            _state.RefreshHeaderRoster(header)
+        end
+        for _, header in ipairs(QUI_GF.raidGroupHeaders) do
+            _state.RefreshHeaderRoster(header)
+        end
+        _state.RefreshHeaderRoster(QUI_GF.spotlightHeader)
+    end
 
     _pending.initSafe = false
 
@@ -4788,6 +4807,9 @@ local function OnEvent(self, event, arg1, ...)
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         C_Timer.After(0.5, function()
+            -- ADDON_LOADED may precede player/roster data on a cold login.
+            -- Keep this pending if visibility updates must wait for combat.
+            _pending.headerRosterRefresh = true
             UpdateHeaderVisibility()
             UpdateFrameScaling(true)
             ResolveRangeSpells()
