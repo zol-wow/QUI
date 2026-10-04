@@ -105,6 +105,10 @@ local function SetInspectFrameBgExtended(extended)
 end
 
 local function SkinInspectFrameTabs()
+    if InspectFrame and InspectFrame.ModeTabs and InspectFrame.ModeTabs.Tabs then
+        SkinBase.SkinTabGroup(InspectFrame.ModeTabs.Tabs, InspectFrame, { font = false })
+        return
+    end
     SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("InspectFrame", 3), InspectFrame, { font = true, resizeToText = true })
 end
 
@@ -126,7 +130,7 @@ local function SkinInspectButtons()
         if viewButton then SkinBase.SkinButton(viewButton, { font = true }) end
 
         local itemsFrame = _G.InspectPaperDollItemsFrame
-        local talentsButton = itemsFrame and itemsFrame.InspectTalents
+        local talentsButton = (itemsFrame and itemsFrame.InspectTalents) or (paperDoll and paperDoll.InspectTalents)
         if talentsButton then SkinBase.SkinButton(talentsButton, { font = true }) end
     end
 end

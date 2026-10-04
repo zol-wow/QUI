@@ -1402,6 +1402,7 @@ local function HideBlizzardDecorations()
 
     local function SkinEquipmentSlot(slot)
         if not slot then return end
+        if slot.BorderFrame then GetSkinBase().StripTextures(slot.BorderFrame) end
 
         local normalTex = slot:GetNormalTexture()
         if normalTex then normalTex:SetAlpha(0) end
@@ -1474,6 +1475,7 @@ local function HideBlizzardDecorations()
         "CharacterFinger0Slot", "CharacterFinger1Slot",
         "CharacterTrinket0Slot", "CharacterTrinket1Slot",
         "CharacterMainHandSlot", "CharacterSecondaryHandSlot",
+        "CharacterRangedSlot", "CharacterAmmoSlot",
     }
 
     local allSlots = {}
@@ -3546,6 +3548,12 @@ local function HookCharacterFrame()
 
     if TokenFrame then
         TokenFrame:HookScript("OnShow", HideCustomElements)
+    end
+
+    if type(CharacterFrame.ShowSubFrame) == "function" then
+        hooksecurefunc(CharacterFrame, "ShowSubFrame", function(_, frameName)
+            if frameName ~= "PaperDollFrame" then HideCustomElements() end
+        end)
     end
 
     if PaperDollFrame then

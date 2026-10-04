@@ -123,6 +123,9 @@ local function SkinFlightMap()
 end
 
 local function RefreshFlightMap()
+    if _G.TaxiFrame and SkinBase.IsSkinned(_G.TaxiFrame) then
+        SkinBase.RefreshFrameBackdropColors(_G.TaxiFrame)
+    end
     local frame = _G.FlightMapFrame
     if not frame or not SkinBase.IsSkinned(frame) then return end
     if frame.BorderFrame then
@@ -140,3 +143,11 @@ if ns.Registry then
 end
 
 SkinBase.OnAddOnLoaded("Blizzard_FlightMap", SkinFlightMap, 0)
+
+SkinBase.OnAddOnLoaded("Blizzard_UIPanels_Game", function()
+    if not IsSettingEnabled("skinFlightMap") then return end
+    local frame = _G.TaxiFrame
+    if not frame or SkinBase.IsSkinned(frame) then return end
+    SkinBase.SkinWindow(frame)
+    SkinBase.MarkSkinned(frame)
+end, 0)

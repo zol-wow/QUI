@@ -128,7 +128,7 @@ local function UpdateBar(self)
 end
 
 local function OnEvent(self, event, arg1, arg2)
-    if event == "UNIT_POWER_UPDATE" then
+    if event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" then
         if arg1 == "player" and arg2 == "ALTERNATE" then
             UpdateBar(self)
         end
@@ -183,6 +183,7 @@ local function CreateQUIAltPowerBar()
     bar:SetScript("OnLeave", OnLeave)
 
     bar:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
+    bar:RegisterUnitEvent("UNIT_MAXPOWER", "player")
     bar:RegisterUnitEvent("UNIT_POWER_BAR_SHOW", "player")
     bar:RegisterUnitEvent("UNIT_POWER_BAR_HIDE", "player")
     bar:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -248,6 +249,25 @@ local function CarryPowerBarWidgetContainer()
     widgetCarryInstalled = true
 end
 
+local function RefreshNativeBuffTimerSkins()
+    if not GetGeneralSettings().skinPowerBarAlt then return end
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetModuleSkinColors()
+    local index = 1
+    while _G["BuffTimer" .. index] do
+        local timer = _G["BuffTimer" .. index]
+        for _, key in ipairs({ "frame", "background", "BG", "BGL", "BGR", "artTop", "artBottom" }) do
+            if timer[key] then timer[key]:SetAlpha(0) end
+        end
+        SkinBase.ApplyPixelBackdrop(timer, 1, true, true)
+        Helpers.SetFrameBackdropColor(timer, bgr, bgg, bgb, bga)
+        Helpers.SetFrameBackdropBorderColor(timer, sr, sg, sb, sa)
+        if timer.statusFrame and timer.statusFrame.text then
+            SkinBase.SkinFontString(timer.statusFrame.text, { fontOnly = true })
+        end
+        index = index + 1
+    end
+end
+
 local function RefreshPowerBarAltColors()
     if not QUIAltPowerBar then return end
 
@@ -259,6 +279,7 @@ local function RefreshPowerBarAltColors()
 
     SkinBase.SetFrameData(QUIAltPowerBar, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(QUIAltPowerBar, "bgColor", { bgr, bgg, bgb, bga })
+    RefreshNativeBuffTimerSkins()
 end
 
 _G.QUI_RefreshPowerBarAltColors = RefreshPowerBarAltColors
@@ -282,6 +303,13 @@ local function Initialize()
     HideBlizzardBar()
 
     QUIAltPowerBar = CreateQUIAltPowerBar()
+
+    if _G.PlayerBuffTimerManager_UpdateTimers then
+        hooksecurefunc("PlayerBuffTimerManager_UpdateTimers", function()
+            RunAfterFirstFrame(RefreshNativeBuffTimerSkins, 0)
+        end)
+        RefreshNativeBuffTimerSkins()
+    end
 
     CarryPowerBarWidgetContainer()
 

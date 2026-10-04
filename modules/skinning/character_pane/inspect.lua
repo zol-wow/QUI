@@ -509,6 +509,7 @@ local INSPECT_SLOT_NAMES = {
     "InspectFinger0Slot", "InspectFinger1Slot",
     "InspectTrinket0Slot", "InspectTrinket1Slot",
     "InspectMainHandSlot", "InspectSecondaryHandSlot",
+    "InspectRangedSlot",
 }
 
 local function GetCurrentInspectTab()
@@ -524,7 +525,9 @@ local function RepositionInspectTabs()
         firstTab:SetPoint("BOTTOMLEFT", InspectFrame, "BOTTOMLEFT", 15, -81)
     end
 
-    local talentsBtn = InspectPaperDollItemsFrame and InspectPaperDollItemsFrame.InspectTalents
+    local paperDoll = _G.InspectPaperDollFrame
+    local talentsBtn = (InspectPaperDollItemsFrame and InspectPaperDollItemsFrame.InspectTalents)
+        or (paperDoll and paperDoll.InspectTalents)
     if talentsBtn and InspectTrinket1Slot then
         talentsBtn:ClearAllPoints()
         talentsBtn:SetPoint("TOP", InspectTrinket1Slot, "BOTTOM", -12, -31)
@@ -667,6 +670,7 @@ end
 local function SkinInspectEquipmentSlot(slot)
     if not slot or (frameState[slot] or EMPTY).skinned then return end
     GetState(slot).skinned = true
+    if slot.BorderFrame then GetSkinBase().StripTextures(slot.BorderFrame) end
 
     local normalTex = slot:GetNormalTexture()
     if normalTex then normalTex:SetAlpha(0) end

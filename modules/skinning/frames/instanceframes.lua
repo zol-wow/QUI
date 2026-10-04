@@ -993,11 +993,57 @@ local function SkinPVPFrame()
     SkinBase.MarkSkinned(PVPQueueFrame)
 end
 
+local function SkinVanillaGroupFinder()
+    local frame = _G.LFGParentFrame
+    if not frame or SkinBase.IsSkinned(frame) then return end
+    SkinBase.SkinWindow(frame, { noClose = true })
+    SkinBase.SkinCloseButton(_G.LFGParentFrameCloseButton)
+    for _, key in ipairs({ "ListingTab", "BrowsingTab", "WhoListingTab" }) do
+        SkinBase.SkinTab(frame[key], frame, { hover = true })
+    end
+    for _, page in pairs({ _G.LFGListingFrame, _G.LFGBrowseFrame, _G.LFGWhoListFrame }) do
+        SkinBase.SkinWindow(page, { noBackdrop = true, noClose = true, depth = 5 })
+        SkinBase.HookScrollBoxRowFonts(page.ScrollBox, 4)
+        SkinBase.SkinTrimScrollBar(page.ScrollBar)
+        for _, key in ipairs({ "BackButton", "PostButton", "SendMessageButton", "GroupInviteButton" }) do
+            SkinBase.SkinButton(page[key], { font = true })
+        end
+        for _, key in ipairs({ "CategoryDropdown", "ActivityDropdown", "FilterDropdown" }) do
+            SkinBase.SkinDropdown(page[key])
+        end
+        SkinBase.SkinEditBox(page.EditBox)
+        local activity = page.ActivityView
+        if activity then
+            SkinBase.SkinDropdown(activity.PlayStyleDropdown)
+            SkinBase.HookScrollBoxRowFonts(activity.ScrollBox, 4)
+            SkinBase.SkinTrimScrollBar(activity.ScrollBar)
+        end
+    end
+    SkinBase.MarkSkinned(frame)
+end
+
+local function RefreshVanillaGroupFinder()
+    local frame = _G.LFGParentFrame
+    if not frame or not SkinBase.IsSkinned(frame) then return end
+    SkinBase.RefreshFrameBackdropColors(frame)
+    for _, key in ipairs({ "ListingTab", "BrowsingTab", "WhoListingTab" }) do
+        if frame[key] then SkinBase.RefreshTabGroup({ frame[key] }, frame) end
+    end
+    for _, page in pairs({ _G.LFGListingFrame, _G.LFGBrowseFrame, _G.LFGWhoListFrame }) do
+        for _, key in ipairs({ "BackButton", "PostButton", "SendMessageButton", "GroupInviteButton",
+            "CategoryDropdown", "ActivityDropdown", "FilterDropdown", "EditBox" }) do
+            SkinBase.RefreshWidget(page[key])
+        end
+        if page.ActivityView then SkinBase.RefreshWidget(page.ActivityView.PlayStyleDropdown) end
+    end
+end
+
 local function SkinInstanceFrames()
     local core = GetCore()
     local settings = core and core.db and core.db.profile and core.db.profile.general
     if not settings or not settings.skinInstanceFrames then return end
 
+    SkinVanillaGroupFinder()
     SkinPVEFrame()
     SkinLFDFrame()
     SkinRaidFinderFrame()
@@ -1058,6 +1104,7 @@ local function UpdateAffixIconColors(affix, sr, sg, sb, sa)
 end
 
 local function RefreshInstanceFramesColors()
+    RefreshVanillaGroupFinder()
     local PVEFrame = _G.PVEFrame
     if not PVEFrame or not SkinBase.IsSkinned(PVEFrame) then return end
 
@@ -1249,6 +1296,7 @@ SkinBase.OnAddOnLoaded("Blizzard_GroupFinder", function()
     SkinInstanceFrames()
 end, 0)
 SkinBase.OnAddOnLoaded("Blizzard_PVPUI", SkinInstanceFrames, 0)
+SkinBase.OnAddOnLoaded("Blizzard_GroupFinder_VanillaStyle", SkinInstanceFrames, 0)
 SkinBase.OnAddOnLoaded("Blizzard_ChallengesUI", SkinInstanceFrames, 0)
 
 if ns.WhenLoggedIn then

@@ -304,6 +304,43 @@ local function SkinTokenFramePopup()
     if popup.Title then popup.Title:SetTextColor(GetTextAccent()) end
 end
 
+local function SkinNativeSidePaneText(pane)
+    for _, key in ipairs({ "Title", "Subtitle", "EmptyText" }) do
+        SkinBase.SkinFontString(pane[key], { fontOnly = true })
+    end
+    SkinBase.SkinFrameText(pane.Description, { recurse = true })
+    SkinBase.SkinFrameText(pane.Content, { recurse = true })
+end
+
+local function SkinNativeSidePane(pane)
+    if not pane then return end
+    SkinNativeSidePaneText(pane)
+    SkinBase.SkinTrimScrollBar(pane.DescriptionScrollBar)
+    if type(pane.Refresh) == "function" and not SkinBase.GetFrameData(pane, "qCharacterSidePaneHooked") then
+        hooksecurefunc(pane, "Refresh", function(self)
+            if IsSkinningEnabled() then SkinNativeSidePaneText(self) end
+        end)
+        SkinBase.SetFrameData(pane, "qCharacterSidePaneHooked", true)
+    end
+end
+
+local function SkinNativeCharacterPanes()
+    if not IsSkinningEnabled() or not (ns.Client and ns.Client.isForever) then return end
+    for _, frame in pairs({ _G.SkillsFrame, _G.StatisticsFrame, _G.PVPRankFrame }) do
+        SkinBase.SkinFrameText(frame, { recurse = true })
+        if frame.ScrollBox and not SkinBase.GetFrameData(frame, "qCharacterNativeRowsHooked") then
+            SkinBase.HookScrollBoxAcquired(frame.ScrollBox, function(row)
+                if IsSkinningEnabled() then SkinBase.LockPooledRowText(row, 4) end
+            end)
+            SkinBase.SetFrameData(frame, "qCharacterNativeRowsHooked", true)
+        end
+        SkinBase.SkinTrimScrollBar(frame.ScrollBar)
+        SkinNativeSidePane(frame.SkillDetailFrame or frame.DetailFrame)
+    end
+    SkinNativeSidePane(TokenFrame and TokenFrame.DetailFrame)
+    SkinNativeSidePane(ReputationFrame and ReputationFrame.ReputationDetailFrame)
+end
+
 local function SetupCharacterFrameSkinning()
     if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
     if not IsSkinningEnabled() then return end
@@ -322,6 +359,7 @@ local function SetupCharacterFrameSkinning()
     end
     SkinReputationDetailFrame()
     SkinTokenFramePopup()
+    SkinNativeCharacterPanes()
     if TokenFrame and TokenFrame.ScrollBox then
         SkinBase.HookScrollBoxAcquired(TokenFrame.ScrollBox, function(row)
             if IsSkinningEnabled() then
@@ -364,6 +402,7 @@ local function RefreshCharacterFrameColors()
     end
     SkinReputationDetailFrame()
     SkinTokenFramePopup()
+    SkinNativeCharacterPanes()
 
     if ReputationFrame and ReputationFrame.ScrollBox then
         SkinBase.ForEachScrollBoxFrame(ReputationFrame.ScrollBox, function(child)
@@ -759,3 +798,5 @@ end
 
 SkinBase.OnAddOnLoaded("Blizzard_CharacterFrame", InitializeCharacterFrameSkinning, 0)
 SkinBase.OnAddOnLoaded("Blizzard_UIPanels_Game", InitializeCharacterFrameSkinning, 0)
+SkinBase.OnAddOnLoaded("Blizzard_Statistics", SkinNativeCharacterPanes, 0)
+SkinBase.OnAddOnLoaded("Blizzard_TokenUI", SkinNativeCharacterPanes, 0)

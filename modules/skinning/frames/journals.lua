@@ -543,11 +543,8 @@ local function SkinCollections()
     local frame = _G.CollectionsJournal
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
-    local tabs = {}
-    for i = 1, 6 do
-        local tab = _G["CollectionsJournalTab" .. i]
-        if tab then tabs[#tabs + 1] = tab end
-    end
+    local tabs = frame.TabContainer and frame.TabContainer.Tabs
+        or SkinBase.CollectNumberedTabs("CollectionsJournal", 6)
     SkinBase.SkinTabGroup(tabs, frame, { resizeToText = true })
     HookCollectionsText(frame)
     SkinBase.MarkSkinned(frame)
@@ -557,11 +554,8 @@ local function RefreshCollections()
     local frame = _G.CollectionsJournal
     if not frame or not IsSettingEnabled("skinCollections") then return end
     RefreshBackdropColors(frame)
-    local tabs = {}
-    for i = 1, 6 do
-        local tab = _G["CollectionsJournalTab" .. i]
-        if tab then tabs[#tabs + 1] = tab end
-    end
+    local tabs = frame.TabContainer and frame.TabContainer.Tabs
+        or SkinBase.CollectNumberedTabs("CollectionsJournal", 6)
     SkinBase.RefreshTabGroup(tabs, frame)
     HookCollectionsText(frame)
 end

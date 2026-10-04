@@ -72,7 +72,6 @@ local function HideBlizzardElements(bar)
         "Divider1", "Divider2", "Divider3",
         "ExitBG", "MicroBGL", "MicroBGR", "_MicroBGMid",
         "ButtonBGL", "ButtonBGR", "_ButtonBGMid",
-        "PitchOverlay", "PitchButtonBG", "PitchBG", "PitchMarker",
         "HealthBarBG", "HealthBarOverlay",
         "PowerBarBG", "PowerBarOverlay",
     }
@@ -85,7 +84,8 @@ local function HideBlizzardElements(bar)
     end
 
     if bar.pitchFrame then
-        bar.pitchFrame:SetAlpha(0)
+        bar.pitchFrame:ClearAllPoints()
+        bar.pitchFrame:SetPoint("RIGHT", bar, "LEFT", -BUTTON_SPACING, 0)
     end
 
     if bar.xpBar then
@@ -156,7 +156,6 @@ local function SkinOverrideActionBar()
 
     if bar.healthBar then
         local healthBar = bar.healthBar
-        healthBar:Show()
         healthBar:SetAlpha(1)
         healthBar:SetOrientation("VERTICAL")
         healthBar:SetRotatesTexture(true)
@@ -181,7 +180,6 @@ local function SkinOverrideActionBar()
 
     if bar.powerBar then
         local powerBar = bar.powerBar
-        powerBar:Show()
         powerBar:SetAlpha(1)
         powerBar:SetOrientation("VERTICAL")
         powerBar:SetRotatesTexture(true)
