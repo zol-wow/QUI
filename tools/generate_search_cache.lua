@@ -3045,6 +3045,12 @@ end
 
 install_search_capture_overrides()
 capture_all_search_features()
+do
+    local originalClient = ns.Client
+    ns.Client = { isForever = true }
+    capture_search_feature(ns.Settings.Registry:GetFeature("skinningPage"))
+    ns.Client = originalClient
+end
 capture_cdm_settings_tabs()
 capture_group_frames_settings_tabs()
 capture_group_frames_auras_elements()

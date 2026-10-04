@@ -67,10 +67,13 @@ local function SkinSubPanel(panel, sr, sg, sb, sa)
 end
 
 local function SkinTabs(frame)
-    if not frame or not frame.TabSystem then return end
-    local tabs = frame.TabSystem.tabs
-    if not tabs then return end
-    SkinBase.SkinTabGroup(tabs, frame, { hover = true })
+    if not frame then return end
+    local tabs = frame.TabSystem and frame.TabSystem.tabs
+    if tabs then SkinBase.SkinTabGroup(tabs, frame, { hover = true }) end
+    if frame.ProfessionsOverviewTab then
+        SkinBase.SkinTab(frame.ProfessionsOverviewTab, frame, { hover = true })
+    end
+    SkinBase.SkinTabGroup(frame.rightProfessionTabs, frame, { hover = true })
 end
 
 local function HookRecipeRowHover()
@@ -305,6 +308,11 @@ local function SkinProfessions()
     SkinBase.SkinCloseButton(frame.CloseButton or _G.ProfessionsFrameCloseButton)
 
     SkinTabs(frame)
+    if frame.BookPage then
+        SkinBase.SkinFrameText(frame.BookPage, { recurse = true })
+        SkinBase.LockFrameTextObjects(frame.BookPage, 4)
+        SkinBase.ApplyButtonFontObjectsDeep(frame.BookPage, 4)
+    end
     SkinCraftingPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinOrdersPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinSpecPage(frame)
@@ -338,6 +346,11 @@ local function RefreshProfessionsColors()
     if frame.TabSystem and frame.TabSystem.tabs then
         SkinBase.RefreshTabGroup(frame.TabSystem.tabs, frame)
     end
+    if frame.ProfessionsOverviewTab then
+        SkinBase.RefreshTabGroup({ frame.ProfessionsOverviewTab }, frame)
+    end
+    SkinBase.RefreshTabGroup(frame.rightProfessionTabs, frame)
+    if frame.BookPage then SkinBase.SkinFrameText(frame.BookPage, { recurse = true }) end
 
     local craftingPage = frame.CraftingPage
     if craftingPage then

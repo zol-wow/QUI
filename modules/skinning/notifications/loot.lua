@@ -29,7 +29,7 @@ local SLOT_HEIGHT = 32
 local SLOT_WIDTH = 230
 local SLOT_SPACING = 2
 local HEADER_HEIGHT = 30
-local LOOT_FRAME_WIDTH = 250
+local LOOT_FRAME_WIDTH = 280
 local LOOT_FRAME_HEIGHT = 200
 local ICON_SIZE = 28
 local ICON_BORDER_SIZE = 30
@@ -57,10 +57,9 @@ local rollTimerFrames = {}
 local rollTimerManager = CreateFrame("Frame")
 rollTimerManager:Hide()
 rollTimerManager:SetScript("OnUpdate", function(self, elapsed)
-    local now = GetTime()
     local anyActive = false
     for frame in pairs(rollTimerFrames) do
-        local remaining = frame.rollTime - (now - frame.startTime)
+        local remaining = _G.GetLootRollTimeLeft(frame.rollID)
         if remaining > 0 then
             frame.timer:SetValue(remaining / frame.rollTime)
             anyActive = true
@@ -119,7 +118,7 @@ local function CreateLootSlot(parent, index)
 
     local slot = CreateFrame("Button", "QUI_LootSlot"..index, parent)
     slot:SetSize(SLOT_WIDTH, SLOT_HEIGHT)
-    slot:SetPoint("TOP", parent, "TOP", 0, -HEADER_HEIGHT - ((index-1) * (SLOT_HEIGHT + SLOT_SPACING)))
+    slot:SetPoint("TOP", parent, "TOP", 0, -((index-1) * (SLOT_HEIGHT + SLOT_SPACING)))
 
     slot.icon = slot:CreateTexture(nil, "ARTWORK")
     slot.icon:SetSize(ICON_SIZE, ICON_SIZE)
@@ -161,7 +160,21 @@ local function CreateLootSlot(parent, index)
 
     slot:SetScript("OnClick", function(self)
         if self.slotIndex then
+            local link = GetLootSlotLink(self.slotIndex)
+            if IsModifiedClick() then
+                HandleModifiedItemClick(link)
+                return
+            end
+            local texture, name, _, _, quality = GetLootSlotInfo(self.slotIndex)
+            LootFrame.selectedLootFrame = self
+            LootFrame.selectedSlot = self.slotIndex
+            LootFrame.selectedItemLink = link
+            LootFrame.selectedQuality = quality
+            LootFrame.selectedItemName = name
+            LootFrame.selectedTexture = texture
+            StaticPopup_Hide("CONFIRM_LOOT_DISTRIBUTION")
             LootSlot(self.slotIndex)
+            EventRegistry:TriggerEvent("LootFrame.ItemLooted")
         end
     end)
 
@@ -221,8 +234,16 @@ local function CreateLootWindow()
     })
 
     frame.slots = {}
+    frame.scrollFrame = CreateFrame("ScrollFrame", nil, frame, "ScrollFrameTemplate")
+    frame.scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -HEADER_HEIGHT)
+    frame.scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -40, 10)
+    frame.scrollChild = CreateFrame("Frame", nil, frame.scrollFrame)
+    frame.scrollChild:SetPoint("TOPLEFT", frame.scrollFrame, "TOPLEFT", 0, 0)
+    frame.scrollChild:SetSize(SLOT_WIDTH, MAX_LOOT_SLOTS * (SLOT_HEIGHT + SLOT_SPACING))
+    frame.scrollFrame:SetScrollChild(frame.scrollChild)
+    SkinBase.SkinTrimScrollBar(frame.scrollFrame.ScrollBar)
     for i = 1, MAX_LOOT_SLOTS do
-        frame.slots[i] = CreateLootSlot(frame, i)
+        frame.slots[i] = CreateLootSlot(frame.scrollChild, i)
     end
 
     return frame
@@ -242,16 +263,16 @@ local function ApplyLootFrameHeight(height)
     lootFrame:SetHeight(height)
 end
 
-local function OnLootOpened(autoLoot)
+local function OnLootOpened(autoLoot, isFromItem, refreshOnly)
     local numItems = GetNumLootItems()
-    if numItems == 0 then return end
+    if numItems == 0 and not refreshOnly then return end
 
     local db = GetDB()
     if not db.loot or not db.loot.enabled then return end
 
     if db.general and db.general.fastAutoLoot then return end
 
-    if not InCombatLockdown() then
+    if not refreshOnly and not InCombatLockdown() then
         if db.loot.lootUnderMouse then
             local x, y = GetCursorPosition()
             local scale = UIParent:GetEffectiveScale()
@@ -272,6 +293,10 @@ local function OnLootOpened(autoLoot)
     local visibleSlots = 0
     for i = 1, numItems do
         local slot = lootFrame.slots[i]
+        if not slot then
+            slot = CreateLootSlot(lootFrame.scrollChild, i)
+            lootFrame.slots[i] = slot
+        end
         if slot and LootSlotHasItem(i) then
             local texture, name, quantity, currencyID, quality, locked, isQuestItem,
                   questID, isActive = GetLootSlotInfo(i)
@@ -308,14 +333,16 @@ local function OnLootOpened(autoLoot)
         end
     end
 
-    for i = numItems + 1, MAX_LOOT_SLOTS do
+    for i = numItems + 1, #lootFrame.slots do
         if lootFrame.slots[i] then
             lootFrame.slots[i]:Hide()
         end
     end
 
     local height = 40 + (visibleSlots * (SLOT_HEIGHT + SLOT_SPACING))
-    ApplyLootFrameHeight(height)
+    lootFrame.scrollChild:SetHeight(numItems * (SLOT_HEIGHT + SLOT_SPACING))
+    ApplyLootFrameHeight(math.min(height, math.max(100, UIParent:GetHeight() - 100)))
+    if not refreshOnly then lootFrame.scrollFrame:SetVerticalScroll(0) end
     lootFrame:Show()
 end
 
@@ -328,7 +355,7 @@ end
 local function OnLootClosed()
     if lootFrame then
         lootFrame:Hide()
-        for i = 1, MAX_LOOT_SLOTS do
+        for i = 1, #lootFrame.slots do
             if lootFrame.slots[i] then
                 lootFrame.slots[i]:Hide()
             end
@@ -547,6 +574,7 @@ end
 StartRoll = function(rollID, rollTime)
     local db = GetDB()
     if not db.lootRoll or not db.lootRoll.enabled then return end
+    if not rollTime or rollTime <= 0 then return end
 
     local texture, name, count, quality, bop, canNeed, canGreed, canDE, reason, deReason, _, _, canTransmog = GetLootRollItemInfo(rollID)
     if not texture then return end
@@ -570,7 +598,6 @@ StartRoll = function(rollID, rollTime)
 
     frame.rollID = rollID
     frame.rollTime = rollTime
-    frame.startTime = GetTime()
 
     frame.icon:SetTexture(texture)
     frame.name:SetText(name or "")
@@ -636,6 +663,30 @@ local function CancelRoll(rollID)
         rollTimerFrames[frame] = nil
         activeRolls[rollID] = nil
         C_Timer.After(0, ProcessRollQueue)
+    end
+end
+
+local function CancelAllRolls()
+    waitingRolls = {}
+    for _, frame in pairs(activeRolls) do
+        frame:Hide()
+        frame.rollID = nil
+    end
+    activeRolls = {}
+    rollTimerFrames = {}
+    rollTimerManager:Hide()
+end
+
+local function RestoreActiveRolls()
+    local db = GetDB()
+    if not db.lootRoll or not db.lootRoll.enabled then
+        CancelAllRolls()
+        return
+    end
+    if type(_G.GetActiveLootRollIDs) ~= "function" then return end
+    CancelAllRolls()
+    for _, rollID in ipairs(_G.GetActiveLootRollIDs()) do
+        StartRoll(rollID, _G.C_Loot.GetLootRollDuration(rollID))
     end
 end
 
@@ -1011,9 +1062,12 @@ function Loot:Initialize()
     local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("LOOT_OPENED")
     eventFrame:RegisterEvent("LOOT_SLOT_CLEARED")
+    eventFrame:RegisterEvent("LOOT_SLOT_CHANGED")
     eventFrame:RegisterEvent("LOOT_CLOSED")
     eventFrame:RegisterEvent("START_LOOT_ROLL")
     eventFrame:RegisterEvent("CANCEL_LOOT_ROLL")
+    eventFrame:RegisterEvent("CANCEL_ALL_LOOT_ROLLS")
+    eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
     eventFrame:SetScript("OnEvent", function(self, event, ...)
         local db = GetDB()
@@ -1025,6 +1079,10 @@ function Loot:Initialize()
         elseif event == "LOOT_SLOT_CLEARED" then
             if db.loot and db.loot.enabled then
                 OnLootSlotCleared(...)
+            end
+        elseif event == "LOOT_SLOT_CHANGED" then
+            if db.loot and db.loot.enabled then
+                OnLootOpened(nil, nil, true)
             end
         elseif event == "LOOT_CLOSED" then
             if db.loot and db.loot.enabled then
@@ -1038,10 +1096,15 @@ function Loot:Initialize()
             if db.lootRoll and db.lootRoll.enabled then
                 CancelRoll(...)
             end
+        elseif event == "CANCEL_ALL_LOOT_ROLLS" then
+            CancelAllRolls()
+        elseif event == "PLAYER_ENTERING_WORLD" then
+            RestoreActiveRolls()
         end
     end)
 
     self.eventFrame = eventFrame
+    RestoreActiveRolls()
 end
 
 function Loot:Refresh()
@@ -1076,7 +1139,7 @@ function Loot:ApplyLootTheme()
     CJKFont(lootFrame.header, fontPath, 12, "OUTLINE")
     lootFrame.header:SetTextColor(unpack(textColor))
 
-    for i = 1, MAX_LOOT_SLOTS do
+    for i = 1, #lootFrame.slots do
         local slot = lootFrame.slots[i]
         if slot then
             CJKFont(slot.name, fontPath, 11, "OUTLINE")
@@ -1167,11 +1230,13 @@ function Loot:ShowLootPreview()
         slot:Show()
     end
 
-    for i = #testItems + 1, MAX_LOOT_SLOTS do
+    for i = #testItems + 1, #lootFrame.slots do
         lootFrame.slots[i]:Hide()
     end
 
     local height = 40 + (#testItems * (SLOT_HEIGHT + SLOT_SPACING))
+    lootFrame.scrollChild:SetHeight(#testItems * (SLOT_HEIGHT + SLOT_SPACING))
+    lootFrame.scrollFrame:SetVerticalScroll(0)
     ApplyLootFrameHeight(height)
     lootFrame:Show()
 end

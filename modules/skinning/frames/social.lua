@@ -125,6 +125,16 @@ end
 
 local function SkinLegacyFriendsContents(frame)
     if not frame then return end
+    local battleNet = frame.BattlenetFrame
+    if battleNet then
+        SkinBase.SkinButton(battleNet.ContactsMenuButton, { font = false })
+        local broadcast = battleNet.BroadcastFrame
+        if broadcast then
+            SkinSideWindow(broadcast)
+            SkinBase.SkinEditBox(broadcast.EditBox)
+            SkinButtons(broadcast.UpdateButton, broadcast.CancelButton)
+        end
+    end
     SkinSocialList(_G.FriendsListFrame, 4)
     SkinButtons(_G.FriendsFrameAddFriendButton, _G.FriendsFrameSendMessageButton)
 
@@ -290,7 +300,10 @@ local function SkinSocial()
     SkinSocialUI()
 end
 
-local function RefreshFriends() RefreshBackdropColors(_G.FriendsFrame) end
+local function RefreshFriends()
+    RefreshBackdropColors(_G.FriendsFrame)
+    RefreshBackdropColors(_G.SocialUIFrame)
+end
 _G.QUI_RefreshFriendsColors = RefreshFriends
 if ns.Registry then
     ns.Registry:Register("skinFriends", {

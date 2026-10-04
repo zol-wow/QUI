@@ -199,6 +199,25 @@ local function ApplyNativeStatsPaneChrome()
     if pane.ClassBackground then
         ns.SafeCallMethod("best-effort-style", pane.ClassBackground, "SetAlpha", 0)
     end
+    for _, scrollPane in pairs({ pane, _G.CharacterStatsPanePetScrollBox }) do
+        if scrollPane.ScrollBox then
+            if scrollPane.Border then SkinBase.ClampTextureHidden(scrollPane.Border) end
+            SkinBase.SkinTrimScrollBar(scrollPane.ScrollBar)
+            local function StyleRow(row)
+                if not CharacterChrome.GetOwnership().halfSkinned then return end
+                if row.Title then
+                    SkinStatCategory(row)
+                else
+                    SkinStatRow(row)
+                end
+            end
+            if not SkinBase.GetFrameData(scrollPane, "qCharChromeStatsHooked") then
+                SkinBase.HookScrollBoxAcquired(scrollPane.ScrollBox, StyleRow)
+                SkinBase.SetFrameData(scrollPane, "qCharChromeStatsHooked", true)
+            end
+            SkinBase.ForEachScrollBoxFrame(scrollPane.ScrollBox, StyleRow)
+        end
+    end
     SkinStatCategory(pane.ItemLevelCategory)
     SkinStatCategory(pane.AttributesCategory)
     SkinStatCategory(pane.EnhancementsCategory)
@@ -219,6 +238,8 @@ local function ApplyNativeStatsPaneChrome()
         statRowHookInstalled = true
         hooksecurefunc("PaperDollFrame_SetLabelAndText", function(statFrame)
             if not CharacterChrome.GetOwnership().halfSkinned then return end
+            local nativePane = CharacterChrome.GetNativeStatsPane()
+            if nativePane and nativePane.ScrollBox then return end
             if SkinBase.GetFrameData(statFrame, "qCharChromeStatRow") then return end
             SkinStatRow(statFrame)
         end)
@@ -250,6 +271,8 @@ local function HideBlizzardDecorations(permanent)
     if not CharacterFrame then return end
     if permanent then
         SkinBase.HidePortraitFrameChrome(CharacterFrame)
+        SkinBase.StripTextures(CharacterFrame.LeftPaneHost)
+        SkinBase.StripTextures(CharacterFrame.RightPaneHost)
         HideNineSlice(CharacterFrameInset and CharacterFrameInset.NineSlice, true)
         HideNineSlice(CharacterFrameInsetRight and CharacterFrameInsetRight.NineSlice, true)
     elseif CharacterFrame.Background then
@@ -322,6 +345,10 @@ end
 ---------------------------------------------------------------------------
 function CharacterChrome.StyleTabs()
     if not CharacterFrame or not CharacterChrome.GetOwnership().tabs then return end
+    if CharacterFrame.ModeTabs and CharacterFrame.ModeTabs.Tabs then
+        SkinBase.SkinTabGroup(CharacterFrame.ModeTabs.Tabs, CharacterFrame, { font = false })
+        return
+    end
     SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("CharacterFrame", 3), CharacterFrame, { font = true })
 end
 
@@ -675,6 +702,7 @@ local SLOT_NAMES = {
     "CharacterFinger0Slot", "CharacterFinger1Slot",
     "CharacterTrinket0Slot", "CharacterTrinket1Slot",
     "CharacterMainHandSlot", "CharacterSecondaryHandSlot",
+    "CharacterRangedSlot", "CharacterAmmoSlot",
 }
 
 local slotBorders = Helpers.CreateStateTable()
@@ -724,6 +752,7 @@ ApplyHalfSkinnedChrome = function()
         if slot then
             EnsureSlotBorder(slot)
             HideSlotRing(slotName)
+            SkinBase.StripTextures(slot.BorderFrame)
             local icon = slot.icon or slot.Icon
             if icon and icon.SetTexCoord then icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
         end
@@ -859,6 +888,11 @@ function CharacterChrome.Initialize()
     if ownership.shell == "skin" then
         local function HugFrame()
             if CharacterChrome.OwnsShell() then CharacterChrome.SetExtended(false) end
+        end
+        if type(CharacterFrame.ShowSubFrame) == "function" then
+            hooksecurefunc(CharacterFrame, "ShowSubFrame", function(_, frameName)
+                if frameName ~= "PaperDollFrame" then HugFrame() end
+            end)
         end
         if ReputationFrame and ReputationFrame.HookScript then
             ReputationFrame:HookScript("OnShow", HugFrame)

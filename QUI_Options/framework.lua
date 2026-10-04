@@ -747,6 +747,12 @@ function GUI:ApplyGeneratedSearchCache(cache, schema)
 
     local order = type(schema) == "table" and schema or {}
     local function IsAvailable(entry)
+        if entry.featureId == "skinningPage" then
+            local key = entry.widgetDescriptor and entry.widgetDescriptor.dbKey
+            local isForever = ns.Client and ns.Client.isForever
+            if key == "skinLegacySystem" or key == "skinStable" then return isForever end
+            if key == "skinKeystoneFrame" then return not isForever end
+        end
         return ns.SwingTimers or not (type(entry.featureId) == "string" and entry.featureId:match("^swingTimer"))
     end
     for _, entry in ipairs(RehydrateSearchRows(cache.navigation, order.navigation)) do
