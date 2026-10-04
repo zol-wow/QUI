@@ -10,6 +10,7 @@ local seedTable = {
     font       = { "text", "size" },
     position   = { "anchor", "offset", "layout" },
     cooldown   = { "cdm", "timer" },
+    reminder   = { "spell reminders", "power infusion", "pihelper", "innervate", "bekindremind", "tts" },
     cdm        = { "cooldown", "cooldown manager" },
     keybind    = { "keybinding", "bind" },
     tooltip    = { "hover", "inspect" },

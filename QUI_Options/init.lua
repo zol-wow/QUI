@@ -93,6 +93,9 @@ function GUI:InitializeOptions()
     if ns.QUI_GameplayTile then
         ns.QUI_GameplayTile.Register(frame)
     end
+    if ns.QUI_RemindersTile then
+        ns.QUI_RemindersTile.Register(frame)
+    end
     if ns.QUI_QoLTile then
         ns.QUI_QoLTile.Register(frame)
     end

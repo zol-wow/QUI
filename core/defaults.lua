@@ -171,6 +171,7 @@ end
 
 local defaults = {
     profile = {
+        spellReminders = { enabled = false, reminders = {} },
         general = {
             uiScale = 0.64,
             font = "Quazii",

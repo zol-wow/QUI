@@ -128,7 +128,7 @@ read_globals = {
     -- C_* namespace tables (whitelisted whole — methods accessed via dot/colon)
     "C_ActionBar", "C_AddOnProfiler", "C_AddOns", "C_ArtifactUI", "C_AssistedCombat",
     "C_PartyInfo", "C_Spell", "C_Timer", "C_UnitAuras", "C_TooltipInfo",
-    "C_NamePlate", "C_NamePlateManager", "C_ItemCallbacks", "C_Secrets",
+    "C_NamePlate", "C_NamePlateManager", "C_ItemCallbacks", "C_Secrets", "C_VoiceChat", "C_RestrictedActions",
     "C_ChallengeMode", "C_ClassTalents", "C_Container", "C_CooldownViewer",
     "C_CurveUtil", "C_DamageMeter", "C_DeathRecap", "C_DurationUtil", "C_Item", "C_ScenarioInfo",
     "C_SpellActivationOverlay",
