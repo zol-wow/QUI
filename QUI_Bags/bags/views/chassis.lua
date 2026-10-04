@@ -381,7 +381,10 @@ function Chassis.ShowSortMenu(anchor, extra)
                 end,
                 function()
                     local s = GetBagsSettings()
-                    if s and s.behavior then s.behavior.sortKey = m.key end
+                    if s and s.behavior then
+                        s.behavior.sortKey = m.key
+                        Bags.BagWindow.Refresh()
+                    end
                 end)
         end
         root:CreateCheckbox(ns.L["Reverse order"],
@@ -391,7 +394,10 @@ function Chassis.ShowSortMenu(anchor, extra)
             end,
             function()
                 local s = GetBagsSettings()
-                if s and s.behavior then s.behavior.sortReverse = not s.behavior.sortReverse end
+                if s and s.behavior then
+                    s.behavior.sortReverse = not s.behavior.sortReverse
+                    Bags.BagWindow.Refresh()
+                end
             end)
         root:CreateCheckbox(ns.L["Pack to bottom"],
             function()

@@ -1954,6 +1954,101 @@ local function ResolveWindowAutoSwap(windowState, settings)
     return value == true
 end
 
+-- Build a snapshot before sending anything: restricted values must never enter chat.
+local function ChatReportText(value)
+    if IsSecretValue(value) then return nil end -- @secret-policy: reject-secret-value
+    if type(value) ~= "string" then return nil end
+    value = value:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+        :gsub("|", ""):gsub("[%c]", " ")
+    if #value > 255 then return nil end
+    return value
+end
+
+local function ResolveChatReportRows(windowID)
+    local settings = GetSettings()
+    local windowState = settings and settings.windows and settings.windows[windowID]
+    local rows = windowState and windowState.shareResultsRows
+    if rows == 3 or rows == 10 or rows == BAR_POOL_SIZE then return rows end
+    return 5
+end
+
+function Window:_BuildChatReport()
+    local sources = self._renderSources
+    if not sources or #sources == 0 then return nil end
+    local session = self.sessionID ~= nil and (self.sessionLabel or ns.L["Previous"])
+        or LabelForSession(self.sessionType)
+    session = ChatReportText(session)
+    if not session then return nil end
+    local lines = { ChatReportText("QUI - " .. LabelForType(self.damageMeterType) .. " - " .. session) }
+    if not lines[1] then return nil end
+    local numberFormat = ResolveAppearance(self.windowID, "numberFormat") or "compact"
+    local secondary = ResolveAppearance(self.windowID, "showSecondaryValue") ~= false
+    for i = 1, math.min(#sources, ResolveChatReportRows(self.windowID)) do
+        local source = sources[i]
+        local primary, extra = source.totalAmount, source.amountPerSecond
+        if IsPerSecondType(self.damageMeterType) then primary, extra = extra, primary end
+        if not secondary then extra = nil end
+        if IsSecretValue(source.name) or IsSecretValue(source.rank)
+            or IsSecretValue(primary) or IsSecretValue(extra) then
+            return nil -- @secret-policy: reject-secret-value
+        end
+        local name = ChatReportText(ShortenName(source.name) or "?")
+        local value = ChatReportText(BuildValueText(primary, extra, numberFormat, IsSecretValue, FormatNumber))
+        if not name or not value then return nil end
+        local line = ChatReportText((source.rank or i) .. ". " .. name .. " - " .. value)
+        if not line then return nil end
+        lines[#lines + 1] = line
+    end
+    return lines
+end
+
+local function ResolveChatReportChannel(channel)
+    if channel == "PARTY" then
+        if IsInGroup(_G.LE_PARTY_CATEGORY_HOME) then return "PARTY" end
+        if IsInGroup(_G.LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
+    elseif channel == "RAID" then
+        if IsInRaid(_G.LE_PARTY_CATEGORY_HOME) then return "RAID" end
+        if IsInRaid(_G.LE_PARTY_CATEGORY_INSTANCE) then return "INSTANCE_CHAT" end
+    elseif channel == "WHISPER" then
+        return channel
+    end
+end
+
+local function SendChatReport(lines, channel, target)
+    local throttle = _G.ChatThrottleLib
+    if not throttle or not throttle.SendChatMessage then return end
+    channel = ResolveChatReportChannel(channel)
+    if not channel then return end
+    if channel == "WHISPER" then
+        target = ChatReportText(target)
+        if not target then return end
+        target = target:match("^%s*(.-)%s*$")
+        if target == "" or target:find("%s") then return end
+    end
+    -- One ordered queue shares the bundled library's global bandwidth budget.
+    for _, line in ipairs(lines) do
+        throttle:SendChatMessage("NORMAL", "QUI_DAMAGE_METER", line, channel, nil, target, "QUI_DAMAGE_METER")
+    end
+end
+
+function Window:_ShareChatReport(channel)
+    local lines = self:_BuildChatReport()
+    if not lines then
+        print(ns.L["Damage meter results are empty or unavailable for sharing."])
+        return
+    end
+    if channel == "WHISPER" then
+        if not _G.StaticPopup_Show then return end
+        _G.StaticPopup_Show("GENERIC_INPUT_BOX", nil, nil, {
+            text = ns.L["Whisper results to (Name-Realm):"],
+            acceptText = ns.L["Send"], cancelText = ns.L["Cancel"], maxLetters = 128,
+            callback = function(target) SendChatReport(lines, channel, target) end,
+        })
+    else
+        SendChatReport(lines, channel)
+    end
+end
+
 function Window:_OpenConfigMenu()
     if not MenuUtil or not MenuUtil.CreateContextMenu then return end
     local s = GetSettings()
@@ -2001,6 +2096,23 @@ function Window:_OpenConfigMenu()
         end
         root:CreateDivider()
         root:CreateTitle(ns.L["Data"])
+        local share = root:CreateButton(ns.L["Share Results"])
+        local rows = share:CreateButton(ns.L["Rows"])
+        local function AddRowChoice(label, count)
+            rows:CreateRadio(label,
+                function() return ResolveChatReportRows(self.windowID) == count end,
+                function() windowState.shareResultsRows = count end)
+        end
+        AddRowChoice(ns.L["Top 3"], 3)
+        AddRowChoice(ns.L["Top 5"], 5)
+        AddRowChoice(ns.L["Top 10"], 10)
+        AddRowChoice(ns.L["All"], BAR_POOL_SIZE)
+        share:CreateDivider()
+        local party = share:CreateButton(ns.L["Party"], function() self:_ShareChatReport("PARTY") end)
+        party:SetEnabled(ResolveChatReportChannel("PARTY") ~= nil)
+        local raid = share:CreateButton(ns.L["Raid"], function() self:_ShareChatReport("RAID") end)
+        raid:SetEnabled(ResolveChatReportChannel("RAID") ~= nil)
+        share:CreateButton(ns.L["Whisper"], function() self:_ShareChatReport("WHISPER") end)
         root:CreateButton(ns.L["Reset Data"], function()
             if C_DamageMeter and C_DamageMeter.ResetAllCombatSessions then
                 C_DamageMeter.ResetAllCombatSessions()
@@ -2499,6 +2611,7 @@ function Window.New(windowID)
             autoSwapChallengeSessions = false,
             mythicStartDMType = false,
             hideTimer = false,
+            shareResultsRows = 5,
         }
     end
 
@@ -3556,6 +3669,7 @@ function WindowManager:SpawnNew()
         autoSwapChallengeSessions = false,
         mythicStartDMType = false,
         hideTimer = false,
+        shareResultsRows = 5,
     }
     s.windowCount = (s.windowCount or 0) + 1
 

@@ -18,8 +18,10 @@ end
 
 function RefreshScope.LayoutSignature(slots, opts, buildDetails)
     local categories = opts.layoutMode == "categories"
+    local sortKey = Bags.SortPlanner.ResolveKey(opts.sortKey)
     local parts = {
-        categories and "cat"
+        categories and table.concat({ "cat", sortKey,
+            opts.sortReverse and "reverse" or "forward" }, "\1")
             or ("flat:" .. tostring(opts.reagentDisplay or "separate")
                 .. (opts.groupEmptySlots and ":g" or ":-")),
     }
@@ -34,6 +36,11 @@ function RefreshScope.LayoutSignature(slots, opts, buildDetails)
                     (details and details.quality) or cell.entry.quality or -1,
                     (details and details.name) or "",
                     cell.entry.itemID or 0,
+                    (details and details.classID) or -1,
+                    (details and details.subClassID) or -1,
+                    (details and details.ilvl) or -1,
+                    (details and details.expacID) or -1,
+                    sortKey == "quality" and (cell.entry.count or 1) or "",
                 }, "\1")
             end
         elseif opts.groupEmptySlots then

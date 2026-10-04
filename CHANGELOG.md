@@ -4,6 +4,73 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.2-beta9 - 2026-10-04
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Improved
+
+- **Keystone Reroll Reminder duration** can be set to 15, 30, or 60 seconds
+  under **Quality of Life → Automation**. The default remains 15 seconds.
+
+### Fixed
+
+- **Layout Mode Shift-drag anchors align flush with their target**, preserving
+  precise positions when nudging or moving anchored groups. Detaching an
+  element clears its pending anchor so saving does not restore it.
+- **Aura Display previews and outlines honor vertical wrapping and row
+  spacing.** Aura displays and groups now expose **Anchor To**, attachment
+  points, and offsets in Layout Mode's right-click settings.
+- **Action-bar size changes update the buttons during slider previews**,
+  keeping the visible layout aligned with its mover outside combat.
+- **Category bags honor the selected sort order and reverse setting**,
+  refreshing their layout when sorting settings or item details change.
+
+## v5.3.2-beta8 - 2026-10-02
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Underlight Angler Helper** adds an unlock checklist, a restored artifact
+  trait tree with purchase confirmations, and fishing tips for alts. Open it
+  with `/angler` or `/quiangler`; configure the module under **Module Addons**.
+- **Keystone Reroll Reminder** can now be toggled under **Quality of Life →
+  Automation**. It remains enabled by default.
+
+### Fixed
+
+- **Keystone reroll reminders retry unavailable key data for up to five seconds**
+  after completion instead of stopping after the first check.
+
+## v5.3.2-beta7 - 2026-10-01
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Share damage-meter results to Party, Raid or Whisper** from the meter header's
+  **Share Results** menu. **Rows → Top 3 / Top 5 / Top 10 / All** defaults to five
+  data rows plus the heading and remembers your choice per window. All is capped
+  at 40 rows. Reports use the selected metric and segment, route instance groups
+  to instance chat, and use the shared chat-throttling queue.
+- **Keystone reroll reminder** shows a large “Re-roll key?” prompt after a
+  non-practice dungeon completion when the completed key level is at least your
+  refreshed owned key level. The reminder expires after 15 seconds.
+
+### Fixed
+
+- **Consumable-check layout waits until combat ends**, including ready checks,
+  avoiding protected UI work during combat.
+
+### Maintenance
+
+- **GitHub coding automation selects alpha or beta from the reported context**
+  while preserving the branch of an existing pull request.
+
 ## v5.3.2-beta6 - 2026-09-25
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and

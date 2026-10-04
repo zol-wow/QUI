@@ -418,6 +418,31 @@ local Y_EDGE_ANCHORS = {
     [9] = {"CENTER", "CENTER"},
 }
 
+local function FindAnchorAxis(aStart, aEnd, bStart, bEnd, sameSide, oppositeSide)
+    if oppositeSide then
+        local startDelta, endDelta = bEnd - aStart, bStart - aEnd
+        if math.abs(startDelta) <= math.abs(endDelta) then
+            return startDelta, math.abs(startDelta), 2
+        end
+        return endDelta, math.abs(endDelta), 4
+    end
+    local bestDelta, bestDist, bestEdge = 0, math.huge, nil
+    for i = 1, 3 do
+        local a = i == 1 and aStart or i == 2 and aEnd or (aStart + aEnd) / 2
+        for j = 1, 3 do
+            if not sameSide or i == j then
+                local b = j == 1 and bStart or j == 2 and bEnd or (bStart + bEnd) / 2
+                local delta = b - a
+                local dist = math.abs(delta)
+                if dist < bestDist then
+                    bestDelta, bestDist, bestEdge = delta, dist, (i - 1) * 3 + j
+                end
+            end
+        end
+    end
+    return bestDelta, bestDist, bestEdge
+end
+
 local function CombineAnchorPoint(yPart, xPart)
     if yPart == "CENTER" and xPart == "CENTER" then return "CENTER" end
     if yPart == "CENTER" then return xPart end
@@ -478,6 +503,10 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
     local um = ns.QUI_LayoutMode
     if not um then return end
 
+    handle._snapAnchorKey = nil
+    handle._snapAnchorPointSelf = nil
+    handle._snapAnchorPointTarget = nil
+
     local snapDisabled = not self.snapEnabled
     local shiftHeld = IsShiftKeyDown()
 
@@ -504,8 +533,8 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
     local bestSnapY, bestDistY = nil, threshY + 1
     local snapLineX, snapLineY
 
-    local bestSnapXKey, bestSnapXEdge
-    local bestSnapYKey, bestSnapYEdge
+    local anchorTargetKey, anchorEdgeX, anchorEdgeY, anchorDeltaX, anchorDeltaY
+    local anchorDistance, anchorCorrection = math.huge, math.huge
 
     local sw, sh = UIParent:GetWidth(), UIParent:GetHeight()
     local screenCX, screenCY = sw / 2, sh / 2
@@ -515,8 +544,6 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
         bestDistX = dx
         bestSnapX = screenCX - (dragR - dragL) / 2
         snapLineX = screenCX
-        bestSnapXKey = nil
-        bestSnapXEdge = nil
     end
 
     local dy = math.abs(dragCY - screenCY)
@@ -524,8 +551,6 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
         bestDistY = dy
         bestSnapY = screenCY - (dragT - dragB) / 2
         snapLineY = screenCY
-        bestSnapYKey = nil
-        bestSnapYEdge = nil
     end
 
     local anchorGroupKeys = handle._anchorGroupKeys
@@ -536,6 +561,24 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
             local oCY = oT and oB and (oT + oB) / 2
 
             if oL and oR and oT and oB then
+                if shiftHeld and HandleIsNearby(um, key, dragL, dragR, dragT, dragB) then
+                    local verticalGap = math.min(math.abs(dragB - oT), math.abs(dragT - oB))
+                    local horizontalGap = math.min(math.abs(dragL - oR), math.abs(dragR - oL))
+                    local vertical = verticalGap <= activeThreshold
+                    local horizontal = horizontalGap <= activeThreshold
+                    local ax, distX, edgeX = FindAnchorAxis(dragL, dragR, oL, oR, vertical and not horizontal, horizontal)
+                    local ay, distY, edgeY = FindAnchorAxis(dragT, dragB, oT, oB, horizontal and not vertical, vertical)
+                    local distance = math.min(verticalGap, horizontalGap)
+                    if not vertical and not horizontal then distance = math.min(distX, distY) end
+                    local correction = distX + distY
+                    if distance <= activeThreshold and (distance < anchorDistance
+                        or (distance == anchorDistance and correction < anchorCorrection)) then
+                        anchorTargetKey, anchorEdgeX, anchorEdgeY = key, edgeX, edgeY
+                        anchorDeltaX, anchorDeltaY = ax, ay
+                        anchorDistance, anchorCorrection = distance, correction
+                    end
+                end
+
                 for i = 1, 3 do
                     local a = i == 1 and dragL or i == 2 and dragR or dragCX
                     for j = 1, 3 do
@@ -545,8 +588,6 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
                             bestDistX = dist
                             bestSnapX = b - (a - dragL)
                             snapLineX = b
-                            bestSnapXKey = key
-                            bestSnapXEdge = (i - 1) * 3 + j
                         end
                     end
                 end
@@ -560,8 +601,6 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
                             bestDistY = dist
                             bestSnapY = b - (a - dragB)
                             snapLineY = b
-                            bestSnapYKey = key
-                            bestSnapYEdge = (i - 1) * 3 + j
                         end
                     end
                 end
@@ -569,9 +608,20 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
         end
     end
 
+    if anchorTargetKey then
+        local targetHandle = um._handles[anchorTargetKey]
+        local oL, oR, oT, oB = GetHandleEdges(targetHandle)
+        local xIndex, yIndex = (anchorEdgeX - 1) % 3 + 1, (anchorEdgeY - 1) % 3 + 1
+        snapLineX = xIndex == 1 and oL or xIndex == 2 and oR or (oL + oR) / 2
+        snapLineY = yIndex == 1 and oT or yIndex == 2 and oB or (oT + oB) / 2
+    end
+
     local snappedX, snappedY = false, false
 
-    if not snapDisabled then
+    if anchorTargetKey then
+        SetHandlePosition(handle, dragCX + anchorDeltaX - screenCX, dragCY + anchorDeltaY - screenCY)
+        snappedX, snappedY = true, true
+    elseif not snapDisabled then
         if bestDistX <= threshX and bestSnapX then
             local newCX = bestSnapX + (dragR - dragL) / 2
             local currentCY = (dragT + dragB) / 2
@@ -596,41 +646,14 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
             end
         end
 
-        snap.snappedX = snappedX
-        snap.snappedY = snappedY
     end
-
-    local nearX = snappedX or (bestDistX <= activeThreshold)
-    local nearY = snappedY or (bestDistY <= activeThreshold)
-
-    local anchorTargetKey = nil
-
-    if shiftHeld then
-        if nearX and bestSnapXKey and HandleIsNearby(um, bestSnapXKey, dragL, dragR, dragT, dragB) then
-            anchorTargetKey = bestSnapXKey
-        end
-        if nearY and bestSnapYKey and not anchorTargetKey
-            and HandleIsNearby(um, bestSnapYKey, dragL, dragR, dragT, dragB) then
-            anchorTargetKey = bestSnapYKey
-        end
-    end
+    snap.snappedX = snappedX
+    snap.snappedY = snappedY
 
     if shiftHeld and anchorTargetKey then
-        local xSelf, xTarget = "CENTER", "CENTER"
-        if nearX and bestSnapXKey == anchorTargetKey and bestSnapXEdge then
-            local xPair = X_EDGE_ANCHORS[bestSnapXEdge]
-            if xPair then
-                xSelf, xTarget = xPair[1], xPair[2]
-            end
-        end
-
-        local ySelf, yTarget = "CENTER", "CENTER"
-        if nearY and bestSnapYKey == anchorTargetKey and bestSnapYEdge then
-            local yPair = Y_EDGE_ANCHORS[bestSnapYEdge]
-            if yPair then
-                ySelf, yTarget = yPair[1], yPair[2]
-            end
-        end
+        local xPair, yPair = X_EDGE_ANCHORS[anchorEdgeX], Y_EDGE_ANCHORS[anchorEdgeY]
+        local xSelf, xTarget = xPair[1], xPair[2]
+        local ySelf, yTarget = yPair[1], yPair[2]
 
         handle._snapAnchorKey = anchorTargetKey
         handle._snapAnchorPointSelf = CombineAnchorPoint(ySelf, xSelf)
@@ -660,10 +683,6 @@ function QUI_LayoutMode_UI:ApplySnap(handle)
             handle._anchorHighlightTarget = anchorTargetKey
         end
     else
-        handle._snapAnchorKey = nil
-        handle._snapAnchorPointSelf = nil
-        handle._snapAnchorPointTarget = nil
-
         if self._anchorLine then
             self._anchorLine:Hide()
         end
