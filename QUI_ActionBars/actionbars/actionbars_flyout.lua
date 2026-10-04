@@ -12,7 +12,8 @@ spellFlyoutSkinHooked = false
 
 do
 
-USE_OWNED_FLYOUT = (WOW_PROJECT_ID == WOW_PROJECT_MAINLINE) and not ActionBarsOwned.restrictedExecutionUnavailable
+USE_OWNED_FLYOUT = (WOW_PROJECT_ID == WOW_PROJECT_MAINLINE or (ns.Client and ns.Client.isForever))
+    and not ActionBarsOwned.restrictedExecutionUnavailable
 ActionBarsOwned.useOwnedFlyout = USE_OWNED_FLYOUT
 
 env.__declared.ownedFlyout = true

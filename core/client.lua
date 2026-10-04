@@ -4,7 +4,7 @@ local isForever = type(version) == "string" and version:match("^1%.60%.") ~= nil
 
 ns.Client = {
     isForever = isForever,
-    restrictedExecutionUnavailable = isForever,
+    restrictedExecutionUnavailable = false,
     flavor = isForever and "forever" or "retail",
     version = version,
     build = build,
