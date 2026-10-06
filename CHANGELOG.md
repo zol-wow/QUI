@@ -4,6 +4,35 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.2-beta10 - 2026-10-05
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Spell Reminders** for Power Infusion, Innervate, and custom spells provide
+  cooldown prompts, sounds, spoken alerts, and load conditions. Enable them
+  under **Reminders → Spell Reminders**.
+- **Power Infusion coordination** adds offensive-buff tracking, group-frame
+  highlights, focus alerts, and optional whisper-triggered priority or rotation
+  lists. Configured lists choose the recipient.
+- **Recipe tooltips** show which characters can learn a recipe or already know
+  it, using each character's last checked result.
+
+### Improved
+
+- **Recipes already known or unavailable to your character receive red tint**
+  in bags and storage. **Mark Unusable Items** defaults on for new profiles and
+  the Starter Profile; existing saved settings are preserved.
+- **Opening the Underlight Angler artifact shows the helper directly over the
+  artifact window**, on its tree tab.
+
+### Fixed
+
+- **Group frames appear reliably after a fresh login**, without requiring
+  `/reload` to initialize them.
+
 ## v5.3.2-beta9 - 2026-10-04
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
