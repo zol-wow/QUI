@@ -460,6 +460,18 @@ function ItemButtons.InvalidateUnusableCache()
 end
 
 function ItemButtons.IsUnusable(bagID, slot, link)
+    local recipes = ns.Storage and ns.Storage.RecipeLearning
+    local itemID = link and C_Item and C_Item.GetItemInfoInstant(link)
+    local isRecipe = recipes and recipes.IsRecipe(itemID)
+    if isRecipe then
+        local data = bagID and C_TooltipInfo.GetBagItem(bagID, slot)
+            or C_TooltipInfo.GetHyperlink(link)
+        local status = recipes.GetStatus(itemID, data, bagID ~= nil)
+        local rec = ns.Storage.Store.GetCurrentCharacter()
+        local cached = rec and rec.recipeLearning and rec.recipeLearning[itemID]
+        status = status or (cached and cached.version == recipes.SNAPSHOT_VERSION and cached.status)
+        return status == "known" or status == "cannotLearn"
+    end
     if link and unusableCache[link] ~= nil then return unusableCache[link] end
     local data
     if bagID and C_TooltipInfo and C_TooltipInfo.GetBagItem then
@@ -489,7 +501,7 @@ function ItemButtons.IsUnusable(bagID, slot, link)
 end
 
 function ItemButtons.SetUnusableTint(button, unusable)
-    local icon = button.icon or button._icon
+    local icon = button.Icon or button.icon or button._icon
     if not icon then return end
     if unusable then
         icon:SetVertexColor(1, 0.35, 0.35)
