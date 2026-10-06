@@ -561,7 +561,7 @@ local defaults = {
                 cornerIconSize = 12,
                 qualityColorText = false,
                 greyJunk = false,
-                markUnusable = false,
+                markUnusable = true,
                 contextFading = true,
             },
             behavior = {

@@ -23,6 +23,9 @@ local UI_EVENTS = {
     "EQUIPMENT_SETS_CHANGED",
     "PLAYER_LEVEL_UP",
     "SKILL_LINES_CHANGED",
+    "NEW_RECIPE_LEARNED",
+    "FACTION_STANDING_CHANGED",
+    "MAJOR_FACTION_RENOWN_LEVEL_CHANGED",
     "PLAYER_SPECIALIZATION_CHANGED",
     "PLAYER_REGEN_DISABLED",
     "PLAYER_REGEN_ENABLED",
@@ -68,6 +71,21 @@ local function StopUI()
     Bags.GuildTakeover.Revert()
 end
 
+local function RefreshUnusableItems()
+    if not uiActive then return end
+    if Bags.ItemButtons then Bags.ItemButtons.InvalidateUnusableCache() end
+    if Bags.BagWindow.IsShown() then
+        Storage.Bus.Publish("BagsChanged", Storage.Store.GetCurrentCharacterKey(), {})
+    end
+    if Bags.BankWindow.IsShown() then
+        Storage.Bus.Publish("BankChanged", Storage.Store.GetCurrentCharacterKey(), {})
+        Storage.Bus.Publish("WarbandChanged", {})
+    end
+    if Bags.GuildWindow.IsShown() then Bags.GuildWindow.Refresh() end
+end
+
+Storage.Bus.Subscribe("RecipeLearningChanged", RefreshUnusableItems)
+
 eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
     if event == "BANKFRAME_OPENED" then
         Bags.BankTakeover.OnBankOpened()
@@ -105,14 +123,10 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
             Storage.Bus.Publish("WarbandChanged", {})
         end
     elseif event == "PLAYER_LEVEL_UP" or event == "SKILL_LINES_CHANGED"
+        or event == "NEW_RECIPE_LEARNED" or event == "FACTION_STANDING_CHANGED"
+        or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED"
         or (event == "PLAYER_SPECIALIZATION_CHANGED" and arg1 == "player") then
-        if Bags.ItemButtons then Bags.ItemButtons.InvalidateUnusableCache() end
-        if Bags.BagWindow.IsShown() then
-            Storage.Bus.Publish("BagsChanged", Storage.Store.GetCurrentCharacterKey(), {})
-        end
-        if Bags.BankWindow.IsShown() then
-            Storage.Bus.Publish("BankChanged", Storage.Store.GetCurrentCharacterKey(), {})
-        end
+        RefreshUnusableItems()
     elseif event == "PLAYER_REGEN_DISABLED" then
         if Bags.SortExecutor then Bags.SortExecutor.OnCombat() end
         if Bags.Transfers then Bags.Transfers.OnCombat() end

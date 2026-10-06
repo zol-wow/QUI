@@ -204,7 +204,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         s1.AddRow(row(s1.frame, ns.L["Group Empty Slots"], groupEmptyW), row(s1.frame, ns.L["Grey Out Junk"], greyJunkW))
 
         local markUnusableW = GUI:CreateFormCheckbox(s1.frame, nil, "markUnusable", bags.appearance, Refresh,
-            { description = ns.L["Red-tint items your character cannot use (reads the item tooltip's red text)."] })
+            { description = ns.L["Red-tint items your character cannot use, including recipes already known or whose learning requirements are not met."] })
         local setBorderW = GUI:CreateFormCheckbox(s1.frame, nil, "equipmentSetBorder", bags.appearance, Refresh,
             { description = ns.L["Use a cyan border instead of the quality color on items that belong to a saved equipment set (live views)."] })
         s1.AddRow(row(s1.frame, ns.L["Mark Unusable Items"], markUnusableW), row(s1.frame, ns.L["Equipment Set Border"], setBorderW))
