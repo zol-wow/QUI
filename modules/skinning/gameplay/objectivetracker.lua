@@ -168,9 +168,9 @@ local function StyleTrackerProgressBar(pb)
             end
         end
 
-        bar:SetStatusBarTexture(CUSTOM_BAR_FILL_TEXTURE)
+        ns.Helpers.ApplyBarStyle(bar, CUSTOM_BAR_FILL_TEXTURE)
 
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
         SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
 
@@ -778,7 +778,7 @@ local function SkinObjectiveTracker()
     local TrackerFrame = _G.ObjectiveTrackerFrame
     if not TrackerFrame then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     if TrackerFrame.UpdateHeight and not SkinBase.GetFrameData(TrackerFrame, "updateHeightHooked") then
         hooksecurefunc(TrackerFrame, "UpdateHeight", function(self)
@@ -834,7 +834,7 @@ local function SkinObjectiveTracker()
         hooksecurefunc(manager, "SetOpacity", function(self, opacityPercent)
             C_Timer.After(0, function()
                 local alpha = (opacityPercent or 0) / 100
-                local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetSkinColors()
+                local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetWindowColors()
                 local bd = SkinBase.GetFrameData(TrackerFrame, "backdrop")
                 if bd then
                     SkinBase.SetBackdropColors(bd, nil, { currBgR, currBgG, currBgB, alpha })
@@ -860,7 +860,7 @@ local function RefreshObjectiveTracker()
     local TrackerFrame = _G.ObjectiveTrackerFrame
     if not TrackerFrame then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     ApplyLayoutSettingsSafely(settings)
 

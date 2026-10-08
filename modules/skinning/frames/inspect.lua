@@ -14,7 +14,10 @@ local CONFIG = {
 
 local customBg = nil
 
-local GetSkinColors = Helpers.CreateSkinColorGetter("inspectFrame")
+local function GetWindowColors()
+    local profile = Helpers.GetProfile and Helpers.GetProfile()
+    return SkinBase.GetWindowColors(profile and profile.general, "inspectFrame")
+end
 
 local function IsSkinningEnabled()
     local core = GetCore()
@@ -40,7 +43,7 @@ end
 local function CreateOrUpdateBackground()
     if not InspectFrame then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetWindowColors()
 
     if not customBg then
         customBg = CreateFrame("Frame", "QUI_InspectFrameBg_Skin", InspectFrame, "BackdropTemplate")
@@ -161,7 +164,7 @@ local function RefreshInspectFrameColors()
     if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
     if not IsSkinningEnabled() then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetWindowColors()
 
     if customBg then
         SkinBase.ApplyPixelBackdrop(customBg, 1, true, true, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })

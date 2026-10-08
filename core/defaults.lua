@@ -176,6 +176,7 @@ local defaults = {
             font = "Quazii",
             fontOutline = "OUTLINE",
             texture = "Quazii v5",
+            visualStyle = "Satin",
             darkMode = false,
             darkModeHealthColor = { 0, 0, 0, 1 },
             darkModeBgColor = { 0.592, 0.592, 0.592, 1 },

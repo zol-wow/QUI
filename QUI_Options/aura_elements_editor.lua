@@ -577,7 +577,7 @@ local function AddSwipeWidgets(ctx, element)
     }))
     row(ns.L["Swipe Style"], GUI:CreateFormDropdown(ctx.detailArea, nil, SWIPE_STYLE_OPTIONS, "swipeStyle", element, onChange, {
         description = ns.L["Radial or linear (horizontal/vertical) cooldown animation over aura icons."],
-    }))
+    }, { placeholder = ns.L["Radial"] }))
 end
 
 local function AddDispelTooltipWidgets(ctx, element)

@@ -48,7 +48,7 @@ local function CreateAlertBackdrop(frame, xOffset1, yOffset1, xOffset2, yOffset2
     local existing = SkinBase.GetFrameData(frame, "backdrop")
     if existing then return existing end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "alerts")
 
     local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     backdrop:SetFrameLevel(frame:GetFrameLevel())
@@ -64,7 +64,7 @@ end
 
 local function CreateIconAnchoredBackdrop(frame, anchorFrame, inset)
     if SkinBase.GetFrameData(frame, "backdrop") or not anchorFrame then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "alerts")
 
     local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     backdrop:SetFrameLevel(frame:GetFrameLevel())
@@ -88,7 +88,8 @@ local function GetQualityColor(hyperlink)
 end
 
 local function CreateIconBorder(icon, parent, qualityColor)
-    local sr, sg, sb, sa = GetThemeColors()
+    Helpers.ApplyIconStyle(parent or icon:GetParent(), icon)
+    local sr, sg, sb, sa = SkinBase.GetWindowColors(GetGeneralSettings(), "alerts")
 
     local existingBorder = SkinBase.GetFrameData(icon, "border")
     if existingBorder then
@@ -280,7 +281,7 @@ end
 local function SkinMoneyWonAlert(frame)
     if not frame or SkinBase.IsSkinned(frame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "alerts")
 
     if frame.Background then frame.Background:SetAlpha(0) end
     if frame.IconBorder then frame.IconBorder:SetAlpha(0) end
@@ -662,14 +663,15 @@ end
 
 local function SkinBonusRollPromptButton(btn)
     if not btn or SkinBase.IsStyled(btn) then return end
-    local sr, sg, sb, sa = GetThemeColors()
+    local sr, sg, sb, sa = SkinBase.GetWindowColors(GetGeneralSettings(), "alerts")
     local border = CreateFrame("Frame", nil, btn, "BackdropTemplate")
     border:SetFrameLevel(btn:GetFrameLevel() + 1)
     border:SetAllPoints()
     SkinBase.ApplyPixelBackdrop(border, 1, false, false)
     Helpers.SetFrameBackdropBorderColor(border, sr, sg, sb, sa)
+    local ar, ag, ab = GetThemeColors()
     local hl = btn.GetHighlightTexture and btn:GetHighlightTexture()
-    if hl then hl:SetColorTexture(sr, sg, sb, 0.25) end
+    if hl then hl:SetColorTexture(ar, ag, ab, 0.25) end
     SkinBase.MarkStyled(btn)
 end
 
@@ -678,7 +680,7 @@ local function SkinBonusRollPrompt(frame)
     local prompt = frame.PromptFrame
     if not prompt then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "alerts")
 
     if not SkinBase.IsSkinned(frame) then
         Kill(frame.Background)
@@ -697,7 +699,10 @@ local function SkinBonusRollPrompt(frame)
         end
 
         if prompt.Timer then
-            prompt.Timer:SetStatusBarColor(sr, sg, sb, 1)
+            local ar, ag, ab = GetThemeColors()
+            local timerTexture = prompt.Timer:GetStatusBarTexture()
+            Helpers.ApplyBarStyle(prompt.Timer, timerTexture and timerTexture:GetTexture())
+            prompt.Timer:SetStatusBarColor(ar, ag, ab, 1)
         end
 
         if prompt.InfoFrame then
@@ -1052,7 +1057,7 @@ local function CreateBNetToastMover()
 end
 
 local function RefreshAlertColors()
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetThemeColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "alerts")
 
     local alertSystems = {
         AchievementAlertSystem,

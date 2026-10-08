@@ -53,7 +53,10 @@ local CONFIG = {
 }
 CharacterChrome.CONFIG = CONFIG
 
-local GetSkinColors = Helpers.CreateSkinColorGetter("characterFrame")
+local function GetWindowColors()
+    local profile = Helpers.GetProfile and Helpers.GetProfile()
+    return SkinBase.GetWindowColors(profile and profile.general, "characterFrame")
+end
 
 -- Border colour as TEXT colour, luminance-floored (a black / hidden border
 -- must not turn titles black or invisible).
@@ -297,7 +300,7 @@ end
 
 local function ApplyShellColors()
     if not shell then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetWindowColors()
     SkinBase.ApplyPixelBackdrop(shell, 1, true, true, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
 end
 
@@ -364,8 +367,8 @@ function CharacterChrome.StyleCloseButton(button, opts)
         fontSize = opts.fontSize,
         textColor = Token("tabHover"),
         accentColor = function() local r, g, b = GetTextAccent(); return r, g, b, 1 end,
-        borderColor = function() local r, g, b = GetSkinColors(); return r, g, b, 1 end,
-        bgColor = function() local _, _, _, _, bgr, bgg, bgb, bga = GetSkinColors(); return bgr, bgg, bgb, bga end,
+        borderColor = function() local r, g, b = GetWindowColors(); return r, g, b, 1 end,
+        bgColor = function() local _, _, _, _, bgr, bgg, bgb, bga = GetWindowColors(); return bgr, bgg, bgb, bga end,
         insetPixels = 2,
     })
     closeButtons[button] = true
@@ -406,7 +409,7 @@ end
 local popouts = Helpers.CreateStateTable()
 
 local function ApplyPopoutChrome(popup)
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetWindowColors()
     SkinBase.ApplyPixelBackdrop(popup, 1, true, true, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
     if popup.title then
         CJKFont(popup.title, GeneralFontFace(), 14, "")
@@ -484,7 +487,7 @@ local function ApplyFlyoutGlow(glow)
 end
 
 local function ApplyFlyoutChrome(flyout)
-    local sr, sg, sb, _, bgr, bgg, bgb = GetSkinColors()
+    local sr, sg, sb, _, bgr, bgg, bgb = GetWindowColors()
     SkinBase.ApplyChromeBackdrop(flyout.panel, {
         withBackground = true,
         borderColor = { sr, sg, sb, 1 },
@@ -556,7 +559,7 @@ function CharacterChrome.CreateSettingsFlyout(parent, opts)
         gearLabel:SetTextColor(hover[1], hover[2], hover[3], hover[4] or 1)
     end)
     gearBtn:SetScript("OnLeave", function(self)
-        local r, g, b = GetSkinColors()
+        local r, g, b = GetWindowColors()
         SkinBase.SetBackdropColors(self, { r, g, b, 1 })
         local rest = Token("tabHover")
         gearLabel:SetTextColor(rest[1], rest[2], rest[3], rest[4] or 0.85)
@@ -717,7 +720,7 @@ local halfSkinDecor = {
 
 local function EnsureSlotBorder(slot)
     local border = slotBorders[slot]
-    local sr, sg, sb = GetSkinColors()
+    local sr, sg, sb = GetWindowColors()
     if not border then
         border = CreateFrame("Frame", nil, slot, "BackdropTemplate")
         border:SetFrameLevel(slot:GetFrameLevel() + 10)
@@ -779,7 +782,7 @@ local flyoutButtonBorders = Helpers.CreateStateTable()
 
 local function SkinEquipmentFlyoutButton(button)
     if not button then return end
-    local sr, sg, sb = GetSkinColors()
+    local sr, sg, sb = GetWindowColors()
     local border = flyoutButtonBorders[button]
     if not border then
         local normal = button.GetNormalTexture and button:GetNormalTexture()
@@ -806,7 +809,7 @@ end
 local function RefreshEquipmentFlyoutChrome()
     local flyout = _G.EquipmentFlyoutFrame
     if not flyout or not SkinBase.GetFrameData(flyout, "qCharChromeFlyout") then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetWindowColors()
     if flyout.buttonFrame then
         SkinBase.CreateBackdrop(flyout.buttonFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         HideFlyoutBackgrounds(flyout.buttonFrame)

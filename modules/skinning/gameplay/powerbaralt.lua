@@ -142,15 +142,16 @@ local function OnEvent(self, event, arg1, arg2)
 end
 
 local function CreateQUIAltPowerBar()
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetModuleSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "powerBarAlt")
 
     local bar = CreateFrame("StatusBar", "QUI_AltPowerBar", UIParent)
     bar:SetSize(BAR_WIDTH, BAR_HEIGHT)
 
     bar:SetPoint("TOP", UIParent, "TOP", 0, -100)
 
-    bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
-    bar:SetStatusBarColor(sr, sg, sb)
+    ns.Helpers.ApplyBarStyle(bar, "Interface\\Buttons\\WHITE8x8")
+    local ar, ag, ab = GetModuleSkinColors()
+    bar:SetStatusBarColor(ar, ag, ab)
     bar:SetMinMaxValues(0, 100)
     bar:SetValue(0)
     bar:Hide()
@@ -251,7 +252,7 @@ end
 
 local function RefreshNativeBuffTimerSkins()
     if not GetGeneralSettings().skinPowerBarAlt then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetModuleSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "powerBarAlt")
     local index = 1
     while _G["BuffTimer" .. index] do
         local timer = _G["BuffTimer" .. index]
@@ -271,9 +272,10 @@ end
 local function RefreshPowerBarAltColors()
     if not QUIAltPowerBar then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetModuleSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "powerBarAlt")
 
-    QUIAltPowerBar:SetStatusBarColor(sr, sg, sb)
+    local ar, ag, ab = GetModuleSkinColors()
+    QUIAltPowerBar:SetStatusBarColor(ar, ag, ab)
     Helpers.SetFrameBackdropColor(QUIAltPowerBar.backdrop, bgr, bgg, bgb, bga)
     Helpers.SetFrameBackdropBorderColor(QUIAltPowerBar.backdrop, sr, sg, sb, sa)
 

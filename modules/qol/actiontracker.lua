@@ -421,13 +421,14 @@ end
 
 local function StyleIconForEntry(icon, entry, settings)
     icon.tex:SetTexture(entry.icon or FALLBACK_ICON)
+    Helpers.ApplyIconStyle(icon, icon.tex)
     icon.tex:SetDesaturated(entry.failed == true)
 
     if settings.iconHideBorder == true then
         icon.border:Hide()
     else
         icon.border:Show()
-        local br, bg, bb, ba = Helpers.GetSkinBorderColor(settings, "icon")
+        local br, bg, bb, ba = Helpers.GetWindowColors(settings, "icon")
         icon.border:SetColorTexture(br or 0, bg or 0, bb or 0, ba or 0.85)
     end
 
@@ -746,7 +747,7 @@ local function RefreshAppearance()
 
     if UIKit and UIKit.CreateBorderLines and UIKit.UpdateBorderLines then
         UIKit.CreateBorderLines(state.frame)
-        local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
+        local bR, bG, bB, bA = Helpers.GetWindowColors(settings, "")
         UIKit.UpdateBorderLines(
             state.frame,
             settings.borderSize or 1,

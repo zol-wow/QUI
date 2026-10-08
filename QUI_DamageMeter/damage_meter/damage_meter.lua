@@ -1428,7 +1428,7 @@ local function AttachRowVisuals(row, barH)
     row.Bar:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     row.Bar:SetPoint("TOP", row, "TOP", 0, 0)
     row.Bar:SetPoint("BOTTOM", row, "BOTTOM", 0, 0)
-    row.Bar:SetStatusBarTexture(BAR_TEXTURE)
+    Helpers.ApplyBarStyle(row.Bar, BAR_TEXTURE)
     row.Bar:SetMinMaxValues(0, 1)
     row.Bar:SetValue(0)
 
@@ -1646,7 +1646,7 @@ function Window:_SetRowSource(row, source, maxAmount)
     ApplyRowBackgroundVisibility(row, windowID)
 
     local barTexName = ResolveAppearance(windowID, "textures", "bar")
-    row.Bar:SetStatusBarTexture(ResolveBarTexture(barTexName))
+    Helpers.ApplyBarStyle(row.Bar, ResolveBarTexture(barTexName))
 
     local iconStyle = ResolveAppearance(windowID, "iconStyle") or "spec"
     if iconStyle == "none" then

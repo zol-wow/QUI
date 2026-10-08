@@ -36,7 +36,10 @@ local skinnedEntries = Helpers.CreateStateTable()
 local rowAccentBars = Helpers.CreateStateTable()
 local rowHoverHooked = Helpers.CreateStateTable()
 
-local GetSkinColors = Helpers.CreateSkinColorGetter("characterFrame")
+local function GetWindowColors()
+    local profile = Helpers.GetProfile and Helpers.GetProfile()
+    return SkinBase.GetWindowColors(profile and profile.general, "characterFrame")
+end
 
 -- Border colour as TEXT colour, luminance-floored (black / hidden borders
 -- otherwise turn headers and popup titles black or invisible).
@@ -161,20 +164,20 @@ end
 local function SkinReputationEntry(child)
     if skinnedEntries[child] then return end
 
-    local sr, sg, sb, sa = GetSkinColors()
+    local sr, sg, sb, sa = GetWindowColors()
     local fontPath = GetFontPath()
 
     if child.Right then
-        SkinEntryHeader(child, fontPath, sr, sg, sb)
+        SkinEntryHeader(child, fontPath, GetTextAccent())
     end
 
     local ReputationBar = child.Content and child.Content.ReputationBar
     if ReputationBar then
         if ReputationBar.SetStatusBarTexture then
-            ReputationBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+            ns.Helpers.ApplyBarStyle(ReputationBar, "Interface\\Buttons\\WHITE8x8")
             UIKit.DisablePixelSnap(ReputationBar)
         elseif ReputationBar.Fill then
-            ReputationBar.Fill:SetTexture("Interface\\Buttons\\WHITE8x8")
+            Helpers.ApplyTextureStyle(ReputationBar, ReputationBar.Fill, "Interface\\Buttons\\WHITE8x8")
             UIKit.DisablePixelSnap(ReputationBar.Fill)
         end
 
@@ -219,16 +222,17 @@ end
 local function SkinCurrencyEntry(child)
     if skinnedEntries[child] then return end
 
-    local sr, sg, sb, sa = GetSkinColors()
+    local sr, sg, sb, sa = GetWindowColors()
     local fontPath = GetFontPath()
 
     if child.Right then
-        SkinEntryHeader(child, fontPath, sr, sg, sb)
+        SkinEntryHeader(child, fontPath, GetTextAccent())
     end
 
     local CurrencyIcon = child.Content and child.Content.CurrencyIcon
     if CurrencyIcon then
         CurrencyIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        Helpers.ApplyIconStyle(CurrencyIcon:GetParent(), CurrencyIcon)
 
         if not iconBorders[CurrencyIcon] then
             local border = CreateFrame("Frame", nil, CurrencyIcon:GetParent(), "BackdropTemplate")
@@ -258,7 +262,7 @@ end
 local function SkinReputationDetailFrame()
     local detail = ReputationFrame and ReputationFrame.ReputationDetailFrame
     if not detail then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetWindowColors()
     if not SkinBase.GetFrameData(detail, "qRepDetailChrome") then
         SkinBase.SetFrameData(detail, "qRepDetailChrome", true)
         if detail.Border then detail.Border:SetAlpha(0) end
@@ -291,7 +295,7 @@ end
 local function SkinTokenFramePopup()
     local popup = _G.TokenFramePopup or (TokenFrame and TokenFrame.Popup)
     if not popup then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetWindowColors()
     if not SkinBase.GetFrameData(popup, "qTokenPopupChrome") then
         SkinBase.SetFrameData(popup, "qTokenPopupChrome", true)
         if popup.Border then popup.Border:SetAlpha(0) end
@@ -392,7 +396,7 @@ local function RefreshCharacterFrameColors()
     if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
     if not IsSkinningEnabled() then return end
 
-    local sr, sg, sb = GetSkinColors()
+    local sr, sg, sb = GetWindowColors()
 
     local chrome = GetChrome()
     if chrome and chrome.RefreshTheme then
@@ -528,10 +532,11 @@ local function SkinEquipmentSetEntry(entry)
     RestyleEquipmentSetEntryText(entry)
     if skinnedEntries[entry] then return end
 
-    local sr, sg, sb = GetSkinColors()
+    local sr, sg, sb = GetWindowColors()
 
     if entry.icon and not iconBorders[entry.icon] then
         entry.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        Helpers.ApplyIconStyle(entry, entry.icon)
         local border = CreateFrame("Frame", nil, entry, "BackdropTemplate")
         SetExpandedPixelPoints(border, entry.icon, 1)
         ApplyPixelBackdrop(border, 1, false, false, { sr, sg, sb, 1 })
@@ -547,7 +552,7 @@ end
 local function StyleEquipMgrButton(btn)
     if not btn or skinnedEntries[btn] then return end
 
-    local sr, sg, sb, sa = GetSkinColors()
+    local sr, sg, sb, sa = GetWindowColors()
 
     local origWidth = btn:GetWidth()
 
@@ -566,11 +571,11 @@ local function StyleEquipMgrButton(btn)
     btn:SetWidth(origWidth)
 
     btn:HookScript("OnEnter", function(self)
-        local r, g, b = GetSkinColors()
+        local r, g, b = GetWindowColors()
         SetPixelBackdropColors(self, { r, g, b, 1 })
     end)
     btn:HookScript("OnLeave", function(self)
-        local r, g, b = GetSkinColors()
+        local r, g, b = GetWindowColors()
         SetPixelBackdropColors(self, { r, g, b, 0.5 })
     end)
 
@@ -619,7 +624,7 @@ RefreshEquipmentManagerColors = function()
     local popup = _G.QUI_EquipMgrPopup
     if not popup or not skinnedEntries[popup] then return end
 
-    local sr, sg, sb = GetSkinColors()
+    local sr, sg, sb = GetWindowColors()
 
     local chrome = GetChrome()
     if chrome and chrome.RefreshPopout then chrome.RefreshPopout(popup) end

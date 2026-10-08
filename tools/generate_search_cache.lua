@@ -3107,6 +3107,7 @@ local tile_order = {
     "QUI_GameplayTile",
     "QUI_QoLTile",
     "QUI_BagsTile",
+    "QUI_AltsTile",
     "QUI_HelpTile",
 }
 
@@ -3396,6 +3397,21 @@ table.sort(navigation_entries, function(a, b)
     return entry_sort_key(a) < entry_sort_key(b)
 end)
 apply_feature_keywords(navigation_entries)
+
+local previousFrame = GUI.MainFrame
+GUI.MainFrame = frame
+for _, entries in ipairs({ settings_entries, navigation_entries }) do
+    for _, entry in ipairs(entries) do
+        local route = GUI:ResolveV2SectionNavigation(entry.tabIndex, entry.sectionName, entry.tileId)
+        if route then
+            entry.tileId = route.tileId
+            entry.subPageIndex = route.subPageIndex
+            local tile = GUI:FindV2TileByID(frame, route.tileId)
+            entry.subTabName = tile.config.subPages[route.subPageIndex].name
+        end
+    end
+end
+GUI.MainFrame = previousFrame
 
 -- Records are emitted POSITIONALLY under a per-group schema header, and the
 -- whole payload ships as a long-bracket string. The keyed, indented table this

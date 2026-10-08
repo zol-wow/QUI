@@ -188,7 +188,7 @@ local function SkinAchievement()
     if not frame or SkinBase.IsSkinned(frame) then return end
 
     HideAchievementChrome()
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
     SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     local closeButton = frame.CloseButton or _G.AchievementFrameCloseButton
@@ -220,7 +220,7 @@ local function RefreshAchievement()
     end
     local bd = SkinBase.GetBackdrop(frame)
     if not bd then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
     SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
 end
 

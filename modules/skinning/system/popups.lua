@@ -56,7 +56,7 @@ end
 
 local function GetColors(prefix)
     local settings = GetGeneralSettings()
-    return SkinBase.GetSkinColors(settings, prefix)
+    return SkinBase.GetWindowColors(settings, prefix)
 end
 
 local function ApplyBackdrop(frame, prefix, bgBoost, bgAlpha)

@@ -95,6 +95,7 @@ core\locale\locale.lua
 # == core/core.xml ==
 core\debug_gate.lua
 core\utils.lua
+core\appearance.lua
 core\pack.lua
 core\safecall.lua
 core\announce.lua

@@ -1551,7 +1551,7 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
     castbar.previewIconTexture = iconTexture
 
     if castbar.statusBar then
-        castbar.statusBar:SetStatusBarTexture(GetTexturePath(castSettings.texture))
+        nsHelpers.ApplyBarStyle(castbar.statusBar, GetTexturePath(castSettings.texture))
         ApplyCastColor(castbar.statusBar, false, castbar.customColor, castbar.customNotInterruptibleColor)
         castbar.statusBar:SetMinMaxValues(0, castTime)
         castbar.statusBar:SetValue(0)
@@ -1920,7 +1920,7 @@ function QUI_Castbar:CreateCastbar(unitFrame, unit, unitKey)
     anchorFrame.customNotInterruptibleColor = GetNotInterruptibleColor(castSettings)
     ApplyBarColor(statusBar, barColor)
     ApplyBackgroundColor(bgBar, castSettings.bgColor)
-    statusBar:SetStatusBarTexture(GetTexturePath(castSettings.texture))
+    nsHelpers.ApplyBarStyle(statusBar, GetTexturePath(castSettings.texture))
 
     anchorFrame.unit = unit
     anchorFrame.unitKey = unitKey
@@ -2137,7 +2137,7 @@ local function UpdateCastbarVisuals(castbar, castSettings, unitKey, texture, tex
     local currentCastSettings = currentSettings and currentSettings.castbar or castSettings
 
     if castbar.statusBar then
-        castbar.statusBar:SetStatusBarTexture(GetTexturePath(currentCastSettings.texture))
+        nsHelpers.ApplyBarStyle(castbar.statusBar, GetTexturePath(currentCastSettings.texture))
     end
 
     UpdateSpellText(castbar, text, spellName, castSettings, unit)
@@ -2922,7 +2922,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     anchorFrame.customNotInterruptibleColor = GetNotInterruptibleColor(castSettings)
     ApplyBarColor(statusBar, barColor)
     ApplyBackgroundColor(bgBar, castSettings.bgColor)
-    statusBar:SetStatusBarTexture(GetTexturePath(castSettings.texture))
+    nsHelpers.ApplyBarStyle(statusBar, GetTexturePath(castSettings.texture))
 
     UpdateCastbarElements(anchorFrame, "boss", castSettings)
 
@@ -3124,7 +3124,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
             local currentSettings = GetUnitSettings(self.unitKey)
             local currentCastSettings = currentSettings and currentSettings.castbar or castSettings
             if self.statusBar then
-                self.statusBar:SetStatusBarTexture(GetTexturePath(currentCastSettings.texture))
+                nsHelpers.ApplyBarStyle(self.statusBar, GetTexturePath(currentCastSettings.texture))
                 self.statusBar:SetReverseFill(false)
             end
 
@@ -3297,7 +3297,7 @@ local function ApplyLiveCastbarSettings(castbar, unitKey, castSettings)
     end
 
     if castbar.statusBar then
-        castbar.statusBar:SetStatusBarTexture(GetTexturePath(castSettings.texture))
+        nsHelpers.ApplyBarStyle(castbar.statusBar, GetTexturePath(castSettings.texture))
         ApplyBackgroundColor(castbar.bgBar, castSettings.bgColor)
     end
 

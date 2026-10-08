@@ -582,12 +582,23 @@ local function CreateCollapsiblePage(parent, pad, topOffset)
             local cardBg = CreateFrame("Frame", nil, host)
             cardBg:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + COLLAPSIBLE_CARD_GAP))
             cardBg:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
-            local fill = cardBg:CreateTexture(nil, "BACKGROUND")
-            fill:SetAllPoints(cardBg)
-            fill:SetColorTexture(1, 1, 1, 0.02)
-            if ns.UIKit and ns.UIKit.CreateBorderLines then
-                ns.UIKit.CreateBorderLines(cardBg)
-                ns.UIKit.UpdateBorderLines(cardBg, 1, 1, 1, 1, 0.12, false)
+            local C = GUI.Colors
+            local surface = C.bgElevated or C.bgLight
+            local border = C.border
+            if UIKit and UIKit.CreateRoundedSurface then
+                UIKit.CreateRoundedSurface(cardBg, {
+                    radius = 8,
+                    bgColor = {surface[1], surface[2], surface[3], 0.8},
+                    borderColor = {border[1], border[2], border[3], 0.45},
+                })
+            else
+                local fill = cardBg:CreateTexture(nil, "BACKGROUND")
+                fill:SetAllPoints(cardBg)
+                fill:SetColorTexture(surface[1], surface[2], surface[3], 0.8)
+                if UIKit and UIKit.CreateBorderLines then
+                    UIKit.CreateBorderLines(cardBg)
+                    UIKit.UpdateBorderLines(cardBg, 1, border[1], border[2], border[3], 0.45, false)
+                end
             end
         end)
         section._sectionTitle = title
@@ -673,28 +684,27 @@ end
 
 local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
     local section, body = BuildCollapsibleChrome(parent, title, contentHeight, function(host)
-        local cardBg = host:CreateTexture(nil, "BACKGROUND")
+        local cardBg = CreateFrame("Frame", nil, host)
         cardBg:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + COLLAPSIBLE_CARD_GAP))
         cardBg:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
-        cardBg:SetColorTexture(1, 1, 1, 0.02)
-
-        local function Hairline()
-            local t = host:CreateTexture(nil, "BORDER")
-            t:SetColorTexture(1, 1, 1, 0.06)
-            return t
+        local C = GUI.Colors
+        local surface = C.bgElevated or C.bgLight
+        local border = C.border
+        if UIKit and UIKit.CreateRoundedSurface then
+            UIKit.CreateRoundedSurface(cardBg, {
+                radius = 8,
+                bgColor = {surface[1], surface[2], surface[3], 0.8},
+                borderColor = {border[1], border[2], border[3], 0.45},
+            })
+        else
+            local fill = cardBg:CreateTexture(nil, "BACKGROUND")
+            fill:SetAllPoints(cardBg)
+            fill:SetColorTexture(surface[1], surface[2], surface[3], 0.8)
+            if UIKit and UIKit.CreateBorderLines then
+                UIKit.CreateBorderLines(cardBg)
+                UIKit.UpdateBorderLines(cardBg, 1, border[1], border[2], border[3], 0.45, false)
+            end
         end
-        local cardTop = Hairline(); cardTop:SetHeight(1)
-        cardTop:SetPoint("TOPLEFT", cardBg, "TOPLEFT", 0, 0)
-        cardTop:SetPoint("TOPRIGHT", cardBg, "TOPRIGHT", 0, 0)
-        local cardBot = Hairline(); cardBot:SetHeight(1)
-        cardBot:SetPoint("BOTTOMLEFT", cardBg, "BOTTOMLEFT", 0, 0)
-        cardBot:SetPoint("BOTTOMRIGHT", cardBg, "BOTTOMRIGHT", 0, 0)
-        local cardLeft = Hairline(); cardLeft:SetWidth(1)
-        cardLeft:SetPoint("TOPLEFT", cardBg, "TOPLEFT", 0, 0)
-        cardLeft:SetPoint("BOTTOMLEFT", cardBg, "BOTTOMLEFT", 0, 0)
-        local cardRight = Hairline(); cardRight:SetWidth(1)
-        cardRight:SetPoint("TOPRIGHT", cardBg, "TOPRIGHT", 0, 0)
-        cardRight:SetPoint("BOTTOMRIGHT", cardBg, "BOTTOMRIGHT", 0, 0)
     end)
 
     local function RefreshContentHeight()
@@ -712,6 +722,7 @@ local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
         if onResize then onResize() end
     end
     section.RefreshContentHeight = RefreshContentHeight
+    body._logicalSection = section
 
     section.SetExpanded = function(self, _expanded)
         RefreshContentHeight()
@@ -811,63 +822,226 @@ local function CreateSettingsCardGroup(parent, yOffset)
     card:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, yOffset or 0)
     card._quiCardGroup = true
 
+    local surface = C.bgElevated or C.bgLight or {0.12, 0.15, 0.18}
+    local border = C.border or {1, 1, 1}
+    if UIKit and UIKit.CreateRoundedSurface then
+        UIKit.CreateRoundedSurface(card, {
+            radius = 8,
+            bgColor = {surface[1], surface[2], surface[3], 0.8},
+            borderColor = {border[1], border[2], border[3], 0.45},
+        })
+    else
+        local fill = card:CreateTexture(nil, "BACKGROUND")
+        fill:SetAllPoints(card)
+        fill:SetColorTexture(surface[1], surface[2], surface[3], 0.8)
+        if UIKit and UIKit.CreateBorderLines then
+            UIKit.CreateBorderLines(card)
+            UIKit.UpdateBorderLines(card, 1, border[1], border[2], border[3], 0.45, false)
+        end
+    end
+
     local rows = {}
-    local rowHeight = 32
-    local padX = 2
-    local cumulativeY = 0
+    local finalized, pending, layingOut = false, false, false
+
+    local function RefreshParentExtent(delta)
+        if delta == 0 then
+            if parent._quiMeasureSettingsHeight then parent:SetHeight(parent._quiMeasureSettingsHeight()) end
+            return
+        end
+        if not parent.GetChildren or not card.GetPoint then return end
+        local _, _, _, _, cardY = card:GetPoint(1)
+        if type(cardY) ~= "number" then return end
+        local siblings = {parent:GetChildren()}
+        for i = 1, (parent.GetNumRegions and parent:GetNumRegions() or 0) do
+            siblings[#siblings + 1] = select(i, parent:GetRegions())
+        end
+        for _, sibling in ipairs(siblings) do
+            if sibling ~= card and sibling.GetNumPoints then
+                for i = 1, sibling:GetNumPoints() do
+                    local point, relative, relativePoint, x, y = sibling:GetPoint(i)
+                    if relative == parent and point:find("TOP", 1, true)
+                        and relativePoint:find("TOP", 1, true) and y < cardY then
+                        sibling:SetPoint(point, relative, relativePoint, x, y - delta)
+                    end
+                end
+            end
+        end
+        parent:SetHeight(parent._quiMeasureSettingsHeight and parent._quiMeasureSettingsHeight()
+            or math.max(1, parent:GetHeight() + delta))
+        local section = parent._logicalSection
+        if section and section.SetExpanded and section:GetParent() then
+            section._contentHeight = parent:GetHeight()
+            parent._contentHeight = parent:GetHeight()
+            section:SetExpanded(true)
+        end
+    end
+
+    local function LayoutRows(notifyParent)
+        if layingOut then return end
+        layingOut = true
+        local width = card:GetWidth()
+        if not width or width <= 0 then width = 680 end
+        local paired = width >= 560
+        local tripleWidth = (width - 64) / 3
+        local plans, pendingCells = {}, {}
+        local function Compact(cell)
+            return ns.QUI_SettingsLayoutShared.FitsThreeColumns(cell._label, cell._widget, width)
+        end
+        local function FlushSettings()
+            local first = 1
+            while first <= #pendingCells do
+                local columns = 2
+                if pendingCells[first + 2] and Compact(pendingCells[first])
+                    and Compact(pendingCells[first + 1]) and Compact(pendingCells[first + 2]) then
+                    columns = 3
+                elseif not pendingCells[first + 1] and Compact(pendingCells[first])
+                    and plans[#plans] and plans[#plans].columns == 3 then
+                    columns = 3
+                end
+                plans[#plans + 1] = {cells = {pendingCells[first], pendingCells[first + 1],
+                    columns == 3 and pendingCells[first + 2] or nil}, columns = columns}
+                first = first + columns
+            end
+            pendingCells = {}
+        end
+        for _, row in ipairs(rows) do
+            local ordinary = paired
+            for _, cell in ipairs({row._leftCell, row._rightCell}) do
+                if not cell._label or not cell._widget then ordinary = false end
+            end
+            if ordinary then
+                pendingCells[#pendingCells + 1] = row._leftCell
+                if row._rightCell then pendingCells[#pendingCells + 1] = row._rightCell end
+            else
+                FlushSettings()
+                plans[#plans + 1] = {cells = {row._leftCell, row._rightCell}, columns = row._leftCell._quiFullWidth and 1 or (paired and 2 or 1)}
+            end
+        end
+        FlushSettings()
+        local cy = -6
+        card._quiColumnCount = paired and 2 or 1
+        for index, plan in ipairs(plans) do
+            local row = rows[index]
+            local cells, columns = plan.cells, plan.columns
+            local cellWidth = columns == 3 and tripleWidth
+                or (paired and columns == 2 and ((width - 44) / 2) or (width - 24))
+            local height, stackedY = 28, -2
+            row:Show()
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", card, "TOPLEFT", 2, cy)
+            row:SetPoint("TOPRIGHT", card, "TOPRIGHT", -2, cy)
+            for column, cell in ipairs(cells) do
+                if cell:GetParent() ~= row then cell:SetParent(row) end
+                local cellHeight = math.max(28, cell.Layout and cell:Layout(cellWidth) or cell:GetHeight() or 28)
+                cell:ClearAllPoints()
+                if columns == 3 then
+                    cell:SetPoint("TOPLEFT", row, "TOPLEFT", 10 + (column - 1) * (cellWidth + 20), -2)
+                    cell:SetWidth(cellWidth)
+                else
+                    local y = paired and -2 or stackedY
+                    cell:SetPoint("TOPLEFT", row, paired and column == 2 and "TOP" or "TOPLEFT", 10, y)
+                    cell:SetPoint("TOPRIGHT", row, paired and column == 1 and columns == 2 and "TOP" or "TOPRIGHT", -10, y)
+                end
+                height = math.max(height, cellHeight)
+                stackedY = stackedY - cellHeight - 4
+            end
+            row._stacked = columns == 1 and cells[2] ~= nil
+            if row._stacked then height = -stackedY - 6 end
+            row:SetHeight(height + 4)
+            if columns == 3 and not row._thirdDivider then
+                row._thirdDivider = row:CreateTexture(nil, "ARTWORK")
+                row._thirdDivider:SetWidth(1)
+                row._thirdDivider:SetColorTexture(border[1], border[2], border[3], 0.35)
+            end
+            for dividerIndex, divider in ipairs({row._centerDivider, row._thirdDivider}) do
+                divider:ClearAllPoints()
+                if columns == 3 then
+                    divider:SetPoint("TOPLEFT", row, "TOPLEFT", dividerIndex * (cellWidth + 20), -8)
+                    divider:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", dividerIndex * (cellWidth + 20), 8)
+                else
+                    divider:SetPoint("TOP", row, "TOP", 0, -8)
+                    divider:SetPoint("BOTTOM", row, "BOTTOM", 0, 8)
+                end
+                divider:SetShown(columns > dividerIndex and cells[dividerIndex] ~= nil)
+            end
+            card._quiColumnCount = math.max(card._quiColumnCount, columns)
+            cy = cy - height - 4
+        end
+        for index = #plans + 1, #rows do rows[index]:Hide() end
+        local oldHeight = card._quiMeasuredHeight or card:GetHeight()
+        local height = math.abs(cy) + 6
+        card._quiMeasuredHeight = height
+        card:SetHeight(height)
+        layingOut = false
+        if notifyParent then RefreshParentExtent(height - oldHeight) end
+        return height
+    end
+
+    local function QueueLayout()
+        if not finalized or pending or layingOut then return end
+        pending = true
+        C_Timer.After(0, function()
+            pending = false
+            if card:GetParent() and (not card.IsVisible or card:IsVisible()) then LayoutRows(true) end
+        end)
+    end
+    local layoutShared = ns.QUI_SettingsLayoutShared
+    if layoutShared and layoutShared.VerifyInitialBounds then
+        layoutShared.VerifyInitialBounds(card, parent, function(self)
+            local point, relative, relativePoint, x, y = self:GetPoint(1)
+            self:ClearAllPoints()
+            self:SetPoint(point, relative, relativePoint, x, y)
+            self:SetWidth(math.max(1, parent:GetWidth() - 2 * x))
+            self._quiRecoveredInset = x
+            LayoutRows(true)
+        end)
+    end
+    card._quiRefreshSettingsRows = QueueLayout
+    card:SetScript("OnSizeChanged", QueueLayout)
+    card:SetScript("OnShow", QueueLayout)
+    parent:HookScript("OnSizeChanged", function()
+        if card._quiRecoveredInset then
+            card:SetWidth(math.max(1, parent:GetWidth() - 2 * card._quiRecoveredInset))
+        end
+        QueueLayout()
+    end)
 
     local function AddRow(leftChild, rightChild)
         local row = CreateFrame("Frame", nil, card)
-        row:SetPoint("TOPLEFT", card, "TOPLEFT", padX, cumulativeY)
-        row:SetPoint("TOPRIGHT", card, "TOPRIGHT", -padX, cumulativeY)
-        row:SetHeight(rowHeight)
-
+        row._leftCell, row._rightCell = leftChild, rightChild
+        leftChild:SetParent(row)
+        if rightChild then rightChild:SetParent(row) end
         if (#rows % 2) == 1 then
             local rowBg = row:CreateTexture(nil, "BACKGROUND")
             rowBg:SetAllPoints(row)
-            rowBg:SetColorTexture(1, 1, 1, 0.02)
+            rowBg:SetColorTexture(1, 1, 1, 0.025)
             row._rowBg = rowBg
         end
-
-        if rightChild then
-            leftChild:SetParent(row)
-            leftChild:ClearAllPoints()
-            leftChild:SetPoint("LEFT", row, "LEFT", 12, 0)
-            leftChild:SetPoint("RIGHT", row, "CENTER", -12, 0)
-            rightChild:SetParent(row)
-            rightChild:ClearAllPoints()
-            rightChild:SetPoint("LEFT", row, "CENTER", 12, 0)
-            rightChild:SetPoint("RIGHT", row, "RIGHT", -12, 0)
-
-            local cdiv = row:CreateTexture(nil, "ARTWORK")
-            cdiv:SetPoint("TOP", row, "TOP", 0, -6)
-            cdiv:SetPoint("BOTTOM", row, "BOTTOM", 0, 6)
-            cdiv:SetWidth(1)
-            cdiv:SetColorTexture(1, 1, 1, 0.05)
-            row._centerDivider = cdiv
-        else
-            leftChild:SetParent(row)
-            leftChild:ClearAllPoints()
-            leftChild:SetPoint("LEFT", row, "LEFT", 12, 0)
-            leftChild:SetPoint("RIGHT", row, "RIGHT", -12, 0)
+        do
+            local divider = row:CreateTexture(nil, "ARTWORK")
+            divider:SetPoint("TOP", row, "TOP", 0, -8)
+            divider:SetPoint("BOTTOM", row, "BOTTOM", 0, 8)
+            divider:SetWidth(1)
+            divider:SetColorTexture(border[1], border[2], border[3], 0.35)
+            row._centerDivider = divider
         end
-
         rows[#rows + 1] = row
-        cumulativeY = cumulativeY - rowHeight
+        LayoutRows(finalized)
         return row
     end
 
     local function Finalize()
-        card:SetHeight(math.abs(cumulativeY))
+        local height = LayoutRows(finalized)
+        finalized = true
+        QueueLayout()
+        return height
     end
-
-    local function GetRowCount() return #rows end
 
     return {
         frame = card,
         AddRow = AddRow,
         Finalize = Finalize,
-        GetRowCount = GetRowCount,
+        GetRowCount = function() return #rows end,
     }
 end
 
@@ -1035,6 +1209,50 @@ local function BuildSettingRow(parent, labelText, widget, desc, opts)
         pins:AttachSettingRow(cell, widget, labelText)
     end
 
+    cell.Layout = function(self, width)
+        local controlWidth = widget and widget:GetWidth() or 0
+        local controlHeight = widget and widget:GetHeight() or 0
+        local pin = widget and widget._quiPinButton
+        local pinWidth = pin and pin:IsShown() and (pin:GetWidth() + 4) or 0
+        if widget and widget._quiPreferredControlWidth then
+            controlWidth = math.max(widget._quiMinimumControlWidth,
+                math.min(widget._quiPreferredControlWidth, width - pinWidth - 98))
+            widget:SetWidth(controlWidth)
+        end
+        local textWidth = width - controlWidth - pinWidth - (widget and 8 or 0)
+        local stacked = widget and textWidth < (widget._quiPreferredControlWidth and 80 or 110)
+        textWidth = math.max(40, stacked and width or textWidth)
+        label:ClearAllPoints()
+        label:SetWordWrap(true)
+        label:SetNonSpaceWrap(true)
+        label:SetWidth(textWidth)
+        local labelHeight = label.GetStringHeight and label:GetStringHeight() or 12
+        local descHeight = 0
+        if self._desc then
+            self._desc:ClearAllPoints()
+            self._desc:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -2)
+            self._desc:SetWidth(textWidth)
+            self._desc:SetJustifyH("LEFT")
+            self._desc:SetWordWrap(true)
+            self._desc:SetNonSpaceWrap(true)
+            descHeight = (self._desc.GetStringHeight and self._desc:GetStringHeight() or 10) + 2
+        end
+        local textHeight = labelHeight + descHeight
+        local height = stacked and textHeight + controlHeight + 8 or math.max(28, textHeight, controlHeight)
+        label:SetPoint("TOPLEFT", self, "TOPLEFT", 0, stacked and 0 or -((height - textHeight) / 2))
+        if widget then
+            widget:ClearAllPoints()
+            widget:SetPoint(stacked and "BOTTOMRIGHT" or "RIGHT", self, stacked and "BOTTOMRIGHT" or "RIGHT", 0, 0)
+        end
+        self:SetHeight(height)
+        return height
+    end
+    cell:SetScript("OnSizeChanged", function(self)
+        local row = self:GetParent()
+        local card = row and row:GetParent()
+        if card and card._quiRefreshSettingsRows then card._quiRefreshSettingsRows() end
+    end)
+
     local tooltipDesc, tooltipLabel = ResolveTooltipInfo(widget)
     if not tooltipDesc and type(desc) == "string" and desc ~= "" then
         tooltipDesc = desc
@@ -1170,6 +1388,13 @@ local function BuildFeatureTabPage(tabContent, featureId, searchContext, renderO
     }, renderOptions))
 
     tabContent:SetHeight((height or 80) + 20)
+    if host.HookScript then
+        host:HookScript("OnSizeChanged", function(self)
+            if self:GetParent() == tabContent then
+                tabContent:SetHeight(self:GetHeight() + 20)
+            end
+        end)
+    end
 end
 
 local function BuildFeatureDirectPage(tabContent, featureId, searchContext, renderOptions)
@@ -1444,6 +1669,7 @@ local function RegisterFeatureTile(frame, spec)
                     preview = subPage.preview,
                     noScroll = subPage.noScroll,
                     sectionNav = subPage.sectionNav,
+                    searchSections = subPage.searchSections,
                     buildFunc = function(body)
                         BuildFeaturePageBody(body, page, BuildFeatureTabPage)
                     end,
@@ -1498,7 +1724,7 @@ BuildFeatureStackPage = function(tabContent, featureIds, searchContext, options)
     if not Renderer or type(Renderer.RenderFeature) ~= "function" then return end
 
     local PAD = 10
-    local GAP = 20
+    local GAP = 12
     local HEADER_HEIGHT = 26
     local HEADER_TO_CARD_GAP = 6
     local C = (QUI and QUI.GUI and QUI.GUI.Colors) or {}
@@ -1512,6 +1738,27 @@ BuildFeatureStackPage = function(tabContent, featureIds, searchContext, options)
     end
 
     tabContent._sectionsAuthoritative = true
+    local featureHosts = {}
+    local building, layingOut = true, false
+    local function RelayoutFeatures()
+        if building or layingOut then return end
+        layingOut = true
+        local cy = -10
+        local previousHost
+        for _, entry in ipairs(featureHosts) do
+            if previousHost then
+                entry.header:SetPoint("TOPLEFT", previousHost, "BOTTOMLEFT", 0, -GAP)
+            else
+                entry.header:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, cy)
+            end
+            cy = cy - HEADER_HEIGHT - HEADER_TO_CARD_GAP
+            entry.host:SetPoint("TOPLEFT", entry.header, "BOTTOMLEFT", 0, -HEADER_TO_CARD_GAP)
+            cy = cy - math.max(1, entry.host:GetHeight()) - GAP
+            previousHost = entry.host
+        end
+        tabContent:SetHeight(math.max(80, math.abs(cy) + 10))
+        layingOut = false
+    end
 
     for _, item in ipairs(featureIds) do
         local featureId, explicitLabel
@@ -1572,11 +1819,18 @@ BuildFeatureStackPage = function(tabContent, featureIds, searchContext, options)
             if type(height) ~= "number" or height <= 0 then
                 height = host.GetHeight and host:GetHeight() or 80
             end
-            height = math.max(80, height)
+            height = math.max(1, height)
             host:SetHeight(height)
+            featureHosts[#featureHosts + 1] = {header = titleRow, host = host}
+            if host.HookScript then
+                host:HookScript("OnSizeChanged", function(self)
+                    if self:GetParent() == tabContent then RelayoutFeatures() end
+                end)
+            end
             yOffset = yOffset - height - GAP
         end
     end
 
-    tabContent:SetHeight(math.max(80, math.abs(yOffset) + 10))
+    building = false
+    RelayoutFeatures()
 end

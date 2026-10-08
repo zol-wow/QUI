@@ -1092,7 +1092,7 @@ function R.RenderBar(self, frame, element, matches)
         bar:SetPoint(anchor, frame, anchor, offsetX, applyOffsetY)
         bar:SetSize(width, height)
         bar:SetOrientation(orientation)
-        bar:SetStatusBarTexture(texturePath)
+        ns.Helpers.ApplyBarStyle(bar, texturePath)
         if hideBorder then
             bar:SetBackdrop(nil)
         else
@@ -1225,7 +1225,7 @@ local function GetOrCreateHealthTintOverlay(frame)
         frame._quiAuraRenderHealthTintOverlay = overlay
     end
     local texture = frame.healthBar:GetStatusBarTexture()
-    overlay:SetStatusBarTexture(texture and texture:GetTexture() or GetStatusBarTexturePath())
+    ns.Helpers.ApplyBarStyle(overlay, texture and texture:GetTexture() or GetStatusBarTexturePath())
     overlay:SetOrientation(frame._isVerticalFill and "VERTICAL" or "HORIZONTAL")
     if overlay.SetReverseFill then overlay:SetReverseFill(false) end
     overlay:SetAllPoints(frame.healthBar)

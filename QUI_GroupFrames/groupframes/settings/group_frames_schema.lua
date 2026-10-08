@@ -225,6 +225,8 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
 
     local y = 0
     local builder = {}
+    local cards = {}
+    sectionHost._quiMeasureSettingsHeight = nil
 
     function builder.Header(text)
         if type(text) ~= "string" or text == "" then
@@ -270,8 +272,9 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
     end
 
     function builder.CloseCard(card)
-        card.Finalize()
-        y = y - card.frame:GetHeight()
+        local height = card.Finalize() or card.frame:GetHeight()
+        cards[#cards + 1] = {frame = card.frame, height = height}
+        y = y - height
     end
 
     function builder.Spacer(amount)
@@ -279,7 +282,15 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
     end
 
     function builder.Height(extra)
-        return math.abs(y) + (extra or SECTION_BOTTOM_PAD)
+        local height = math.abs(y) + (extra or SECTION_BOTTOM_PAD)
+        sectionHost._quiMeasureSettingsHeight = function()
+            local settledHeight = height
+            for _, card in ipairs(cards) do
+                settledHeight = settledHeight + (card.frame._quiMeasuredHeight or card.frame:GetHeight()) - card.height
+            end
+            return settledHeight
+        end
+        return height
     end
 
     return builder
@@ -420,11 +431,16 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
         return nil
     end
 
-    SetSearchContext(CreateSearchContext("general", groupFrames.contextMode))
+    local optionsAPI = GetOptionsAPI()
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("general", groupFrames.contextMode))
+    if not optionsAPI or not builder then
+        return nil
+    end
+    local card = builder.Card()
 
     local enableCheck = gui:CreateFormCheckbox(
-        sectionHost,
-        ns.L["Enable QUI Group Frames (Req. Reload)"],
+        card.frame,
+        nil,
         "enabled",
         groupFrames.gfdb,
         function(enabled)
@@ -447,12 +463,10 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
         end,
         { description = ns.L["Replace Blizzard's party and raid frames with QUI group frames. Requires a UI reload to take effect."] }
     )
-    enableCheck:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, -4)
-    enableCheck:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, -4)
 
     local externalSkinCheck = gui:CreateFormCheckbox(
-        sectionHost,
-        "External Skinning",
+        card.frame,
+        nil,
         "externalSkinning",
         groupFrames.gfdb,
         function()
@@ -460,8 +474,6 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
         end,
         { description = "When an external button-skinning addon is installed, let it skin group-frame aura icons instead of QUI's own border." }
     )
-    externalSkinCheck:SetPoint("TOPLEFT", enableCheck, "BOTTOMLEFT", 0, -8)
-    externalSkinCheck:SetPoint("TOPRIGHT", enableCheck, "BOTTOMRIGHT", 0, -8)
 
     local skinOptions = {}
     if ns.IconSkin and ns.IconSkin.GetSkinList then
@@ -472,8 +484,8 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
     if #skinOptions == 0 then skinOptions = { { value = "Default", text = "Default" } } end
 
     local iconSkinDropdown = gui:CreateFormDropdown(
-        sectionHost,
-        "Button Skin",
+        card.frame,
+        nil,
         skinOptions,
         "iconSkin",
         groupFrames.gfdb,
@@ -482,10 +494,13 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
         end,
         { description = "In-house skin preset (gloss + backdrop) for group-frame aura icons. Default keeps QUI's original look." }
     )
-    iconSkinDropdown:SetPoint("TOPLEFT", externalSkinCheck, "BOTTOMLEFT", 0, -12)
-    iconSkinDropdown:SetPoint("TOPRIGHT", externalSkinCheck, "BOTTOMRIGHT", 0, -12)
-
-    return 142
+    card.AddRow(
+        optionsAPI.BuildSettingRow(card.frame, ns.L["Enable QUI Group Frames (Req. Reload)"], enableCheck),
+        optionsAPI.BuildSettingRow(card.frame, "External Skinning", externalSkinCheck)
+    )
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, "Button Skin", iconSkinDropdown))
+    builder.CloseCard(card)
+    return builder.Height()
 end
 
 local function RenderGeneralCopySettingsSection(sectionHost, ctx)
@@ -2944,7 +2959,7 @@ local function CreateSingleSectionTabFeature(id, sectionId, minHeight, render)
                 padding = 10,
                 sectionGap = 14,
                 topPadding = 10,
-                bottomPadding = 40,
+                bottomPadding = 0,
             },
         },
         sections = {
@@ -2978,7 +2993,7 @@ local function CreateMultiSectionTabFeature(id, sectionDefs)
                 padding = 10,
                 sectionGap = 14,
                 topPadding = 10,
-                bottomPadding = 40,
+                bottomPadding = 0,
             },
         },
         sections = sections,

@@ -52,8 +52,7 @@ end
 
 local function GetEffectiveColors()
     local settings = GetSettings()
-    local sr, sg, sb, sa = Helpers.GetSkinBorderColor(settings, "")
-    local bgr, bgg, bgb, bga = Helpers.GetSkinBgColor()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = Helpers.GetWindowColors(settings, "")
 
     if settings then
         if settings.bgColor then

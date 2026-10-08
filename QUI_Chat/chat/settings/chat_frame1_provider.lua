@@ -194,6 +194,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             container:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, L.getY())
             container:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
             container:SetHeight(defaultHeight or 1)
+            container:SetWidth(math.max(1, content:GetWidth() - PAD * 2))
             local measuredHeight = buildFunc(container) or defaultHeight or 1
             L.placeCustom(container, math.max(8, measuredHeight))
             return container

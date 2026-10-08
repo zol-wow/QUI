@@ -116,6 +116,7 @@ function ProfileCopyOptions.CreateCard(parent, opts)
         end
     end
 
+    local sourceCell
     local function RefreshSources()
         local core = GetCore()
         local dbRef = core and core.db
@@ -131,6 +132,7 @@ function ProfileCopyOptions.CreateCard(parent, opts)
             end
         end
         sourceDropdown.SetOptions(options)
+        sourceCell:SetEnabled(#options > 0)
         local selected = (selectedAvailable and sourceState.selected)
             or (options[1] and options[1].value) or ""
         sourceState.selected = selected
@@ -138,7 +140,7 @@ function ProfileCopyOptions.CreateCard(parent, opts)
         RefreshPinState()
     end
 
-    local sourceCell = Shared.BuildSettingRow(card.frame, ns.L["Source Profile"], sourceDropdown)
+    sourceCell = Shared.BuildSettingRow(card.frame, ns.L["Source Profile"], sourceDropdown)
     if not supportsPin then card.AddRow(sourceCell) end
 
     local categoryDropdown
@@ -558,8 +560,12 @@ local function BuildSpecProfilesContent(content)
         commitOnEnter = false, commitOnFocusLost = false,
         onEscapePressed = function(self) self:ClearFocus() end,
     }, { description = ns.L["Name for a new profile. Click Create to add it and switch to it immediately."] })
-    local createCell = Shared.BuildSettingRow(manageCard.frame, ns.L["New Profile"], newProfileInput)
-    local createBtn = GUI:CreateButton(createCell, ns.L["Create"], 70, 22, function()
+    local createControls = CreateFrame("Frame", nil, manageCard.frame)
+    createControls:SetSize(260, 22)
+    newProfileInput:SetParent(createControls)
+    createControls.editBox = newProfileInput.editBox
+    local createCell = Shared.BuildSettingRow(manageCard.frame, ns.L["New Profile"], createControls)
+    local createBtn = GUI:CreateButton(createControls, ns.L["Create"], 70, 22, function()
         local core = GetCore(); local dbRef = core and core.db
         local newName = newProfileInput.editBox and newProfileInput.editBox:GetText()
         if newName and newName ~= "" and dbRef then
@@ -572,9 +578,9 @@ local function BuildSpecProfilesContent(content)
             RefreshProfileDropdowns()
         end
     end)
-    createBtn:SetPoint("RIGHT", createCell, "RIGHT", 0, 0)
+    createBtn:SetPoint("RIGHT", createControls, "RIGHT", 0, 0)
     newProfileInput:ClearAllPoints()
-    newProfileInput:SetPoint("LEFT", createCell, "LEFT", 84, 0)
+    newProfileInput:SetPoint("LEFT", createControls, "LEFT", 0, 0)
     newProfileInput:SetPoint("RIGHT", createBtn, "LEFT", -8, 0)
 
     manageCard.AddRow(

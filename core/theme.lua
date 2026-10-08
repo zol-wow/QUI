@@ -11,6 +11,9 @@ GUI.Colors = GUI.Colors or {
     bgContent = {1, 1, 1, 0.02},
     bgSidebar = {0, 0, 0, 0.25},
     bgFooter = {0, 0, 0, 0.15},
+    bgElevated = {0.125, 0.153, 0.18, 1},
+    optionsWindow = {0.082, 0.105, 0.129, 0.98},
+    optionsSidebar = {0.063, 0.086, 0.11, 1},
 
     accent = {0.204, 0.827, 0.6, 1},
     accentLight = {0.431, 0.906, 0.718, 1},
@@ -140,6 +143,7 @@ function GUI:NotifyAccentChanged()
 end
 
 GUI.ThemePresets = GUI.ThemePresets or {
+    { name = "Satin Gold",   color = {0.8353, 0.7412, 0.5529} },
     { name = "Sky Blue",     color = {0.376, 0.647, 0.980} },
     { name = "Classic Mint", color = {0.204, 0.827, 0.600} },
     { name = "Horde",        color = {0.780, 0.192, 0.192} },
@@ -181,9 +185,34 @@ function GUI:ResolveThemePreset(presetName)
     return 0.376, 0.647, 0.980
 end
 
+local legacySurfaces = {}
+for _, name in ipairs({ "bg", "bgLight", "bgDark", "border", "borderStrong", "text", "textBright", "textMuted", "textDim", "sectionLabel" }) do
+    local color = GUI.Colors[name]
+    legacySurfaces[name] = { color[1], color[2], color[3], color[4] }
+end
+
+local satinSurfaces = {
+    bg = {0.0745, 0.1059, 0.1176, 0.97},
+    bgLight = {0.102, 0.145, 0.157, 1},
+    bgDark = {0.043, 0.063, 0.071, 1},
+    border = {0.2824, 0.3294, 0.3098, 1},
+    borderStrong = {0.38, 0.44, 0.42, 1},
+    text = {0.925, 0.933, 0.894, 1},
+    textBright = {0.925, 0.933, 0.894, 1},
+    textMuted = {0.66, 0.72, 0.68, 1},
+    textDim = {0.66, 0.72, 0.68, 1},
+    sectionLabel = {0.66, 0.72, 0.68, 1},
+}
+
 function GUI:ApplyAccentColor(r, g, b)
     local function lerp(a, b2, t) return a + (b2 - a) * t end
     local C = self.Colors
+    local surfaces = ns.Helpers and ns.Helpers.IsSatinStyle and ns.Helpers.IsSatinStyle()
+        and satinSurfaces or legacySurfaces
+    for name, color in pairs(surfaces) do
+        local target = C[name]
+        target[1], target[2], target[3], target[4] = color[1], color[2], color[3], color[4]
+    end
     C.accent[1], C.accent[2], C.accent[3], C.accent[4] = r, g, b, 1
     C.accentFaint[1], C.accentFaint[2], C.accentFaint[3] = r, g, b
     C.accentGlow[1], C.accentGlow[2], C.accentGlow[3] = r, g, b

@@ -28,7 +28,7 @@ local function GetGameMenuFontSize()
 end
 
 local function GetGameMenuColors()
-    return SkinBase.GetSkinColors(GetGeneralSettings(), "gameMenu")
+    return SkinBase.GetWindowColors(GetGeneralSettings(), "gameMenu")
 end
 
 local function StripChromeOnce()

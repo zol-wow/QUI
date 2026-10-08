@@ -354,6 +354,11 @@ local function ApplyDualColumnLayout(section)
     for _, item in ipairs(layoutItems) do
         if item._quiCardGroup then return end
     end
+    for _, item in ipairs(layoutItems) do
+        if item._quiLayoutFormSlider then
+            item:_quiLayoutFormSlider(math.max(1, body:GetWidth() / 2 - 24))
+        end
+    end
 
     table.sort(layoutItems, function(a, b)
         local ay = a._quiDualColumnOriginalY
@@ -378,6 +383,7 @@ local function ApplyDualColumnLayout(section)
     for _, rf in ipairs(body._dualRowFrames) do
         rf:Hide()
         rf._divider:Hide()
+        if rf._thirdDivider then rf._thirdDivider:Hide() end
         rf._bg:Hide()
     end
 
@@ -400,6 +406,7 @@ local function ApplyDualColumnLayout(section)
 
     local ly = -4
     local rowIdx = 0
+    local lastColumns = 2
     local i = 1
     while i <= #layoutItems do
         local left = layoutItems[i]
@@ -443,7 +450,37 @@ local function ApplyDualColumnLayout(section)
 
             left:ClearAllPoints()
             left:SetPoint("LEFT", rf, "LEFT", 12, 0)
-            if right then
+            local third = layoutItems[i + 2]
+            local width = body.GetWidth and body:GetWidth() or 0
+            local function IsCompact(item)
+                return item and not item._quiDualColumnFullWidth and item.label
+                    and item.track and item.track.GetWidth and item.track:GetWidth() <= 32
+                    and not item.slider
+                    and ns.QUI_SettingsLayoutShared.FitsThreeColumns(item.label, item.track, width)
+            end
+            if IsCompact(left) and IsCompact(right) and IsCompact(third) then
+                local cellWidth = (width + 4) / 3
+                rowHeight = math.max(rowHeight, GetDualColumnRowHeight(third))
+                rf:SetHeight(rowHeight)
+                if not rf._thirdDivider then
+                    rf._thirdDivider = rf:CreateTexture(nil, "ARTWORK")
+                    rf._thirdDivider:SetWidth(1)
+                    rf._thirdDivider:SetColorTexture(1, 1, 1, 0.05)
+                end
+                for column, item in ipairs({left, right, third}) do
+                    item:ClearAllPoints()
+                    item:SetPoint("LEFT", rf, "LEFT", (column - 1) * cellWidth + 12, 0)
+                    item:SetPoint("RIGHT", rf, "LEFT", column * cellWidth - 12, 0)
+                end
+                for index, divider in ipairs({rf._divider, rf._thirdDivider}) do
+                    divider:ClearAllPoints()
+                    divider:SetPoint("TOPLEFT", rf, "TOPLEFT", index * cellWidth, -6)
+                    divider:SetPoint("BOTTOMLEFT", rf, "BOTTOMLEFT", index * cellWidth, 6)
+                    divider:Show()
+                end
+                lastColumns = 3
+                i = i + 3
+            elseif right then
                 left:SetPoint("RIGHT", rf, "CENTER", -12, 0)
                 right:ClearAllPoints()
                 right:SetPoint("LEFT", rf, "CENTER", 12, 0)
@@ -452,9 +489,19 @@ local function ApplyDualColumnLayout(section)
                 rf._divider:SetPoint("TOP", rf, "TOP", 0, -6)
                 rf._divider:SetPoint("BOTTOM", rf, "BOTTOM", 0, 6)
                 rf._divider:Show()
+                lastColumns = 2
                 i = i + 2
             else
-                left:SetPoint("RIGHT", rf, "RIGHT", -12, 0)
+                local third = lastColumns == 3 and IsCompact(left)
+                if third then
+                    left:SetPoint("RIGHT", rf, "LEFT", (width + 4) / 3 - 12, 0)
+                else
+                    left:SetPoint("RIGHT", rf, "CENTER", -12, 0)
+                end
+                rf._divider:ClearAllPoints()
+                rf._divider:SetPoint("TOPLEFT", rf, "TOPLEFT", third and (width + 4) / 3 or width / 2, -6)
+                rf._divider:SetPoint("BOTTOMLEFT", rf, "BOTTOMLEFT", third and (width + 4) / 3 or width / 2, 6)
+                rf._divider:Show()
                 i = i + 1
             end
 
@@ -477,6 +524,20 @@ local function ApplyDualColumnLayoutWhenReady(section)
     if not section then return end
 
     ApplyDualColumnLayout(section)
+    local body = section._body
+    if body and body.HookScript and not body._quiColumnResizeHook then
+        body._quiColumnResizeHook = true
+        body._quiColumnLayoutWidth = body:GetWidth()
+        body:HookScript("OnSizeChanged", function(_, width)
+            if width == body._quiColumnLayoutWidth then return end
+            body._quiColumnLayoutWidth = width
+            C_Timer.After(0, function()
+                if body:GetParent() and (not body.IsVisible or body:IsVisible()) then
+                    ApplyDualColumnLayout(section)
+                end
+            end)
+        end)
+    end
 
     C_Timer.After(0, function()
         if not section or not section._body or not section.GetParent then return end
@@ -665,6 +726,9 @@ SettingsBuilders.PROVIDER_LABELS = {
     rotationAssistIcon = "Rotation Assist",
     focusCastAlert     = "Focus Cast Alert",
     petWarning         = "Pet Warning",
+    noTargetWarning    = "No Target Warning",
+    quiPanel           = "Options Window",
+    reloadBehavior     = "Reload Behavior",
     readyCheck         = "Ready Check",
     mplusTimer         = "Mythic+ Timer",
     mplusProgress      = "Mythic+ Mob Progress",

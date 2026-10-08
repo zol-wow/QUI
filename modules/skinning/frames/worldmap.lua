@@ -34,7 +34,7 @@ end
 
 local function ApplyBorderBackdrop(backdrop)
     if not backdrop then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
     SkinBase.SetBackdropColors(backdrop, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
 end
 

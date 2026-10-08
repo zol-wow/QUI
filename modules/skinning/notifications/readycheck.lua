@@ -251,7 +251,7 @@ local function SkinReadyCheckFrame()
     local listenerFrame = _G.ReadyCheckListenerFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "readyCheck")
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "readyCheck")
 
     HideBlizzardDecorations()
 
@@ -308,7 +308,7 @@ local function RefreshReadyCheckColors()
     if not frame or not SkinBase.IsSkinned(frame) then return end
 
     local settings = GetSettings()
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "readyCheck")
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "readyCheck")
 
     ApplyTextureBackdrop(SkinBase.GetFrameData(frame, TEXTURE_BACKDROP_KEY), sr, sg, sb, sa, bgr, bgg, bgb, bga)
 

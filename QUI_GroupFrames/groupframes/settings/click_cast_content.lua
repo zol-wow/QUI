@@ -1941,7 +1941,7 @@ if Registry and Schema
         id = "clickCastPage",
         moverKey = "clickCast",
         category = "global",
-        nav = { tileId = "global", subPageIndex = 5 },
+        nav = { tileId = "global", subPageIndex = 6 },
         sections = {
             Schema.Section({
                 id = "settings",

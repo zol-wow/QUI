@@ -517,7 +517,8 @@ end
 
 local function RenderTabStrip(tabs)
     for _, btn in ipairs(tabButtons) do btn:Hide() end
-    local sr, sg, sb = Helpers.GetSkinColors()
+    local sr, sg, sb, sa = Helpers.GetWindowColors()
+    local ar, ag, ab = Helpers.GetSkinColors()
     local x = 0
     for i, entry in ipairs(tabs) do
         local btn = tabButtons[i]
@@ -541,7 +542,7 @@ local function RenderTabStrip(tabs)
         btn:SetPoint("TOPLEFT", win._tabStrip, "TOPLEFT", x, 0)
         local selected = (entry.all and selectedTab == "all")
             or (not entry.purchase and not entry.all and entry.tab == selectedTab)
-        UIKit.UpdateBorderLines(btn, 1, sr, sg, sb, selected and 1 or 0.35)
+        UIKit.UpdateBorderLines(btn, 1, selected and ar or sr, selected and ag or sg, selected and ab or sb, selected and 1 or (0.35 * sa))
         btn:Show()
         x = x + w + TAB_GAP
     end

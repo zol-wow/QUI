@@ -28,6 +28,13 @@ function V2.Register(frame)
             subTabIndex = 0,
             subTabName = ns.L["Group Frames"],
         },
+        preview = {
+            height = 285,
+            build = function(parent)
+                local surface = ns.QUI_GroupFramesSettingsSurface
+                if surface and surface.BuildInlinePreview then surface.BuildInlinePreview(parent) end
+            end,
+        },
         renderOptions = { surface = "full" },
         relatedSettings = {
             { label = ns.L["Unit Frames"], tileId = "unit_frames" },

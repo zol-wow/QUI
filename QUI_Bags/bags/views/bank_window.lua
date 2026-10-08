@@ -599,7 +599,8 @@ end
 local function RenderTabStrip(tabs)
     for _, btn in ipairs(tabButtons) do btn:Hide() end
     if purchaseTabButton then purchaseTabButton:Hide() end
-    local sr, sg, sb = Helpers.GetSkinColors()
+    local sr, sg, sb, sa = Helpers.GetWindowColors()
+    local ar, ag, ab = Helpers.GetSkinColors()
     local selectedBagID = GetSelectedBagID()
     local x = 0
     for i, entry in ipairs(tabs) do
@@ -630,7 +631,7 @@ local function RenderTabStrip(tabs)
         btn:SetPoint("TOPLEFT", win._tabStrip, "TOPLEFT", x, 0)
         local selected = (entry.all and selectedBagID == "all")
             or (not entry.purchase and not entry.all and entry.bagID == selectedBagID)
-        UIKit.UpdateBorderLines(btn, 1, sr, sg, sb, selected and 1 or 0.35)
+        UIKit.UpdateBorderLines(btn, 1, selected and ar or sr, selected and ag or sg, selected and ab or sb, selected and 1 or (0.35 * sa))
         btn:Show()
         x = x + w + TAB_GAP
     end
@@ -638,12 +639,13 @@ local function RenderTabStrip(tabs)
 end
 
 local function RenderBankTypeSegment()
-    local sr, sg, sb = Helpers.GetSkinColors()
+    local sr, sg, sb, sa = Helpers.GetWindowColors()
+    local ar, ag, ab = Helpers.GetSkinColors()
     local totalW = 0
     local buttons = { win._charBankBtn, win._warbandBankBtn }
     for _, btn in ipairs(buttons) do
         local selected = btn._bankType == activeBankType
-        UIKit.UpdateBorderLines(btn, 1, sr, sg, sb, selected and 1 or 0.35)
+        UIKit.UpdateBorderLines(btn, 1, selected and ar or sr, selected and ag or sg, selected and ab or sb, selected and 1 or (0.35 * sa))
         btn:Show()
         totalW = totalW + btn:GetWidth()
     end
@@ -739,11 +741,11 @@ local function RenderFooter()
     end
     win._bankMoney:Show()
 
-    local sr, sg, sb = Helpers.GetSkinColors()
+    local sr, sg, sb, sa = Helpers.GetWindowColors()
     local shown = {}
     local function gate(btn, show)
         if show then
-            UIKit.UpdateBorderLines(btn, 1, sr, sg, sb, 0.35)
+            UIKit.UpdateBorderLines(btn, 1, sr, sg, sb, 0.35 * sa)
             btn:Show()
             shown[#shown + 1] = btn
         else
@@ -855,8 +857,8 @@ function BankWindow.Refresh()
     local stripW = RenderTabStrip(tabs)
 
     if liveMode then
-        local sr, sg, sb = Helpers.GetSkinColors()
-        UIKit.UpdateBorderLines(win._sortBtn, 1, sr, sg, sb, 0.35)
+        local sr, sg, sb, sa = Helpers.GetWindowColors()
+        UIKit.UpdateBorderLines(win._sortBtn, 1, sr, sg, sb, 0.35 * sa)
         win._sortBtn:Show()
     else
         win._sortBtn:Hide()

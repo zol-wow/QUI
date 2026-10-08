@@ -36,6 +36,13 @@ function ns.QUI_AurasTile.Register(frame)
                 id = "aurasGroup",
                 name = ns.L["Group Frames"],
                 featureId = "aurasGroupPage",
+                preview = {
+                    height = 285,
+                    build = function(parent)
+                        local surface = ns.QUI_GroupFramesSettingsSurface
+                        if surface and surface.BuildInlinePreview then surface.BuildInlinePreview(parent) end
+                    end,
+                },
                 navRoutes = { { tabIndex = 21, subTabIndex = 2 } },
                 searchContext = {
                     tabIndex = 21,
@@ -86,6 +93,16 @@ function ns.QUI_AurasTile.Register(frame)
                 id = "aurasNameplate",
                 name = ns.L["Nameplates"],
                 featureId = "aurasNameplatePage",
+                preview = {
+                    height = 360,
+                    build = function(previewHost)
+                        local surface = ns.QUI_NameplatesSettingsSurface
+                        local preview = surface and surface.preview
+                        if preview and type(preview.build) == "function" then
+                            preview.build(previewHost, { showDropdown = false })
+                        end
+                    end,
+                },
                 navRoutes = { { tabIndex = 21, subTabIndex = 5 } },
                 searchContext = {
                     tabIndex = 21,
