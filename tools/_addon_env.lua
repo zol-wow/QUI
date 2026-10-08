@@ -244,6 +244,7 @@ local function LoadCore()
     -- SafeCall available before anything in this list could invoke it.
     LoadAddonFile("core/safecall.lua",       "QUI", SHARED_NS)
     LoadAddonFile("core/utils.lua",          "QUI", SHARED_NS)
+    LoadAddonFile("core/appearance.lua",     "QUI", SHARED_NS)
     LoadAddonFile("core/ns_export_guard.lua", "QUI", SHARED_NS)
     LoadAddonFile("core/aura_elements.lua",  "QUI", SHARED_NS)
     LoadAddonFile("core/aura_context.lua",   "QUI", SHARED_NS)

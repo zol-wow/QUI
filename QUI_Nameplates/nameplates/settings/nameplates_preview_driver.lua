@@ -14,6 +14,7 @@ local CAST_PROGRESS = 0.62
 local PREVIEW_BASE_OFFSET_X = 0
 local PREVIEW_BASE_OFFSET_Y = 0
 local PREVIEW_MEASURE_ATTEMPTS = 4
+local previewZoom = 1
 
 local PREVIEW_DEFAULT_STATE = {
     reaction = "hostile",
@@ -104,6 +105,7 @@ local function StampPreviewType(plate, settings)
     local mode = (np and np.ResolveRenderMode and np.ResolveRenderMode(typeSettings)) or "bars"
     if key == "friendly" and FriendlyIsOff(settings) then mode = "off" end
     plate.npRenderMode = mode
+    plate.npIsTarget = PreviewState().isTarget == true
     plate.npReaction = ReactionNameFor(fake.reaction)
     plate.npIsPlayer = fake.isPlayer == true
     plate.npClassToken = plate.npIsPlayer and PlayerClassToken() or nil
@@ -527,6 +529,7 @@ local function BuildPreviewPlate(host)
 
     local plate = CreateFrame("Frame", nil, host)
     plate:SetSize(1, 1)
+    if plate.SetIgnoreParentScale then plate:SetIgnoreParentScale(true) end
     plate:SetPoint("TOPLEFT", host, "TOPLEFT", PREVIEW_BASE_OFFSET_X, PREVIEW_BASE_OFFSET_Y)
 
     local core = ns.Addon
@@ -568,6 +571,8 @@ local function Refresh()
 
     local core = PushLivePixelReference()
 
+    if np.Driver and np.Driver.PinPlateScale then np.Driver.PinPlateScale(plate) end
+    if previewZoom ~= 1 then plate:SetScale(plate:GetScale() * previewZoom) end
     np.Health.ApplyAppearance(plate, typeSettings)
     np.Castbar.ApplyAppearance(plate, typeSettings)
     if np.Extras and np.Extras.ApplyAppearance then
@@ -588,6 +593,14 @@ local function Refresh()
     RequestMeasure()
 end
 
+function PreviewDriver.SetZoom(value)
+    if value ~= 1 and value ~= 2 and value ~= 3 then return false end
+    if previewZoom == value then return false end
+    previewZoom = value
+    Refresh()
+    return true
+end
+
 function PreviewDriver.SetSelectedType(key)
     if type(key) ~= "string" or not FAKE_STATE[key] then return false end
     if selectedType == key then return false end
@@ -605,6 +618,11 @@ function ns.QUI_BuildNameplatePreview(host)
         if not bound then
             local plate = BuildPreviewPlate(host)
             if plate then
+                if ns.UIKit and ns.UIKit.RegisterScaleRefresh then
+                    ns.UIKit.RegisterScaleRefresh(plate, "nameplatePreview", function(owner)
+                        if owner == state.plate and owner:IsVisible() then Refresh() end
+                    end)
+                end
                 bound = {
                     plate = plate,
                     offsetX = PREVIEW_BASE_OFFSET_X,

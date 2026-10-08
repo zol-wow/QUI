@@ -1050,6 +1050,11 @@ end
 Driver._RenderFrameAuras = RenderFrameAuras
 
 local function GetMockDimensions(vdb, contextMode, count)
+    local options = state.host and state.host._quiGroupPreviewOptions
+    if options and contextMode == "raid" and options.tier then
+        local Chrome = GetChrome()
+        if Chrome and Chrome.FrameDimensions then return Chrome.FrameDimensions(vdb, options.tier) end
+    end
     local Chrome = GetChrome()
     if not Chrome or not Chrome.FrameDimensions then return 200, 40 end
     return Chrome.FrameDimensions(vdb, Chrome.DimensionMode(count, contextMode))
@@ -1178,7 +1183,8 @@ function Driver._RenderSpotlight(root, vdb, gfdb, now, gridRight)
     state.spotlightFrames = {}
 
     local sp = vdb.spotlight
-    if not sp or sp.enabled ~= true then
+    if (state.host and state.host._quiGroupPreviewOptions and state.host._quiGroupPreviewOptions.single)
+        or not sp or sp.enabled ~= true then
         local Render = ns.QUI_GroupFrameAuraRender
         for _, f in ipairs(state.spotlightPool) do
             if Render and Render.ReleaseAll then Render:ReleaseAll(f) end
@@ -1333,7 +1339,8 @@ function Driver.Refresh(contextMode)
     local count = 5
     if state.contextMode == "raid" then
         local tm = (gfdb and gfdb.testMode) or {}
-        count = Driver._SnapRaidCount(tm.raidCount)
+        local options = state.host and state.host._quiGroupPreviewOptions
+        count = Driver._SnapRaidCount(options and options.raidCount or tm.raidCount)
     end
 
     local root = Driver._EnsureRoot()
@@ -1344,8 +1351,20 @@ function Driver.Refresh(contextMode)
     local layout = vdb.layout or {}
     local roster = Driver._PrepareRoster(state.contextMode, count, layout, gfdb)
     count = #roster
+    local dimensionCount = count
+    local options = state.host and state.host._quiGroupPreviewOptions
+    if options and options.single then
+        roster = { Driver._BuildRoster(state.contextMode, 3)[3] }
+        count = 1
+    end
     AssignSampleFlags(roster, count, vdb, layout)
-    local w, h = GetMockDimensions(vdb, state.contextMode, count)
+    if options and options.single then
+        roster[1]._sampleThreat = options.scenario == 2
+        roster[1]._sampleDispel = options.scenario == 3 and "Magic" or nil
+        roster[1]._sampleOOR = options.scenario == 4
+        roster[1]._sampleTargetedSpells = options.scenario == 5 and 2 or nil
+    end
+    local w, h = GetMockDimensions(vdb, state.contextMode, dimensionCount)
     local positions = Driver._ComputeGridPositions(state.contextMode, count, layout, w, h)
 
     local pad = 4

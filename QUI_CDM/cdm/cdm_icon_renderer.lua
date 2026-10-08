@@ -2020,6 +2020,7 @@ local function ConfigureIcon(icon, rowConfig)
             if icon.Border then icon.Border:Hide() end
             icon._quiBackdrop:Hide()
             icon._quiGloss:Hide()
+            Helpers.ApplyIconStyle(icon, icon.Icon, "External")
         else
             if icon._quiBridged and Bridge then
                 Bridge.RemoveButton("cdm", icon)
@@ -2039,6 +2040,7 @@ local function ConfigureIcon(icon, rowConfig)
                 icon._quiBackdrop:Hide()
                 icon._quiGloss:Hide()
             end
+            Helpers.ApplyIconStyle(icon, icon.Icon, skinName)
         end
     end
 

@@ -536,7 +536,7 @@ function GUI:ResolveThemePreset(presetName)
 end
 
 GUI.PANEL_WIDTH = 1000
-GUI.SIDEBAR_WIDTH = 190
+GUI.SIDEBAR_WIDTH = 211
 GUI.CONTENT_WIDTH = 800
 
 GUI.PANEL_MIN_WIDTH = 750
@@ -1492,7 +1492,8 @@ function GUI:NavigateTo(tabIndex, subTabIndex, sectionName)
     if not frame then return end
     if not tabIndex then return end
 
-    local route = GUI.ResolveV2Navigation and GUI:ResolveV2Navigation(tabIndex, subTabIndex)
+    local route = self:ResolveV2SectionNavigation(tabIndex, sectionName)
+        or (GUI.ResolveV2Navigation and GUI:ResolveV2Navigation(tabIndex, subTabIndex))
     if not route then route = { tileId = "welcome", subPageIndex = nil } end
     local _, idx = GUI:FindV2TileByID(frame, route.tileId)
     if not idx then idx = 1 end
@@ -1586,6 +1587,8 @@ local FONT_PATH = LSM:Fetch("font", "Quazii") or [[Interface\AddOns\QUI\assets\Q
 GUI.FONT_PATH = FONT_PATH
 
 local function GetFontPath()
+    FONT_PATH = (GameFontNormal and select(1, GameFontNormal:GetFont())) or FONT_PATH
+    GUI.FONT_PATH = FONT_PATH
     return FONT_PATH
 end
 
@@ -1660,14 +1663,24 @@ function GUI:CreateLabel(parent, text, size, color, anchor, x, y)
 end
 
 function GUI:CreateButton(parent, text, width, height, onClick, variant, tooltip)
-    return ns.UIKit.CreateButton(parent, {
+    local button = ns.UIKit.CreateButton(parent, {
         text = text,
         width = width,
         height = height,
         onClick = onClick,
         variant = variant,
         tooltip = tooltip,
+        font = self:GetFontPath(),
+        radius = 5,
     })
+    local layoutShared = ns.QUI_SettingsLayoutShared
+    if parent and layoutShared and layoutShared.VerifyInitialBounds and button.text then
+        layoutShared.VerifyInitialBounds(button, parent, function(self)
+            self.text:ClearAllPoints()
+            self.text:SetPoint("CENTER", self, "CENTER", 0, 0)
+        end, button.text)
+    end
+    return button
 end
 
 local function ApplyFallbackPixelBorder(field, r, g, b, a, gray)
@@ -2069,6 +2082,7 @@ local DROPDOWN_SCROLL_STEP = 40
 
 local function PositionDropdownMenu(menuFrame, dropdown, menuHeight)
     menuFrame:ClearAllPoints()
+    local rightOffset = math.max(0, (menuFrame._quiMinWidth or 0) - dropdown:GetWidth())
     local uiScale = UIParent:GetEffectiveScale()
     local _, cursorY = GetCursorPosition()
     cursorY = cursorY / uiScale
@@ -2082,10 +2096,10 @@ local function PositionDropdownMenu(menuFrame, dropdown, menuHeight)
     end
     if cursorY - menuHeight < panelBottom + 10 then
         menuFrame:SetPoint("BOTTOMLEFT", dropdown, "TOPLEFT", 0, 2)
-        menuFrame:SetPoint("BOTTOMRIGHT", dropdown, "TOPRIGHT", 0, 2)
+        menuFrame:SetPoint("BOTTOMRIGHT", dropdown, "TOPRIGHT", rightOffset, 2)
     else
         menuFrame:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -2)
-        menuFrame:SetPoint("TOPRIGHT", dropdown, "BOTTOMRIGHT", 0, -2)
+        menuFrame:SetPoint("TOPRIGHT", dropdown, "BOTTOMRIGHT", rightOffset, -2)
     end
 end
 
@@ -2129,8 +2143,8 @@ end
 
 local function CreateDropdownScrollBody(menuFrame)
     local scrollFrame = CreateFrame("ScrollFrame", nil, menuFrame)
-    scrollFrame:SetPoint("TOPLEFT", 0, 0)
-    scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
+    scrollFrame:SetPoint("TOPLEFT", 6, -6)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -6, 6)
 
     local scrollContent = CreateFrame("Frame", nil, scrollFrame)
     scrollContent:SetWidth(200)
@@ -2176,7 +2190,11 @@ local function GetSharedDropdownMenu()
         and Kit.CreateBorderLines
         and Kit.UpdateBorderLines
     local menu = CreateFrame("Frame", nil, UIParent, useUIKitBorders and nil or "BackdropTemplate")
-    if useUIKitBorders then
+    if Kit and Kit.CreateRoundedSurface then
+        menu.bg = Kit.CreateRoundedSurface(menu, {
+            radius = 6, bgColor = C.bg, borderColor = { 1, 1, 1, 0.2 },
+        }).background
+    elseif useUIKitBorders then
         menu.bg = Kit.CreateBackground(menu, C.bg[1], C.bg[2], C.bg[3], 1)
         Kit.CreateBorderLines(menu)
         Kit.UpdateBorderLines(menu, 1, 1, 1, 1, 0.2, false)
@@ -2194,16 +2212,16 @@ local function GetSharedDropdownMenu()
     menu.updateThumb = updateThumb
     menu.UpdateScrollInset = function()
         if scrollBar.track:IsShown() then
-            scrollFrame:SetPoint("BOTTOMRIGHT", -(DROPDOWN_SCROLLBAR_WIDTH + 4), 0)
+            scrollFrame:SetPoint("BOTTOMRIGHT", -(DROPDOWN_SCROLLBAR_WIDTH + 10), 6)
         else
-            scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
+            scrollFrame:SetPoint("BOTTOMRIGHT", -6, 6)
         end
     end
 
     local searchContainer = CreateFrame("Frame", nil, menu)
     searchContainer:SetHeight(DROPDOWN_SEARCH_BOX_HEIGHT)
-    searchContainer:SetPoint("TOPLEFT", 0, 0)
-    searchContainer:SetPoint("TOPRIGHT", 0, 0)
+    searchContainer:SetPoint("TOPLEFT", 6, -6)
+    searchContainer:SetPoint("TOPRIGHT", -6, -6)
     searchContainer:Hide()
     menu.searchContainer = searchContainer
 
@@ -2377,12 +2395,13 @@ local function AcquireSharedMenuFor(menu, container, dropdown, searchable, build
     menu._owner = container
     menu._ownerDropdown = dropdown
     menu._ownerBuildMenu = buildMenu
+    menu._quiMinWidth = nil
     -- The menu is shared across every form dropdown: a scroll offset left by a
     -- long list would push a short list entirely out of the clipped viewport.
     ResetSharedMenuScroll(menu)
     if searchable then
         menu.searchContainer:Show()
-        menu.scrollFrame:SetPoint("TOPLEFT", 0, -DROPDOWN_SEARCH_BOX_HEIGHT)
+        menu.scrollFrame:SetPoint("TOPLEFT", 6, -DROPDOWN_SEARCH_BOX_HEIGHT - 6)
         SetFont(menu.searchBox, 11, "", C.text)
         SetFont(menu.searchBox.placeholder, 11, "", C.textMuted or {0.6, 0.6, 0.6})
         menu.searchBox:SetText("")
@@ -2390,7 +2409,7 @@ local function AcquireSharedMenuFor(menu, container, dropdown, searchable, build
         container.searchText = ""
     else
         menu.searchContainer:Hide()
-        menu.scrollFrame:SetPoint("TOPLEFT", 0, 0)
+        menu.scrollFrame:SetPoint("TOPLEFT", 6, -6)
     end
     if menu.scrollBar.Retint then menu.scrollBar:Retint() end
 end
@@ -2438,25 +2457,36 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
     ApplyWidgetSyncContext(container, dbTable, dbKey)
 
     local text
-    local toggleLeftOffset = 180
+    local togglePoint = label and "RIGHT" or "LEFT"
     if label then
         container:SetHeight(FORM_ROW_HEIGHT)
         text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         SetFont(text, 12, "", C.text)
         text:SetText(label)
         text:SetPoint("LEFT", 0, 0)
-        text:SetWidth(170)
         text:SetWordWrap(true)
         text:SetNonSpaceWrap(true)
         text:SetJustifyH("LEFT")
     else
         container:SetSize(26, 14)
-        toggleLeftOffset = 0
     end
 
     local toggle = CreateFrame("Button", nil, container)
     toggle:SetSize(26, 14)
-    toggle:SetPoint("LEFT", container, "LEFT", toggleLeftOffset, 0)
+    local function PlaceToggle()
+        toggle:ClearAllPoints()
+        local width = container:GetWidth()
+        if label and width >= 640 then
+            toggle:SetPoint("LEFT", container, "LEFT", (width - 44) / 2 - 26, 0)
+        else
+            toggle:SetPoint(togglePoint, container, togglePoint, 0, 0)
+        end
+    end
+    PlaceToggle()
+    if text then
+        text:SetPoint("RIGHT", toggle, "LEFT", -24, 0)
+        container:SetScript("OnSizeChanged", PlaceToggle)
+    end
 
     local track = toggle:CreateTexture(nil, "ARTWORK")
     track:SetAllPoints(toggle)
@@ -2511,7 +2541,7 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
     -- Refresh) writes the endpoint directly.
     local function UpdateVisual(isOn, instant)
         local target = isOn and 1 or 0
-        if instant or not (UIKit and UIKit.AnimateValue) then
+        if instant or (GUI.IsOptionsMotionEnabled and not GUI:IsOptionsMotionEnabled()) or not (UIKit and UIKit.AnimateValue) then
             if UIKit and UIKit.CancelValueAnimation then UIKit.CancelValueAnimation(toggle, "pill") end
             progress = target
             Paint()
@@ -2567,8 +2597,7 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
         local scaleKey = invert and "formToggleInvertedScale" or "formToggleScale"
         ns.UIKit.RegisterScaleRefresh(toggle, scaleKey, function()
             toggle:SetSize(26, 14)
-            toggle:ClearAllPoints()
-            toggle:SetPoint("LEFT", container, "LEFT", toggleLeftOffset, 0)
+            PlaceToggle()
             knob:SetSize(10, 10)
             UpdateVisual(GetValue(), true)
         end)
@@ -3020,19 +3049,21 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         text:SetJustifyH("LEFT")
         container.label = text
     else
-        container:SetSize(180, FORM_ROW_HEIGHT)
+        container:SetSize(((options and options.width) or 120) + ((options and options.editWidth) or 36) + 60, FORM_ROW_HEIGHT)
         sliderLeftOffset = 0
+        container._quiPreferredControlWidth = container:GetWidth()
+        container._quiMinimumControlWidth = math.min((options.width or 120), 100) + (options.editWidth or 36) + 60
     end
 
     local SLIDER_TRACK_WIDTH = (options and options.width) or 120
     local SLIDER_TRACK_HEIGHT = 4
-    local SLIDER_THUMB_SIZE = 10
+    local SLIDER_THUMB_SIZE = 14
 
     local slider = CreateFrame("Slider", nil, container)
     slider:SetSize(SLIDER_TRACK_WIDTH, SLIDER_TRACK_HEIGHT)
     slider:SetPoint("LEFT", container, "LEFT", sliderLeftOffset, 0)
     slider:SetOrientation("HORIZONTAL")
-    slider:SetHitRectInsets(0, 0, -10, -10)
+    slider:SetHitRectInsets(-7, -7, -12, -12)
 
     local trackBg = slider:CreateTexture(nil, "BACKGROUND")
     trackBg:SetAllPoints(slider)
@@ -3071,7 +3102,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     local editBoxWidth = (options and options.editWidth) or 36
     nudgeMinus:SetPoint("RIGHT", container, "RIGHT", -(editBoxWidth + 28), 0)
 
-    slider:SetPoint("RIGHT", nudgeMinus, "LEFT", -8, 0)
+    slider:SetPoint("RIGHT", nudgeMinus, "LEFT", -16, 0)
     if useUIKitBorders then
         nudgeMinus.bg = UIKit.CreateBackground(nudgeMinus, 0.08, 0.08, 0.08, 1)
         UIKit.CreateBorderLines(nudgeMinus)
@@ -3326,6 +3357,8 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     container.value = math.max(container.min, math.min(container.max, GetValue()))
     UpdateVisual(container.value)
 
+    ns.QUI_SettingsLayoutShared.RefreshInitialEditText(editBox, container)
+
     container._refreshEditBox = function()
         local val = GetValue()
         local txt = FormatValue(val)
@@ -3375,6 +3408,28 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
         })
     end
 
+    if text then
+        container._quiLayoutFormSlider = function(self, width)
+            if self._layingOutSlider or not width or width <= 0 then return end
+            self._layingOutSlider = true
+            local stacked = width < sliderLeftOffset + SLIDER_TRACK_WIDTH + editBoxWidth + 60
+            local height = stacked and 52 or FORM_ROW_HEIGHT
+            text:ClearAllPoints()
+            text:SetPoint(stacked and "TOPLEFT" or "LEFT", self, stacked and "TOPLEFT" or "LEFT", 0, stacked and -2 or 0)
+            text:SetWidth(stacked and width or 170)
+            if stacked then text:SetPoint("TOPRIGHT", self, "TOPRIGHT", 0, -2) end
+            text:SetHeight(stacked and 18 or FORM_ROW_HEIGHT)
+            slider:ClearAllPoints()
+            slider:SetPoint("LEFT", self, "LEFT", stacked and 28 or sliderLeftOffset, stacked and -12 or 0)
+            slider:SetPoint("RIGHT", nudgeMinus, "LEFT", -16, 0)
+            nudgeMinus:ClearAllPoints()
+            nudgeMinus:SetPoint("RIGHT", self, "RIGHT", -(editBoxWidth + 28), stacked and -12 or 0)
+            self._quiDualColumnRowHeight = height
+            self:SetHeight(height)
+            self._layingOutSlider = nil
+        end
+        container:HookScript("OnSizeChanged", function(self, width) self:_quiLayoutFormSlider(width) end)
+    end
     AttachFormWidgetTooltip(container, slider, effectiveDescription, label)
     return container
 end
@@ -3403,14 +3458,28 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         text:SetPoint("LEFT", 0, 0)
     else
         container:SetSize(180, FORM_ROW_HEIGHT)
+        container._quiPreferredControlWidth = 180
+        container._quiMinimumControlWidth = 140
         dropdownLeftOffset = 0
+    end
+
+    if opts.compact then
+        dropdownLeftOffset = text and math.ceil(text:GetStringWidth()) + 8 or 0
+        container:SetHeight(22)
     end
 
     local dropdown = CreateFrame("Button", nil, container, useUIKitBorders and nil or "BackdropTemplate")
     dropdown:SetHeight(22)
     dropdown:SetPoint("LEFT", container, "LEFT", dropdownLeftOffset, 0)
     dropdown:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-    if useUIKitBorders then
+    local rounded
+    if UIKit and UIKit.CreateRoundedSurface then
+        rounded = UIKit.CreateRoundedSurface(dropdown, {
+            radius = 5, bgColor = { C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06 },
+            borderColor = { 1, 1, 1, 0.2 },
+        })
+        dropdown.bg = rounded.background
+    elseif useUIKitBorders then
         dropdown.bg = UIKit.CreateBackground(dropdown, C.bgContent[1], C.bgContent[2], C.bgContent[3], 0.06)
         UIKit.CreateBorderLines(dropdown)
         UIKit.UpdateBorderLines(dropdown, 1, 1, 1, 1, 0.2, false)
@@ -3419,7 +3488,9 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     end
 
     local function SetDropdownBorderColor(r, g, b, a)
-        if useUIKitBorders then
+        if rounded then
+            rounded:SetColors({ r, g, b, a or 1 }, { dropdown.bg:GetVertexColor() })
+        elseif useUIKitBorders then
             UIKit.UpdateBorderLines(dropdown, 1, r, g, b, a or 1, false)
         else
             dropdown:SetBackdropBorderColor(r, g, b, a or 1)
@@ -3439,6 +3510,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     dropdown.selected:SetPoint("LEFT", dropdown, "LEFT", 8, 0)
     dropdown.selected:SetPoint("RIGHT", chevron, "LEFT", -4, 0)
     dropdown.selected:SetJustifyH("LEFT")
+    dropdown.selected:SetWordWrap(false)
 
     dropdown:SetScript("OnEnter", function(self)
         SetDropdownBorderColor(1, 1, 1, 0.35)
@@ -3473,12 +3545,15 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     end
 
     local function UpdateVisual(val)
-        if val == nil then return end
+        dropdown.selected:SetText(val ~= nil and val ~= "" and tostring(val) or opts.placeholder or "")
         for _, opt in ipairs(container.options) do
             if not opt.isHeader and opt.value == val then
                 dropdown.selected:SetText(opt.text)
                 break
             end
+        end
+        if opts.compact then
+            container:SetWidth(dropdownLeftOffset + math.ceil(dropdown.selected:GetStringWidth()) + 30)
         end
     end
 
@@ -3508,6 +3583,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         local filterText = searchable and container.searchText and container.searchText:lower() or ""
         local isFiltering = filterText ~= ""
         local visibleCount = 0
+        local contentWidth = math.max(1, dropdown:GetWidth() - 12)
         local currentHeader = nil
         local mutedColor = C.textMuted or {0.6, 0.6, 0.6}
 
@@ -3624,6 +3700,9 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
                     btn._btnText:SetPoint("LEFT", btn, "LEFT", 8, 0)
                     SetFont(btn._btnText, 10, "", C.text)
                     btn._btnText:SetText(opt.text)
+                    if opts.compact then
+                        contentWidth = math.max(contentWidth, btn._btnText:GetStringWidth() + 24)
+                    end
 
                     local isSelected = (container.selectedValue == opt.value)
                     if isSelected then
@@ -3677,8 +3756,9 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         local searchOffset = searchable and DROPDOWN_SEARCH_BOX_HEIGHT or 0
 
         scrollContent:SetHeight(totalHeight)
-        scrollContent:SetWidth(dropdown:GetWidth() - 4)
-        menu:SetHeight(math.min(totalHeight, maxHeight) + searchOffset)
+        scrollContent:SetWidth(contentWidth)
+        menu._quiMinWidth = opts.compact and (contentWidth + 12) or nil
+        menu:SetHeight(math.min(totalHeight, maxHeight) + searchOffset + 12)
     end
 
     dropdown:SetScript("OnClick", function()
@@ -3719,7 +3799,10 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
         if not found and container.preserveUnknownValue and currentVal ~= nil and currentVal ~= "" then
             dropdown.selected:SetText(tostring(currentVal))
         elseif not found then
-            dropdown.selected:SetText("")
+            dropdown.selected:SetText(opts.placeholder or "")
+        end
+        if opts.compact then
+            container:SetWidth(dropdownLeftOffset + math.ceil(dropdown.selected:GetStringWidth()) + 30)
         end
     end
 
@@ -5321,9 +5404,18 @@ function GUI:CreateMainFrame()
     frame:Hide()
 
     local savedAlpha = QUI.QUICore and QUI.QUICore.db and QUI.QUICore.db.profile.configPanelAlpha or 0.97
-    frame._bg = UIKit.CreateBackground(frame, C.bg[1], C.bg[2], C.bg[3], savedAlpha)
-    UIKit.CreateBorderLines(frame)
-    UIKit.UpdateBorderLines(frame, 1, C.border[1], C.border[2], C.border[3], C.border[4] or 1)
+    local windowColor = C.optionsWindow or C.bg
+    if UIKit.CreateRoundedSurface then
+        local surface = UIKit.CreateRoundedSurface(frame, {
+            radius = 12, bgColor = { windowColor[1], windowColor[2], windowColor[3], savedAlpha },
+            borderColor = { 0.30, 0.36, 0.39, 0 },
+        })
+        frame._bg = surface.background
+    else
+        frame._bg = UIKit.CreateBackground(frame, windowColor[1], windowColor[2], windowColor[3], savedAlpha)
+        UIKit.CreateBorderLines(frame)
+        UIKit.UpdateBorderLines(frame, 1, C.border[1], C.border[2], C.border[3], C.border[4] or 1)
+    end
 
     self.MainFrame = frame
 
@@ -5382,9 +5474,7 @@ function GUI:CreateMainFrame()
     local themeDropBtn = CreateFrame("Button", nil, titleBar)
     themeDropBtn:SetSize(110, 16)
     themeDropBtn:SetPoint("LEFT", themeLabel, "RIGHT", 6, 0)
-    UIKit.CreateBackground(themeDropBtn, 0.1, 0.1, 0.1, 0.8)
-    UIKit.CreateBorderLines(themeDropBtn)
-    UIKit.UpdateBorderLines(themeDropBtn, 1, 0.3, 0.3, 0.3, 1)
+    UIKit.CreateRoundedSurface(themeDropBtn, { radius = 4, bgColor = { 0.1, 0.1, 0.1, 0.8 }, borderColor = { 0.3, 0.3, 0.3, 1 } })
 
     local themeDropText = themeDropBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(themeDropText, 10, "", C.text)
@@ -5430,9 +5520,7 @@ function GUI:CreateMainFrame()
     end
 
     local themeMenu = CreateFrame("Frame", nil, themeDropBtn)
-    UIKit.CreateBackground(themeMenu, 0.08, 0.08, 0.12, 0.95)
-    UIKit.CreateBorderLines(themeMenu)
-    UIKit.UpdateBorderLines(themeMenu, 1, 0.3, 0.3, 0.3, 1)
+    UIKit.CreateRoundedSurface(themeMenu, { radius = 6, bgColor = { 0.08, 0.08, 0.12, 0.95 }, borderColor = { 0.3, 0.3, 0.3, 1 } })
     themeMenu:SetFrameStrata("TOOLTIP")
     themeMenu:Hide()
 
@@ -5633,9 +5721,7 @@ function GUI:CreateMainFrame()
     local langDropBtn = CreateFrame("Button", nil, titleBar)
     langDropBtn:SetSize(110, 16)
     langDropBtn:SetPoint("LEFT", langLabel, "RIGHT", 6, 0)
-    UIKit.CreateBackground(langDropBtn, 0.1, 0.1, 0.1, 0.8)
-    UIKit.CreateBorderLines(langDropBtn)
-    UIKit.UpdateBorderLines(langDropBtn, 1, 0.3, 0.3, 0.3, 1)
+    UIKit.CreateRoundedSurface(langDropBtn, { radius = 4, bgColor = { 0.1, 0.1, 0.1, 0.8 }, borderColor = { 0.3, 0.3, 0.3, 1 } })
 
     local langDropText = langDropBtn:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     SetFont(langDropText, 10, "", C.text)
@@ -5651,9 +5737,7 @@ function GUI:CreateMainFrame()
     langDropArrow:SetPoint("RIGHT", -3, 0)
 
     local langMenu = CreateFrame("Frame", nil, langDropBtn)
-    UIKit.CreateBackground(langMenu, 0.08, 0.08, 0.12, 0.95)
-    UIKit.CreateBorderLines(langMenu)
-    UIKit.UpdateBorderLines(langMenu, 1, 0.3, 0.3, 0.3, 1)
+    UIKit.CreateRoundedSurface(langMenu, { radius = 6, bgColor = { 0.08, 0.08, 0.12, 0.95 }, borderColor = { 0.3, 0.3, 0.3, 1 } })
     langMenu:SetFrameStrata("TOOLTIP")
     langMenu:Hide()
 
@@ -5774,6 +5858,7 @@ function GUI:CreateMainFrame()
         value = math.floor(value * 20 + 0.5) / 20
         frame:SetScale(value)
         ClampPanelToScreen()
+        if UIKit.QueueScaleRefresh then UIKit.QueueScaleRefresh(2) end
         if QUI.QUICore and QUI.QUICore.db then
             QUI.QUICore.db.profile.configPanelScale = value
             QUI.QUICore._preservedPanelScale = value
@@ -5843,25 +5928,20 @@ function GUI:CreateMainFrame()
         onClick = function() frame:Hide() end,
     })
 
-    local titleSep = frame:CreateTexture(nil, "ARTWORK")
-    titleSep:SetPoint("TOPLEFT", 10, -30)
-    titleSep:SetPoint("TOPRIGHT", -10, -30)
-    titleSep:SetHeight(1)
-    titleSep:SetColorTexture(C_border_r, C_border_g, C_border_b, C_border_a)
-
     local sidebar = CreateFrame("Frame", nil, frame)
     sidebar:SetPoint("TOPLEFT", 10, -35)
     sidebar:SetPoint("BOTTOMLEFT", 10, 10)
     sidebar:SetWidth(SIDEBAR_W)
 
-    local sidebarBg = sidebar:CreateTexture(nil, "BACKGROUND")
-    sidebarBg:SetAllPoints()
-    sidebarBg:SetColorTexture(C.bgSidebar[1], C.bgSidebar[2], C.bgSidebar[3], C.bgSidebar[4])
-    sidebar._bg = sidebarBg
+    sidebar._bg = ns.UIKit.CreateRoundedSurface(sidebar, {
+        radius = 10,
+        bgColor = {0, 0, 0, 0},
+        borderColor = {C_border_r, C_border_g, C_border_b, C_border_a},
+    }).background
 
     local sidebarBorder = sidebar:CreateTexture(nil, "ARTWORK")
-    sidebarBorder:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", 0, 0)
-    sidebarBorder:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", 0, 0)
+    sidebarBorder:SetPoint("TOPRIGHT", sidebar, "TOPRIGHT", 0, -10)
+    sidebarBorder:SetPoint("BOTTOMRIGHT", sidebar, "BOTTOMRIGHT", 0, 10)
     sidebarBorder:SetWidth(1)
     sidebarBorder:SetColorTexture(C_border_r, C_border_g, C_border_b, C_border_a)
     sidebar._divider = sidebarBorder
@@ -5873,29 +5953,7 @@ function GUI:CreateMainFrame()
     footer:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, 10)
     footer:SetHeight(36)
 
-    local footerBg = footer:CreateTexture(nil, "BACKGROUND")
-    footerBg:SetAllPoints(footer)
-    footerBg:SetColorTexture(C.bgFooter[1], C.bgFooter[2], C.bgFooter[3], C.bgFooter[4])
-
-    local footerDivider = footer:CreateTexture(nil, "OVERLAY")
-    footerDivider:SetPoint("TOPLEFT", footer, "TOPLEFT", 0, 0)
-    footerDivider:SetPoint("TOPRIGHT", footer, "TOPRIGHT", 0, 0)
-    footerDivider:SetHeight(1)
-    footerDivider:SetColorTexture(C.border[1], C.border[2], C.border[3], C.border[4])
-
     frame.footerBar = footer
-
-    local resetBtn = GUI:CreateButton(footer, ns.L["Reset to Defaults"], 0, 22, function()
-        local tileIndex = frame._lastTileIndex
-        local tile = tileIndex and frame._tiles and frame._tiles[tileIndex]
-        if tile and tile.config and tile.config.onReset then
-            tile.config.onReset()
-        else
-            print("|cff34D399QUI|r: No reset hook registered for this page.")
-        end
-    end, "ghost")
-    resetBtn:SetPoint("LEFT", footer, "LEFT", 18, 0)
-    frame._footerResetBtn = resetBtn
 
     local reloadBtn = GUI:CreateButton(footer, ns.L["Reload UI"], 0, 22, function()
         if QUI and QUI.SafeReload then
@@ -5904,7 +5962,7 @@ function GUI:CreateMainFrame()
             ReloadUI()
         end
     end, "ghost")
-    reloadBtn:SetPoint("LEFT", resetBtn, "RIGHT", 8, 0)
+    reloadBtn:SetPoint("LEFT", footer, "LEFT", 18, 0)
     if QUI and QUI.BindReloadButton then QUI:BindReloadButton(reloadBtn) end
     frame._footerReloadBtn = reloadBtn
 
@@ -5918,7 +5976,7 @@ function GUI:CreateMainFrame()
 
     local subTabBarBg = subTabBar:CreateTexture(nil, "BACKGROUND")
     subTabBarBg:SetAllPoints()
-    subTabBarBg:SetColorTexture(unpack(C.bgContent))
+    subTabBarBg:SetColorTexture(0, 0, 0, 0)
 
     local subTabBarBorder = subTabBar:CreateTexture(nil, "ARTWORK")
     subTabBarBorder:SetPoint("BOTTOMLEFT", subTabBar, "BOTTOMLEFT", 0, 0)
@@ -5929,29 +5987,23 @@ function GUI:CreateMainFrame()
     frame.subTabBar = subTabBar
 
     local contentArea = CreateFrame("Frame", nil, frame)
-    contentArea:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 5, 0)
-    contentArea:SetPoint("BOTTOMRIGHT", -10, 46)
+    contentArea:SetPoint("TOPLEFT", sidebar, "TOPRIGHT", 5, -44)
+    contentArea:SetPoint("BOTTOMRIGHT", footer, "TOPRIGHT", 0, 8)
     contentArea:EnableMouse(false)
 
-    local contentBg = contentArea:CreateTexture(nil, "BACKGROUND")
-    contentBg:SetAllPoints()
-    contentBg:SetColorTexture(unpack(C.bgContent))
+    ns.UIKit.CreateRoundedSurface(contentArea, {
+        radius = 10,
+        bgColor = {0, 0, 0, 0},
+        borderColor = {C_border_r, C_border_g, C_border_b, C_border_a},
+    })
 
-    local glow = contentArea:CreateTexture(nil, "BACKGROUND")
-    glow:SetAllPoints(contentArea)
-    glow:SetTexture("Interface\\BUTTONS\\WHITE8x8")
-    if glow.SetGradient then
-        local ok = ns.SafeCall("best-effort-style", function()
-            glow:SetGradient("HORIZONTAL",
-                CreateColor(C.accentGlow[1], C.accentGlow[2], C.accentGlow[3], C.accentGlow[4]),
-                CreateColor(C.accentGlow[1], C.accentGlow[2], C.accentGlow[3], 0))
-        end)
-        if not ok then
-            glow:SetColorTexture(C.accentGlow[1], C.accentGlow[2], C.accentGlow[3], C.accentGlow[4])
-        end
-    else
-        glow:SetColorTexture(C.accentGlow[1], C.accentGlow[2], C.accentGlow[3], C.accentGlow[4])
-    end
+    local glowLayer = CreateFrame("Frame", nil, contentArea)
+    glowLayer:SetAllPoints(contentArea)
+    local glow = ns.UIKit.CreateRoundedSurface(glowLayer, {
+        radius = 10,
+        bgColor = {0, 0, 0, 0},
+        borderColor = {0, 0, 0, 0},
+    }).background
     contentArea._accentGlow = glow
 
     frame.contentArea = contentArea
@@ -6245,7 +6297,7 @@ local FW2 = ns.QUI_Framework
 local SIDEBAR_SEARCH_RESERVE = 44
 local SIDEBAR_TILE_HEIGHT = 26
 local SIDEBAR_TILE_GAP = 2
-local SIDEBAR_TOOLS_RESERVE = 96
+local SIDEBAR_TOOLS_RESERVE = 108
 local SIDEBAR_BOTTOM_GAP = 6
 local SIDEBAR_SCROLLBAR_WIDTH = 4
 local SIDEBAR_SCROLL_STEP = 45
@@ -6345,7 +6397,7 @@ local function EnsureSidebarTileVisible(frame, tile)
     local viewportH = scroll:GetHeight()
     if viewportH <= 0 then return end
 
-    local tileTop = (tile._sidebarSlot - 1) * (SIDEBAR_TILE_HEIGHT + SIDEBAR_TILE_GAP)
+    local tileTop = tile._sidebarTop or (tile._sidebarSlot - 1) * (SIDEBAR_TILE_HEIGHT + SIDEBAR_TILE_GAP)
     local tileBottom = tileTop + SIDEBAR_TILE_HEIGHT
     local maxScroll = math.max(0, frame._sidebarScrollChild:GetHeight() - viewportH)
 
@@ -6498,6 +6550,8 @@ function GUI:AddFeatureTile(frame, config)
         if not self._isActive then self.hoverBg:Hide() end
     end)
 
+    if GUI.AttachTileNavigation then GUI:AttachTileNavigation(frame, tile) end
+
     return tile
 end
 
@@ -6520,6 +6574,66 @@ local function installRegisterSection(targetBody)
     end
 end
 
+local function BuildInlinePreview(owner, parent, anchor, anchorPoint, inset, gap, config, getMaxHeight)
+    local pv = CreateFrame("Frame", nil, parent)
+    pv:SetPoint("TOPLEFT", anchor, anchorPoint, inset, gap)
+    pv:SetPoint("TOPRIGHT", anchor, anchorPoint == "BOTTOMLEFT" and "BOTTOMRIGHT" or "TOPRIGHT", -inset, gap)
+    pv:SetHeight(config.height or 90)
+    if ns.UIKit and ns.UIKit.CreateRoundedSurface then
+        pv._quiPreviewSurface = ns.UIKit.CreateRoundedSurface(pv, {
+            radius = 8, borderPixels = 1, bgColor = C.bgLight,
+            borderColor = C.borderStrong or C.border, layer = "BACKGROUND", subLevel = -7,
+        })
+    end
+    config.build(pv)
+    owner._preview = pv
+    local fullSurface = ns.Settings and ns.Settings.FullSurface
+    if fullSurface and fullSurface.ConfigureInlinePreview then
+        fullSurface.ConfigureInlinePreview(pv, getMaxHeight)
+        parent:HookScript("OnSizeChanged", function()
+            if pv._quiPreviewLayout then pv._quiPreviewLayout() end
+        end)
+    end
+    if fullSurface and fullSurface.SetInlinePreviewCollapsed then
+        local toggle = GUI:CreateButton(pv, ns.L["Hide preview"], 0, 22, function()
+            fullSurface.SetInlinePreviewCollapsed(pv, not pv._quiPreviewCollapsed)
+            local control = owner._previewToggle
+            control.text:SetText(pv._quiPreviewCollapsed and ns.L["Show preview"] or ns.L["Hide preview"])
+            ns.UIKit.SetChevronCaretExpanded(control.chevron, not pv._quiPreviewCollapsed)
+        end, "ghost")
+        toggle.text:SetText(ns.L["Show preview"])
+        local showWidth = toggle.text:GetStringWidth()
+        toggle.text:SetText(ns.L["Hide preview"])
+        toggle:SetWidth(math.max(showWidth, toggle.text:GetStringWidth()) + 30)
+        toggle.text:ClearAllPoints()
+        toggle.text:SetPoint("LEFT", toggle, "LEFT", 22, 0)
+        toggle.text:SetPoint("RIGHT", toggle, "RIGHT", -8, 0)
+        toggle.chevron = ns.UIKit.CreateChevronCaret(toggle, {
+            point = "LEFT", xPixels = 8, sizePixels = 8,
+            expanded = true, collapsedDirection = "right",
+            r = C.text[1], g = C.text[2], b = C.text[3],
+        })
+        toggle:SetPoint("TOPRIGHT", pv, "TOPRIGHT", -6, -4)
+        local previewHeader = pv._quiPreviewHeader
+        if previewHeader then
+            local top = previewHeader.dropdown and -4 or -2
+            if previewHeader._quiPreviewActionHeight then
+                local _, _, _, _, headerTop = previewHeader:GetPoint(1)
+                top = headerTop or top
+                toggle:SetHeight(previewHeader._quiPreviewActionHeight)
+                toggle:ClearAllPoints()
+                toggle:SetPoint("LEFT", previewHeader, "RIGHT", 6, 0)
+            end
+            previewHeader:SetPoint("TOPRIGHT", pv, "TOPRIGHT", -toggle:GetWidth() - 12, top)
+            if previewHeader._quiPreviewLayoutHeader then
+                previewHeader._quiPreviewLayoutHeader(toggle:GetWidth() + 12)
+            end
+        end
+        owner._previewToggle = toggle
+    end
+    return pv
+end
+
 function GUI:BuildTilePage(frame, tile)
     if not tile or tile._built then return end
 
@@ -6531,26 +6645,24 @@ function GUI:BuildTilePage(frame, tile)
 
     tile._pageFrame = CreateFrame("Frame", nil, content)
     tile._pageFrame:SetAllPoints(content)
+    tile._pageFrame._quiOptionsTile = tile
     tile._pageFrame:Hide()
 
     local header = CreateFrame("Frame", nil, tile._pageFrame)
     header:SetPoint("TOPLEFT", tile._pageFrame, "TOPLEFT", 18, -14)
     header:SetPoint("TOPRIGHT", tile._pageFrame, "TOPRIGHT", -18, -14)
-    header:SetHeight(48)
+    header:SetHeight(30)
+    tile._compactHeader = true
     tile._header = header
 
-    local crumb = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     local fpath = ns.UIKit and ns.UIKit.ResolveFontPath and ns.UIKit.ResolveFontPath(GUI:GetFontPath())
-    ns.Helpers.ApplyFontWithFallback(crumb, fpath or select(1, crumb:GetFont()), 10, "")
-    crumb:SetTextColor(C.textMuted[1], C.textMuted[2], C.textMuted[3], 1)
-    crumb:SetPoint("TOPLEFT", header, "TOPLEFT", 0, 0)
-    crumb:SetText(ns.L["Settings"] .. "  >  " .. (tile.config.name or ""))
-    tile._crumb = crumb
 
     local title = header:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    ns.Helpers.ApplyFontWithFallback(title, fpath or select(1, title:GetFont()), 15, "")
+    ns.Helpers.ApplyFontWithFallback(title, fpath or select(1, title:GetFont()), 18, "")
     title:SetTextColor(C.text[1], C.text[2], C.text[3], 1)
-    title:SetPoint("TOPLEFT", crumb, "BOTTOMLEFT", 0, -4)
+    title:SetPoint("LEFT", header, "LEFT", 0, 2)
+    title:SetJustifyH("LEFT")
+    title:SetWordWrap(false)
     title:SetText(tile.config.name or "")
     tile._title = title
 
@@ -6563,23 +6675,28 @@ function GUI:BuildTilePage(frame, tile)
         subtitle:SetJustifyH("LEFT")
         subtitle:SetText(tile.config.subtitle)
         tile._subtitle = subtitle
-        header:SetHeight(54)
+        header:SetHeight(48)
     end
 
     local pins = ns.Settings and ns.Settings.Pins
     if pins and type(pins.AttachCountChip) == "function" then
         pins:AttachCountChip(header)
     end
+    if header._quiPinChip then
+        title:SetPoint("RIGHT", header._quiPinChip, "LEFT", -8, 0)
+    else
+        title:SetPoint("RIGHT", header, "RIGHT", 0, 2)
+    end
 
     local anchorFrame = header
     if tile.config.preview and type(tile.config.preview.build) == "function" then
-        local pv = CreateFrame("Frame", nil, tile._pageFrame)
-        pv:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -10)
-        pv:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -10)
-        pv:SetHeight(tile.config.preview.height or 90)
-        tile.config.preview.build(pv)
-        tile._preview = pv
-        anchorFrame = pv
+        anchorFrame = BuildInlinePreview(tile, tile._pageFrame, header, "BOTTOMLEFT", 0, -10,
+            tile.config.preview, function()
+                local footerReserve = tile.config.relatedSettings and 32 or 0
+                local available = tile._pageFrame:GetHeight() - header:GetHeight() - footerReserve - 144
+                local minimum = tile._preview._quiPreviewCollapsedHeight or 1
+                return math.max(minimum, math.min(tile.config.preview.height or 180, available))
+            end)
     end
 
     if tile.config.subPages and #tile.config.subPages > 0 then
@@ -6589,8 +6706,9 @@ function GUI:BuildTilePage(frame, tile)
     elseif type(tile.config.buildFunc) == "function" then
         local container = CreateFrame("Frame", nil, tile._pageFrame)
         local footerReserve = tile.config.relatedSettings and 32 or 0
-        container:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", -18, -10)
-        container:SetPoint("TOPRIGHT", anchorFrame, "BOTTOMRIGHT", 18, -10)
+        local contentGap = tile._preview and -4 or -10
+        container:SetPoint("TOPLEFT", anchorFrame, "BOTTOMLEFT", -18, contentGap)
+        container:SetPoint("TOPRIGHT", anchorFrame, "BOTTOMRIGHT", 18, contentGap)
         container:SetPoint("BOTTOMRIGHT", tile._pageFrame, "BOTTOMRIGHT", 0, footerReserve)
 
         local scrollFrame, body
@@ -6606,7 +6724,7 @@ function GUI:BuildTilePage(frame, tile)
 
         tile.config.buildFunc(body)
 
-        if tile.config.sectionNav and scrollFrame and #body._sections >= 2 then
+        if tile.config.sectionNav and not GUI.GetTileNavigationPages and scrollFrame and #body._sections >= 2 then
             local function tryBuildSectionNav()
                 if container._sectionNav then return end
                 local bodyH = body:GetHeight() or 0
@@ -6842,6 +6960,9 @@ function GUI:SelectFeatureTile(frame, index, opts)
     frame._tiles = frame._tiles or {}
     local tile = frame._tiles[index]
     if not tile then return end
+    if frame._navigationSuggestions then frame._navigationSuggestions:Hide() end
+    if self.CloseNavigationFlyout then self:CloseNavigationFlyout(frame) end
+    if self.PushNavigationHistory and not (opts and opts.noHistory) then self:PushNavigationHistory(frame) end
     GUI.Tooltip:Hide(true)
 
     if not (opts and opts.searchEntry) and frame._searchBox and frame._searchBox.editBox then
@@ -6884,6 +7005,7 @@ function GUI:SelectFeatureTile(frame, index, opts)
         if t._pageFrame and t ~= tile then t._pageFrame:Hide() end
     end
     tile._pageFrame:Show()
+    if self.AnimateOptionsPage then self:AnimateOptionsPage(tile._pageFrame) end
 
     if frame._tiles then
         for _, t in ipairs(frame._tiles) do
@@ -6899,6 +7021,8 @@ function GUI:SelectFeatureTile(frame, index, opts)
     if opts and type(opts.searchEntry) == "table" then
         self:ApplyFeatureSearchNavigation(tile, opts.searchEntry, opts)
     end
+
+    if self.UpdateTileNavigationTitle then self:UpdateTileNavigationTitle(tile) end
 
     if opts and (opts.scrollToPath or opts.scrollToLabel or opts.scrollToFeatureId) then
         C_Timer.After(0, function()
@@ -6958,15 +7082,19 @@ function GUI:SelectFeatureTile(frame, index, opts)
 end
 
 function GUI:AddSidebarSearchBar(frame)
-    local container = CreateFrame("Frame", nil, frame.sidebar)
-    container:SetPoint("TOPLEFT", frame.sidebar, "TOPLEFT", 8, -10)
-    container:SetPoint("TOPRIGHT", frame.sidebar, "TOPRIGHT", -8, -10)
+    local container = CreateFrame("Frame", nil, frame)
+    container:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 48, -7)
+    container:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -18, -42)
     container:SetHeight(28)
+
+    if GUI.CreateNavigationBackButton then GUI:CreateNavigationBackButton(frame, container) end
 
     local box = GUI:CreateSearchBox(container)
     box:SetAllPoints(container)
 
     box.onSearch = function(text)
+        if frame._navigationSuggestions then frame._navigationSuggestions:Hide() end
+        if GUI.CloseNavigationFlyout then GUI:CloseNavigationFlyout(frame) end
         if not text or text == "" then
             if frame._lastTileIndex then
                 GUI:SelectFeatureTile(frame, frame._lastTileIndex)
@@ -6981,13 +7109,15 @@ function GUI:AddSidebarSearchBar(frame)
         GUI:RenderSearchResults(frame._searchResultsArea.inner, results, text, navResults)
     end
     box.onClear = function()
+        if frame._navigationSuggestions then frame._navigationSuggestions:Hide() end
         if frame._searchResultsArea then frame._searchResultsArea:Hide() end
         if frame._tileContent then frame._tileContent:Show() end
     end
 
-    if box._editBox and box._editBox.HookScript then
-        box._editBox:HookScript("OnEditFocusGained", function()
+    if box.editBox and box.editBox.HookScript then
+        box.editBox:HookScript("OnEditFocusGained", function()
             GUI:EnsureSearchCacheLoaded()
+            if box.editBox:GetText() == "" and GUI.ShowNavigationSuggestions then GUI:ShowNavigationSuggestions(frame) end
         end)
     end
 
@@ -7020,7 +7150,7 @@ end
 function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFrame)
     if not subPages or #subPages == 0 then return end
 
-    local single = #subPages == 1
+    local single = #subPages == 1 or GUI.GetTileNavigationPages ~= nil
 
     local bar
     if not single then
@@ -7045,7 +7175,7 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
     local footerReserve = tile and tile.config and tile.config.relatedSettings and 32 or 0
     if single then
         if headerFrame then
-            body:SetPoint("TOPLEFT", headerFrame, "BOTTOMLEFT", -18, -10)
+            body:SetPoint("TOPLEFT", headerFrame, "BOTTOMLEFT", -18, tile._preview and -4 or -10)
         else
             body:SetPoint("TOPLEFT", contentArea, "TOPLEFT", 0, -70)
         end
@@ -7076,21 +7206,21 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
         end
 
         local container = CreateFrame("Frame", nil, body)
+        container._quiOptionsSubPageIndex = i
         container:SetAllPoints(body)
         container:Hide()
         tile._subPageBodies[i] = container
 
         local contentRoot = container
         if sp.preview and type(sp.preview.build) == "function" then
-            local preview = CreateFrame("Frame", nil, container)
-            preview:SetPoint("TOPLEFT", container, "TOPLEFT", 0, 0)
-            preview:SetPoint("TOPRIGHT", container, "TOPRIGHT", 0, 0)
-            preview:SetHeight(sp.preview.height or 90)
-            sp.preview.build(preview)
-            container._preview = preview
+            local preview = BuildInlinePreview(container, container, container, "TOPLEFT", 18, 0,
+                sp.preview, function()
+                    local minimum = container._preview._quiPreviewCollapsedHeight or 1
+                    return math.max(minimum, math.min(sp.preview.height or 180, container:GetHeight() - 120))
+                end)
 
             contentRoot = CreateFrame("Frame", nil, container)
-            contentRoot:SetPoint("TOPLEFT", preview, "BOTTOMLEFT", 0, -8)
+            contentRoot:SetPoint("TOPLEFT", preview, "BOTTOMLEFT", -18, -4)
             contentRoot:SetPoint("BOTTOMRIGHT", container, "BOTTOMRIGHT", 0, 0)
         end
 
@@ -7113,7 +7243,7 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
         container._scrollFrame = scrollFrame
         container._contentBody = contentBody
 
-        if sp.sectionNav and scrollFrame and #contentBody._sections >= 2 then
+        if sp.sectionNav and not GUI.GetTileNavigationPages and scrollFrame and #contentBody._sections >= 2 then
             local function tryBuildSectionNav()
                 if container._sectionNav then return end
                 local bodyH = contentBody:GetHeight() or 0
@@ -7141,6 +7271,7 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
     end
 
     select = function(i)
+        if not subPages[i] then return end
         currentIndex = i
         tile._activeSubPageIndex = i
         GUI.Tooltip:Hide(true)
@@ -7169,6 +7300,7 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
         BuildSubPageBody(i)
 
         tile._subPageBodies[i]:Show()
+        if GUI.UpdateTileNavigationTitle then GUI:UpdateTileNavigationTitle(tile) end
     end
 
     local ROW_HEIGHT = 28
@@ -7225,6 +7357,11 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
     end
 
     tile._subPageSelect = select
+    if GUI.GetTileNavigationPages then
+        for i, sp in ipairs(subPages) do
+            if sp.sectionNav then BuildSubPageBody(i) end
+        end
+    end
     select(1)
 
     return body, select
@@ -7462,8 +7599,8 @@ function GUI:AddToolsStripButton(frame, config)
 
     if not frame._toolsStrip then
         local strip = CreateFrame("Frame", nil, frame.sidebar)
-        strip:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 6, 24)
-        strip:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -6, 24)
+        strip:SetPoint("BOTTOMLEFT", frame.sidebar, "BOTTOMLEFT", 6, 12)
+        strip:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", -6, 12)
         strip:SetHeight(72)
 
         local sep = strip:CreateTexture(nil, "OVERLAY")
@@ -7490,13 +7627,11 @@ function GUI:AddToolsStripButton(frame, config)
     btn:SetPoint("TOPLEFT", strip, "TOPLEFT", 4, yOffset)
     btn:SetPoint("TOPRIGHT", strip, "TOPRIGHT", -4, yOffset)
 
-    QUICore.SafeSetBackdrop(btn, {
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = QUICore:GetPixelSize(btn),
+    local surface = ns.UIKit.CreateRoundedSurface(btn, {
+        radius = 5,
+        bgColor = {1, 1, 1, 0.06},
+        borderColor = {C.border[1], C.border[2], C.border[3], C.border[4]},
     })
-    btn:SetBackdropColor(1, 1, 1, 0.06)
-    btn:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], C.border[4])
 
     local iconTexturePath = config.iconTexture
     if iconTexturePath == nil and config.id then
@@ -7536,15 +7671,14 @@ function GUI:AddToolsStripButton(frame, config)
     end
 
     btn:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(C.accentFaint[1], C.accentFaint[2], C.accentFaint[3], 0.12)
-        self:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 0.3)
+        surface:SetColors({C.accent[1], C.accent[2], C.accent[3], 0.3},
+            {C.accentFaint[1], C.accentFaint[2], C.accentFaint[3], 0.12})
         if self.iconTexture then
             self.iconTexture:SetVertexColor(C.accent[1], C.accent[2], C.accent[3], 1)
         end
     end)
     btn:SetScript("OnLeave", function(self)
-        self:SetBackdropColor(1, 1, 1, 0.06)
-        self:SetBackdropBorderColor(C.border[1], C.border[2], C.border[3], C.border[4])
+        surface:SetColors({C.border[1], C.border[2], C.border[3], C.border[4]}, {1, 1, 1, 0.06})
         if self.iconTexture then
             self.iconTexture:SetVertexColor(C.textDim[1], C.textDim[2], C.textDim[3], 0.9)
         end
@@ -7552,6 +7686,8 @@ function GUI:AddToolsStripButton(frame, config)
     btn:SetScript("OnClick", function() config.onClick() end)
 
     frame._tools[idx] = btn
+    strip:SetHeight(20 + idx * 26 - 2)
+    UpdateSidebarScrollBounds(frame)
     return btn
 end
 
@@ -7560,6 +7696,19 @@ GUI._navMap = GUI._navMap or {}
 function GUI:RegisterV2NavRoute(tabIndex, subTabIndex, tileId, subPageIndex)
     local key = (tabIndex or 0) .. ":" .. (subTabIndex or 0)
     GUI._navMap[key] = { tileId = tileId, subPageIndex = subPageIndex }
+end
+
+function GUI:ResolveV2SectionNavigation(tabIndex, sectionName, tileId)
+    if not sectionName then return nil end
+    local route = tileId and { tileId = tileId } or self:ResolveV2Navigation(tabIndex, 0)
+    local tile = route and self:FindV2TileByID(self.MainFrame, route.tileId)
+    for index, page in ipairs(tile and tile.config.subPages or {}) do
+        for _, name in ipairs(page.searchSections or {}) do
+            if name == sectionName then
+                return { tileId = route.tileId, subPageIndex = index }
+            end
+        end
+    end
 end
 
 function GUI:ResolveV2Navigation(tabIndex, subTabIndex)
@@ -7676,6 +7825,8 @@ end
 
 function GUI:ResolveSearchNavigation(entry)
     if not entry then return nil end
+    local sectionRoute = self:ResolveV2SectionNavigation(entry.tabIndex, entry.sectionName, entry.tileId)
+    if sectionRoute then return sectionRoute end
 
     local directRoute = nil
     if type(entry.tileId) == "string" and entry.tileId ~= "" then
@@ -7732,7 +7883,7 @@ function GUI:GetSearchBreadcrumb(entry)
                     table.insert(parts, subPage.name)
                 end
             end
-            if entry.sectionName and entry.sectionName ~= "" then
+            if entry.sectionName and entry.sectionName ~= "" and entry.sectionName ~= parts[#parts] then
                 table.insert(parts, entry.sectionName)
             end
             return parts

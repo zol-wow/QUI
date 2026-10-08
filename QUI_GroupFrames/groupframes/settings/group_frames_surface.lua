@@ -53,6 +53,10 @@ local function InstallPreviewObserver()
     end
     previewObserverInstalled = true
     _G.QUI_SetGroupFramePreviewObserver(function(_, wrapper)
+        if State.inlineActive and State.inlinePreview then
+            State.inlinePreview.Layout()
+            return
+        end
         local p = State.previewPanel
         if not p then return end
         if p.RefreshControlStrip and CurrentPreviewVDB then
@@ -198,6 +202,12 @@ local function UpdatePreviewTitle()
 end
 
 local function RefreshPreviewPanel()
+    if State.inlineActive and State.inlinePreview then
+        local p = State.inlinePreview
+        if State.previewPanel then State.previewPanel.Hide() end
+        p.Refresh()
+        return
+    end
     local panel = EnsurePreviewPanel()
     if not panel then return end
     UpdatePreviewTitle()
@@ -217,7 +227,9 @@ local ContextSelection = FullSurface and FullSurface.CreateSelectionController
         afterSet = function(key)
             EnsureTabModel():ApplyNormalized()
 
-            if _G.QUI_RefreshGroupFramePreview then
+            if State.inlineActive and State.inlinePreview then
+                State.inlinePreview.Refresh()
+            elseif _G.QUI_RefreshGroupFramePreview then
                 _G.QUI_RefreshGroupFramePreview(key)
             end
             if State.previewPanel and State.previewPanel.RefreshControlStrip then
@@ -401,9 +413,23 @@ local function BuildTabSectionNav(host, cached)
     end
 end
 
+local function InlinePanelFor(body)
+    local owner = body
+    while owner do
+        local preview = rawget(owner, "_preview")
+        local tile = rawget(owner, "_quiOptionsTile")
+        preview = preview or (tile and tile._preview)
+        if preview and preview._gfInlinePreviewPanel then return preview._gfInlinePreviewPanel end
+        owner = owner:GetParent()
+    end
+end
+
 local function ActivatePreviewBody(body)
     if not body then return end
 
+    local inline = InlinePanelFor(body)
+    if inline then State.inlinePreview = inline end
+    State.inlineActive = inline ~= nil
     local getContextMode = body._gfPreviewContextGetter
     if type(getContextMode) == "function" then
         local contextMode = NormalizeContextMode(getContextMode())
@@ -412,7 +438,11 @@ local function ActivatePreviewBody(body)
         end
     end
 
-    if State.previewPanel then State.previewPanel.Show() end
+    State.inlineActive = inline ~= nil
+    if _G.QUI_SetGroupFramePreviewFilter then
+        _G.QUI_SetGroupFramePreviewFilter(State.inlineActive and {} or State.previewFilter)
+    end
+    if State.previewPanel and not State.inlineActive then State.previewPanel.Show() end
     RefreshPreviewPanel()
 end
 
@@ -429,7 +459,7 @@ local function BindPreviewBody(body, getContextMode)
             if State.previewPanel then State.previewPanel.Hide() end
         end)
     end
-    if State.previewPanel and body:IsShown() then
+    if State.previewPanel and body:IsVisible() then
         ActivatePreviewBody(body)
     end
 end
@@ -509,12 +539,131 @@ local function BuildTileBody(body, _, _, feature)
         preventReentry = true,
     })
 
+    body._gfInlinePreview = true
     BindPreviewBody(body, function()
         local db = contextDropdown and contextDropdown.dropdownDB
         return (db and db._contextMode) or State.contextMode
     end)
 
     return result
+end
+
+local function BuildInlinePreview(parent)
+    local options = { single = true, tier = "small", raidCount = 20, zoom = 2, scenario = 1 }
+    local host = CreateFrame("Frame", nil, parent)
+    host:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -42)
+    host:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -14, 12)
+    host._quiGroupPreviewOptions = options
+    parent._quiPreviewHost = host
+    parent._quiPreviewChromeHeight = 54
+    parent:SetHeight(190)
+    parent._quiPreviewCollapsedHeight = 38
+    local header = CreateFrame("Frame", nil, parent)
+    header:SetPoint("TOPLEFT", 10, -6)
+    header:SetPoint("TOPRIGHT", -120, -6)
+    header:SetHeight(28)
+    header._quiPreviewActionHeight = 26
+    parent._quiPreviewHeader = header
+    local label = GUI:CreateLabel(header, ns.L["Party"], 12)
+    label:ClearAllPoints()
+    label:SetPoint("LEFT", 0, 0)
+    local panel = { host = host }
+    State.inlinePreview = panel
+    parent._gfInlinePreviewPanel = panel
+    local sizeButton, groupButton, zoomButton, countButton, scenarioButton
+    local function Bounds(root)
+        local left, right, top, bottom
+        local function Visit(region)
+            if not region:IsShown() then return end
+            local l, r, t, b = region:GetLeft(), region:GetRight(), region:GetTop(), region:GetBottom()
+            if l and r and t and b then
+                local scale = region:GetEffectiveScale() / root:GetEffectiveScale()
+                l, r, t, b = l * scale, r * scale, t * scale, b * scale
+                left = left and math.min(left, l) or l
+                right = right and math.max(right, r) or r
+                top = top and math.max(top, t) or t
+                bottom = bottom and math.min(bottom, b) or b
+            end
+            if region.GetChildren then for _, child in ipairs({region:GetChildren()}) do Visit(child) end end
+            if region.GetRegions then for _, child in ipairs({region:GetRegions()}) do Visit(child) end end
+        end
+        Visit(root)
+        return left, right, top, bottom
+    end
+    panel.Layout = function()
+        local Driver = ns.QUI_GroupFramesPreview
+        local root = Driver and Driver._state.root
+        if not root or root:GetParent() ~= host or not host:IsVisible() or panel.layingOut then return end
+        panel.layingOut = true
+        root:SetScale(1)
+        root:ClearAllPoints()
+        root:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+        local l, r, t, b = Bounds(root)
+        if not l then panel.layingOut = nil; return end
+        local w, h = math.max(1, r - l), math.max(1, t - b)
+        if not options.single and not parent._quiPreviewCollapsed then
+            local fit = math.min(1, math.max(0.1, (host:GetWidth() - 12) / w))
+            local height = math.min(285, math.max(120, 66 + h * fit))
+            if math.abs((parent._quiPreviewNaturalHeight or parent:GetHeight()) - height) > 0.5 then parent:SetHeight(height) end
+        end
+        local scale = math.min(options.single and options.zoom or 1, math.max(0.1, (host:GetWidth() - 12) / w), math.max(0.1, ((parent._quiPreviewViewport or host):GetHeight() - 12) / h))
+        local dx, dy = l - root:GetLeft(), root:GetTop() - t
+        root:SetScale(scale)
+        root:ClearAllPoints()
+        root:SetPoint("TOPLEFT", host, "TOPLEFT", (host:GetWidth() / scale - w) / 2 - dx, -(host:GetHeight() / scale - h) / 2 + dy)
+        panel.layingOut = nil
+    end
+    panel.Refresh = function()
+        label:SetText(State.contextMode == "raid" and ns.L["Raid"] or ns.L["Party"])
+        sizeButton:SetShown(State.contextMode == "raid")
+        sizeButton.text:SetText(ns.L[options.tier == "small" and "Small" or options.tier == "medium" and "Medium" or "Large"])
+        groupButton.text:SetText(options.single and ns.L["Full group"] or ns.L["Single frame"])
+        zoomButton:SetShown(options.single)
+        countButton:SetShown(not options.single and State.contextMode == "raid")
+        scenarioButton:SetShown(options.single)
+        scenarioButton:ClearAllPoints()
+        scenarioButton:SetPoint("LEFT", State.contextMode == "raid" and sizeButton or label, "RIGHT", 10, 0)
+        parent:SetHeight(options.single and 190 or 285)
+        if _G.QUI_BuildGroupFramePreview then _G.QUI_BuildGroupFramePreview(host, State.contextMode) end
+        panel.Layout()
+    end
+    sizeButton = GUI:CreateButton(header, ns.L["Small"], 78, 26, function()
+        options.tier = options.tier == "small" and "medium" or options.tier == "medium" and "large" or "small"
+        panel.Refresh()
+    end, "ghost", ns.L["Click to cycle Small, Medium, and Large raid frame sizes."])
+    sizeButton:SetPoint("LEFT", label, "RIGHT", 10, 0)
+    local scenarios = { ns.L["Normal"], ns.L["Threat"], ns.L["Dispel"], ns.L["Range Fade"], ns.L["Targeted Spells"] }
+    scenarioButton = GUI:CreateButton(header, scenarios[1], 116, 26, function()
+        options.scenario = options.scenario % #scenarios + 1
+        scenarioButton.text:SetText(scenarios[options.scenario])
+        panel.Refresh()
+    end, "ghost", ns.L["Click to cycle preview scenarios without changing your settings."])
+    groupButton = GUI:CreateButton(header, ns.L["Full group"], 100, 26, function()
+        options.single = not options.single
+        panel.Refresh()
+    end, "ghost")
+    groupButton:SetPoint("RIGHT", header, "RIGHT", 0, 0)
+    zoomButton = GUI:CreateButton(header, "2×", 46, 26, function()
+        options.zoom = options.zoom == 2 and 3 or options.zoom == 3 and 1 or 2
+        zoomButton.text:SetText(options.zoom .. "×")
+        panel.Layout()
+    end, "ghost", ns.L["Click to cycle preview zoom. The specimen stays fitted inside the card."])
+    zoomButton:SetPoint("RIGHT", groupButton, "LEFT", -6, 0)
+    countButton = GUI:CreateButton(header, "20 " .. ns.L["Players"], 88, 26, function()
+        options.raidCount = options.raidCount >= 40 and 5 or options.raidCount + 5
+        countButton.text:SetText(options.raidCount .. " " .. ns.L["Players"])
+        panel.Refresh()
+    end, "ghost", ns.L["Click to cycle the preview group size from 5 to 40 players."])
+    countButton:SetPoint("RIGHT", groupButton, "LEFT", -6, 0)
+    host:HookScript("OnSizeChanged", panel.Layout)
+    parent:HookScript("OnShow", function()
+        State.inlinePreview = panel
+        State.inlineActive = true
+        if State.previewPanel then State.previewPanel.Hide() end
+        panel.Refresh()
+    end)
+    parent:HookScript("OnHide", function() State.inlineActive = false end)
+    InstallPreviewObserver()
 end
 
 local function ShowPreviewOn(body, getContextMode)
@@ -532,6 +681,7 @@ local function InvalidateTabBodies()
 end
 
 ns.QUI_GroupFramesSettingsSurface = {
+    BuildInlinePreview = BuildInlinePreview,
     InvalidateTabBodies = InvalidateTabBodies,
     SetContextMode = SetContextMode,
     GetContextMode = GetContextMode,

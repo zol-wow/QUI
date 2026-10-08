@@ -108,7 +108,7 @@ RegisterNonVisualFeature("clickCast", {
 
 Register(
     "popupBlocker",
-    ns.L["QoL"],
+    ns.L["Quality of Life"],
     ns.L["Popup Blocker"],
     ns.L["Hides Blizzard tutorial popups, micro-button glows, and collection toasts."],
     false,
@@ -119,7 +119,7 @@ Register(
 
 Register(
     "quickSalvage",
-    ns.L["QoL"],
+    ns.L["Quality of Life"],
     ns.L["Quick Salvage"],
     ns.L["Alt-click bag items to instantly disenchant, mill, or prospect them."],
     false,
@@ -130,7 +130,7 @@ Register(
 
 Register(
     "autoCombatLog",
-    ns.L["QoL"],
+    ns.L["Quality of Life"],
     ns.L["Auto Log M+"],
     ns.L["Automatically starts and stops combat logging when entering Mythic+ dungeons."],
     false,
@@ -141,7 +141,7 @@ Register(
 
 Register(
     "autoCombatLogRaid",
-    ns.L["QoL"],
+    ns.L["Quality of Life"],
     ns.L["Auto Log Raids"],
     ns.L["Automatically starts and stops combat logging when entering raid instances."],
     false,
@@ -152,7 +152,7 @@ Register(
 
 Register(
     "reticle",
-    ns.L["QoL"],
+    ns.L["Quality of Life"],
     ns.L["Reticle"],
     ns.L["GCD ring and reticle drawn at the cursor for cast timing feedback."],
     false,
@@ -163,7 +163,7 @@ Register(
 
 Register(
     "mplusProgress",
-    ns.L["QoL"],
+    ns.L["Quality of Life"],
     ns.L["M+ Progress"],
     ns.L["Displays enemy forces contribution on nameplates and unit tooltips in Mythic+."],
     false,
@@ -174,7 +174,7 @@ Register(
 
 Register(
     "combatText",
-    ns.L["QoL"],
+    ns.L["Quality of Life"],
     ns.L["Combat Text"],
     ns.L["Shows a brief text flash when entering or leaving combat."],
     false,
@@ -185,7 +185,7 @@ Register(
 
 Register(
     "blizzardMover",
-    ns.L["QoL"],
+    ns.L["Quality of Life"],
     ns.L["Blizzard Frame Mover"],
     ns.L["Enables modifier-drag repositioning and scaling of Blizzard's built-in frames."],
     false,
@@ -214,7 +214,7 @@ do
     end
 
     RegisterNonVisualFeature("consumableMacros", {
-        group        = ns.L["QoL"],
+        group        = ns.L["Quality of Life"],
         label        = ns.L["Consumable Macros"],
         caption      = ns.L["Auto-maintains bag-aware macros for flasks, potions, augment runes, and weapon oils."],
         combatLocked = false,

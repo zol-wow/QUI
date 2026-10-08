@@ -100,44 +100,12 @@ function ns.QUI_PreyTrackerOptions.BuildPreyTrackerContent(content)
         else return "custom"
         end
     end
-    local colorModeDropdown = GUI:CreateFormDropdown(sBA.frame, nil, colorModeOptions, nil, nil, nil,
-        { description = ns.L["How the prey tracker bar is colored. Accent uses the addon accent, Class uses your class color, Custom uses the picker below."] })
-    local dropdownBtn
-    for _, child in ipairs({ colorModeDropdown:GetChildren() }) do
-        if child.GetObjectType and child:GetObjectType() == "Button" then
-            dropdownBtn = child
-            break
-        end
-    end
-    if dropdownBtn then
-        local currentMode = GetColorMode()
-        for _, opt in ipairs(colorModeOptions) do
-            if opt.value == currentMode then
-                local btnText = dropdownBtn:GetFontString()
-                if btnText then btnText:SetText(opt.text) end
-                break
-            end
-        end
-        dropdownBtn:SetScript("OnClick", function(self)
-            local menuItems = {}
-            for _, opt in ipairs(colorModeOptions) do
-                table.insert(menuItems, {
-                    text = opt.text,
-                    checked = (opt.value == GetColorMode()),
-                    func = function()
-                        db.barUseClassColor = (opt.value == "class")
-                        db.barUseAccentColor = (opt.value == "accent")
-                        local btnText2 = self:GetFontString()
-                        if btnText2 then btnText2:SetText(opt.text) end
-                        RefreshPreview()
-                    end,
-                })
-            end
-            if GUI.ShowDropdownMenu then
-                GUI:ShowDropdownMenu(self, menuItems)
-            end
-        end)
-    end
+    local colorModeState = { value = GetColorMode() }
+    local colorModeDropdown = GUI:CreateFormDropdown(sBA.frame, nil, colorModeOptions, "value", colorModeState, function(value)
+        db.barUseClassColor = value == "class"
+        db.barUseAccentColor = value == "accent"
+        RefreshPreview()
+    end, { description = ns.L["How the prey tracker bar is colored. Accent uses the addon accent, Class uses your class color, Custom uses the picker below."] })
 
     sBA.AddRow(
         row(sBA.frame, ns.L["Bar Texture"], baTexW),

@@ -169,14 +169,7 @@ local function BuildTroubleshootingContent(content)
     panel:SetHeight(320)
 
     local function RecalcContentHeight()
-        C_Timer.After(0, function()
-            if not content:GetParent() then return end
-            local contentTop = content:GetTop() or 0
-            local panelBottom = panel:GetBottom() or 0
-            if contentTop > 0 and panelBottom > 0 then
-                content:SetHeight(contentTop - panelBottom + 20)
-            end
-        end)
+        content:SetHeight(-y + grid:GetHeight() + 18 + outLabel:GetHeight() + 8 + panel:GetHeight() + 20)
     end
     grid:HookScript("OnSizeChanged", RecalcContentHeight)
     RecalcContentHeight()

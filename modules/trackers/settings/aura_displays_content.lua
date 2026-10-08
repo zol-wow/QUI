@@ -259,8 +259,9 @@ local UI = { headerRows = {}, displayRows = {} }
 
 local function SyncPreview()
     if not (AD and type(AD.ShowPreviewFor) == "function") then return end
-    local wantedID = previewEnabled and selectedID or nil
-    local wantedGroup = previewEnabled and selectedGroup or nil
+    local visible = UI.previewOwner and UI.previewOwner:IsVisible()
+    local wantedID = visible and previewEnabled and selectedID or nil
+    local wantedGroup = visible and previewEnabled and selectedGroup or nil
     if UI.lastPreviewID and UI.lastPreviewID ~= wantedID then
         AD.HidePreviewFor(UI.lastPreviewID)
     end
@@ -1610,6 +1611,7 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
     pane:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -topOffset)
     pane:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -topOffset)
     pane:SetHeight(PAGE_H)
+    UI.previewOwner = pane
     pane:SetScript("OnHide", function()
         if UI.lastPreviewID then
             AD.HidePreviewFor(UI.lastPreviewID)

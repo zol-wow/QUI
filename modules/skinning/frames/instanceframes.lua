@@ -129,7 +129,7 @@ local function SkinPVEFrame()
     local PVEFrame = _G.PVEFrame
     if not PVEFrame or SkinBase.IsSkinned(PVEFrame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     HidePVEDecorations()
 
@@ -395,7 +395,7 @@ local function SkinLFGListFrame()
     local LFGListFrame = _G.LFGListFrame
     if not LFGListFrame or SkinBase.IsSkinned(LFGListFrame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
     local actionTextColor = { 1.0, 0.82, 0.0, 1 }
 
     HideLFGListDecorations()
@@ -578,7 +578,7 @@ local function SkinChallengesFrame()
     local ChallengesFrame = _G.ChallengesFrame
     if not ChallengesFrame or SkinBase.IsSkinned(ChallengesFrame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     HideChallengesDecorations()
 
@@ -606,7 +606,7 @@ local function SkinChallengesFrame()
         hooksecurefunc(ChallengesFrame, "Update", function(self)
             C_Timer.After(0, function()
                 if self.DungeonIcons then
-                    local sr2, sg2, sb2, sa2, bgr2, bgg2, bgb2, bga2 = SkinBase.GetSkinColors()
+                    local sr2, sg2, sb2, sa2, bgr2, bgg2, bgb2, bga2 = SkinBase.GetWindowColors()
                     for _, icon in pairs(self.DungeonIcons) do
                         StyleDungeonIcon(icon, sr2, sg2, sb2, sa2, bgr2, bgg2, bgb2, bga2)
                     end
@@ -707,7 +707,8 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
     Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
 
     if button.SelectedTexture then
-        button.SelectedTexture:SetColorTexture(sr, sg, sb, 0.2)
+        local ar, ag, ab = SkinBase.GetSkinColors()
+        button.SelectedTexture:SetColorTexture(ar, ag, ab, 0.2)
         SkinBase.DisablePixelSnap(button.SelectedTexture)
     end
 
@@ -771,7 +772,8 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
 
     if button.SelectedTexture then
-        button.SelectedTexture:SetColorTexture(sr, sg, sb, 0.3)
+        local ar, ag, ab = SkinBase.GetSkinColors()
+        button.SelectedTexture:SetColorTexture(ar, ag, ab, 0.3)
         SkinBase.DisablePixelSnap(button.SelectedTexture)
         button.SelectedTexture:SetAllPoints()
     end
@@ -799,7 +801,7 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     button:HookScript("OnLeave", function(self)
         local bd = SkinBase.GetFrameData(self, "backdrop")
         if bd then
-            local cr, cg, cb, ca = SkinBase.GetSkinColors()
+            local cr, cg, cb, ca = SkinBase.GetWindowColors()
             Helpers.SetFrameBackdropBorderColor(bd, cr, cg, cb, ca)
         end
     end)
@@ -857,7 +859,7 @@ local function SkinPVPFrame()
     local PVPQueueFrame = _G.PVPQueueFrame
     if not PVPQueueFrame or SkinBase.IsSkinned(PVPQueueFrame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     HidePVPDecorations()
 
@@ -1072,7 +1074,8 @@ local function UpdatePVPActivityButtonColors(button, sr, sg, sb, sa, bgr, bgg, b
     Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     if button.SelectedTexture then
-        button.SelectedTexture:SetColorTexture(sr, sg, sb, 0.2)
+        local ar, ag, ab = SkinBase.GetSkinColors()
+        button.SelectedTexture:SetColorTexture(ar, ag, ab, 0.2)
         SkinBase.DisablePixelSnap(button.SelectedTexture)
     end
     local rewardIconBd = button.Reward and button.Reward.Icon and SkinBase.GetFrameData(button.Reward.Icon, "backdrop")
@@ -1108,7 +1111,7 @@ local function RefreshInstanceFramesColors()
     local PVEFrame = _G.PVEFrame
     if not PVEFrame or not SkinBase.IsSkinned(PVEFrame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     local pveBd = SkinBase.GetBackdrop(PVEFrame)
     if pveBd then

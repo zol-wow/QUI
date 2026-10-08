@@ -152,25 +152,27 @@ local function BuildActionBarsPreview(pv)
         PreviewState.bar = selectedBar
     end
 
-    local fill = pv:CreateTexture(nil, "BACKGROUND")
-    fill:SetAllPoints(pv)
-    fill:SetColorTexture(0, 0, 0, 0.2)
-
-    if ns.UIKit and ns.UIKit.CreateBorderLines then
-        ns.UIKit.CreateBorderLines(pv)
-        ns.UIKit.UpdateBorderLines(pv, 1, border[1], border[2], border[3], 0.15, false)
+    if not pv._quiPreviewSurface then
+        local fill = pv:CreateTexture(nil, "BACKGROUND")
+        fill:SetAllPoints(pv)
+        fill:SetColorTexture(0, 0, 0, 0.2)
+        if ns.UIKit and ns.UIKit.CreateBorderLines then
+            ns.UIKit.CreateBorderLines(pv)
+            ns.UIKit.UpdateBorderLines(pv, 1, border[1], border[2], border[3], 0.15, false)
+        end
     end
 
     local lbl = pv:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     if SkinBase and SkinBase.SkinFontString then
-        SkinBase.SkinFontString(lbl, { fontOnly = true })
+        SkinBase.SkinFontString(lbl, { fontOnly = true, font = GUI:GetFontPath(), outline = "" })
     end
     lbl:SetPoint("TOPLEFT", pv, "TOPLEFT", 8, -6)
     lbl:SetText(ns.L["Live Preview"])
     lbl:SetTextColor(0.6, 0.6, 0.6, 1)
 
     if ns.QUI_ActionBarsPreviewDriver and ns.QUI_ActionBarsPreviewDriver.Build then
-        ns.QUI_ActionBarsPreviewDriver.Build(pv, {
+        pv._quiPreviewChromeHeight = 42
+        pv._quiPreviewHost = ns.QUI_ActionBarsPreviewDriver.Build(pv, {
             autoHeight = true,
             chromeHeight = 42,
             minHeight = 66,
@@ -189,6 +191,8 @@ local function BuildActionBarsPreview(pv)
     selector:ClearAllPoints()
     selector:SetPoint("TOPRIGHT", pv, "TOPRIGHT", -8, -4)
     selector:SetSize(80, 22)
+    pv._quiPreviewHeader = selector
+    pv._quiPreviewCollapsedHeight = 30
 
     RegisterSelectedBarListener(pv, function(barKey, origin)
         if not (ns.QUI_ActionBarsPreviewDriver

@@ -1130,8 +1130,8 @@ function Pins:AttachCountChip(header)
     local borderAlpha = count > 0 and 0.3 or 0.18
     local bgAlpha = count > 0 and 0.1 or 0.04
 
-    chip:SetWidth(count >= 100 and 70 or 62)
-    chip.text:SetText(string_format(ns.L["Pin %d"], count))
+    chip.text:SetText(ns.L["Favorites"] .. " " .. tostring(count))
+    chip:SetWidth(math.max(82, chip.text:GetStringWidth() + 20))
     chip.text:SetTextColor(textColor[1], textColor[2], textColor[3], count > 0 and 1 or 0.9)
     StyleSurface(chip, bgAlpha, borderColor, borderAlpha)
 

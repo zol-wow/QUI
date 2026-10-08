@@ -255,6 +255,12 @@ local function GetPerBarBuilder()
     return nil
 end
 
+local function PrepareSettingsHost(host, ctx)
+    local width = math.max(300, (ctx.width or 0) - ((ctx.surface.padding or 10) * 2))
+    host:SetWidth(width)
+    return width
+end
+
 local function RenderSettingsSection(sectionHost, ctx, includePosition)
     local build = GetPerBarBuilder()
     if type(build) ~= "function" then
@@ -263,7 +269,7 @@ local function RenderSettingsSection(sectionHost, ctx, includePosition)
 
     RegisterSelectionListener(ctx)
 
-    local width = math.max(300, (ctx.width or 0) - ((ctx.surface.padding or 10) * 2))
+    local width = PrepareSettingsHost(sectionHost, ctx)
     local barKey = ResolveSelectionState(ctx.state).key
     local render = function()
         return build(sectionHost, barKey, width)
@@ -356,10 +362,11 @@ local function BuildPinnedBarSection(sectionId, barKey)
         id = sectionId,
         kind = "page",
         minHeight = 80,
-        build = function(host)
+        build = function(host, ctx)
             local build = GetPerBarBuilder()
             if type(build) ~= "function" then return 80 end
-            return build(host, barKey) or 80
+            local width = PrepareSettingsHost(host, ctx)
+            return build(host, barKey, width) or 80
         end,
     })
 end

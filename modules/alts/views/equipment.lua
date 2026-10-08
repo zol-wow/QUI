@@ -274,6 +274,7 @@ local function Builder(parent)
                     if entry then
                         cell._link = entry.link
                         cell._icon:SetTexture(entry.icon or 134400)
+                        ns.Helpers.ApplyIconStyle(cell._iconFrame, cell._icon)
                         cell._icon:Show()
                         local qr, qg, qb = GetQualityColor(entry.quality)
                         UIKit.UpdateBorderLines(cell._iconFrame, 1, qr, qg, qb, 0.8)

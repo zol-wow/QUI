@@ -412,7 +412,7 @@ local function SkinAuctionHouse()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame or SkinBase.IsSkinned(AuctionHouseFrame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     HideAuctionHouseDecorations()
 
@@ -456,7 +456,7 @@ local function RefreshAuctionHouseColors()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame or not SkinBase.IsSkinned(AuctionHouseFrame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     local mainBd = SkinBase.GetBackdrop(AuctionHouseFrame)
     if mainBd then

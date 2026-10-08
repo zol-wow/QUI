@@ -95,7 +95,7 @@ local function SkinKeystoneFrame()
     local keystoneFrame = _G.ChallengesKeystoneFrame
     if not keystoneFrame or SkinBase.IsSkinned(keystoneFrame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "keystone")
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "keystone")
 
     SkinBase.CreateBackdrop(keystoneFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
@@ -149,7 +149,7 @@ local function RefreshKeystoneColors()
 
     local core = GetCore()
     local settings = core and core.db and core.db.profile and core.db.profile.general
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "keystone")
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "keystone")
 
     local ksBd = SkinBase.GetBackdrop(keystoneFrame)
     if ksBd then

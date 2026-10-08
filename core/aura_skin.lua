@@ -1,4 +1,5 @@
 local ADDON_NAME, ns = ...
+local Helpers = ns.Helpers or {}
 ns.Addon = ns.Addon or {}
 local AuraTheme = ns.Addon.AuraTheme
 local AuraSkin = {}
@@ -128,7 +129,11 @@ local function buildButtonArt(button)
     if button.SetDurationCooldown then button:SetDurationCooldown(cd) end
 
     local fill = CreateFrame("StatusBar", nil, button)
-    fill:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    if Helpers and Helpers.ApplyBarStyle then
+        Helpers.ApplyBarStyle(fill, "Interface\\Buttons\\WHITE8x8")
+    else
+        fill:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    end
     fill:SetAllPoints(button)
     fill:Hide()
     button._quiDurationBar = fill
@@ -188,6 +193,7 @@ local function ApplyIconSkinOwnership(button, profile)
         if button._quiBorder and button._quiBorder.Hide then button._quiBorder:Hide() end
         if button._quiBackdrop and button._quiBackdrop.Hide then button._quiBackdrop:Hide() end
         if button._quiGloss and button._quiGloss.Hide then button._quiGloss:Hide() end
+        if Helpers.ApplyIconStyle then Helpers.ApplyIconStyle(button, button.Icon, "External") end
         return
     end
 
@@ -204,6 +210,7 @@ local function ApplyIconSkinOwnership(button, profile)
         button._quiRegions = regions
         regions.Backdrop = button._quiBackdrop
         regions.Gloss = button._quiGloss
+        regions.Icon = button.Icon
         ns.IconSkin.ApplySkin(button, regions, skinName)
     else
         if button._quiBackdrop and button._quiBackdrop.Hide then button._quiBackdrop:Hide() end
@@ -235,6 +242,9 @@ function AuraSkin.StyleIconArt(button, profile)
         icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -inset, inset)
     end
 
+    if Helpers.ApplyIconStyle then
+        Helpers.ApplyIconStyle(button, icon, button._quiBridged and "External" or (profile.iconSkin or "Default"))
+    end
     local border = button._quiBorder
     if not border then return end
     if button._quiBridged or not showBorder then
@@ -504,7 +514,11 @@ local function styleButton(button, profile)
         end
         if not fill then
             fill = CreateFrame("StatusBar", nil, button)
-            fill:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+            if Helpers and Helpers.ApplyBarStyle then
+                Helpers.ApplyBarStyle(fill, "Interface\\Buttons\\WHITE8x8")
+            else
+                fill:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+            end
             fill:SetAllPoints(button)
             button._quiDurationBar = fill
         end

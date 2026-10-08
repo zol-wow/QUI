@@ -105,7 +105,7 @@ local function SkinOverrideActionBar()
         return
     end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "overrideActionBar")
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "overrideActionBar")
 
     HideBlizzardElements(bar)
 
@@ -162,7 +162,7 @@ local function SkinOverrideActionBar()
         healthBar:SetSize(RESOURCE_BAR_WIDTH, RESOURCE_BAR_HEIGHT)
         healthBar:ClearAllPoints()
         healthBar:SetPoint("LEFT", bar, "LEFT", 4, 0)
-        healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        ns.Helpers.ApplyBarStyle(healthBar, "Interface\\Buttons\\WHITE8x8")
 
         local hbBd = SkinBase.GetFrameData(healthBar, "backdrop")
         if not hbBd then
@@ -186,7 +186,7 @@ local function SkinOverrideActionBar()
         powerBar:SetSize(RESOURCE_BAR_WIDTH, RESOURCE_BAR_HEIGHT)
         powerBar:ClearAllPoints()
         powerBar:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
-        powerBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        ns.Helpers.ApplyBarStyle(powerBar, "Interface\\Buttons\\WHITE8x8")
 
         local pbBd = SkinBase.GetFrameData(powerBar, "backdrop")
         if not pbBd then
@@ -230,7 +230,7 @@ local function RefreshOverrideActionBarColors()
     if not bar or not SkinBase.IsSkinned(bar) then return end
 
     local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "overrideActionBar")
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "overrideActionBar")
 
     local mainBd = SkinBase.GetFrameData(bar, "backdrop")
     if mainBd then

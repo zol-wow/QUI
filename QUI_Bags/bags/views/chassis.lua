@@ -147,7 +147,7 @@ function Chassis.ClampAppearance(appearance)
 end
 
 local function Reskin(win)
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = Helpers.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = Helpers.GetWindowColors()
     win._bg:SetVertexColor(bgr, bgg, bgb, bga)
     if win._border and win._border.SetBackdropBorderColor then
         win._border:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -265,7 +265,7 @@ function Chassis.CreateWindow(opts)
             else ar, ag, ab = Helpers.GetSkinColors() end
             UIKit.UpdateBorderLines(self, 1, ar, ag, ab, 0.9)
         else
-            local sr, sg, sb = Helpers.GetSkinColors()
+            local sr, sg, sb = Helpers.GetWindowColors()
             UIKit.UpdateBorderLines(self, 1, sr, sg, sb, 0.5)
         end
     end

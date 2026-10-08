@@ -19,8 +19,9 @@ QUICore.Loot = Loot
 
 local function GetThemeColors()
     local db = QUICore.db and QUICore.db.profile or {}
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(db.loot or {}, "loot")
-    return {bgr, bgg, bgb, bga}, {sr, sg, sb, sa}, {0.95, 0.96, 0.97, 1}
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(db.loot or {}, "loot")
+    local ar, ag, ab, aa = SkinBase.GetSkinColors(db.loot or {}, "loot")
+    return {bgr, bgg, bgb, bga}, {sr, sg, sb, sa}, {0.95, 0.96, 0.97, 1}, {ar, ag, ab, aa}
 end
 
 local MAX_LOOT_SLOTS = 10
@@ -114,7 +115,7 @@ local function IsUncollectedTransmog(itemLink)
 end
 
 local function CreateLootSlot(parent, index)
-    local bgColor, borderColor, textColor = GetThemeColors()
+    local bgColor, borderColor, textColor, accentColor = GetThemeColors()
 
     local slot = CreateFrame("Button", "QUI_LootSlot"..index, parent)
     slot:SetSize(SLOT_WIDTH, SLOT_HEIGHT)
@@ -156,7 +157,7 @@ local function CreateLootSlot(parent, index)
     slot.questIcon:Hide()
 
     slot:SetHighlightTexture("Interface\\Buttons\\WHITE8x8")
-    slot:GetHighlightTexture():SetVertexColor(borderColor[1], borderColor[2], borderColor[3], 0.2)
+    slot:GetHighlightTexture():SetVertexColor(accentColor[1], accentColor[2], accentColor[3], 0.2)
 
     slot:SetScript("OnClick", function(self)
         if self.slotIndex then
@@ -196,7 +197,7 @@ local function CreateLootSlot(parent, index)
 end
 
 local function CreateLootWindow()
-    local bgColor, borderColor, textColor = GetThemeColors()
+    local bgColor, borderColor, textColor, accentColor = GetThemeColors()
 
     local frame = CreateFrame("Frame", "QUI_LootFrame", UIParent, "BackdropTemplate")
     frame:SetSize(LOOT_FRAME_WIDTH, LOOT_FRAME_HEIGHT)
@@ -303,6 +304,7 @@ local function OnLootOpened(autoLoot, isFromItem, refreshOnly)
 
             slot.slotIndex = i
             slot.icon:SetTexture(texture)
+            Helpers.ApplyIconStyle(slot, slot.icon)
             slot.name:SetText(name or "")
 
             local r, g, b = C_Item.GetItemQualityColor(quality or 1)
@@ -413,7 +415,7 @@ local QUALITY_BG_TINTS = {
 }
 
 local function CreateRollFrame(index)
-    local bgColor, borderColor, textColor = GetThemeColors()
+    local bgColor, borderColor, textColor, accentColor = GetThemeColors()
 
     local frame = CreateFrame("Frame", "QUI_LootRollFrame"..index, UIParent, "BackdropTemplate")
     frame:SetSize(ROLL_FRAME_WIDTH, ROLL_FRAME_HEIGHT)
@@ -450,8 +452,8 @@ local function CreateRollFrame(index)
     frame.timer:SetHeight(ROLL_TIMER_HEIGHT)
     frame.timer:SetPoint("BOTTOMLEFT", 4, 4)
     frame.timer:SetPoint("BOTTOMRIGHT", -4, 4)
-    frame.timer:SetStatusBarTexture(LSM:Fetch("statusbar", "Quazii") or "Interface\\TargetingFrame\\UI-StatusBar")
-    frame.timer:SetStatusBarColor(borderColor[1], borderColor[2], borderColor[3], 1)
+    ns.Helpers.ApplyBarStyle(frame.timer, LSM:Fetch("statusbar", "Quazii") or "Interface\\TargetingFrame\\UI-StatusBar")
+    frame.timer:SetStatusBarColor(accentColor[1], accentColor[2], accentColor[3], 1)
     frame.timer:SetMinMaxValues(0, 1)
     frame.timer:SetValue(1)
 
@@ -600,6 +602,7 @@ StartRoll = function(rollID, rollTime)
     frame.rollTime = rollTime
 
     frame.icon:SetTexture(texture)
+    Helpers.ApplyIconStyle(frame, frame.icon)
     frame.name:SetText(name or "")
 
     local r, g, b = C_Item.GetItemQualityColor(quality or 1)
@@ -639,7 +642,7 @@ StartRoll = function(rollID, rollTime)
 
     PositionRollFrame(frame)
 
-    local _, accentColor = GetThemeColors()
+    local _, _, _, accentColor = GetThemeColors()
     frame.timer:SetStatusBarColor(accentColor[1], accentColor[2], accentColor[3], 1)
     rollTimerFrames[frame] = true
     rollTimerManager:Show()
@@ -751,7 +754,7 @@ local function SkinGroupLootHistoryFrame()
     local HistoryFrame = _G.GroupLootHistoryFrame
     if not HistoryFrame then return end
 
-    local bgColor, borderColor, textColor = GetThemeColors()
+    local bgColor, borderColor, textColor, accentColor = GetThemeColors()
 
     SkinBase.HidePortraitFrameChrome(HistoryFrame)
 
@@ -772,8 +775,8 @@ local function SkinGroupLootHistoryFrame()
         if Timer.Border then Timer.Border:SetAlpha(0) end
 
         if Timer.Fill then
-            Timer.Fill:SetTexture(LSM:Fetch("statusbar", "Quazii") or "Interface\\TargetingFrame\\UI-StatusBar")
-            Timer.Fill:SetVertexColor(borderColor[1], borderColor[2], borderColor[3], 1)
+            Helpers.ApplyTextureStyle(Timer, Timer.Fill, LSM:Fetch("statusbar", "Quazii") or "Interface\\TargetingFrame\\UI-StatusBar")
+            Timer.Fill:SetVertexColor(accentColor[1], accentColor[2], accentColor[3], 1)
         end
 
         local timerParts = frameParts[Timer]
@@ -879,7 +882,7 @@ function Loot:ApplyLootHistoryTheme()
 
     if not themeBd then return end
 
-    local bgColor, borderColor, textColor = GetThemeColors()
+    local bgColor, borderColor, textColor, accentColor = GetThemeColors()
 
     themeBd:Show()
     if HistoryFrame.NineSlice then HistoryFrame.NineSlice:SetAlpha(0) end
@@ -894,7 +897,7 @@ function Loot:ApplyLootHistoryTheme()
         local timerParts = frameParts[HistoryFrame.Timer]
         if timerParts and timerParts.bg then timerParts.bg:Show() end
         if HistoryFrame.Timer.Fill then
-            HistoryFrame.Timer.Fill:SetVertexColor(borderColor[1], borderColor[2], borderColor[3], 1)
+            HistoryFrame.Timer.Fill:SetVertexColor(accentColor[1], accentColor[2], accentColor[3], 1)
         end
     end
 
@@ -1131,7 +1134,7 @@ end
 
 function Loot:ApplyLootTheme()
     if not lootFrame then return end
-    local bgColor, borderColor, textColor = GetThemeColors()
+    local bgColor, borderColor, textColor, accentColor = GetThemeColors()
     local fontPath = LSM:Fetch("font", GetGeneralFont())
 
     Helpers.SetFrameBackdropColor(lootFrame, unpack(bgColor))
@@ -1145,13 +1148,13 @@ function Loot:ApplyLootTheme()
             CJKFont(slot.name, fontPath, 11, "OUTLINE")
             CJKFont(slot.count, fontPath, 10, "OUTLINE")
             CJKFont(slot.transmogMarker, fontPath, 12, "OUTLINE")
-            slot:GetHighlightTexture():SetVertexColor(borderColor[1], borderColor[2], borderColor[3], 0.2)
+            slot:GetHighlightTexture():SetVertexColor(accentColor[1], accentColor[2], accentColor[3], 0.2)
         end
     end
 end
 
 function Loot:ApplyRollTheme()
-    local bgColor, borderColor, textColor = GetThemeColors()
+    local bgColor, borderColor, textColor, accentColor = GetThemeColors()
     local fontPath = LSM:Fetch("font", GetGeneralFont())
 
     for i = 1, MAX_ROLL_FRAMES do
@@ -1159,7 +1162,7 @@ function Loot:ApplyRollTheme()
         if frame then
             Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], 0.95)
             Helpers.SetFrameBackdropBorderColor(frame, borderColor[1], borderColor[2], borderColor[3], 0.3)
-            frame.timer:SetStatusBarColor(borderColor[1], borderColor[2], borderColor[3], 1)
+            frame.timer:SetStatusBarColor(accentColor[1], accentColor[2], accentColor[3], 1)
             CJKFont(frame.name, fontPath, 12, "OUTLINE")
         end
     end
@@ -1215,6 +1218,7 @@ function Loot:ShowLootPreview()
         local slot = lootFrame.slots[i]
         slot.slotIndex = nil
         slot.icon:SetTexture(item.texture)
+        Helpers.ApplyIconStyle(slot, slot.icon)
         slot.name:SetText(item.name)
         local r, g, b = C_Item.GetItemQualityColor(item.quality)
         Helpers.SetFrameBackdropBorderColor(slot.iconBorder, r, g, b, 1)
@@ -1278,7 +1282,7 @@ function Loot:ShowRollPreview()
         _G.QUI_ApplyAllFrameAnchors()
     end
 
-    local bgColor, borderColor, textColor = GetThemeColors()
+    local bgColor, borderColor, textColor, accentColor = GetThemeColors()
 
     self._previewMaxFrames = maxFrames
 
@@ -1294,6 +1298,7 @@ function Loot:ShowRollPreview()
 
         frame.rollID = nil
         frame.icon:SetTexture(item.texture)
+        Helpers.ApplyIconStyle(frame, frame.icon)
         frame.name:SetText(item.name)
         local r, g, b = C_Item.GetItemQualityColor(item.quality)
         Helpers.SetFrameBackdropBorderColor(frame.iconBorder, r, g, b, 1)
@@ -1303,7 +1308,7 @@ function Loot:ShowRollPreview()
         frame.qualityTint:SetColorTexture(tint[1], tint[2], tint[3], tint[4])
 
         frame.timer:SetValue(item.timer)
-        frame.timer:SetStatusBarColor(borderColor[1], borderColor[2], borderColor[3], 1)
+        frame.timer:SetStatusBarColor(accentColor[1], accentColor[2], accentColor[3], 1)
         rollTimerFrames[frame] = nil
 
         if i == 1 then

@@ -34,7 +34,7 @@ local function ApplyWeeklyRewardsSkin(frame)
 
     HideWeeklyRewardsChrome(frame)
     if not SkinBase.GetBackdrop(frame) then
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
         SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
 
@@ -91,7 +91,7 @@ local function RefreshWeeklyRewards()
     if not frame then return end
     local bd = SkinBase.GetBackdrop(frame)
     if not bd then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
     SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
 end
 

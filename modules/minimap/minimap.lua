@@ -418,7 +418,7 @@ local function UpdateBackdrop()
     local fullSize = settings.size + (settings.borderSize * 2)
     backdrop:SetSize(fullSize, fullSize)
 
-    local r, g, b, a = Helpers.GetSkinBorderColor(settings, "")
+    local r, g, b, a = Helpers.GetWindowColors(settings, "")
     backdrop:SetColorTexture(r, g, b, a)
 
     if settings.shape == "SQUARE" then
@@ -559,7 +559,7 @@ local function UpdateDatatextPanel()
     local minimapScale = minimapSettings.scale or 1.0
     local minimapBorderSize = minimapSettings.borderSize or 3
     local dtBorderSize = dtSettings.borderSize or 2
-    local dtBr, dtBg, dtBb, dtBa = Helpers.GetSkinBorderColor(dtSettings, "")
+    local dtBr, dtBg, dtBb, dtBa = Helpers.GetWindowColors(dtSettings, "")
     local dtBorderColor = { dtBr, dtBg, dtBb, dtBa }
     local dtHeight = dtSettings.height or 22
     local yOffset = dtSettings.offsetY or 0
@@ -611,8 +611,9 @@ local function UpdateDatatextPanel()
 
     do
         local bgR, bgG, bgB = 0, 0, 0
-        if Helpers and Helpers.GetSkinBgColor then
-            bgR, bgG, bgB = Helpers.GetSkinBgColor()
+        if Helpers and Helpers.GetWindowColors then
+            local _, _, _, _, r, g, b = Helpers.GetWindowColors()
+            bgR, bgG, bgB = r, g, b
         end
         datatextFrame.bg:SetColorTexture(bgR or 0, bgG or 0, bgB or 0, bgAlpha)
     end
@@ -1669,15 +1670,16 @@ local function ShowMiddleClickMenu(keepPosition)
     local fontSize = 12
     local borderR, borderG, borderB, borderA = 0.2, 0.8, 0.6, 1
     local bgR, bgG, bgB, bgA = 0.03, 0.03, 0.03, 0.98
-    if Helpers and Helpers.GetSkinBorderColor then
-        borderR, borderG, borderB, borderA = Helpers.GetSkinBorderColor()
+    if Helpers and Helpers.GetWindowColors then
+        borderR, borderG, borderB, borderA = Helpers.GetWindowColors()
     elseif QUI and QUI.GetAddonAccentColor then
         borderR, borderG, borderB, borderA = QUI:GetAddonAccentColor()
     end
     borderA = borderA or 1
 
-    if Helpers and Helpers.GetSkinBgColor then
-        bgR, bgG, bgB, bgA = Helpers.GetSkinBgColor()
+    if Helpers and Helpers.GetWindowColors then
+        local _, _, _, _, r, g, b, a = Helpers.GetWindowColors()
+        bgR, bgG, bgB, bgA = r, g, b, a
     else
         local core = Helpers.GetCore and Helpers.GetCore() or nil
         if core and core.db and core.db.profile and core.db.profile.general and core.db.profile.general.skinBgColor then
@@ -2517,13 +2519,14 @@ local function StyleDrawerFrame()
     local borderR, borderG, borderB, borderA = 0.2, 0.8, 0.6, 1
     local bgR, bgG, bgB, bgA = 0.03, 0.03, 0.03, 0.98
 
-    if Helpers and Helpers.GetSkinBorderColor then
-        borderR, borderG, borderB, borderA = Helpers.GetSkinBorderColor(drawerSettings, "")
+    if Helpers and Helpers.GetWindowColors then
+        borderR, borderG, borderB, borderA = Helpers.GetWindowColors(drawerSettings, "")
     end
     borderA = borderA or 1
 
-    if Helpers and Helpers.GetSkinBgColor then
-        bgR, bgG, bgB, bgA = Helpers.GetSkinBgColor()
+    if Helpers and Helpers.GetWindowColors then
+        local _, _, _, _, r, g, b, a = Helpers.GetWindowColors()
+        bgR, bgG, bgB, bgA = r, g, b, a
     end
 
     if drawerSettings and type(drawerSettings.bgColor) == "table" then
@@ -2607,8 +2610,9 @@ local function CreateDrawerToggleButton()
         if SkinBase and SkinBase.GetDepthColor then
             bgR, bgG, bgB = SkinBase.GetDepthColor("PANEL")
         end
-        if not bgR and Helpers.GetSkinBgColor then
-            bgR, bgG, bgB = Helpers.GetSkinBgColor()
+        if not bgR and Helpers.GetWindowColors then
+            local _, _, _, _, r, g, b = Helpers.GetWindowColors()
+            bgR, bgG, bgB = r, g, b
         end
         bg:SetColorTexture(bgR or 0.05, bgG or 0.05, bgB or 0.05, 0.9)
     end

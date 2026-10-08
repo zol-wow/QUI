@@ -51,13 +51,18 @@ local function ApplyBackdrop()
     local db = GetDB()
     if not db then return end
 
-    bar.bg:SetColorTexture(0, 0, 0, (db.bgOpacity or 85) / 100)
+    local bgR, bgG, bgB = 0, 0, 0
+    if Helpers.IsSatinStyle() then
+        local _, _, _, _, r, g, b = Helpers.GetWindowColors(db, "")
+        bgR, bgG, bgB = r, g, b
+    end
+    bar.bg:SetColorTexture(bgR, bgG, bgB, (db.bgOpacity or 85) / 100)
     if UIKit and UIKit.DisablePixelSnap then
         UIKit.DisablePixelSnap(bar.bg)
     end
 
     local borderSize = db.borderSize or 1
-    local bR, bG, bB, bA = Helpers.GetSkinBorderColor(db, "")
+    local bR, bG, bB, bA = Helpers.GetWindowColors(db, "")
     local edge = bar.borderEdge
     edge:SetColorTexture(bR, bG, bB, bA)
     if UIKit and UIKit.DisablePixelSnap then

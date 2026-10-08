@@ -106,7 +106,7 @@ local function SkinMailIconButton(button)
     if SkinBase.IsStyled(button) then
         SkinBase.RefreshWidget(button)
     else
-        local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetSkinColors()
+        local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetWindowColors()
         SkinBase.CreateBackdrop(button, sr, sg, sb, sa,
             min(bgr + ICON_BUTTON_BG_BOOST, 1),
             min(bgg + ICON_BUTTON_BG_BOOST, 1),

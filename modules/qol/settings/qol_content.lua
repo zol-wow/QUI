@@ -292,7 +292,7 @@ local function BuildCombatText(L, db)
         end
     end, { description = ns.L["Use a custom font for the combat text instead of inheriting the global QUI default font."] })
     combatTextFontDropdown = GUI:CreateFormDropdown(s.frame, nil, fontList, "font", combatTextDB, RefreshCombatText,
-        { description = ns.L["Custom font used for the combat text when Use Custom Font is enabled."] })
+        { description = ns.L["Custom font used for the combat text when Use Custom Font is enabled."] }, { placeholder = ns.L["Global Font"] })
     if combatTextFontDropdown.SetEnabled then
         combatTextFontDropdown:SetEnabled(combatTextDB.useCustomFont == true)
     end
@@ -1026,9 +1026,9 @@ local function BuildQuiPanel(L, db)
 
     local alphaW = GUI:CreateFormSlider(s.frame, nil, 0.3, 1.0, 0.01, "configPanelAlpha", db, function(val)
         local mainFrame = GUI.MainFrame
-        if mainFrame then
-            local bgColor = GUI.Colors.bg
-            mainFrame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], val)
+        if mainFrame and mainFrame._bg then
+            local bgColor = GUI.Colors.optionsWindow or GUI.Colors.bg
+            mainFrame._bg:SetVertexColor(bgColor[1], bgColor[2], bgColor[3], val)
         end
     end, { description = ns.L["Background opacity of the QUI options panel itself."] })
 
@@ -1044,6 +1044,13 @@ local function BuildQuiPanel(L, db)
         s.AddRow(row(s.frame, ns.L["Hide QUI Minimap Icon"], hideW), row(s.frame, ns.L["QUI Panel Transparency"], alphaW))
     else
         s.AddRow(row(s.frame, ns.L["QUI Panel Transparency"], alphaW))
+    end
+    if db.general then
+        if db.general.optionsMotion == nil then db.general.optionsMotion = true end
+        local motionW = GUI:CreateFormCheckbox(s.frame, nil, "optionsMotion", db.general, function()
+            if GUI.RefreshOptionsMotion then GUI:RefreshOptionsMotion() end
+        end, { description = ns.L["Use brief animations when navigating the options panel. Disable for reduced motion."] })
+        s.AddRow(row(s.frame, ns.L["Animate Options"], motionW))
     end
     L.closeSection(s)
 end
@@ -1346,14 +1353,14 @@ local generalSectionFeatures = {
     { id = "quickSalvage",      category = "qol",        nav = { tileId = "qol", subPageIndex = 5 }, sectionKey = "quickSalvage",     sectionTitle = "Quick Salvage",                    searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 5, subTabName = "Salvage" } },
     { id = "consumableMacros",  category = "qol",        nav = { tileId = "qol", subPageIndex = 6 }, sectionKey = "consumableMacros", sectionTitle = "Consumable Macros",                searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 6, subTabName = "Consumables" } },
     { id = "targetDistance",    category = "qol",        nav = { tileId = "qol", subPageIndex = 7 }, sectionKey = "targetDistance",   sectionTitle = "Target Distance Bracket Display",  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 7, subTabName = "Distance" } },
-    { id = "quiPanel",          category = "qol",        nav = { tileId = "qol", subPageIndex = 8 }, sectionKey = "quiPanel",         sectionTitle = "QUI Panel Settings",               searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 8, subTabName = "Panel" } },
-    { id = "reloadBehavior",    category = "qol",        nav = { tileId = "qol", subPageIndex = 9 }, sectionKey = "reloadBehavior",   sectionTitle = "Reload Behavior",                  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 9, subTabName = "Reload" } },
-    { id = "merchantGrid",      category = "qol",        nav = { tileId = "qol", subPageIndex = 10 }, sectionKey = "merchantGrid",     sectionTitle = "Merchant Grid",                    searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 10, subTabName = "Merchant" } },
-    { id = "friendsList",       category = "qol",        nav = { tileId = "qol", subPageIndex = 11 }, sectionKey = "friendsList",      sectionTitle = "Friends List",                     searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 11, subTabName = "Friends List" } },
-    { id = "extendedIgnore",    category = "qol",        nav = { tileId = "qol", subPageIndex = 12 }, sectionKey = "extendedIgnore",   sectionTitle = "Extended Ignore",                  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 12, subTabName = "Extended Ignore" } },
-    { id = "eventSounds",       category = "qol",        nav = { tileId = "qol", subPageIndex = 13 }, sectionKey = "eventSounds",      sectionTitle = "Event Sounds",                     searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 13, subTabName = "Event Sounds" } },
-    { id = "soundMute",         category = "qol",        nav = { tileId = "qol", subPageIndex = 14 }, sectionKey = "soundMute",        sectionTitle = "Sound Mute",                       searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 14, subTabName = "Sound Mute" } },
-    { id = "notifications",     category = "qol",        nav = { tileId = "qol", subPageIndex = 15 }, sectionKey = "notifications",    sectionTitle = "Group Death Alerts",               searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 15, subTabName = "Notifications" },
+    { id = "quiPanel",          category = "global",     nav = { tileId = "global", subPageIndex = 7 }, sectionKey = "quiPanel",         sectionTitle = "QUI Panel Settings",               searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 8, subTabName = "Panel" } },
+    { id = "reloadBehavior",    category = "global",     nav = { tileId = "global", subPageIndex = 7 }, sectionKey = "reloadBehavior",   sectionTitle = "Reload Behavior",                  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 9, subTabName = "Reload" } },
+    { id = "merchantGrid",      category = "qol",        nav = { tileId = "qol", subPageIndex = 8 }, sectionKey = "merchantGrid",     sectionTitle = "Merchant Grid",                    searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 10, subTabName = "Merchant" } },
+    { id = "friendsList",       category = "qol",        nav = { tileId = "qol", subPageIndex = 9 }, sectionKey = "friendsList",      sectionTitle = "Friends List",                     searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 11, subTabName = "Friends List" } },
+    { id = "extendedIgnore",    category = "qol",        nav = { tileId = "qol", subPageIndex = 10 }, sectionKey = "extendedIgnore",   sectionTitle = "Extended Ignore",                  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 12, subTabName = "Extended Ignore" } },
+    { id = "eventSounds",       category = "qol",        nav = { tileId = "qol", subPageIndex = 11 }, sectionKey = "eventSounds",      sectionTitle = "Event Sounds",                     searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 13, subTabName = "Event Sounds" } },
+    { id = "soundMute",         category = "qol",        nav = { tileId = "qol", subPageIndex = 12 }, sectionKey = "soundMute",        sectionTitle = "Sound Mute",                       searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 14, subTabName = "Sound Mute" } },
+    { id = "notifications",     category = "qol",        nav = { tileId = "qol", subPageIndex = 13 }, sectionKey = "notifications",    sectionTitle = "Group Death Alerts",               searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 15, subTabName = "Notifications" },
       -- Legacy pin route: death alert settings lived under Automation; "general.deathAlert.*" pin paths resolve here.
       lookupKeys = { "deathAlert" } },
     { id = "uiScale",           category = "appearance", nav = { tileId = "appearance", subPageIndex = 1 }, sectionKey = "uiScale",   sectionTitle = "UI Scale",                         searchContext = { tabIndex = 10, tabName = "Appearance",      subTabIndex = 3, subTabName = "UI Scale" } },

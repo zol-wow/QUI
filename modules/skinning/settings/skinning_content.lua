@@ -207,6 +207,16 @@ local function BuildThemeColorsTab(tabContent)
 
     local L = MakeLayout(tabContent)
 
+    L.headerAt(ns.L["Visual Style"])
+    local sVS = L.sectionAt()
+    local styleDropdown = GUI:CreateFormDropdown(sVS.frame, nil, {
+        { value = "Satin", text = ns.L["Satin"] },
+        { value = "Legacy", text = ns.L["Legacy"] },
+    }, "visualStyle", general, ReloadConfirm,
+        { description = ns.L["Choose Satin finishes or the legacy appearance. Your textures, colors and layout are preserved. Requires a UI reload."] })
+    sVS.AddRow(row(sVS.frame, ns.L["Visual Style"], styleDropdown))
+    L.closeSection(sVS)
+
     L.headerAt(ns.L["Theme Accent"])
     local sTA = L.sectionAt()
     local themeDropdown, accentColorPicker

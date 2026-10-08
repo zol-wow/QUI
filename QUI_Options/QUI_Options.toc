@@ -35,6 +35,7 @@ framework.lua
 border_control.lua
 reorder_list.lua
 shared.lua
+navigation.lua
 wizard.lua
 # Options-only settings framework, deferred out of the login path. Every
 # consumer reaches these lazily (inside a function) from UI-build code; none

@@ -73,7 +73,7 @@ local function ApplyForcesTextColor(fontString, colors, settings)
     end
 end
 
-local function ApplyBarSkin(bar, sr, sg, sb, br, bg, bb, colors, isTimerBar, barIndex, showBorder, settings)
+local function ApplyBarSkin(bar, sr, sg, sb, sa, br, bg, bb, colors, isTimerBar, barIndex, showBorder, settings)
     if not bar or not bar.frame then return end
 
     local barBg = colors.barBg
@@ -83,10 +83,10 @@ local function ApplyBarSkin(bar, sr, sg, sb, br, bg, bb, colors, isTimerBar, bar
     Helpers.SetFrameBackdropColor(bar.frame, barBg[1], barBg[2], barBg[3], barBg[4])
 
     local borderAlpha = showBorder and 1 or 0
-    Helpers.SetFrameBackdropBorderColor(bar.frame, sr * borderMult, sg * borderMult, sb * borderMult, borderAlpha)
+    Helpers.SetFrameBackdropBorderColor(bar.frame, sr * borderMult, sg * borderMult, sb * borderMult, borderAlpha * sa)
 
     if bar.bar then
-        bar.bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        ns.Helpers.ApplyBarStyle(bar.bar, "Interface\\Buttons\\WHITE8x8")
 
         if isTimerBar then
             if barIndex == 3 then
@@ -127,7 +127,8 @@ local function ApplyMPlusTimerSkin()
     end
 
     local settings = GetMPlusTimerSettings()
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings)
+    local sr, sg, sb = SkinBase.GetSkinColors(settings)
+    local wr, wg, wb, wa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings)
     local opacityMul = settings.frameBackgroundOpacity
     if opacityMul == nil then opacityMul = 1 end
     opacityMul = math.max(0, math.min(1, opacityMul))
@@ -136,7 +137,7 @@ local function ApplyMPlusTimerSkin()
     local colors = GetContrastColors(bgr, bgg, bgb)
     local showBorder = settings.showBorder ~= false
 
-    ApplyBackdrop(MPlusTimer.frames.root, sr, sg, sb, sa, bgr, bgg, bgb, bga, showBorder)
+    ApplyBackdrop(MPlusTimer.frames.root, wr, wg, wb, wa, bgr, bgg, bgb, bga, showBorder)
 
     if MPlusTimer.frames.deathsText then
         MPlusTimer.frames.deathsText:SetTextColor(
@@ -178,12 +179,12 @@ local function ApplyMPlusTimerSkin()
     if MPlusTimer.bars then
         for i = 1, 3 do
             if MPlusTimer.bars[i] then
-                ApplyBarSkin(MPlusTimer.bars[i], sr, sg, sb, br, bg, bb, colors, true, i, showBorder, settings)
+                ApplyBarSkin(MPlusTimer.bars[i], wr, wg, wb, wa, br, bg, bb, colors, true, i, showBorder, settings)
             end
         end
 
         if MPlusTimer.bars.forces then
-            ApplyBarSkin(MPlusTimer.bars.forces, sr, sg, sb, br, bg, bb, colors, false, nil, showBorder, settings)
+            ApplyBarSkin(MPlusTimer.bars.forces, wr, wg, wb, wa, br, bg, bb, colors, false, nil, showBorder, settings)
         end
     end
 
@@ -202,7 +203,7 @@ local function ApplyMPlusTimerSkin()
         local borderAlpha = showBorder and 1 or 0
         SkinBase.ApplyPixelBackdrop(MPlusTimer.frames.sleekBar, 1, true, false)
         Helpers.SetFrameBackdropColor(MPlusTimer.frames.sleekBar, barBg[1], barBg[2], barBg[3], barBg[4])
-        Helpers.SetFrameBackdropBorderColor(MPlusTimer.frames.sleekBar, sr * borderMult, sg * borderMult, sb * borderMult, borderAlpha)
+        Helpers.SetFrameBackdropBorderColor(MPlusTimer.frames.sleekBar, wr * borderMult, wg * borderMult, wb * borderMult, borderAlpha * wa)
     end
 
     if MPlusTimer.sleekSegments then

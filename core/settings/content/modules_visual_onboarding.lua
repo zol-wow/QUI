@@ -123,47 +123,47 @@ local VISUAL_MODULES = {
     },
 
     {
-        key = "crosshair", group = ns.L["QoL"], label = ns.L["Crosshair"],
+        key = "crosshair", group = ns.L["Quality of Life"], label = ns.L["Crosshair"],
         caption = ns.L["Reticle drawn at the screen center for precise targeting."],
         combatLocked = true,
     },
     {
-        key = "skyriding", group = ns.L["QoL"], label = ns.L["Skyriding HUD"],
+        key = "skyriding", group = ns.L["Quality of Life"], label = ns.L["Skyriding HUD"],
         caption = ns.L["Momentum and Second Wind HUD for Skyriding mounts."],
         combatLocked = true,
     },
     {
-        key = "xpTracker", group = ns.L["QoL"], label = ns.L["XP Tracker"],
+        key = "xpTracker", group = ns.L["Quality of Life"], label = ns.L["XP Tracker"],
         caption = ns.L["Compact bar showing current XP or reputation progress."],
         combatLocked = true,
     },
     {
-        key = "rangeCheck", group = ns.L["QoL"], label = ns.L["Range Check"],
+        key = "rangeCheck", group = ns.L["Quality of Life"], label = ns.L["Range Check"],
         caption = ns.L["Indicator that alerts when your target steps out of range."],
         combatLocked = false,
     },
     {
-        key = "actionTracker", group = ns.L["QoL"], label = ns.L["Action Tracker"],
+        key = "actionTracker", group = ns.L["Quality of Life"], label = ns.L["Action Tracker"],
         caption = ns.L["Tracks and displays the last ability or action used."],
         combatLocked = false,
     },
     {
-        key = "focusCastAlert", group = ns.L["QoL"], label = ns.L["Focus Cast Alert"],
+        key = "focusCastAlert", group = ns.L["Quality of Life"], label = ns.L["Focus Cast Alert"],
         caption = ns.L["Highlights when your focus target begins casting."],
         combatLocked = false,
     },
     {
-        key = "petWarning", group = ns.L["QoL"], label = ns.L["Pet Warning"],
+        key = "petWarning", group = ns.L["Quality of Life"], label = ns.L["Pet Warning"],
         caption = ns.L["Warns when your pet enters or exits combat unexpectedly."],
         combatLocked = false,
     },
     {
-        key = "preyTracker", group = ns.L["QoL"], label = ns.L["Prey Tracker"],
+        key = "preyTracker", group = ns.L["Quality of Life"], label = ns.L["Prey Tracker"],
         caption = ns.L["Tracks a designated enemy target across reloads."],
         combatLocked = false,
     },
     {
-        key = "atonementCounter", group = ns.L["QoL"], label = ns.L["Atonement Counter"],
+        key = "atonementCounter", group = ns.L["Quality of Life"], label = ns.L["Atonement Counter"],
         caption = ns.L["Discipline Priest Atonement uptime tracker."],
         combatLocked = true,
         hidden = HiddenUnlessDisciplinePriest,
@@ -175,7 +175,7 @@ local VISUAL_MODULES = {
         combatLocked = true,
     },
     {
-        key = "lustTimer", group = ns.L["QoL"], label = ns.L["Lust Timer"],
+        key = "lustTimer", group = ns.L["Quality of Life"], label = ns.L["Lust Timer"],
         caption = ns.L["Bar + countdown for an active Bloodlust/Heroism-family buff on you."],
         combatLocked = true,
     },
@@ -396,7 +396,7 @@ local VISUAL_MODULES = {
     },
 
     {
-        key = "rotationAssistIcon", group = ns.L["Cooldown Manager & Custom Tracker Bars"],
+        key = "rotationAssistIcon", group = ns.L["Cooldown Manager"],
         label = ns.L["Rotation Assist Icon"],
         caption = ns.L["Large icon showing the next recommended rotation ability."],
         combatLocked = true,

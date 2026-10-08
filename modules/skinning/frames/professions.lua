@@ -300,7 +300,7 @@ local function SkinProfessions()
 
     HookProfessionTableHeaderFonts()
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     HideDecorations(frame)
     SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
@@ -336,7 +336,7 @@ local function RefreshProfessionsColors()
     local frame = _G.ProfessionsFrame
     if not frame or not SkinBase.IsSkinned(frame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     local mainBd = SkinBase.GetBackdrop(frame)
     if mainBd then

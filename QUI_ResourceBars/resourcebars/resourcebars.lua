@@ -2131,7 +2131,7 @@ function QUICore:GetPowerBar()
     bar.StatusBar = CreateFrame("StatusBar", nil, bar)
     bar.StatusBar:SetAllPoints()
     local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
-    bar.StatusBar:SetStatusBarTexture(tex)
+    Helpers.ApplyBarStyle(bar.StatusBar, tex)
     bar.StatusBar:SetFrameLevel(bar:GetFrameLevel())
 
     local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor(cfg, "")
@@ -2387,7 +2387,7 @@ function QUICore:UpdatePowerBar()
 
     local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
     if bar._cachedTex ~= tex then
-        bar.StatusBar:SetStatusBarTexture(tex)
+        Helpers.ApplyBarStyle(bar.StatusBar, tex)
         bar._cachedTex = tex
     end
 
@@ -2728,7 +2728,7 @@ function QUICore:GetSecondaryPowerBar()
     bar.StatusBar = CreateFrame("StatusBar", nil, bar)
     bar.StatusBar:SetAllPoints()
     local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
-    bar.StatusBar:SetStatusBarTexture(tex)
+    Helpers.ApplyBarStyle(bar.StatusBar, tex)
     bar.StatusBar:SetFrameLevel(bar:GetFrameLevel())
 
     local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor(cfg, "")
@@ -2780,7 +2780,7 @@ function QUICore:CreateFragmentedPowerBars(bar, resource, isVertical)
         if not bar.FragmentedPowerBars[i] then
             local fragmentBar = CreateFrame("StatusBar", nil, bar)
             local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
-            fragmentBar:SetStatusBarTexture(tex)
+            Helpers.ApplyBarStyle(fragmentBar, tex)
             fragmentBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
             fragmentBar:SetFrameLevel(bar.StatusBar:GetFrameLevel())
             bar.FragmentedPowerBars[i] = fragmentBar
@@ -2819,7 +2819,7 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical, current
     if bar._quiFragmentTexture ~= tex then
         bar._quiFragmentTexture = tex
         for i = 1, #bar.FragmentedPowerBars do
-            bar.FragmentedPowerBars[i]:SetStatusBarTexture(tex)
+            Helpers.ApplyBarStyle(bar.FragmentedPowerBars[i], tex)
         end
     end
 
@@ -3233,10 +3233,10 @@ function QUICore:UpdateChargedComboPoints(bar, resource, max, current, isVertica
             local isFilled = cpIndex <= current
             if isFilled then
                 local tex = LSM:Fetch("statusbar", GetBarTexture(self.db.profile.secondaryPowerBar))
-                overlay.tex:SetTexture(tex)
+                Helpers.ApplyTextureStyle(overlay, overlay.tex, tex)
                 overlay.tex:SetVertexColor(chargedColor[1], chargedColor[2], chargedColor[3], chargedColor[4] or 1)
             else
-                overlay.tex:SetTexture(nil)
+                Helpers.ApplyTextureStyle(overlay, overlay.tex, nil)
             end
 
             SkinBase.ApplyPixelBackdrop(overlay, px, false, false,
@@ -3782,7 +3782,7 @@ function QUICore:UpdateSecondaryPowerBar()
 
     local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
     if bar._cachedTex ~= tex then
-        bar.StatusBar:SetStatusBarTexture(tex)
+        Helpers.ApplyBarStyle(bar.StatusBar, tex)
         bar._cachedTex = tex
     end
 
