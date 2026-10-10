@@ -109,6 +109,8 @@ end
 
 function GetRealmName()      return "TestRealm"           end
 function UnitName()          return "TestChar"            end
+_G.UnitNameUnmodified = function(unit) return UnitName(unit) end
+_G.RegionalUniqueNamesEnabled = function() return false end
 function UnitClass()         return nil, "MAGE"           end
 function UnitRace()          return nil, "Human"          end
 function UnitFactionGroup()  return "Alliance"            end

@@ -41,7 +41,7 @@
 -- @class file
 -- @name AceDB-3.0.lua
 -- @release $Id$
-local ACEDB_MAJOR, ACEDB_MINOR = "AceDB-3.0", 37
+local ACEDB_MAJOR, ACEDB_MINOR = "AceDB-3.0", 40
 local AceDB = LibStub:NewLibrary(ACEDB_MAJOR, ACEDB_MINOR)
 
 if not AceDB then return end -- No upgrade needed
@@ -252,17 +252,15 @@ local preserve_keys = {
 	["children"] = true,
 }
 
-local realmKey = GetRealmName()
 local factionKey = UnitFactionGroup("player")
 local localeKey = GetLocale():lower()
-local charKey, classKey, raceKey, factionrealmKey, factionrealmregionKey
+local charKey, realmKey, classKey, raceKey, factionrealmKey, factionrealmregionKey
 do
 	local _
 	_, classKey = UnitClass("player")
 	_, raceKey = UnitRace("player")
 
-	local _, _, _, version = GetBuildInfo()
-	if version > 16000 and version < 20000 then
+	if RegionalUniqueNamesEnabled and RegionalUniqueNamesEnabled() then
 		if C_GameRules.IsGameRuleActive(Enum.GameRule.HardcoreRuleset) then
 			realmKey = "Hardcore"
 		elseif C_GameRules.IsGameRuleActive(Enum.GameRule.RPRuleset) then
@@ -272,8 +270,16 @@ do
 		else
 			realmKey = "PvE"
 		end
+		local name, surname = UnitNameUnmodified("player")
+		if surname then
+			charKey = name .. " " .. tostring(surname)
+		else
+			charKey = name
+		end
+	else
+		realmKey = GetRealmName()
+		charKey = UnitNameUnmodified("player") .. " - " .. realmKey
 	end
-	charKey = UnitName("player") .. " - " .. realmKey
 
 	local regionTable = { "US", "KR", "EU", "TW", "CN" }
 	local regionName = GetCurrentRegionName()

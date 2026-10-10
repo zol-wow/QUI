@@ -945,9 +945,7 @@ SkinIconSelectorPopup = function(popup, settingKey)
     local selector = popup.IconSelector
     if selector then
         SkinBase.SkinTrimScrollBar(selector.ScrollBar)
-        if type(selector.EnumerateButtons) == "function" then
-            for button in selector:EnumerateButtons() do SkinGuildIcon(button) end
-        end
+        SkinBase.ForEachScrollBoxFrame(selector.ScrollBox, SkinGuildIcon)
     end
 end
 
@@ -1150,12 +1148,10 @@ local function SkinMacroContents(frame)
     local selector = frame.MacroSelector
     if selector then
         SkinBase.SkinTrimScrollBar(selector.ScrollBar)
-        if type(selector.EnumerateButtons) == "function" then
-            for button in selector:EnumerateButtons() do
-                SkinGuildIcon(button)
-                SkinBase.SkinFontString(button.Name, { fontOnly = true })
-            end
-        end
+        SkinBase.ForEachScrollBoxFrame(selector.ScrollBox, function(button)
+            SkinGuildIcon(button)
+            SkinBase.SkinFontString(button.Name, { fontOnly = true })
+        end)
     end
     for _, name in ipairs({ "MacroEditButton", "MacroCancelButton", "MacroSaveButton",
         "MacroDeleteButton", "MacroNewButton", "MacroExitButton" }) do SkinBase.RefreshWidget(_G[name]) end

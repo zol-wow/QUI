@@ -611,7 +611,8 @@ local function BuildSpecProfilesContent(content)
 
     local specCore = GetCore()
     local specDB = specCore and specCore.db
-    local numSpecs = GetNumSpecializations()
+    local isForever = ns.Client and ns.Client.isForever
+    local numSpecs = isForever and 2 or GetNumSpecializations()
 
     if specDB and specDB.IsDualSpecEnabled and specDB.SetDualSpecEnabled and specDB.GetDualSpecProfile and specDB.SetDualSpecProfile then
         local specCard = Shared.CreateSettingsCardGroup(content, y)
@@ -627,9 +628,14 @@ local function BuildSpecProfilesContent(content)
         specCard.AddRow(Shared.BuildSettingRow(specCard.frame, ns.L["Enable Spec Profiles"], enableW))
 
         local specCells = {}
-        local currentSpec = GetSpecialization()
+        local currentSpec = isForever and C_SpecializationInfo.GetActiveSpecGroup() or GetSpecialization()
         for i = 1, numSpecs do
-            local _, specName = GetSpecializationInfo(i)
+            local specName
+            if isForever then
+                specName = i == 1 and _G.TALENT_SPEC_PRIMARY or _G.TALENT_SPEC_SECONDARY
+            else
+                specName = select(2, GetSpecializationInfo(i))
+            end
             if specName then
                 local displayName = specName .. (i == currentSpec and ns.L[" (Active)"] or "")
                 local currentSpecProfile = specDB:GetDualSpecProfile(i) or ""
