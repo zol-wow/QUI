@@ -171,7 +171,8 @@ local function StyleTrackerProgressBar(pb)
         ns.Helpers.ApplyBarStyle(bar, CUSTOM_BAR_FILL_TEXTURE)
 
         local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
-        SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga, 4)
+        SkinBase.RoundBarTexture(bar, fill)
     end
 
     local color = settings.objectiveTrackerBarColor
@@ -693,7 +694,7 @@ end
 local function ApplyBackdropColors(backdrop, hideBorder, sr, sg, sb, sa, bgr, bgg, bgb, opacity)
     local borderColor = hideBorder and { 0, 0, 0, 0 } or { sr, sg, sb, sa }
     local bgColor = { bgr, bgg, bgb, opacity }
-    SkinBase.ApplyPixelBackdrop(backdrop, hideBorder and 0 or 1, true, true, borderColor, bgColor, nil, nil, 1)
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 8, borderPixels = hideBorder and 0 or 1, withBackground = true, borderColor = borderColor, bgColor = bgColor })
 end
 
 local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)

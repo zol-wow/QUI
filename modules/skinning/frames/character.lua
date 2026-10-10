@@ -50,9 +50,6 @@ end
 
 local GetFontPath = Helpers.GetGeneralFont
 
-local function ApplyPixelBackdrop(frame, borderPixels, withBackground, withInsets, borderColor, bgColor)
-    SkinBase.ApplyPixelBackdrop(frame, borderPixels, withBackground, withInsets, borderColor, bgColor)
-end
 
 local function SetPixelBackdropColors(frame, borderColor, bgColor)
     SkinBase.SetBackdropColors(frame, borderColor, bgColor)
@@ -143,22 +140,23 @@ local function SkinEntryHeader(child, fontPath, sr, sg, sb)
     hooksecurefunc(child.HighlightRight, "SetAtlas", UpdateCollapseIcon)
 end
 
-local function SkinToggleCollapseButton(ToggleCollapseButton)
-    if ToggleCollapseButton and ToggleCollapseButton.RefreshIcon then
-        local function UpdateToggleButton(button)
-            local header = button.GetHeader and button:GetHeader()
-            if not header then return end
-            if header:IsCollapsed() then
-                button:GetNormalTexture():SetAtlas("Gamepad_Expand", true)
-                button:GetPushedTexture():SetAtlas("Gamepad_Expand", true)
-            else
-                button:GetNormalTexture():SetAtlas("Gamepad_Collapse", true)
-                button:GetPushedTexture():SetAtlas("Gamepad_Collapse", true)
-            end
-        end
-        hooksecurefunc(ToggleCollapseButton, "RefreshIcon", UpdateToggleButton)
-        UpdateToggleButton(ToggleCollapseButton)
+local function SkinToggleCollapseButton(button)
+    if not button or not button.RefreshIcon then return end
+    if SkinBase.GetFrameData(button, "characterCollapseGlyph") then return end
+    SkinBase.SkinButton(button, { strip = true, font = false })
+    local backdrop = SkinBase.GetBackdrop(button)
+    if backdrop then SkinBase.ApplyChromeBackdrop(backdrop, { radius = 4 }) end
+    local glyph = button:CreateFontString(nil, "OVERLAY")
+    glyph:SetPoint("CENTER", button, "CENTER", 0, 0)
+    SkinBase.SkinFontString(glyph, { size = 14 })
+    SkinBase.SetFrameData(button, "characterCollapseGlyph", glyph)
+    local function UpdateToggleButton(owner)
+        local header = owner.GetHeader and owner:GetHeader()
+        if not header then return end
+        glyph:SetText(header:IsCollapsed() and "+" or "−")
     end
+    hooksecurefunc(button, "RefreshIcon", UpdateToggleButton)
+    UpdateToggleButton(button)
 end
 
 local function SkinReputationEntry(child)
@@ -181,6 +179,9 @@ local function SkinReputationEntry(child)
             UIKit.DisablePixelSnap(ReputationBar.Fill)
         end
 
+        local fill = ReputationBar.GetStatusBarTexture and ReputationBar:GetStatusBarTexture() or ReputationBar.Fill
+        SkinBase.RoundBarTexture(ReputationBar, fill)
+
         if ReputationBar.LeftTexture then
             ReputationBar.LeftTexture:SetTexture(nil)
             ReputationBar.LeftTexture:Hide()
@@ -200,11 +201,11 @@ local function SkinReputationEntry(child)
         end
 
         if not SkinBase.GetFrameData(ReputationBar, "backdrop") then
-            local backdrop = CreateFrame("Frame", nil, ReputationBar:GetParent(), "BackdropTemplate")
+            local backdrop = CreateFrame("Frame", nil, ReputationBar, "BackdropTemplate")
             backdrop:SetFrameLevel(math.max(0, ReputationBar:GetFrameLevel() - 1))
             local dr, dg, db, da = SkinBase.GetDepthColor("ROW")
             SetExpandedPixelPoints(backdrop, ReputationBar, SkinBase.CHROME.BORDER_PX)
-            ApplyPixelBackdrop(backdrop, SkinBase.CHROME.BORDER_PX, true, false, { sr, sg, sb, 1 }, { dr, dg, db, da })
+            SkinBase.ApplyChromeBackdrop(backdrop, { radius = 3, withBackground = true, borderColor = { sr, sg, sb, 1 }, bgColor = { dr, dg, db, da } })
             backdrop:Show()
             SkinBase.SetFrameData(ReputationBar, "backdrop", backdrop)
         end
@@ -239,7 +240,8 @@ local function SkinCurrencyEntry(child)
             local drawLayer = CurrencyIcon.GetDrawLayer and CurrencyIcon:GetDrawLayer()
             border:SetFrameLevel((drawLayer == "OVERLAY") and child:GetFrameLevel() + 2 or child:GetFrameLevel() + 1)
             SetExpandedPixelPoints(border, CurrencyIcon, 1)
-            ApplyPixelBackdrop(border, 1, false, false, { sr, sg, sb, 1 })
+            SkinBase.ApplyChromeBackdrop(border, { radius = 4, withBackground = false, borderColor = { sr, sg, sb, 1 } })
+            SkinBase.RoundIconTexture(CurrencyIcon:GetParent(), CurrencyIcon)
             iconBorders[CurrencyIcon] = border
         end
     end
@@ -265,6 +267,10 @@ local function SkinReputationDetailFrame()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetWindowColors()
     if not SkinBase.GetFrameData(detail, "qRepDetailChrome") then
         SkinBase.SetFrameData(detail, "qRepDetailChrome", true)
+        SkinBase.StripTextures(detail)
+        if type(detail.Refresh) == "function" then
+            hooksecurefunc(detail, "Refresh", SkinReputationDetailFrame)
+        end
         if detail.Border then detail.Border:SetAlpha(0) end
         if detail.Divider then detail.Divider:SetAlpha(0) end
         if detail.Title then
@@ -275,8 +281,14 @@ local function SkinReputationDetailFrame()
         end
         for _, key in ipairs({ "AtWarCheckbox", "MakeInactiveCheckbox", "WatchFactionCheckbox" }) do
             local check = detail[key]
-            if check and check.Label then
-                SkinBase.SkinFontString(check.Label, { size = 11, color = RowToken("tabHover") })
+            if check then
+                SkinBase.SkinCheckBox(check)
+                local backdrop = SkinBase.GetBackdrop(check)
+                if backdrop then
+                    SkinBase.SetInsetPixelPoints(backdrop, check, 6)
+                    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 3, withBackground = true })
+                end
+                SkinBase.SkinFontString(check.Label, { size = 11, fontOnly = true })
             end
         end
         if SkinBase.ApplyButtonFontObjectsDeep then
@@ -285,7 +297,24 @@ local function SkinReputationDetailFrame()
         StyleCloseButton(detail.CloseButton)
         StyleThinScrollBar(detail.ScrollingDescriptionScrollBar)
     end
-    SkinBase.CreateBackdrop(detail, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    SkinBase.CreateBackdrop(detail, sr, sg, sb, sa, bgr, bgg, bgb, bga, 8)
+    for _, key in ipairs({ "MakeInactiveCheckbox", "WatchFactionCheckbox" }) do
+        local check = detail[key]
+        if check and check.Label then
+            local color = check.IsEnabled and not check:IsEnabled() and RowToken("disabled") or RowToken("tabHover")
+            SkinBase.SkinFontString(check.Label, { size = 11, color = color })
+            if not SkinBase.GetFrameData(check.Label, "qReputationDetailColorHooked") then
+                SkinBase.SetFrameData(check.Label, "qReputationDetailColorHooked", true)
+                hooksecurefunc(check.Label, "SetTextColor", function(label, r, g, b, a)
+                    local expected = check.IsEnabled and not check:IsEnabled() and RowToken("disabled") or RowToken("tabHover")
+                    if r ~= expected[1] or g ~= expected[2] or b ~= expected[3] or a ~= (expected[4] or 1) then
+                        label:SetTextColor(expected[1], expected[2], expected[3], expected[4] or 1)
+                    end
+                end)
+            end
+        end
+    end
+    if detail.ViewRenownButton then SkinBase.SkinButton(detail.ViewRenownButton) end
     if detail.Title then detail.Title:SetTextColor(GetTextAccent()) end
 end
 
@@ -302,10 +331,77 @@ local function SkinTokenFramePopup()
         if popup.Title then
             SkinBase.SkinFontString(popup.Title, { size = 13, color = { GetTextAccent() } })
         end
-        StyleCloseButton(popup.CloseButton)
+        StyleCloseButton(popup.CloseButton or popup["$parent.CloseButton"])
+        SkinBase.SkinButton(popup.CurrencyTransferToggleButton)
+        for _, key in ipairs({ "InactiveCheckbox", "BackpackCheckbox" }) do
+            local check = popup[key]
+            if check then
+                SkinBase.SkinCheckBox(check)
+                local backdrop = SkinBase.GetBackdrop(check)
+                if backdrop then
+                    SkinBase.SetInsetPixelPoints(backdrop, check, 6)
+                    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 3, withBackground = true })
+                end
+                SkinBase.SkinFontString(check.Text or check.Label, { size = 11, fontOnly = true })
+            end
+        end
     end
-    SkinBase.CreateBackdrop(popup, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    SkinBase.CreateBackdrop(popup, sr, sg, sb, sa, bgr, bgg, bgb, bga, 8)
     if popup.Title then popup.Title:SetTextColor(GetTextAccent()) end
+end
+
+local function StyleCurrencyLogRow(row)
+    if not row or not IsSkinningEnabled() then return end
+    SkinBase.SkinScrollRow(row)
+    SkinBase.StripTextures(row.BackgroundHighlight)
+    if row.CurrencyIcon then
+        row.CurrencyIcon:SetAlpha(1)
+        row.CurrencyIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        SkinBase.RoundIconTexture(row, row.CurrencyIcon)
+    end
+    if row.Arrow then row.Arrow:SetAlpha(1) end
+    for _, key in ipairs({ "SourceName", "DestinationName", "CurrencyQuantity" }) do
+        SkinBase.SkinFontString(row[key], { size = 11, color = { 0.9, 0.9, 0.9, 1 } })
+    end
+end
+
+local function SkinCurrencyTransferLog()
+    local log = _G.CurrencyTransferLog
+    if not log or not IsSkinningEnabled() then return end
+    local toggle = TokenFrame and TokenFrame.CurrencyTransferLogToggleButton
+    if toggle then
+        SkinBase.SkinButton(toggle, { strip = true, font = false, belowChildren = true })
+        SkinBase.RefreshWidget(toggle)
+        if not SkinBase.GetFrameData(toggle, "qCurrencyLogGlyph") then
+            local glyph = toggle:CreateFontString(nil, "OVERLAY")
+            glyph:SetPoint("CENTER")
+            SkinBase.SkinFontString(glyph, { size = 9, color = { 1, 1, 1, 1 } })
+            glyph:SetText("Log")
+            SkinBase.SetFrameData(toggle, "qCurrencyLogGlyph", glyph)
+        end
+    end
+    if not SkinBase.IsSkinned(log) then
+        SkinBase.SkinWindow(log)
+        SkinBase.MarkSkinned(log)
+        log:HookScript("OnShow", SkinCurrencyTransferLog)
+        if type(log.Refresh) == "function" then hooksecurefunc(log, "Refresh", SkinCurrencyTransferLog) end
+        SkinBase.HookScrollBoxAcquired(log.ScrollBox, StyleCurrencyLogRow)
+    end
+    SkinBase.ClampTextureHidden(log.Background, true)
+    SkinBase.StripTextures(log.Inset)
+    SkinBase.KillNineSlice(log.Inset and log.Inset.NineSlice, true)
+    SkinBase.SkinTrimScrollBar(log.ScrollBar)
+    local sr, sg, sb, sa, r, g, b, a = GetWindowColors()
+    SkinBase.SetBackdropColors(SkinBase.GetBackdrop(log), { sr, sg, sb, sa }, { r, g, b, a })
+    local title = log.GetTitleText and log:GetTitleText()
+    SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
+    SkinBase.SkinFontString(log.EmptyLogMessage, { size = 12, color = { 0.85, 0.85, 0.85, 1 } })
+    local mixin = _G.CurrencyTransferLogEntryMixin
+    if mixin and type(mixin.Initialize) == "function" and not SkinBase.GetFrameData(mixin, "qCurrencyLogRowsHooked") then
+        hooksecurefunc(mixin, "Initialize", StyleCurrencyLogRow)
+        SkinBase.SetFrameData(mixin, "qCurrencyLogRowsHooked", true)
+    end
+    SkinBase.ForEachScrollBoxFrame(log.ScrollBox, StyleCurrencyLogRow)
 end
 
 local function SkinNativeSidePaneText(pane)
@@ -345,6 +441,17 @@ local function SkinNativeCharacterPanes()
     SkinNativeSidePane(ReputationFrame and ReputationFrame.ReputationDetailFrame)
 end
 
+local function SkinCharacterListControls()
+    SkinCurrencyTransferLog()
+    for _, pane in pairs({ _G.ReputationFrame, _G.TokenFrame }) do
+        if pane.filterDropdown then
+            SkinBase.SkinDropdown(pane.filterDropdown, { skinArrow = true })
+            SkinBase.RefreshWidget(pane.filterDropdown)
+        end
+        if pane.ScrollBar then SkinBase.SkinTrimScrollBar(pane.ScrollBar) end
+    end
+end
+
 local function SetupCharacterFrameSkinning()
     if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
     if not IsSkinningEnabled() then return end
@@ -364,6 +471,7 @@ local function SetupCharacterFrameSkinning()
     SkinReputationDetailFrame()
     SkinTokenFramePopup()
     SkinNativeCharacterPanes()
+    SkinCharacterListControls()
     if TokenFrame and TokenFrame.ScrollBox then
         SkinBase.HookScrollBoxAcquired(TokenFrame.ScrollBox, function(row)
             if IsSkinningEnabled() then
@@ -407,6 +515,7 @@ local function RefreshCharacterFrameColors()
     SkinReputationDetailFrame()
     SkinTokenFramePopup()
     SkinNativeCharacterPanes()
+    SkinCharacterListControls()
 
     if ReputationFrame and ReputationFrame.ScrollBox then
         SkinBase.ForEachScrollBoxFrame(ReputationFrame.ScrollBox, function(child)
@@ -459,7 +568,7 @@ local function EnsureRowAccentBar(row)
         bar = row:CreateTexture(nil, "OVERLAY")
         bar:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
         bar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
-        bar:SetWidth(SkinBase.GetPixelSize(row, 1) * 2)
+        bar:SetWidth(SkinBase.GetPixelSize(row, 1))
         UIKit.DisablePixelSnap(bar)
         bar:Hide()
         rowAccentBars[row] = bar
@@ -483,13 +592,15 @@ local function ApplyRowState(row, hovered)
         text:SetTextColor(color[1], color[2], color[3], color[4] or 1)
     end
 
-    local ar, ag, ab = GetTextAccent()
+    local profile = Helpers.GetProfile and Helpers.GetProfile()
+    local ar, ag, ab = SkinBase.GetSkinColors(profile and profile.general, "characterFrame")
     local bar = EnsureRowAccentBar(row)
     if bar then
         bar:SetColorTexture(ar, ag, ab, 1)
         if selected then bar:Show() else bar:Hide() end
     end
     if row.Check and row.Check.SetVertexColor then
+        if row.Check.SetDesaturated then row.Check:SetDesaturated(true) end
         row.Check:SetVertexColor(ar, ag, ab)
     end
     local wash = RowToken("selectedWash")
@@ -530,6 +641,15 @@ end
 local function SkinEquipmentSetEntry(entry)
     if not entry then return end
     RestyleEquipmentSetEntryText(entry)
+    for _, key in ipairs({ "BgTop", "BgMiddle", "BgBottom" }) do
+        if entry[key] then SkinBase.ClampTextureHidden(entry[key]) end
+    end
+    if entry.icon and not entry.setID then
+        entry.icon:SetTexture("Interface\\AddOns\\QUI\\assets\\character\\add.tga")
+        entry.icon:SetVertexColor(0.9, 0.9, 0.9, 1)
+    elseif entry.icon then
+        entry.icon:SetVertexColor(1, 1, 1, 1)
+    end
     if skinnedEntries[entry] then return end
 
     local sr, sg, sb = GetWindowColors()
@@ -537,9 +657,11 @@ local function SkinEquipmentSetEntry(entry)
     if entry.icon and not iconBorders[entry.icon] then
         entry.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         Helpers.ApplyIconStyle(entry, entry.icon)
+        SkinBase.RoundIconTexture(entry, entry.icon)
         local border = CreateFrame("Frame", nil, entry, "BackdropTemplate")
+        SkinBase.UsePhysicalPixelScale(border)
         SetExpandedPixelPoints(border, entry.icon, 1)
-        ApplyPixelBackdrop(border, 1, false, false, { sr, sg, sb, 1 })
+        SkinBase.ApplyChromeBackdrop(border, { radius = 3, withBackground = false, borderColor = { sr, sg, sb, 1 } })
         iconBorders[entry.icon] = border
     end
 
@@ -550,61 +672,36 @@ local function SkinEquipmentSetEntry(entry)
 end
 
 local function StyleEquipMgrButton(btn)
-    if not btn or skinnedEntries[btn] then return end
-
-    local sr, sg, sb, sa = GetWindowColors()
-
-    local origWidth = btn:GetWidth()
-
-    if btn:GetNormalTexture() then btn:GetNormalTexture():SetTexture(nil) end
-    if btn:GetHighlightTexture() then btn:GetHighlightTexture():SetTexture(nil) end
-    if btn:GetPushedTexture() then btn:GetPushedTexture():SetTexture(nil) end
-    if btn:GetDisabledTexture() then btn:GetDisabledTexture():SetTexture(nil) end
-
-    if not btn.SetBackdrop then
-        return
-    end
-    ApplyPixelBackdrop(btn, 1, true, false, { sr, sg, sb, 0.5 }, { 0.15, 0.15, 0.15, 1 })
-
-    SkinBase.ApplyButtonFontObjects(btn, { size = 11, color = { 0.9, 0.9, 0.9, 1 }, disabledColor = { 0.5, 0.5, 0.5, 1 } })
-
-    btn:SetWidth(origWidth)
-
-    btn:HookScript("OnEnter", function(self)
-        local r, g, b = GetWindowColors()
-        SetPixelBackdropColors(self, { r, g, b, 1 })
-    end)
-    btn:HookScript("OnLeave", function(self)
-        local r, g, b = GetWindowColors()
-        SetPixelBackdropColors(self, { r, g, b, 0.5 })
-    end)
-
-    skinnedEntries[btn] = true
+    local chrome = GetChrome()
+    if chrome and chrome.StyleActionButton then chrome.StyleActionButton(btn) end
 end
 
 local function SkinEquipmentManager()
-    if not IsSkinningEnabled() then return end
+    local chrome = GetChrome()
+    if not IsSkinningEnabled() and not (chrome and chrome.GetOwnership().enhancement) then return end
 
     local popup = _G.QUI_EquipMgrPopup
-    if not popup then return end
-
-    -- Popout chrome (backdrop, title, close) is the owner's; re-tint only.
-    local chrome = GetChrome()
-    if chrome and chrome.RefreshPopout then chrome.RefreshPopout(popup) end
-    skinnedEntries[popup] = true
+    if popup then
+        local chrome = GetChrome()
+        if chrome and chrome.RefreshPopout then chrome.RefreshPopout(popup) end
+        skinnedEntries[popup] = true
+    end
 
     local pane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
     if pane and pane.ScrollBox then
         SkinBase.HookScrollBoxAcquired(pane.ScrollBox, function(row)
-            if IsSkinningEnabled() then SkinEquipmentSetEntry(row) end
+            local owner = GetChrome()
+            if IsSkinningEnabled() or (owner and owner.GetOwnership().enhancement) then SkinEquipmentSetEntry(row) end
         end)
     end
 
     if type(_G.PaperDollEquipmentManagerPane_InitButton) == "function"
         and not SkinBase.GetFrameData(pane, "qEquipInitHooked") then
         hooksecurefunc("PaperDollEquipmentManagerPane_InitButton", function(button)
-            if not IsSkinningEnabled() or not button then return end
-            RestyleEquipmentSetEntryText(button)
+            if not button then return end
+            local owner = GetChrome()
+            if not IsSkinningEnabled() and not (owner and owner.GetOwnership().enhancement) then return end
+            SkinEquipmentSetEntry(button)
             if button.icon then button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
         end)
         SkinBase.SetFrameData(pane, "qEquipInitHooked", true)
@@ -663,9 +760,12 @@ local function SkinTitleEntry(button)
 
     if button.text then
         CJKFont(button.text, GetFontPath(), 12, "")
+        button.text:SetWordWrap(false)
+        button.text:SetMaxLines(1)
     end
 
     HideTitleRowArt(button)
+    if button.GetHighlightTexture then SkinBase.ClampTextureHidden(button:GetHighlightTexture(), true) end
 
     if not button.Highlight and not SkinBase.GetFrameData(button, "qRowHighlight") and button.CreateTexture then
         -- Title rows ship without a highlight texture; give the hover state a
@@ -685,7 +785,8 @@ local function RefreshTitleEntry(button)
     SyncRowSelection(button)
     local highlight = SkinBase.GetFrameData(button, "qRowHighlight")
     if highlight then
-        local ar, ag, ab = GetTextAccent()
+        local profile = Helpers.GetProfile and Helpers.GetProfile()
+        local ar, ag, ab = SkinBase.GetSkinColors(profile and profile.general, "characterFrame")
         highlight:SetColorTexture(ar, ag, ab, 0.06)
     end
 end

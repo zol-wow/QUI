@@ -39,7 +39,7 @@ ns.CharacterChrome = CharacterChrome
 
 local CONFIG = {
     PANEL_WIDTH_EXTENSION = 55,
-    PANEL_HEIGHT_EXTENSION = 50,
+    PANEL_HEIGHT_EXTENSION = 82,
     POPOUT_WIDTH = 205,
     POPOUT_HEIGHT = 400,
     POPOUT_GAP = 10,
@@ -301,7 +301,7 @@ end
 local function ApplyShellColors()
     if not shell then return end
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetWindowColors()
-    SkinBase.ApplyPixelBackdrop(shell, 1, true, true, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
+    SkinBase.ApplyChromeBackdrop(shell, { radius = 8, withBackground = true, borderColor = { sr, sg, sb, sa }, bgColor = { bgr, bgg, bgb, bga } })
 end
 
 -- opts.extended: true = reach past the frame for the enhancement layout,
@@ -321,15 +321,26 @@ function CharacterChrome.EnsureShell(opts)
 
     if opts and opts.extended ~= nil then
         shell:ClearAllPoints()
-        if opts.extended then
+        if opts.extended or ownership.enhancement then
             shell:SetPoint("TOPLEFT", CharacterFrame, "TOPLEFT", 0, 0)
-            shell:SetPoint("BOTTOMRIGHT", CharacterFrame, "BOTTOMRIGHT",
-                CONFIG.PANEL_WIDTH_EXTENSION, -CONFIG.PANEL_HEIGHT_EXTENSION)
+            shell:SetPoint("BOTTOMRIGHT", CharacterFrame, "BOTTOMLEFT",
+                (_G.CHARACTERFRAME_EXPANDED_WIDTH or 540) + CONFIG.PANEL_WIDTH_EXTENSION, -CONFIG.PANEL_HEIGHT_EXTENSION)
         else
             shell:SetAllPoints(CharacterFrame)
         end
     end
 
+    if ownership.enhancement then
+        for _, pane in ipairs({ ReputationFrame, TokenFrame }) do
+            if pane then
+                pane:ClearAllPoints()
+                pane:SetAllPoints(shell)
+                if pane.ScrollBox then
+                    pane.ScrollBox:SetPoint("BOTTOMRIGHT", shell, "BOTTOMRIGHT", -28, 42)
+                end
+            end
+        end
+    end
     shell:Show()
     HideBlizzardDecorations(ownership.shell == "skin")
     return shell
@@ -348,11 +359,55 @@ end
 ---------------------------------------------------------------------------
 function CharacterChrome.StyleTabs()
     if not CharacterFrame or not CharacterChrome.GetOwnership().tabs then return end
-    if CharacterFrame.ModeTabs and CharacterFrame.ModeTabs.Tabs then
-        SkinBase.SkinTabGroup(CharacterFrame.ModeTabs.Tabs, CharacterFrame, { font = false })
-        return
+    local tabs = CharacterFrame.ModeTabs and CharacterFrame.ModeTabs.Tabs
+        or SkinBase.CollectNumberedTabs("CharacterFrame", 3)
+    local integrated = CharacterChrome.GetOwnership().enhancement
+    SkinBase.SkinTabGroup(tabs, CharacterFrame, {
+        font = true, radius = 5, uniform = true, height = 28,
+        minWidth = integrated and ((_G.CHARACTERFRAME_EXPANDED_WIDTH or 540) + CONFIG.PANEL_WIDTH_EXTENSION - 16) / 3 or nil,
+        gap = integrated and 0 or nil,
+    })
+    if integrated then
+        for _, tab in ipairs(tabs) do
+            local backdrop = SkinBase.GetBackdrop(tab)
+            if backdrop then backdrop:SetAlpha(0) end
+        end
     end
-    SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("CharacterFrame", 3), CharacterFrame, { font = true })
+end
+
+function CharacterChrome.StyleActionButton(button)
+    if not button then return end
+    SkinBase.SkinButton(button, { strip = true })
+    local backdrop = SkinBase.GetBackdrop(button)
+    if backdrop then SkinBase.ApplyChromeBackdrop(backdrop, { radius = 4, withBackground = true }) end
+end
+
+function CharacterChrome.StyleSlotFlyoutButton(button)
+    if not button then return end
+    local slot = button:GetParent()
+    if slot then button:SetFrameLevel(slot:GetFrameLevel() + 12) end
+    CharacterChrome.StyleActionButton(button)
+    local backdrop = SkinBase.GetBackdrop(button)
+    if backdrop then
+        SkinBase.ApplyChromeBackdrop(backdrop, { radius = 4, withBackground = true, bgColor = { 0.12, 0.15, 0.18, 1 }, borderColor = { 0.5, 0.55, 0.6, 1 } })
+    end
+    local vertical = slot and slot.verticalFlyout
+    local carets = SkinBase.GetFrameData(button, "slotFlyoutCarets")
+    if not carets then
+        carets = {
+            UIKit.CreateChevronCaret(button, { point = "CENTER", collapsedDirection = "right", sizePixels = 8 }),
+            UIKit.CreateChevronCaret(button, { point = "CENTER", collapsedDirection = "left", sizePixels = 8 }),
+        }
+        SkinBase.SetFrameData(button, "slotFlyoutCarets", carets)
+    end
+    UIKit.SetChevronCaretExpanded(carets[1], vertical)
+    if vertical and button.flyoutLocked then
+        carets[1].line1:SetRotation(math.rad(45))
+        carets[1].line2:SetRotation(math.rad(-45))
+    end
+    carets[1]:SetShown(vertical or not button.flyoutLocked)
+    carets[2]:SetShown(not vertical and button.flyoutLocked)
+    button:SetSize(vertical and 20 or 14, vertical and 14 or 20)
 end
 
 local closeButtons = Helpers.CreateStateTable()
@@ -410,7 +465,7 @@ local popouts = Helpers.CreateStateTable()
 
 local function ApplyPopoutChrome(popup)
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetWindowColors()
-    SkinBase.ApplyPixelBackdrop(popup, 1, true, true, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
+    SkinBase.ApplyChromeBackdrop(popup, { radius = 8, withBackground = true, borderColor = { sr, sg, sb, sa }, bgColor = { bgr, bgg, bgb, bga } })
     if popup.title then
         CJKFont(popup.title, GeneralFontFace(), 14, "")
         popup.title:SetTextColor(GetTextAccent())
@@ -489,11 +544,13 @@ end
 local function ApplyFlyoutChrome(flyout)
     local sr, sg, sb, _, bgr, bgg, bgb = GetWindowColors()
     SkinBase.ApplyChromeBackdrop(flyout.panel, {
+        radius = 8,
         withBackground = true,
         borderColor = { sr, sg, sb, 1 },
         bgColor = { bgr, bgg, bgb, 0.97 },
     })
     SkinBase.ApplyChromeBackdrop(flyout.trigger, {
+        radius = 5,
         withBackground = true,
         borderColor = { sr, sg, sb, 1 },
         bgColor = { bgr, bgg, bgb, 0.9 },
@@ -544,10 +601,10 @@ function CharacterChrome.CreateSettingsFlyout(parent, opts)
 
     local gearLabel = gearBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     gearLabel:SetPoint("LEFT", gearIcon, "RIGHT", 4, 0)
-    gearLabel:SetPoint("RIGHT", gearBtn, "RIGHT", -6, 0)
     gearLabel:SetJustifyH("LEFT")
     CJKFont(gearLabel, GeneralFontFace(), 12, "")
     gearLabel:SetText(ns.L and ns.L["Settings"] or "Settings")
+    SetPixelSize(gearBtn, math.ceil(gearLabel:GetStringWidth()) + 36, 24)
     local idle = Token("tabHover")
     gearLabel:SetTextColor(idle[1], idle[2], idle[3], idle[4] or 0.85)
     flyout.triggerLabel = gearLabel
@@ -566,7 +623,7 @@ function CharacterChrome.CreateSettingsFlyout(parent, opts)
     end)
 
     local panel = CreateFrame("Frame", opts.name, parent, "BackdropTemplate")
-    panel:SetSize(CONFIG.FLYOUT_WIDTH, CONFIG.FLYOUT_HEIGHT)
+    panel:SetSize(opts.width or CONFIG.FLYOUT_WIDTH, CONFIG.FLYOUT_HEIGHT)
     panel:SetPoint("TOPLEFT", parent, "TOPRIGHT", (opts.extension or 0) + CONFIG.FLYOUT_GAP, 0)
     panel:SetFrameStrata("DIALOG")
     panel:SetFrameLevel(200)
@@ -577,11 +634,12 @@ function CharacterChrome.CreateSettingsFlyout(parent, opts)
     local contentBg = panel:CreateTexture(nil, "BACKGROUND", nil, 1)
     SkinBase.SetInsetPixelPoints(contentBg, panel, 1)
     local bgContent = Token("bgContent")
-    contentBg:SetColorTexture(bgContent[1], bgContent[2], bgContent[3], bgContent[4] or 0.02)
+    contentBg:SetColorTexture(bgContent[1], bgContent[2], bgContent[3], 0)
     UIKit.DisablePixelSnap(contentBg)
 
     local glow = panel:CreateTexture(nil, "BACKGROUND", nil, 2)
-    SkinBase.SetInsetPixelPoints(glow, panel, 1)
+    glow:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, -8)
+    glow:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 8)
     glow:SetTexture("Interface\\BUTTONS\\WHITE8x8")
     flyout.glow = glow
     panel:HookScript("OnShow", function() ApplyFlyoutGlow(glow) end)
@@ -604,7 +662,7 @@ function CharacterChrome.CreateSettingsFlyout(parent, opts)
     flyout.scrollFrame = scrollFrame
 
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetWidth(CONFIG.FLYOUT_WIDTH - 5 - CONFIG.FLYOUT_GUTTER - 2)
+    scrollChild:SetWidth((opts.width or CONFIG.FLYOUT_WIDTH) - 5 - CONFIG.FLYOUT_GUTTER - 2)
     scrollChild:SetHeight(1)
     scrollFrame:SetScrollChild(scrollChild)
     flyout.scrollChild = scrollChild
@@ -627,8 +685,21 @@ function CharacterChrome.CreateSettingsFlyout(parent, opts)
         FORM_ROW = FORM_ROW,
         y = -5,
     }
-    function ctx.ResetRows() rowIdx = 0 end
+    local activeCard, cardY
+    function ctx.ResetRows() rowIdx = 0; activeCard = nil end
     function ctx.PlaceRow(widget, currentY)
+        if opts.columns == 2 then
+            if not activeCard then
+                cardY = currentY
+                activeCard = ns.QUI_Options.CreateSettingsCardGroup(scrollChild, cardY, { maxColumns = 2 })
+                activeCard.frame:ClearAllPoints()
+                activeCard.frame:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", PAD, cardY)
+                activeCard.frame:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", -PAD, cardY)
+            end
+            activeCard.AddRow(widget)
+            return cardY - activeCard.Finalize()
+        end
+        if widget.Layout then widget:Layout(scrollChild:GetWidth() - PAD * 2) end
         widget:SetPoint("TOPLEFT", PAD, currentY)
         widget:SetPoint("RIGHT", scrollChild, "RIGHT", -PAD, 0)
         rowIdx = rowIdx + 1
@@ -641,7 +712,7 @@ function CharacterChrome.CreateSettingsFlyout(parent, opts)
             rowBg:SetColorTexture(c[1], c[2], c[3], c[4] or 0.02)
             UIKit.DisablePixelSnap(rowBg)
         end
-        return currentY - FORM_ROW
+        return currentY - math.max(FORM_ROW, widget:GetHeight() or FORM_ROW)
     end
     function ctx.HookShow(fn) panel:HookScript("OnShow", fn) end
     function ctx.Hide() panel:Hide() end
@@ -757,7 +828,10 @@ ApplyHalfSkinnedChrome = function()
             HideSlotRing(slotName)
             SkinBase.StripTextures(slot.BorderFrame)
             local icon = slot.icon or slot.Icon
-            if icon and icon.SetTexCoord then icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+            if icon and icon.SetTexCoord then
+                icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                SkinBase.RoundIconTexture(slot, icon)
+            end
         end
     end
     for _, name in ipairs(halfSkinDecor) do
@@ -778,23 +852,16 @@ CharacterChrome.ApplyHalfSkinnedChrome = ApplyHalfSkinnedChrome
 ---------------------------------------------------------------------------
 -- EquipmentFlyout (chrome only: backdrop, slot borders, navigation)
 ---------------------------------------------------------------------------
-local flyoutButtonBorders = Helpers.CreateStateTable()
-
 local function SkinEquipmentFlyoutButton(button)
     if not button then return end
-    local sr, sg, sb = GetWindowColors()
-    local border = flyoutButtonBorders[button]
-    if not border then
-        local normal = button.GetNormalTexture and button:GetNormalTexture()
-        if normal then normal:SetAlpha(0) end
-        local icon = button.icon or button.Icon
-        if icon and icon.SetTexCoord then icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
-        border = CreateFrame("Frame", nil, button, "BackdropTemplate")
-        border:SetFrameLevel(button:GetFrameLevel() + 2)
-        SkinBase.SetExpandedPixelPoints(border, button, 1)
-        flyoutButtonBorders[button] = border
+    local normal = button.GetNormalTexture and button:GetNormalTexture()
+    if normal then SkinBase.ClampTextureHidden(normal) end
+    if button.IconBorder then SkinBase.ClampTextureHidden(button.IconBorder) end
+    local icon = button.icon or button.Icon
+    if icon and icon.SetTexCoord then
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        SkinBase.RoundIconTexture(button, icon)
     end
-    SkinBase.ApplyPixelBackdrop(border, 1, false, false, { sr, sg, sb, 1 })
 end
 
 local function HideFlyoutBackgrounds(buttonFrame)
@@ -812,10 +879,13 @@ local function RefreshEquipmentFlyoutChrome()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetWindowColors()
     if flyout.buttonFrame then
         SkinBase.CreateBackdrop(flyout.buttonFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(flyout.buttonFrame), { radius = 5, withBackground = true })
+        SkinBase.SetPixelInsetPoints(SkinBase.GetBackdrop(flyout.buttonFrame), flyout.buttonFrame, 0, 0, -3, 0)
         HideFlyoutBackgrounds(flyout.buttonFrame)
     end
     if flyout.NavigationFrame then
         SkinBase.CreateBackdrop(flyout.NavigationFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(flyout.NavigationFrame), { radius = 5, withBackground = true })
     end
     if type(flyout.buttons) == "table" then
         for _, button in ipairs(flyout.buttons) do
@@ -829,10 +899,16 @@ local function SkinEquipmentFlyout()
     if not flyout or SkinBase.GetFrameData(flyout, "qCharChromeFlyout") then return end
     SkinBase.SetFrameData(flyout, "qCharChromeFlyout", true)
 
+    if flyout.Highlight then SkinBase.ClampTextureHidden(flyout.Highlight) end
+    if type(_G.EquipmentFlyout_UpdateItems) == "function" then
+        hooksecurefunc("EquipmentFlyout_UpdateItems", function()
+            if CharacterChrome.GetOwnership().popouts then RefreshEquipmentFlyoutChrome() end
+        end)
+    end
     local buttonFrame = flyout.buttonFrame
     if buttonFrame and buttonFrame.HookScript then
         buttonFrame:HookScript("OnShow", function()
-            if not CharacterChrome.GetOwnership().skin then return end
+            if not CharacterChrome.GetOwnership().popouts then return end
             RefreshEquipmentFlyoutChrome()
         end)
     end
@@ -849,6 +925,38 @@ end
 ---------------------------------------------------------------------------
 -- Theme refresh + lifecycle
 ---------------------------------------------------------------------------
+local function StyleCharacterModelControls()
+    if CharacterChrome.GetOwnership().shell == "none" then return end
+    local scene = _G.CharacterModelScene
+    local controls = scene and scene.ControlFrame
+    if not controls then return end
+    for key, glyph in pairs({
+        zoomInButton = "+", zoomOutButton = "-", rotateLeftButton = "<",
+        rotateRightButton = ">", resetButton = "Reset",
+    }) do
+        local button = controls[key]
+        if button then
+            SkinBase.SkinButton(button, { font = false, belowChildren = true })
+            SkinBase.ClampTextureHidden(button.Icon, true)
+            local text = SkinBase.GetFrameData(button, "qCharacterModelGlyph")
+            if not text then
+                text = button:CreateFontString(nil, "OVERLAY")
+                text:SetPoint("CENTER")
+                SkinBase.SetFrameData(button, "qCharacterModelGlyph", text)
+            end
+            SkinBase.SkinFontString(text, { size = key == "resetButton" and 10 or 16, color = { 0.9, 0.9, 0.9, 1 } })
+            text:SetText(glyph)
+            SkinBase.RefreshWidget(button)
+        end
+    end
+    controls.buttonHorizontalPadding = 4
+    if type(controls.UpdateLayout) == "function" then controls:UpdateLayout() end
+    if not SkinBase.GetFrameData(controls, "qCharacterModelControlsHooked") then
+        controls:HookScript("OnShow", StyleCharacterModelControls)
+        SkinBase.SetFrameData(controls, "qCharacterModelControlsHooked", true)
+    end
+end
+
 function CharacterChrome.RefreshTheme()
     local ownership = CharacterChrome.GetOwnership()
     if ownership.shell ~= "none" and shell then ApplyShellColors() end
@@ -864,7 +972,8 @@ function CharacterChrome.RefreshTheme()
     for popup in pairs(popouts) do ApplyPopoutChrome(popup) end
     for flyout in pairs(flyouts) do ApplyFlyoutChrome(flyout) end
     if ownership.halfSkinned then ApplyHalfSkinnedChrome() end
-    if ownership.skin then RefreshEquipmentFlyoutChrome() end
+    if ownership.popouts then RefreshEquipmentFlyoutChrome() end
+    StyleCharacterModelControls()
 end
 
 local initialized = false
@@ -881,12 +990,25 @@ function CharacterChrome.Initialize()
     if ownership.shell == "skin" then
         CharacterChrome.EnsureShell({ extended = false })
     end
+    if type(CharacterFrame.UpdateTabBounds) == "function" then
+        hooksecurefunc(CharacterFrame, "UpdateTabBounds", function(frame)
+            if not CharacterChrome.GetOwnership().tabs then return end
+            if frame.Tabs then
+                table.sort(frame.Tabs, function(a, b) return a:GetID() < b:GetID() end)
+                if type(_G.PanelTemplates_UpdateTabs) == "function" then
+                    _G.PanelTemplates_UpdateTabs(frame)
+                end
+            end
+            CharacterChrome.StyleTabs()
+        end)
+    end
     CharacterChrome.StyleTabs()
     if ownership.close and CharacterFrame.CloseButton then
         CharacterChrome.StyleCloseButton(CharacterFrame.CloseButton)
     end
     if ownership.halfSkinned then ApplyHalfSkinnedChrome() end
-    if ownership.skin then SkinEquipmentFlyout() end
+    if ownership.popouts then SkinEquipmentFlyout() end
+    StyleCharacterModelControls()
 
     if ownership.shell == "skin" then
         local function HugFrame()

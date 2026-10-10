@@ -46,6 +46,10 @@ end
 local function SetTextureBackdropLayout(parent, parts)
     if not parent or not parts then return end
 
+    if parts.surface then
+        parts.surface:Refresh()
+        return
+    end
     local px = Pixel(parent)
     parts.bg:ClearAllPoints()
     parts.bg:SetAllPoints(parent)
@@ -87,6 +91,17 @@ local function EnsureTextureBackdrop(parent, owner)
         return parts
     end
 
+    if ns.UIKit and ns.UIKit.CreateRoundedSurface then
+        local radius = parent:GetObjectType() == "Button" and 5 or 8
+        local surface = ns.UIKit.CreateRoundedSurface(parent, { radius = radius, layer = "BACKGROUND", subLevel = -8 })
+        for _, regions in ipairs({ surface.fill, surface.border }) do
+            for _, texture in pairs(regions) do MarkOwnedTexture(texture) end
+        end
+        parts = { surface = surface }
+        SkinBase.SetFrameData(owner, TEXTURE_BACKDROP_KEY, parts)
+        return parts
+    end
+
     parts = {
         bg = MarkOwnedTexture(parent:CreateTexture(nil, "BACKGROUND", nil, -8)),
         top = MarkOwnedTexture(parent:CreateTexture(nil, "BORDER", nil, 7)),
@@ -110,6 +125,10 @@ end
 local function ApplyTextureBackdrop(parts, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not parts then return end
 
+    if parts.surface then
+        parts.surface:SetColors({ sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
+        return
+    end
     ColorTexture(parts.bg, bgr, bgg, bgb, bga)
     for _, edge in ipairs({ parts.top, parts.bottom, parts.left, parts.right }) do
         ColorTexture(edge, sr, sg, sb, sa)

@@ -814,7 +814,8 @@ end
 ns.QUI_Options = ns.QUI_Options or {}
 ns.QUI_Options.CreateAccentDotLabel = CreateAccentDotLabel
 
-local function CreateSettingsCardGroup(parent, yOffset)
+local function CreateSettingsCardGroup(parent, yOffset, opts)
+    opts = opts or {}
     local C = QUI.GUI and QUI.GUI.Colors or {}
 
     local card = CreateFrame("Frame", nil, parent)
@@ -891,10 +892,10 @@ local function CreateSettingsCardGroup(parent, yOffset)
             local first = 1
             while first <= #pendingCells do
                 local columns = 2
-                if pendingCells[first + 2] and Compact(pendingCells[first])
+                if opts.maxColumns ~= 2 and pendingCells[first + 2] and Compact(pendingCells[first])
                     and Compact(pendingCells[first + 1]) and Compact(pendingCells[first + 2]) then
                     columns = 3
-                elseif not pendingCells[first + 1] and Compact(pendingCells[first])
+                elseif opts.maxColumns ~= 2 and not pendingCells[first + 1] and Compact(pendingCells[first])
                     and plans[#plans] and plans[#plans].columns == 3 then
                     columns = 3
                 end

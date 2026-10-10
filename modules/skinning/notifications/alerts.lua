@@ -54,7 +54,7 @@ local function CreateAlertBackdrop(frame, xOffset1, yOffset1, xOffset2, yOffset2
     backdrop:SetFrameLevel(frame:GetFrameLevel())
     backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", xOffset1 or 0, yOffset1 or 0)
     backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", xOffset2 or 0, yOffset2 or 0)
-    SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 8, withBackground = true })
     Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
     Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
 
@@ -70,7 +70,7 @@ local function CreateIconAnchoredBackdrop(frame, anchorFrame, inset)
     backdrop:SetFrameLevel(frame:GetFrameLevel())
     backdrop:SetPoint("TOPLEFT", anchorFrame, "TOPLEFT", -inset, inset)
     backdrop:SetPoint("BOTTOMRIGHT", anchorFrame, "BOTTOMRIGHT", 180, -inset)
-    SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 8, withBackground = true })
     Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
     Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
     SkinBase.SetFrameData(frame, "backdrop", backdrop)
@@ -89,6 +89,7 @@ end
 
 local function CreateIconBorder(icon, parent, qualityColor)
     Helpers.ApplyIconStyle(parent or icon:GetParent(), icon)
+    SkinBase.RoundIconTexture(parent or icon:GetParent(), icon)
     local sr, sg, sb, sa = SkinBase.GetWindowColors(GetGeneralSettings(), "alerts")
 
     local existingBorder = SkinBase.GetFrameData(icon, "border")
@@ -105,7 +106,7 @@ local function CreateIconBorder(icon, parent, qualityColor)
     local border = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     border:SetFrameLevel(parent:GetFrameLevel() + 1)
     SkinBase.SetExpandedPixelPoints(border, icon, 2)
-    SkinBase.ApplyPixelBackdrop(border, 1, false, false)
+    SkinBase.ApplyChromeBackdrop(border, { radius = 4, withBackground = false })
 
     if qualityColor then
         Helpers.SetFrameBackdropBorderColor(border, qualityColor.r or qualityColor[1], qualityColor.g or qualityColor[2], qualityColor.b or qualityColor[3], 1)
@@ -168,7 +169,7 @@ local function SkinAchievementAlert(frame)
         frame.Unlocked:SetTextColor(unpack(QUI_TEXT_COLOR))
     end
     if frame.Name then
-        frame.Name:SetTextColor(1, 0.82, 0)
+        frame.Name:SetTextColor(unpack(QUI_TEXT_COLOR))
     end
 
     if frame.Icon and frame.Icon.Texture then
@@ -197,7 +198,7 @@ local function SkinCriteriaAlert(frame)
     Kill(frame.Icon.Overlay)
 
     if frame.Unlocked then frame.Unlocked:SetTextColor(unpack(QUI_TEXT_COLOR)) end
-    if frame.Name then frame.Name:SetTextColor(1, 1, 0) end
+    if frame.Name then frame.Name:SetTextColor(unpack(QUI_TEXT_COLOR)) end
 
     StyleIcon(frame.Icon.Texture, frame)
 
@@ -224,6 +225,7 @@ end
 local function SkinLootWonAlert(frame)
     if not frame then return end
     local lootItem = frame.lootItem or frame
+    if frame.Label then frame.Label:SetTextColor(unpack(QUI_TEXT_COLOR)) end
 
     if SkinBase.IsSkinned(frame) then
         SuppressLootWonArt(frame, lootItem)
@@ -287,15 +289,18 @@ local function SkinMoneyWonAlert(frame)
     if frame.IconBorder then frame.IconBorder:SetAlpha(0) end
 
     if frame.Icon then
-        frame.Icon:SetTexCoord(unpack(ICON_TEX_COORDS))
+        StyleIcon(frame.Icon, frame)
     end
+
+    if frame.Label then frame.Label:SetTextColor(unpack(QUI_TEXT_COLOR)) end
+    if frame.Amount then SkinBase.SkinFontString(frame.Amount, { fontOnly = true }) end
 
     if not SkinBase.GetFrameData(frame, "backdrop") then
         local backdrop = CreateFrame("Frame", nil, frame, "BackdropTemplate")
         backdrop:SetFrameLevel(frame:GetFrameLevel())
         backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", 5, -5)
         backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -5, 5)
-        SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
+        SkinBase.ApplyChromeBackdrop(backdrop, { radius = 8, withBackground = true })
         Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
         Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
         SkinBase.SetFrameData(frame, "backdrop", backdrop)
@@ -316,6 +321,9 @@ local function SkinHonorAwardedAlert(frame)
     Kill(frame.Background)
     Kill(frame.IconBorder)
 
+    if frame.Label then frame.Label:SetTextColor(unpack(QUI_TEXT_COLOR)) end
+    if frame.Amount then SkinBase.SkinFontString(frame.Amount, { fontOnly = true }) end
+
     StyleIcon(frame.Icon, frame)
 
     CreateIconAnchoredBackdrop(frame, SkinBase.GetFrameData(frame.Icon, "border"), 4)
@@ -324,7 +332,7 @@ local function SkinHonorAwardedAlert(frame)
 end
 
 local function SkinNewRecipeLearnedAlert(frame)
-    if not frame or SkinBase.IsSkinned(frame) then return end
+    if not frame then return end
 
     frame:SetAlpha(1)
     if not SkinBase.GetFrameData(frame, "hooked") then
@@ -333,15 +341,16 @@ local function SkinNewRecipeLearnedAlert(frame)
     end
 
     CreateAlertBackdrop(frame, 19, -6, -23, 6)
+    SkinBase.SkinFontString(frame.Title, { color = QUI_TEXT_COLOR })
+    SkinBase.SkinFontString(frame.Name, { color = QUI_TEXT_COLOR })
 
     Kill(frame.glow)
     Kill(frame.shine)
 
     local regions = { frame:GetRegions() }
     for _, region in ipairs(regions) do
-        if region:IsObjectType("Texture") then
+        if region:IsObjectType("Texture") and region:GetAtlas() == "recipetoast-bg" then
             Kill(region)
-            break
         end
     end
 
@@ -359,7 +368,7 @@ local function SkinNewRecipeLearnedAlert(frame)
 end
 
 local function SkinDungeonCompletionAlert(frame)
-    if not frame or SkinBase.IsSkinned(frame) then return end
+    if not frame then return end
 
     frame:SetAlpha(1)
     if not SkinBase.GetFrameData(frame, "hooked") then
@@ -368,6 +377,8 @@ local function SkinDungeonCompletionAlert(frame)
     end
 
     CreateAlertBackdrop(frame, -2, -6, -2, 6)
+    SkinBase.SkinFontString(frame.completionText, { color = QUI_TEXT_COLOR })
+    SkinBase.SkinFontString(frame.instanceName, { color = QUI_TEXT_COLOR })
 
     if frame.glowFrame then
         Kill(frame.glowFrame)
@@ -376,7 +387,6 @@ local function SkinDungeonCompletionAlert(frame)
 
     Kill(frame.shine)
     Kill(frame.raidArt)
-    Kill(frame.heroicIcon)
     Kill(frame.dungeonArt)
     Kill(frame.dungeonArt1)
     Kill(frame.dungeonArt2)
@@ -396,7 +406,7 @@ local function SkinDungeonCompletionAlert(frame)
 end
 
 local function SkinScenarioAlert(frame)
-    if not frame or SkinBase.IsSkinned(frame) then return end
+    if not frame then return end
 
     frame:SetAlpha(1)
     if not SkinBase.GetFrameData(frame, "hooked") then
@@ -408,7 +418,9 @@ local function SkinScenarioAlert(frame)
 
     local regions = { frame:GetRegions() }
     for _, region in ipairs(regions) do
-        if region:IsObjectType("Texture") then
+        if region:IsObjectType("FontString") then
+            SkinBase.SkinFontString(region, { color = QUI_TEXT_COLOR })
+        elseif region:IsObjectType("Texture") then
             local atlas = region:GetAtlas()
             if atlas == "Toast-IconBG" or atlas == "Toast-Frame" then
                 Kill(region)
@@ -433,7 +445,7 @@ local function SkinScenarioAlert(frame)
 end
 
 local function SkinWorldQuestCompleteAlert(frame)
-    if not frame or SkinBase.IsSkinned(frame) then return end
+    if not frame then return end
 
     frame:SetAlpha(1)
     if not SkinBase.GetFrameData(frame, "hooked") then
@@ -442,6 +454,8 @@ local function SkinWorldQuestCompleteAlert(frame)
     end
 
     CreateAlertBackdrop(frame, 10, -6, -14, 6)
+    SkinBase.SkinFontString(frame.ToastText, { color = QUI_TEXT_COLOR })
+    SkinBase.SkinFontString(frame.QuestName, { color = QUI_TEXT_COLOR })
 
     Kill(frame.shine)
     Kill(frame.ToastBackground)
@@ -458,18 +472,6 @@ end
 
 local function SkinLegendaryItemAlert(frame, itemLink)
     if not frame then return end
-
-    if SkinBase.IsSkinned(frame) then
-        if frame.Icon and itemLink then
-            local quality = C_Item.GetItemQualityByID(itemLink)
-            if quality then
-                local r, g, b = C_Item.GetItemQualityColor(quality)
-                local border = SkinBase.GetFrameData(frame.Icon, "border")
-                if border then Helpers.SetFrameBackdropBorderColor(border, r, g, b, 1) end
-            end
-        end
-        return
-    end
 
     frame:SetAlpha(1)
     if not SkinBase.GetFrameData(frame, "hooked") then
@@ -489,30 +491,47 @@ local function SkinLegendaryItemAlert(frame, itemLink)
     Kill(frame.shine)
 
     CreateAlertBackdrop(frame, 20, -20, -20, 20)
+    for _, region in ipairs({ frame:GetRegions() }) do
+        if region:IsObjectType("FontString") then
+            SkinBase.SkinFontString(region, region == frame.ItemName and { fontOnly = true } or { color = QUI_TEXT_COLOR })
+        end
+    end
 
     if frame.Icon then
         frame.Icon:SetTexCoord(unpack(ICON_TEX_COORDS))
         frame.Icon:SetDrawLayer("ARTWORK")
 
-        local border = CreateIconBorder(frame.Icon, frame)
-
-        if itemLink then
-            local quality = C_Item.GetItemQualityByID(itemLink)
-            if quality then
-                local r, g, b = C_Item.GetItemQualityColor(quality)
-                Helpers.SetFrameBackdropBorderColor(border, r, g, b, 1)
-            end
-        end
+        CreateIconBorder(frame.Icon, frame, GetQualityColor(itemLink or frame.hyperlink))
     end
 
     SkinBase.MarkSkinned(frame)
 end
 
+local function GetMiscAlertQualityColor(frame)
+    local border = frame and frame.IconBorder
+    local atlas = border and border.GetAtlas and border:GetAtlas()
+    local qualities = Enum and Enum.ItemQuality
+    if not atlas or not qualities or not ColorManager or not ColorManager.GetAtlasDataForLootBorderItemQuality then return nil end
+    for _, quality in pairs(qualities) do
+        if type(quality) == "number" and ColorManager.GetAtlasDataForLootBorderItemQuality(quality) == atlas then
+            local r, g, b = C_Item.GetItemQualityColor(quality)
+            return { r = r, g = g, b = b }
+        end
+    end
+end
+
 local function SkinMiscAlert(frame)
     if not frame then return end
+    if type(frame.SetUpDisplay) == "function" and not SkinBase.GetFrameData(frame, "miscDisplayHooked") then
+        hooksecurefunc(frame, "SetUpDisplay", SkinMiscAlert)
+        SkinBase.SetFrameData(frame, "miscDisplayHooked", true)
+    end
 
+    local quality = GetMiscAlertQualityColor(frame)
+    SkinBase.SetFrameData(frame, "miscAlertQualityColor", quality)
+    SkinBase.SkinFontString(frame.Label, { color = QUI_TEXT_COLOR })
     if frame.Icon then
-        CreateIconBorder(frame.Icon, frame, nil)
+        CreateIconBorder(frame.Icon, frame, quality)
     end
 
     if SkinBase.IsSkinned(frame) then
@@ -540,6 +559,51 @@ local function SkinMiscAlert(frame)
     SkinBase.MarkSkinned(frame)
 end
 
+local function SkinGarrisonAlert(frame)
+    if not frame then return end
+    local quality
+    local followerBG = frame.FollowerBG
+    local atlas = followerBG and followerBG.GetAtlas and followerBG:GetAtlas()
+    if atlas and followerBG:IsShown() and Enum and Enum.ItemQuality and ColorManager
+        and ColorManager.GetAtlasDataForGarrisonFollowerQuality then
+        for _, value in pairs(Enum.ItemQuality) do
+            if type(value) == "number" then
+                local suffix = ColorManager.GetAtlasDataForGarrisonFollowerQuality(value)
+                if suffix and atlas == "Garr_FollowerToast-" .. suffix then
+                    local r, g, b = C_Item.GetItemQualityColor(value)
+                    quality = { r = r, g = g, b = b }
+                    break
+                end
+            end
+        end
+    end
+    SkinBase.SetFrameData(frame, "garrisonAlertQualityColor", quality)
+    local backdrop = CreateAlertBackdrop(frame, 4, -6, -4, 6)
+    SkinMiscAlert(frame)
+    local sr, sg, sb, sa = SkinBase.GetWindowColors(GetGeneralSettings(), "alerts")
+    Helpers.SetFrameBackdropBorderColor(backdrop, quality and quality.r or sr,
+        quality and quality.g or sg, quality and quality.b or sb, quality and 1 or sa)
+    Kill(frame.Background)
+    Kill(frame.Blank)
+    Kill(frame.IconBG)
+    Kill(frame.FollowerBG)
+    Kill(frame.glow)
+    Kill(frame.shine)
+    for _, region in ipairs({ frame:GetRegions() }) do
+        if region:IsObjectType("FontString") then
+            local semantic = region == frame.Name or region == frame.Rare or region == frame.Class
+                or region == frame.Level or region == frame.ItemLevel
+            SkinBase.SkinFontString(region, semantic and { fontOnly = true } or { color = QUI_TEXT_COLOR })
+        elseif region:IsObjectType("Texture") then
+            local regionAtlas = region:GetAtlas()
+            if regionAtlas == "Garr_Toast" or regionAtlas == "Garr_MissionToast"
+                or regionAtlas == "ShipMission_Toast" then
+                Kill(region)
+            end
+        end
+    end
+end
+
 local function RestyleEntitlementAlertText(frame)
     if not frame or not frame.Title then return end
     SkinBase.SkinFontString(frame.Title, { fontOnly = true })
@@ -549,7 +613,6 @@ end
 local function SkinEntitlementAlert(frame)
     if not frame then return end
     RestyleEntitlementAlertText(frame)
-    if SkinBase.IsSkinned(frame) then return end
 
     frame:SetAlpha(1)
     if not SkinBase.GetFrameData(frame, "hooked") then
@@ -561,6 +624,7 @@ local function SkinEntitlementAlert(frame)
 
     Kill(frame.Background)
     Kill(frame.StandardBackground)
+    Kill(frame.FancyBackground)
     Kill(frame.glow)
     Kill(frame.shine)
 
@@ -577,7 +641,7 @@ local function SkinEntitlementAlert(frame)
 end
 
 local function SkinDigsiteCompleteAlert(frame)
-    if not frame or SkinBase.IsSkinned(frame) then return end
+    if not frame then return end
 
     frame:SetAlpha(1)
     if not SkinBase.GetFrameData(frame, "hooked") then
@@ -591,9 +655,16 @@ local function SkinDigsiteCompleteAlert(frame)
     Kill(frame.shine)
 
     local regions = { frame:GetRegions() }
-    if regions[1] then Kill(regions[1]) end
+    for _, region in ipairs(regions) do
+        if region:IsObjectType("FontString") then
+            SkinBase.SkinFontString(region, { color = QUI_TEXT_COLOR })
+        elseif region:IsObjectType("Texture") and region ~= frame.DigsiteTypeTexture then
+            Kill(region)
+        end
+    end
 
     if frame.DigsiteTypeTexture then
+        frame.DigsiteTypeTexture:ClearAllPoints()
         frame.DigsiteTypeTexture:SetPoint("LEFT", -10, -14)
     end
 
@@ -601,7 +672,7 @@ local function SkinDigsiteCompleteAlert(frame)
 end
 
 local function SkinGuildChallengeAlert(frame)
-    if not frame or SkinBase.IsSkinned(frame) then return end
+    if not frame then return end
 
     frame:SetAlpha(1)
     if not SkinBase.GetFrameData(frame, "hooked") then
@@ -611,9 +682,11 @@ local function SkinGuildChallengeAlert(frame)
 
     CreateAlertBackdrop(frame, -2, -6, -2, 6)
 
-    local region = select(2, frame:GetRegions())
-    if region and region:IsObjectType("Texture") then
-        if region:GetTexture() == [[Interface\GuildFrame\GuildChallenges]] then
+    for _, region in ipairs({ frame:GetRegions() }) do
+        if region:IsObjectType("FontString") then
+            SkinBase.SkinFontString(region, { color = QUI_TEXT_COLOR })
+        elseif region:IsObjectType("Texture") and region ~= frame.EmblemIcon
+            and region ~= frame.EmblemBackground and region ~= frame.EmblemBorder then
             Kill(region)
         end
     end
@@ -624,14 +697,34 @@ local function SkinGuildChallengeAlert(frame)
 
     if frame.EmblemIcon then
         CreateIconBorder(frame.EmblemIcon, frame)
-        SetLargeGuildTabardTextures("player", frame.EmblemIcon)
     end
 
     SkinBase.MarkSkinned(frame)
 end
 
+local function SkinGuildRenameAlert(frame)
+    if not frame then return end
+    frame:SetAlpha(1)
+    if not SkinBase.GetFrameData(frame, "hooked") then
+        hooksecurefunc(frame, "SetAlpha", ForceAlpha)
+        SkinBase.SetFrameData(frame, "hooked", true)
+    end
+    CreateAlertBackdrop(frame, -2, -6, -2, 6)
+    Kill(frame.glow)
+    Kill(frame.shine)
+    for _, region in ipairs({ frame:GetRegions() }) do
+        if region:IsObjectType("FontString") then
+            SkinBase.SkinFontString(region, region == frame.GuildName and { fontOnly = true } or { color = QUI_TEXT_COLOR })
+        elseif region:IsObjectType("Texture") and region ~= frame.GuildTabardEmblem
+            and region ~= frame.GuildTabardBackground and region ~= frame.GuildTabardBorder then
+            Kill(region)
+        end
+    end
+    SkinBase.MarkSkinned(frame)
+end
+
 local function SkinInvasionAlert(frame)
-    if not frame or SkinBase.IsSkinned(frame) then return end
+    if not frame then return end
 
     frame:SetAlpha(1)
     if not SkinBase.GetFrameData(frame, "hooked") then
@@ -642,18 +735,17 @@ local function SkinInvasionAlert(frame)
     CreateAlertBackdrop(frame, 4, 4, -7, 6)
 
     if frame.GetRegions then
-        local region, icon = frame:GetRegions()
-        if region and region:IsObjectType("Texture") then
-            if region:GetAtlas() == "legioninvasion-Toast-Frame" then
-                Kill(region)
-            end
-        end
-
-        if icon and icon:IsObjectType("Texture") then
-            if icon:GetTexture() == 236293 then
-                CreateIconBorder(icon, frame)
-                icon:SetDrawLayer("OVERLAY")
-                icon:SetTexCoord(unpack(ICON_TEX_COORDS))
+        for _, region in ipairs({ frame:GetRegions() }) do
+            if region:IsObjectType("FontString") then
+                SkinBase.SkinFontString(region, { color = QUI_TEXT_COLOR })
+            elseif region:IsObjectType("Texture") then
+                if region:GetAtlas() == "legioninvasion-Toast-Frame" then
+                    Kill(region)
+                elseif region:GetTexture() == 236293 or region:GetTexture() == [[Interface\Icons\Ability_Warlock_DemonicPower]] then
+                    CreateIconBorder(region, frame)
+                    region:SetDrawLayer("OVERLAY")
+                    region:SetTexCoord(unpack(ICON_TEX_COORDS))
+                end
             end
         end
     end
@@ -662,12 +754,16 @@ local function SkinInvasionAlert(frame)
 end
 
 local function SkinBonusRollPromptButton(btn)
-    if not btn or SkinBase.IsStyled(btn) then return end
+    if not btn then return end
     local sr, sg, sb, sa = SkinBase.GetWindowColors(GetGeneralSettings(), "alerts")
-    local border = CreateFrame("Frame", nil, btn, "BackdropTemplate")
-    border:SetFrameLevel(btn:GetFrameLevel() + 1)
-    border:SetAllPoints()
-    SkinBase.ApplyPixelBackdrop(border, 1, false, false)
+    local border = SkinBase.GetFrameData(btn, "backdrop")
+    if not border then
+        border = CreateFrame("Frame", nil, btn, "BackdropTemplate")
+        border:SetFrameLevel(btn:GetFrameLevel() + 1)
+        border:SetAllPoints()
+        SkinBase.ApplyChromeBackdrop(border, { radius = 4, withBackground = false })
+        SkinBase.SetFrameData(btn, "backdrop", border)
+    end
     Helpers.SetFrameBackdropBorderColor(border, sr, sg, sb, sa)
     local ar, ag, ab = GetThemeColors()
     local hl = btn.GetHighlightTexture and btn:GetHighlightTexture()
@@ -692,7 +788,7 @@ local function SkinBonusRollPrompt(frame)
             backdrop:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
             backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -6)
             backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -6, 6)
-            SkinBase.ApplyPixelBackdrop(backdrop, 1, true, false)
+            SkinBase.ApplyChromeBackdrop(backdrop, { radius = 8, withBackground = true })
             Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
             Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
             SkinBase.SetFrameData(frame, "backdrop", backdrop)
@@ -1081,34 +1177,68 @@ local function RefreshAlertColors()
         NewMountAlertSystem,
         NewToyAlertSystem,
         NewCosmeticAlertFrameSystem,
+        NewRuneforgePowerAlertSystem,
+        SkillLineSpecsUnlockedAlertSystem,
+        GuildRenameAlertSystem,
         NewWarbandSceneAlertSystem,
+        GarrisonBuildingAlertSystem,
+        GarrisonMissionAlertSystem,
+        GarrisonShipMissionAlertSystem,
+        GarrisonRandomMissionAlertSystem,
+        GarrisonFollowerAlertSystem,
+        GarrisonShipFollowerAlertSystem,
+        GarrisonTalentAlertSystem,
     }
 
-    for _, system in ipairs(alertSystems) do
+    for _, system in pairs(alertSystems) do
         if system and system.alertFramePool then
             for frame in system.alertFramePool:EnumerateActive() do
+                local garrisonQuality = SkinBase.GetFrameData(frame, "garrisonAlertQualityColor")
                 local bd = SkinBase.GetFrameData(frame, "backdrop")
                 if bd then
                     Helpers.SetFrameBackdropColor(bd, bgr, bgg, bgb, bga)
-                    Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
+                    Helpers.SetFrameBackdropBorderColor(bd, garrisonQuality and garrisonQuality.r or sr,
+                        garrisonQuality and garrisonQuality.g or sg, garrisonQuality and garrisonQuality.b or sb, garrisonQuality and 1 or sa)
                 end
                 local ib = SkinBase.GetFrameData(frame, "iconBorder")
                 if ib then
-                    Helpers.SetFrameBackdropBorderColor(ib, sr, sg, sb, sa)
+                    local lootItem = frame.lootItem or frame
+                    local quality = GetQualityColor(frame.hyperlink or lootItem.hyperlink) or SkinBase.GetFrameData(frame, "miscAlertQualityColor")
+                    if quality then
+                        Helpers.SetFrameBackdropBorderColor(ib, quality.r, quality.g, quality.b, 1)
+                    else
+                        Helpers.SetFrameBackdropBorderColor(ib, sr, sg, sb, sa)
+                    end
                 end
             end
         end
     end
 
-    local moneyBd = BonusRollMoneyWonFrame and SkinBase.GetFrameData(BonusRollMoneyWonFrame, "backdrop")
-    if moneyBd then
-        Helpers.SetFrameBackdropColor(moneyBd, bgr, bgg, bgb, bga)
-        Helpers.SetFrameBackdropBorderColor(moneyBd, sr, sg, sb, sa)
+    for _, frame in pairs({ BonusRollFrame, BonusRollMoneyWonFrame, BonusRollLootWonFrame }) do
+        local bd = SkinBase.GetFrameData(frame, "backdrop")
+        if bd then
+            Helpers.SetFrameBackdropColor(bd, bgr, bgg, bgb, bga)
+            Helpers.SetFrameBackdropBorderColor(bd, sr, sg, sb, sa)
+        end
+        local ib = SkinBase.GetFrameData(frame, "iconBorder")
+        if ib then
+            local lootItem = frame.lootItem or frame
+            local quality = GetQualityColor(frame.hyperlink or lootItem.hyperlink)
+            Helpers.SetFrameBackdropBorderColor(ib, quality and quality.r or sr,
+                quality and quality.g or sg, quality and quality.b or sb, quality and 1 or sa)
+        end
     end
-    local lootBd = BonusRollLootWonFrame and SkinBase.GetFrameData(BonusRollLootWonFrame, "backdrop")
-    if lootBd then
-        Helpers.SetFrameBackdropColor(lootBd, bgr, bgg, bgb, bga)
-        Helpers.SetFrameBackdropBorderColor(lootBd, sr, sg, sb, sa)
+    local prompt = BonusRollFrame and BonusRollFrame.PromptFrame
+    if prompt and SkinBase.GetFrameData(BonusRollFrame, "backdrop") then
+        if prompt.Timer then
+            local ar, ag, ab = GetThemeColors()
+            prompt.Timer:SetStatusBarColor(ar, ag, ab, 1)
+        end
+        for _, button in pairs({ prompt.RollButton, prompt.PassButton }) do
+            if SkinBase.IsStyled(button) then SkinBonusRollPromptButton(button) end
+        end
+        local ib = SkinBase.GetFrameData(prompt, "iconBorder")
+        if ib then Helpers.SetFrameBackdropBorderColor(ib, sr, sg, sb, sa) end
     end
 end
 
@@ -1179,17 +1309,17 @@ function Alerts:HookAlertSystems()
     DeferredHook(NewCosmeticAlertFrameSystem, SkinMiscAlert)
     DeferredHook(NewWarbandSceneAlertSystem, SkinMiscAlert)
 
-    DeferredHook(GarrisonBuildingAlertSystem, SkinMiscAlert)
-    DeferredHook(GarrisonMissionAlertSystem, SkinMiscAlert)
-    DeferredHook(GarrisonShipMissionAlertSystem, SkinMiscAlert)
-    DeferredHook(GarrisonRandomMissionAlertSystem, SkinMiscAlert)
-    DeferredHook(GarrisonFollowerAlertSystem, SkinMiscAlert)
-    DeferredHook(GarrisonShipFollowerAlertSystem, SkinMiscAlert)
-    DeferredHook(GarrisonTalentAlertSystem, SkinMiscAlert)
+    DeferredHook(GarrisonBuildingAlertSystem, SkinGarrisonAlert)
+    DeferredHook(GarrisonMissionAlertSystem, SkinGarrisonAlert)
+    DeferredHook(GarrisonShipMissionAlertSystem, SkinGarrisonAlert)
+    DeferredHook(GarrisonRandomMissionAlertSystem, SkinGarrisonAlert)
+    DeferredHook(GarrisonFollowerAlertSystem, SkinGarrisonAlert)
+    DeferredHook(GarrisonShipFollowerAlertSystem, SkinGarrisonAlert)
+    DeferredHook(GarrisonTalentAlertSystem, SkinGarrisonAlert)
 
     DeferredHook(NewRuneforgePowerAlertSystem, SkinMiscAlert)
-    DeferredHook(SkillLineSpecsUnlockedAlertSystem, SkinMiscAlert)
-    DeferredHook(GuildRenameAlertSystem, SkinMiscAlert)
+    DeferredHook(SkillLineSpecsUnlockedAlertSystem, SkinNewRecipeLearnedAlert)
+    DeferredHook(GuildRenameAlertSystem, SkinGuildRenameAlert)
 
     HookBonusRollFrames()
 end
