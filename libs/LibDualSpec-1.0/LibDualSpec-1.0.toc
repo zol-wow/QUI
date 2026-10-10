@@ -1,8 +1,8 @@
-## Interface: 11508, 11509, 20505, 20506, 30405, 38001, 40402, 50503, 50504, 120100, 120005, 120007
+## Interface: 11508, 11509, 16001, 20505, 20506, 30405, 38001, 38002, 40402, 50503, 50504, 120100, 120105, 120005, 120007
 ## LoadOnDemand: 1
 ## Title: Lib: DualSpec-1.0
-## Version: v1.32.0
-## X-Date: 2026-09-05T03:53:48Z
+## Version: v1.35.0
+## X-Date: 2026-09-20T06:41:37Z
 ## Notes: Adds spec switching support to individual AceDB-3.0 databases.
 ## Author: Adirelle, Nebula
 ## OptionalDeps: Ace3

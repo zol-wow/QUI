@@ -11,13 +11,28 @@ function ns.Compatibility.CreateDatabase(defaults)
     if not isForever then return db end
 
     local characterKey = db.keys.char
-    local legacyKey = characterKey:sub(1, #characterKey - #db.keys.realm) .. GetRealmName()
-    if legacyKey == characterKey then return db end
+    local legacyName = UnitName("player")
+    local unmodifiedName = _G.UnitNameUnmodified("player")
+    if issecretvalue(legacyName) then legacyName = characterKey end
+    if issecretvalue(unmodifiedName) then unmodifiedName = characterKey end
+    local legacyKeys = {
+        characterKey .. " - " .. db.keys.realm,
+        legacyName .. " - " .. db.keys.realm,
+        unmodifiedName .. " - " .. db.keys.realm,
+        characterKey .. " - " .. GetRealmName(),
+        legacyName .. " - " .. GetRealmName(),
+        unmodifiedName .. " - " .. GetRealmName(),
+    }
 
     local function CopyCharacter(store)
         local characters = store.char
-        if characters and characters[characterKey] == nil and type(characters[legacyKey]) == "table" then
-            characters[characterKey] = DeepCopy(characters[legacyKey])
+        if characters and characters[characterKey] == nil then
+            for _, legacyKey in ipairs(legacyKeys) do
+                if type(characters[legacyKey]) == "table" then
+                    characters[characterKey] = DeepCopy(characters[legacyKey])
+                    break
+                end
+            end
         end
     end
     CopyCharacter(db.sv)
@@ -25,7 +40,13 @@ function ns.Compatibility.CreateDatabase(defaults)
         CopyCharacter(namespace)
     end
 
-    local profile = previousProfiles and previousProfiles[legacyKey]
+    local profile
+    for _, legacyKey in ipairs(legacyKeys) do
+        if previousProfiles and previousProfiles[legacyKey] ~= nil then
+            profile = previousProfiles[legacyKey]
+            break
+        end
+    end
     if previousProfiles and previousProfiles[characterKey] == nil and type(profile) == "string"
         and _G.strlenutf8(profile) > 0 and not profile:find("^ +$")
         and (_G.strlenutf8(profile) <= 50 or (db.sv.profiles and type(db.sv.profiles[profile]) == "table")) then
