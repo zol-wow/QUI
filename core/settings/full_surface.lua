@@ -346,6 +346,127 @@ function FullSurface.BuildHeaderActions(headerRow, options)
     }
 end
 
+local function HookInlinePreviewResize(parent)
+    if not parent._quiPreviewCollapseHooked and parent.HookScript then
+        parent._quiPreviewCollapseHooked = true
+        parent:HookScript("OnSizeChanged", function(self)
+            if self._quiPreviewCollapseApplying then return end
+            if self._quiPreviewLayout then self._quiPreviewLayout(self:GetHeight()); return end
+            if not self._quiPreviewCollapsed then return end
+            local height = self._quiPreviewCollapsedHeight or 1
+            local requestedHeight = self:GetHeight()
+            if requestedHeight ~= height then
+                if requestedHeight > height then self._quiPreviewExpandedHeight = requestedHeight end
+                self._quiPreviewCollapseApplying = true
+                self:SetHeight(height)
+                self._quiPreviewCollapseApplying = nil
+            end
+        end)
+    end
+end
+
+function FullSurface.SetInlinePreviewCollapsed(parent, collapsed)
+    if not parent then return false end
+    collapsed = collapsed == true
+    if parent._quiPreviewCollapsed == collapsed then return false end
+    HookInlinePreviewResize(parent)
+    local host = parent._quiPreviewHost
+    parent._quiPreviewCollapsed = collapsed
+    if collapsed then
+        parent._quiPreviewExpandedHeight = parent._quiPreviewNaturalHeight or parent:GetHeight()
+        if host then
+            host:Hide()
+        else
+            parent:Hide()
+        end
+        if parent._quiPreviewLayout then parent._quiPreviewLayout() else parent:SetHeight(parent._quiPreviewCollapsedHeight or 1) end
+    else
+        if parent._quiPreviewLayout then
+            parent._quiPreviewLayout()
+        else
+            parent:SetHeight(parent._quiPreviewExpandedHeight or parent:GetHeight())
+        end
+        if host then
+            host:Show()
+        else
+            parent:Show()
+        end
+    end
+    return true
+end
+
+function FullSurface.ConfigureInlinePreview(parent, getMaxHeight)
+    if not parent or type(getMaxHeight) ~= "function" then return end
+    local naturalHeight = parent:GetHeight()
+    local host = parent._quiPreviewHost
+    if not host then return end
+    local viewport
+    local chromeHeight = 0
+    if host then
+        chromeHeight = parent._quiPreviewChromeHeight or math.max(0, naturalHeight - host:GetHeight())
+        viewport = CreateFrame("ScrollFrame", nil, parent)
+        for index = 1, host:GetNumPoints() do
+            viewport:SetPoint(host:GetPoint(index))
+        end
+        host:ClearAllPoints()
+        host:SetParent(viewport)
+        host:SetPoint("TOPLEFT", viewport, "TOPLEFT", 0, 0)
+        viewport:SetScript("OnSizeChanged", function(_, width)
+            if width > 0 and host:GetWidth() ~= width then host:SetWidth(width) end
+        end)
+        viewport:SetScrollChild(host)
+        parent._quiPreviewViewport = viewport
+        if ns.UIKit and ns.UIKit.AttachSmoothScroll then
+            local function Range()
+                local overflow = host:GetHeight() - viewport:GetHeight()
+                return overflow > 0.5 and overflow or 0
+            end
+            ns.UIKit.CreateScrollBar(viewport, { width = 4, offsetX = -1, getRange = Range })
+            ns.UIKit.AttachSmoothScroll(viewport, { step = 35, getRange = Range })
+        end
+    end
+    parent._quiPreviewNaturalHeight = naturalHeight
+    parent._quiPreviewLayout = function(requestedHeight)
+        if parent._quiPreviewCollapseApplying then return end
+        local collapsedHeight = parent._quiPreviewCollapsedHeight or 1
+        if requestedHeight and math.abs(requestedHeight - (parent._quiPreviewAppliedHeight or 0)) > 0.5
+            and (not parent._quiPreviewCollapsed or requestedHeight > collapsedHeight + 0.5) then
+            parent._quiPreviewNaturalHeight = requestedHeight
+        end
+        local natural = parent._quiPreviewNaturalHeight
+        parent._quiPreviewExpandedHeight = natural
+        local height = parent._quiPreviewCollapsed and collapsedHeight or math.min(natural, getMaxHeight())
+        parent._quiPreviewCollapseApplying = true
+        parent._quiPreviewAppliedHeight = height
+        if host then
+            local width = viewport:GetWidth()
+            if width > 0 and host:GetWidth() ~= width then host:SetWidth(width) end
+            local currentChrome = parent._quiPreviewChromeHeight or chromeHeight
+            host:SetHeight(math.max(1, natural - currentChrome))
+            viewport:SetShown(not parent._quiPreviewCollapsed and height >= currentChrome + 24)
+        end
+        if parent:GetHeight() ~= height then parent:SetHeight(height) end
+        parent._quiPreviewCollapseApplying = nil
+    end
+    HookInlinePreviewResize(parent)
+    if parent.HookScript then
+        parent:HookScript("OnShow", function()
+            parent._quiPreviewLayout()
+            C_Timer.After(0, function()
+                if parent:IsVisible() then parent._quiPreviewLayout() end
+            end)
+        end)
+    end
+    if hooksecurefunc then
+        hooksecurefunc(parent, "SetHeight", function(_, height)
+            if parent._quiPreviewCollapseApplying then return end
+            parent._quiPreviewNaturalHeight = height
+            parent._quiPreviewLayout()
+        end)
+    end
+    parent._quiPreviewLayout()
+end
+
 function FullSurface.BuildDropdownPreviewBlock(parent, options)
     options = options or {}
 
@@ -370,12 +491,12 @@ function FullSurface.BuildDropdownPreviewBlock(parent, options)
 
     local headerRow, actions, dropdown, dropdownStateKey, dropdownDB
 
-    if showDropdown then
-        headerRow = CreateFrame("Frame", nil, parent)
-        headerRow:SetHeight(headerHeight)
-        headerRow:SetPoint("TOPLEFT", pad, headerTop)
-        headerRow:SetPoint("TOPRIGHT", -pad, headerTop)
+    headerRow = CreateFrame("Frame", nil, parent)
+    headerRow:SetHeight(headerHeight)
+    headerRow:SetPoint("TOPLEFT", pad, headerTop)
+    headerRow:SetPoint("TOPRIGHT", -pad, headerTop)
 
+    if showDropdown then
         actions = FullSurface.BuildHeaderActions(headerRow, {
             gui = gui,
             state = options.state,
@@ -409,20 +530,24 @@ function FullSurface.BuildDropdownPreviewBlock(parent, options)
             options.dropdownMeta or {},
             options.dropdownConfig or { searchable = false, collapsible = false }
         )
-        dropdown:SetPoint("TOPLEFT", headerRow, "TOPLEFT", 0, 0)
-        dropdown:SetPoint("RIGHT", headerRow, "RIGHT", -dropdownRightInset, 0)
+        if options.dropdownConfig and options.dropdownConfig.compact then
+            local anchor = options.alignHeaderControls and "RIGHT" or "TOPRIGHT"
+            dropdown:SetPoint(anchor, headerRow, anchor, -dropdownRightInset, 0)
+            if options.alignHeaderControls then headerRow._quiPreviewActionHeight = headerHeight end
+        else
+            dropdown:SetPoint("TOPLEFT", headerRow, "TOPLEFT", 0, 0)
+            dropdown:SetPoint("RIGHT", headerRow, "RIGHT", -dropdownRightInset, 0)
+        end
 
         if type(options.state) == "table" then
             options.state[options.dropdownField or "dropdown"] = dropdown
         end
+    else
+        gui:CreateLabel(headerRow, ns.L["Live Preview"], 11, nil, "LEFT", 0, 0)
     end
 
     local previewHost = CreateFrame("Frame", nil, parent)
-    if showDropdown then
-        previewHost:SetPoint("TOPLEFT", headerRow, "BOTTOMLEFT", 0, previewGap)
-    else
-        previewHost:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-    end
+    previewHost:SetPoint("TOPLEFT", headerRow, "BOTTOMLEFT", 0, previewGap)
     previewHost:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -pad, pad)
 
     if options.clipPreviewChildren and previewHost.SetClipsChildren then
@@ -434,6 +559,19 @@ function FullSurface.BuildDropdownPreviewBlock(parent, options)
         hostBg:SetAllPoints(previewHost)
         hostBg:SetColorTexture(0, 0, 0, previewFillAlpha)
     end
+
+    parent._quiPreviewHost = previewHost
+    parent._quiPreviewHeader = headerRow
+    parent._quiPreviewChromeHeight = headerRow and (headerHeight - headerTop - previewGap + pad) or pad
+    local collapsedHeight = headerRow and (headerHeight + pad * 2) or 1
+    if headerRow then
+        for _, child in ipairs({ parent:GetChildren() }) do
+            if child ~= previewHost and child ~= headerRow and child.GetHeight then
+                collapsedHeight = math.max(collapsedHeight, child:GetHeight() + pad * 2)
+            end
+        end
+    end
+    parent._quiPreviewCollapsedHeight = collapsedHeight
 
     if type(options.onBuildPreviewHost) == "function" then
         options.onBuildPreviewHost(previewHost, {
@@ -920,7 +1058,25 @@ function FullSurface.BuildContextDropdownRow(parent, opts)
         opts.config or { searchable = false, collapsible = false }
     )
     dropdown:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
-    dropdown:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    dropdown:SetWidth(math.min(opts.width or 380, math.max(1, parent:GetWidth() - 2 * pad)))
+    parent:HookScript("OnSizeChanged", function()
+        dropdown:SetWidth(math.min(opts.width or 380, math.max(1, parent:GetWidth() - 2 * pad)))
+    end)
+
+    local layoutShared = ns.QUI_SettingsLayoutShared
+    if layoutShared and layoutShared.VerifyInitialBounds then
+        layoutShared.VerifyInitialBounds(row, parent, function(self)
+            self:ClearAllPoints()
+            self:SetPoint("TOPLEFT", parent, "TOPLEFT", pad, -(4 + topOffset))
+            self:SetWidth(math.max(1, parent:GetWidth() - 2 * pad))
+            self._quiRecoveredWidth = true
+        end)
+        parent:HookScript("OnSizeChanged", function()
+            if row._quiRecoveredWidth then
+                row:SetWidth(math.max(1, parent:GetWidth() - 2 * pad))
+            end
+        end)
+    end
 
     return { row = row, dropdown = dropdown, dropdownDB = db }
 end
@@ -1125,6 +1281,35 @@ function FullSurface.CreateTabStrip(parent, options)
     return strip, Paint
 end
 
+local function CreateBodyTabNavigation(body, options)
+    local gui = _G.QUI and _G.QUI.GUI
+    local selectTab
+    local descriptor = {
+        getTabs = options.getTabs,
+        getActiveTab = options.getActiveTab,
+        selectTab = function(tabKey)
+            if selectTab then
+                return selectTab(tabKey)
+            end
+            return false
+        end,
+    }
+    if gui and type(gui.RegisterTileSurfacePages) == "function"
+        and gui:RegisterTileSurfacePages(body, descriptor) then
+        return nil, function(_, _, onClick)
+            selectTab = onClick
+            if type(gui.RefreshTileSurfacePages) == "function" then
+                gui:RefreshTileSurfacePages(body)
+            end
+        end
+    end
+
+    local createTabStrip = options.createTabStrip or function(parent)
+        return FullSurface.CreateTabStrip(parent, options.tabStripOptions)
+    end
+    return createTabStrip(body)
+end
+
 local function CreateTabRepainter(options, paintTabs, RenderActive)
     local repainting = false
     local function RepaintTabs()
@@ -1143,9 +1328,21 @@ local function CreateTabRepainter(options, paintTabs, RenderActive)
             end
         end
 
-        local function HandleTabClick(tabKey, previousActiveTab)
+        local function HandleTabClick(tabKey)
+            local currentTabs = type(options.getTabs) == "function" and options.getTabs() or {}
+            local definition
+            for _, candidate in ipairs(currentTabs) do
+                if candidate.key == tabKey then
+                    definition = candidate
+                    break
+                end
+            end
+            if not definition or definition.disabled == true or definition.enabled == false then
+                return false
+            end
+            local previousActiveTab = type(options.getActiveTab) == "function" and options.getActiveTab() or nil
             if tabKey == previousActiveTab then
-                return
+                return false
             end
             if type(options.setActiveTab) == "function" then
                 options.setActiveTab(tabKey)
@@ -1156,11 +1353,10 @@ local function CreateTabRepainter(options, paintTabs, RenderActive)
             repainting = false
             RepaintTabs()
             RenderActive(false)
+            return true
         end
 
-        paintTabs(tabs, activeTab, function(tabKey)
-            return HandleTabClick(tabKey, activeTab)
-        end)
+        paintTabs(tabs, activeTab, HandleTabClick)
 
         repainting = false
     end
@@ -1192,16 +1388,19 @@ function FullSurface.BuildScrollTabBody(body, options)
     local contentRight = options.contentRightPadding or pad
     local contentBottom = options.contentBottomPadding or pad
 
-    local createTabStrip = options.createTabStrip or function(parent)
-        return FullSurface.CreateTabStrip(parent, options.tabStripOptions)
+    local tabStrip, paintTabs = CreateBodyTabNavigation(body, options)
+    local noStripTop = options.tabTopOffset and (tabTop + contentTop) or (options.contentTopOffset or 0)
+    if tabStrip then
+        tabStrip:SetPoint("TOPLEFT", body, "TOPLEFT", pad, tabTop)
+        tabStrip:SetPoint("RIGHT", body, "RIGHT", -pad, 0)
     end
 
-    local tabStrip, paintTabs = createTabStrip(body)
-    tabStrip:SetPoint("TOPLEFT", body, "TOPLEFT", pad, tabTop)
-    tabStrip:SetPoint("RIGHT", body, "RIGHT", -pad, 0)
-
     local scrollWrap = CreateFrame("Frame", nil, body)
-    scrollWrap:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, contentTop)
+    if tabStrip then
+        scrollWrap:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, contentTop)
+    else
+        scrollWrap:SetPoint("TOPLEFT", body, "TOPLEFT", pad, noStripTop)
+    end
     scrollWrap:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -contentRight, contentBottom)
 
     local scrollContent
@@ -1363,19 +1562,22 @@ function FullSurface.BuildMultiHostTabBody(body, options)
     local contentRight = options.contentRightPadding or pad
     local contentBottom = options.contentBottomPadding or pad
 
-    local createTabStrip = options.createTabStrip or function(parent)
-        return FullSurface.CreateTabStrip(parent, options.tabStripOptions)
+    local tabStrip, paintTabs = CreateBodyTabNavigation(body, options)
+    local noStripTop = options.tabTopOffset and (tabTop + contentTop) or (options.contentTopOffset or 0)
+    if tabStrip then
+        tabStrip:SetPoint("TOPLEFT", body, "TOPLEFT", pad, tabTop)
+        tabStrip:SetPoint("RIGHT", body, "RIGHT", -pad, 0)
     end
-
-    local tabStrip, paintTabs = createTabStrip(body)
-    tabStrip:SetPoint("TOPLEFT", body, "TOPLEFT", pad, tabTop)
-    tabStrip:SetPoint("RIGHT", body, "RIGHT", -pad, 0)
 
     local hosts = {}
     if not cacheTabBodies then
         for hostKey, definition in pairs(options.hosts or {}) do
             local container = CreateFrame("Frame", nil, body)
-            container:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, contentTop)
+            if tabStrip then
+                container:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, contentTop)
+            else
+                container:SetPoint("TOPLEFT", body, "TOPLEFT", pad, noStripTop)
+            end
             container:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -contentRight, contentBottom)
             container:Hide()
 
@@ -1415,7 +1617,11 @@ function FullSurface.BuildMultiHostTabBody(body, options)
         local definitions = options.hosts or {}
         local definition = definitions[activeHostKey] or definitions[options.defaultHostKey] or {}
         local container = CreateFrame("Frame", nil, body)
-        container:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, contentTop)
+        if tabStrip then
+            container:SetPoint("TOPLEFT", tabStrip, "BOTTOMLEFT", 0, contentTop)
+        else
+            container:SetPoint("TOPLEFT", body, "TOPLEFT", pad, noStripTop)
+        end
         container:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -contentRight, contentBottom)
         container:Hide()
 

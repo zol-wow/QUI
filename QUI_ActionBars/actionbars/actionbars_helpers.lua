@@ -11,7 +11,12 @@ GetDB = Helpers.CreateDBGetter("actionBars")
 local _lastPlainActionSlot = setmetatable({}, { __mode = "k" })
 function GetSafeActionSlot(button, requireCurrent)
     if not button or not button.GetAttribute then return nil end
-    local action = button:GetAttribute("action")
+    local action
+    if ActionBarsOwned.useNativeButtons and button.CalculateAction then
+        action = button:CalculateAction()
+    else
+        action = button:GetAttribute("action")
+    end
     if Helpers.IsSecretValue(action) then
         local index = button._quiButtonIndex
         if type(index) == "number" then
@@ -504,6 +509,17 @@ function GetBarButtons(barKey)
     local buttons = {}
 
     if barKey == "microbar" then
+        if ns.Client and ns.Client.isForever then
+            if not MicroMenu or not MicroMenu.GenerateButtonInfos then return buttons end
+            local hasStore = StoreMicroButton and StoreMicroButton.layoutIndex ~= nil
+            for _, info in ipairs(MicroMenu:GenerateButtonInfos()) do
+                local button = info.button
+                if button and button.layoutIndex and (button ~= HelpMicroButton or not hasStore) then
+                    buttons[#buttons + 1] = button
+                end
+            end
+            return buttons
+        end
         for _, name in ipairs(MICRO_BUTTON_NAMES) do
             local btn = _G[name]
             if btn then
@@ -512,6 +528,14 @@ function GetBarButtons(barKey)
         end
         return buttons
     elseif barKey == "bags" then
+        if ns.Client and ns.Client.isForever and MainMenuBarBagManager then
+            for _, button in MainMenuBarBagManager:EnumerateBagButtons() do
+                if button ~= KeyRingButton or C_ActionBar.ShouldShowKeyring() then
+                    buttons[#buttons + 1] = button
+                end
+            end
+            return buttons
+        end
         if MainMenuBarBackpackButton then
             table.insert(buttons, MainMenuBarBackpackButton)
         end
@@ -554,8 +578,7 @@ end
 
 libKeyBoundPatched = false
 
-function PatchLibKeyBoundForMidnight()
-    if not IS_MIDNIGHT then return end
+function PatchLibKeyBoundForOwnedButtons()
     if libKeyBoundPatched then return end
 
     local LibKeyBound = LibStub("LibKeyBound-1.0", true)
@@ -769,13 +792,15 @@ end
 
 function CreateBarContainer(barKey)
     local containerName = "QUI_ActionBar_" .. barKey
-    local container = CreateFrame("Frame", containerName, UIParent, "SecureHandlerStateTemplate")
+    local template = not ActionBarsOwned.useNativeButtons and "SecureHandlerStateTemplate" or nil
+    local container = CreateFrame("Frame", containerName, UIParent, template)
     container:SetSize(1, 1)
     container:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     container:Show()
     container:SetClampedToScreen(true)
 
     container:SetAttribute("qui-user-shown", true)
+    if ActionBarsOwned.useNativeButtons then return container end
     container:SetAttribute("_onstate-quioverride", [[
         if newstate == "hide" then
             self:Hide()
@@ -803,6 +828,10 @@ end
 
 function SetBarContainerShown(container, shown)
     if not container then return end
+    if ActionBarsOwned.useNativeButtons then
+        SetNativeBarShown(container, shown)
+        return
+    end
     container:SetAttribute("qui-user-shown", shown and true or false)
     if InCombatLockdown() then return end
     if shown then

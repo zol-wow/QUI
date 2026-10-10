@@ -140,10 +140,8 @@ local POWER_COLORS = {
     [13] = { 0.4, 0, 0.8 },
 }
 
-local tocVersion = tonumber((select(4, GetBuildInfo()))) or 0
-
 local function GetHealthPct(unit, usePredicted)
-    if tocVersion >= 120000 and type(UnitHealthPercent) == "function"
+    if type(UnitHealthPercent) == "function"
        and CurveConstants and CurveConstants.ScaleTo100 then
         local ok, pct = pcall(UnitHealthPercent, unit, usePredicted, CurveConstants.ScaleTo100)
         if ok then return pct end
@@ -156,7 +154,7 @@ local function GetHealthPct(unit, usePredicted)
 end
 
 local function GetPowerPct(unit, powerType, usePredicted)
-    if tocVersion >= 120000 and type(UnitPowerPercent) == "function" then
+    if type(UnitPowerPercent) == "function" then
         local ok, pct
         if CurveConstants and CurveConstants.ScaleTo100 then
             ok, pct = pcall(UnitPowerPercent, unit, powerType, usePredicted, CurveConstants.ScaleTo100)
@@ -775,7 +773,7 @@ local function UpdateAbsorbs(frame)
         local absorbTexturePath = GetAbsorbTexturePath(absorbSettings.texture)
         if not frame.absorbOverflowBar then
             frame.absorbOverflowBar = CreateFrame("StatusBar", nil, frame.healthBar)
-            frame.absorbOverflowBar:SetStatusBarTexture(absorbTexturePath)
+            Helpers.ApplyBarStyle(frame.absorbOverflowBar, absorbTexturePath)
             local overflowBarTex = frame.absorbOverflowBar:GetStatusBarTexture()
             if overflowBarTex then
                 overflowBarTex:SetHorizTile(false)
@@ -785,7 +783,7 @@ local function UpdateAbsorbs(frame)
             frame.absorbOverflowBar:SetFrameLevel(frame.healthBar:GetFrameLevel() + 2)
             frame.absorbOverflowBar:EnableMouse(false)
         else
-            frame.absorbOverflowBar:SetStatusBarTexture(absorbTexturePath)
+            Helpers.ApplyBarStyle(frame.absorbOverflowBar, absorbTexturePath)
         end
 
         if not frame.attachedVisHelper then
@@ -857,7 +855,7 @@ local function UpdateAbsorbs(frame)
         frame.absorbBar:SetReverseFill(healthReversed)
         frame.absorbBar:SetMinMaxValues(0, maxHealth)
         frame.absorbBar:SetValue(clampedAbsorbs)
-        frame.absorbBar:SetStatusBarTexture(absorbTexturePath)
+        Helpers.ApplyBarStyle(frame.absorbBar, absorbTexturePath)
         frame.absorbBar:SetStatusBarColor(c[1], c[2], c[3], a)
         frame.absorbBar:SetAlpha(frame.attachedVisHelper:GetAlpha())
         frame.absorbBar:Show()
@@ -962,7 +960,7 @@ local function UpdateHealPrediction(frame)
     frame.healPredictionBar:SetReverseFill(healthReversed)
     frame.healPredictionBar:SetMinMaxValues(0, maxHealth)
     frame.healPredictionBar:SetValue(incomingHeals)
-    frame.healPredictionBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+    Helpers.ApplyBarStyle(frame.healPredictionBar, GetTexturePath(settings.texture))
 
     local c = predictionSettings.color or { 0.2, 1, 0.2 }
     local a = predictionSettings.opacity or 0.5
@@ -1492,7 +1490,7 @@ local function BuildFrameBars(frame, unit, unitKey, settings, general, width, he
     local healthBar = CreateFrame("StatusBar", nil, frame)
     healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
     healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
-    healthBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+    Helpers.ApplyBarStyle(healthBar, GetTexturePath(settings.texture))
     healthBar:SetMinMaxValues(0, 100)
     healthBar:SetValue(100)
     healthBar:EnableMouse(false)
@@ -1503,7 +1501,7 @@ local function BuildFrameBars(frame, unit, unitKey, settings, general, width, he
     if unitKey == "player" or unitKey == "target" then
         local predictionSettings = settings.healPrediction or {}
         local healPredictionBar = CreateFrame("StatusBar", nil, healthBar)
-        healPredictionBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+        Helpers.ApplyBarStyle(healPredictionBar, GetTexturePath(settings.texture))
         healPredictionBar:SetFrameLevel(healthBar:GetFrameLevel() + 1)
         healPredictionBar:SetPoint("TOP", healthBar, "TOP", 0, 0)
         healPredictionBar:SetPoint("BOTTOM", healthBar, "BOTTOM", 0, 0)
@@ -1518,7 +1516,7 @@ local function BuildFrameBars(frame, unit, unitKey, settings, general, width, he
 
     local absorbSettings = settings.absorbs or {}
     local absorbBar = CreateFrame("StatusBar", nil, healthBar)
-    absorbBar:SetStatusBarTexture(GetAbsorbTexturePath(absorbSettings.texture))
+    Helpers.ApplyBarStyle(absorbBar, GetAbsorbTexturePath(absorbSettings.texture))
     local absorbBarTex = absorbBar:GetStatusBarTexture()
     if absorbBarTex then
         absorbBarTex:SetHorizTile(false)
@@ -1537,7 +1535,7 @@ local function BuildFrameBars(frame, unit, unitKey, settings, general, width, he
     frame.absorbBar = absorbBar
 
     local healAbsorbBar = CreateFrame("StatusBar", nil, healthBar)
-    healAbsorbBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+    Helpers.ApplyBarStyle(healAbsorbBar, GetTexturePath(settings.texture))
     healAbsorbBar:SetFrameLevel(healthBar:GetFrameLevel() + 2)
     healAbsorbBar:SetAllPoints(healthBar)
     healAbsorbBar:SetMinMaxValues(0, 1)
@@ -1559,7 +1557,7 @@ local function BuildFrameBars(frame, unit, unitKey, settings, general, width, he
         powerBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", borderSize, borderSize)
         powerBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
         powerBar:SetHeight(powerHeight)
-        powerBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+        Helpers.ApplyBarStyle(powerBar, GetTexturePath(settings.texture))
         powerBar:SetMinMaxValues(0, 100)
         powerBar:SetValue(100)
         local powerColor = settings.powerBarColor or { 0, 0.5, 1, 1 }
@@ -2710,7 +2708,7 @@ function QUI_UF:ShowPreview(unitKey)
             frame.healPredictionBar:SetReverseFill(healthReversed)
             frame.healPredictionBar:SetMinMaxValues(0, hpMax)
             frame.healPredictionBar:SetValue(clamped)
-            frame.healPredictionBar:SetStatusBarTexture(GetTexturePath(settings.texture))
+            Helpers.ApplyBarStyle(frame.healPredictionBar, GetTexturePath(settings.texture))
             local c = settings.healPrediction.color or { 0.2, 1, 0.2 }
             local a = settings.healPrediction.opacity or 0.5
             frame.healPredictionBar:SetStatusBarColor(c[1] or 0.2, c[2] or 1, c[3] or 0.2, a)
@@ -2908,7 +2906,7 @@ function QUI_UF:RefreshFrame(unitKey)
                 frame.healthBar:SetAlpha(healthOpacity)
                 if frame.powerBar then frame.powerBar:SetAlpha(healthOpacity) end
 
-                frame.healthBar:SetStatusBarTexture(texturePath)
+                Helpers.ApplyBarStyle(frame.healthBar, texturePath)
                 frame.healthBar:ClearAllPoints()
                 frame.healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
                 frame.healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
@@ -2916,7 +2914,7 @@ function QUI_UF:RefreshFrame(unitKey)
 
                 if frame.powerBar then
                     if settings.showPowerBar then
-                        frame.powerBar:SetStatusBarTexture(texturePath)
+                        Helpers.ApplyBarStyle(frame.powerBar, texturePath)
                         frame.powerBar:ClearAllPoints()
                         frame.powerBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", borderSize, borderSize)
                         frame.powerBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
@@ -3204,7 +3202,7 @@ function QUI_UF:RefreshFrame(unitKey)
     local separatorHeight = (settings.showPowerBar and settings.powerBarBorder ~= false) and QUICore:GetPixelSize(frame) or 0
 
     local texturePath = GetTexturePath(settings.texture)
-    frame.healthBar:SetStatusBarTexture(texturePath)
+    Helpers.ApplyBarStyle(frame.healthBar, texturePath)
 
     frame.healthBar:ClearAllPoints()
     frame.healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
@@ -3217,7 +3215,7 @@ function QUI_UF:RefreshFrame(unitKey)
             powerBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", borderSize, borderSize)
             powerBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
             powerBar:SetHeight(powerHeight)
-            powerBar:SetStatusBarTexture(texturePath)
+            Helpers.ApplyBarStyle(powerBar, texturePath)
             powerBar:SetMinMaxValues(0, 100)
             powerBar:SetValue(100)
             local powerColor = settings.powerBarColor or { 0, 0.5, 1, 1 }
@@ -3225,7 +3223,7 @@ function QUI_UF:RefreshFrame(unitKey)
             powerBar:EnableMouse(false)
             frame.powerBar = powerBar
         end
-        frame.powerBar:SetStatusBarTexture(texturePath)
+        Helpers.ApplyBarStyle(frame.powerBar, texturePath)
         frame.powerBar:ClearAllPoints()
         frame.powerBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", borderSize, borderSize)
         frame.powerBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
@@ -3932,6 +3930,7 @@ do
                         local GUI = QUI and QUI.GUI
                         if GUI and GUI.ShowConfirmation then
                             GUI:ShowConfirmation({
+                                reload = true,
                                 title = "Reload UI?",
                                 message = "Enabling or disabling unit frames requires a UI reload to take effect.",
                                 acceptText = "Reload",
@@ -3986,6 +3985,7 @@ do
                     local GUI = QUI and QUI.GUI
                     if GUI and GUI.ShowConfirmation then
                         GUI:ShowConfirmation({
+                            reload = true,
                             title = "Reload UI?",
                             message = "Enabling or disabling unit frames requires a UI reload to take effect.",
                             acceptText = "Reload",

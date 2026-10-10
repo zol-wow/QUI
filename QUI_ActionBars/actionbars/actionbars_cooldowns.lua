@@ -58,10 +58,8 @@ else
 end
 
 do
-    local USE_DURATION_OBJECTS = IS_MIDNIGHT
-        and C_ActionBar ~= nil
-        and C_ActionBar.GetActionCooldownDuration ~= nil
-        and (tonumber((select(2, GetBuildInfo()))) or 0) >= 66562
+    local USE_DURATION_OBJECTS = C_ActionBar ~= nil
+        and type(C_ActionBar.GetActionCooldownDuration) == "function"
 
     local DEFAULT_CD_INFO  = { startTime = 0, duration = 0, isEnabled = false, isActive = false, modRate = 0 }
     local DEFAULT_LOC_INFO = { startTime = 0, duration = 0, modRate = 0, isActive = false, shouldReplaceNormalCooldown = false }
@@ -109,10 +107,31 @@ do
         return _locGateResult
     end
 
+    local function CanMutateCooldown(cooldown)
+        return not Helpers.CanMutateCooldown or Helpers.CanMutateCooldown(cooldown)
+    end
+
+    local function ClearCooldown(cooldown)
+        if not cooldown then return end
+        if not CanMutateCooldown(cooldown) then
+            ActionBarsOwned.pendingCooldownRefresh = true
+            return
+        end
+        if Helpers.ClearCooldown then
+            Helpers.ClearCooldown(cooldown)
+        else
+            cooldown:Clear()
+        end
+    end
+
     local function SetOrClearCooldown(cooldown, shouldShow, durationObject)
         if not cooldown then return end
+        if not CanMutateCooldown(cooldown) then
+            ActionBarsOwned.pendingCooldownRefresh = true
+            return
+        end
         if not shouldShow or not durationObject then
-            cooldown:Clear()
+            ClearCooldown(cooldown)
             return
         end
         cooldown:SetCooldownFromDurationObject(durationObject)
@@ -333,10 +352,10 @@ do
             if cdActive == false and chActive ~= true and not PlayerMayHaveLossOfControl() then
                 if _buttonWasActive[button] then
                     _buttonWasActive[button] = nil
-                    cooldown:Clear()
-                    if button.chargeCooldown then button.chargeCooldown:Clear() end
+                    ClearCooldown(cooldown)
+                    ClearCooldown(button.chargeCooldown)
                     local loc = GetLoCCooldown(button)
-                    if loc then loc:Clear() end
+                    ClearCooldown(loc)
                 end
                 return
             end
@@ -353,13 +372,13 @@ do
             if showNormal then
                 SetOrClearCooldown(cooldown, true, cdDurationObject)
             else
-                cooldown:Clear()
+                ClearCooldown(cooldown)
             end
 
             if showCharge then
                 SetOrClearCooldown(GetOrCreateChargeCooldown(button), true, chargeDurObj)
             elseif button.chargeCooldown then
-                button.chargeCooldown:Clear()
+                ClearCooldown(button.chargeCooldown)
             end
 
             if showLoC then
@@ -367,7 +386,7 @@ do
                 SetOrClearCooldown(GetOrCreateLoCCooldown(button), true, C_ActionBar.GetActionLossOfControlCooldownDuration(action))
             else
                 local loc = GetLoCCooldown(button)
-                if loc then loc:Clear() end
+                ClearCooldown(loc)
             end
         else
             if ActionButton_UpdateCooldown then

@@ -1,3 +1,4 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
 local ADDON_NAME, ns = ...
 local NP = ns.QUI_Nameplates
 if not NP then return end

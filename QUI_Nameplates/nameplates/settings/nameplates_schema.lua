@@ -1,3 +1,4 @@
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
 local QUI = QUI
 
@@ -14,8 +15,8 @@ local Helpers = ns.Helpers
 local NameplatesSchema = ns.QUI_NameplatesSettingsSchema or {}
 ns.QUI_NameplatesSettingsSchema = NameplatesSchema
 
-local HEADER_GAP = 26
-local SECTION_BOTTOM_PAD = 10
+local HEADER_GAP = 22
+local SECTION_BOTTOM_PAD = 6
 local DESCRIPTION_TEXT_COLOR = { 1, 1, 1, 0.6 }  -- white + alpha (palette textDim)
 
 local HEALTH_TEXT_STYLE_OPTIONS = {
@@ -248,6 +249,8 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
 
     local y = 0
     local builder = {}
+    local cards = {}
+    sectionHost._quiMeasureSettingsHeight = nil
 
     function builder.Header(text)
         if type(text) ~= "string" or text == "" then
@@ -270,7 +273,8 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
 
         local description = sectionHost:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         description:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        description:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
+        description:SetWidth(sectionHost:GetWidth())
+        description:SetWordWrap(true)
         description:SetJustifyH("LEFT")
         description:SetText(text)
         description:SetTextColor(color[1], color[2], color[3], color[4])
@@ -278,7 +282,8 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
         if description.GetStringHeight then
             height = math.max(14, math.ceil(description:GetStringHeight() or 14))
         end
-        y = y - height - 4
+        description:SetHeight(height)
+        y = y - height - 8
         return description
     end
 
@@ -296,8 +301,9 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
     end
 
     function builder.CloseCard(card)
-        card.Finalize()
-        y = y - card.frame:GetHeight()
+        local height = card.Finalize() or card.frame:GetHeight()
+        cards[#cards + 1] = {frame = card.frame, height = height}
+        y = y - height
     end
 
     function builder.Spacer(amount)
@@ -305,7 +311,15 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
     end
 
     function builder.Height(extra)
-        return math.abs(y) + (extra or SECTION_BOTTOM_PAD)
+        local height = math.abs(y) + (extra or SECTION_BOTTOM_PAD)
+        sectionHost._quiMeasureSettingsHeight = function()
+            local settledHeight = height
+            for _, card in ipairs(cards) do
+                settledHeight = settledHeight + (card.frame._quiMeasuredHeight or card.frame:GetHeight()) - card.height
+            end
+            return settledHeight
+        end
+        return height
     end
 
     return builder
@@ -371,6 +385,7 @@ local function RenderEnableSection(sectionHost, ctx)
             end
             RefreshNameplates()
             gui:ShowConfirmation({
+                reload = true,
                 title = ns.L["Reload UI?"],
                 message = ns.L["Nameplates load at login: changing the enabled state requires a UI reload to install or remove the nameplate hooks."],
                 acceptText = ns.L["Reload"],
@@ -382,10 +397,11 @@ local function RenderEnableSection(sectionHost, ctx)
         end,
         { description = ns.L["Replace Blizzard's nameplates with QUI's custom nameplates. Requires a UI reload to take full effect."] }
     )
+    enableCheck:SetWidth(sectionHost:GetWidth())
     enableCheck:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, -4)
     enableCheck:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, -4)
 
-    return 64
+    return enableCheck:GetHeight() + 4 + SECTION_BOTTOM_PAD
 end
 
 local function AddTextPositionRows(gui, optionsAPI, card, tbl, refresh, gatedRows)
@@ -2226,6 +2242,29 @@ local STARTER_STYLE_LABELS = {
     },
 }
 
+local function CreateActionCell(parent)
+    local cell = CreateFrame("Frame", nil, parent)
+    cell:SetHeight(28)
+    cell._buttons = {}
+    cell.Layout = function(self, width)
+        local x, y, rowHeight = 0, 0, 0
+        for _, button in ipairs(self._buttons) do
+            local buttonWidth, buttonHeight = button:GetWidth(), button:GetHeight()
+            if x > 0 and x + buttonWidth > width then
+                x, y, rowHeight = 0, y + rowHeight + 4, 0
+            end
+            button:ClearAllPoints()
+            button:SetPoint("TOPLEFT", self, "TOPLEFT", x, -y)
+            x = x + buttonWidth + 8
+            rowHeight = math.max(rowHeight, buttonHeight)
+        end
+        local height = math.max(28, y + rowHeight)
+        self:SetHeight(height)
+        return height
+    end
+    return cell
+end
+
 local function RenderStarterStylesSection(sectionHost, ctx)
     local gui = GetGUI()
     local optionsAPI = GetOptionsAPI()
@@ -2247,19 +2286,24 @@ local function RenderStarterStylesSection(sectionHost, ctx)
     builder.Header(ns.L["Starter Styles"])
     builder.Description(ns.L["One-click starting points. Each one overwrites only the settings it opinionates, then you tune from there."])
 
+    local card = builder.Card()
+    local actions = CreateActionCell(card.frame)
+    actions._quiFullWidth = true
+    actions.Layout = function(self, width)
+        local count = #self._buttons
+        local buttonWidth = math.max(1, (width - math.max(0, count - 1) * 8) / math.max(1, count))
+        for index, button in ipairs(self._buttons) do
+            button:ClearAllPoints()
+            button:SetWidth(buttonWidth)
+            button:SetPoint("TOPLEFT", self, "TOPLEFT", (index - 1) * (buttonWidth + 8), 0)
+        end
+        self:SetHeight(28)
+        return 28
+    end
     for _, key in ipairs(NPPresets.GetStarterStyleKeys()) do
         local meta = STARTER_STYLE_LABELS[key]
         if meta then
-            local row = CreateFrame("Frame", nil, sectionHost)
-            row:SetHeight(26)
-            row:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, -builder.Height(0))
-            row:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, -builder.Height(0))
-            builder.Spacer(30)
-
-            local label = gui:CreateLabel(row, meta.label, 12)
-            label:SetPoint("LEFT", row, "LEFT", 4, 0)
-
-            local applyBtn = gui:CreateButton(row, ns.L["Apply"], 70, 20, function()
+            local applyBtn = gui:CreateButton(actions, meta.label, 200, 24, function()
                 gui:ShowConfirmation({
                     title = meta.label,
                     message = meta.description,
@@ -2274,9 +2318,12 @@ local function RenderStarterStylesSection(sectionHost, ctx)
                     end,
                 })
             end)
-            applyBtn:SetPoint("LEFT", row, "LEFT", 200, 0)
+            actions._buttons[#actions._buttons + 1] = applyBtn
+            if gui.AttachTooltip then gui:AttachTooltip(applyBtn, meta.description, meta.label) end
         end
     end
+    card.AddRow(actions)
+    builder.CloseCard(card)
 
     return builder.Height()
 end
@@ -2343,15 +2390,11 @@ local function RenderNameplateProfilesSection(sectionHost, ctx)
         activeValue:SetText(ns.L["None"])
         activeValue:SetTextColor(mutedColor[1], mutedColor[2], mutedColor[3], 1)
     end
-    card.AddRow(activeCell)
-
     local assignments = (Presets.GetAssignments and Presets.GetAssignments()) or { autoSwitch = false, specs = {}, roles = {} }
     local autoToggle = gui:CreateFormCheckbox(card.frame, nil, "autoSwitch", assignments, nil, {
         description = ns.L["Account-wide: changing specialization (or logging in) applies the profile assigned to your spec, or to your role if the spec has none."],
     })
-    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Auto-switch on spec change"], autoToggle))
-    builder.CloseCard(card)
-    builder.Spacer(8)
+    card.AddRow(activeCell, optionsAPI.BuildSettingRow(card.frame, ns.L["Auto-switch on spec change"], autoToggle))
 
     local function AddRow(height)
         local row = CreateFrame("Frame", nil, sectionHost)
@@ -2367,9 +2410,7 @@ local function RenderNameplateProfilesSection(sectionHost, ctx)
     end
 
     -- Profile selector + actions
-    local selectorRow = AddRow(26)
-    local selectorLabel = gui:CreateLabel(selectorRow, ns.L["Profile"], 12)
-    selectorLabel:SetPoint("LEFT", selectorRow, "LEFT", 4, 0)
+    local selectorRow = card.frame
 
     local profileOptions = {}
     for _, name in ipairs(names) do
@@ -2384,11 +2425,10 @@ local function RenderNameplateProfilesSection(sectionHost, ctx)
             selectedNameplateProfile = selectorState.value
         end
     end)
-    selectorDropdown:SetPoint("LEFT", selectorRow, "LEFT", 200, 0)
-    selectorDropdown:SetWidth(280)
+    selectorDropdown:SetWidth(210)
 
     local exportBox
-    local actionRow = AddRow(24)
+    local actionRow = CreateActionCell(card.frame)
     local applyBtn = gui:CreateButton(actionRow, ns.L["Apply"], 74, 20, function()
         if Presets.ApplyProfile(selectedNameplateProfile) then
             RefreshNameplates()
@@ -2443,6 +2483,8 @@ local function RenderNameplateProfilesSection(sectionHost, ctx)
         end
     end)
     exportBtn:SetPoint("LEFT", deleteBtn, "RIGHT", 8, 0)
+    actionRow._buttons = { applyBtn, updateBtn, deleteBtn, exportBtn }
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Profile"], selectorDropdown), actionRow)
 
     if not hasSelection then
         for _, btn in ipairs({ applyBtn, updateBtn, deleteBtn, exportBtn }) do
@@ -2451,13 +2493,10 @@ local function RenderNameplateProfilesSection(sectionHost, ctx)
     end
 
     -- Save as new / rename
-    local nameRow = AddRow(26)
-    local nameLabel = gui:CreateLabel(nameRow, ns.L["Profile name"], 12)
-    nameLabel:SetPoint("LEFT", nameRow, "LEFT", 4, 0)
-    local nameField, nameEditBox = gui:CreateInlineEditBox(nameRow, { width = 280, maxLetters = 60 })
-    nameField:SetPoint("LEFT", nameRow, "LEFT", 200, 0)
+    local nameRow = card.frame
+    local nameField, nameEditBox = gui:CreateInlineEditBox(nameRow, { width = 210, maxLetters = 60 })
 
-    local nameActionRow = AddRow(24)
+    local nameActionRow = CreateActionCell(card.frame)
     local function ReadNameInput()
         local text = nameEditBox:GetText() or ""
         text = text:gsub("^%s+", ""):gsub("%s+$", "")
@@ -2510,10 +2549,14 @@ local function RenderNameplateProfilesSection(sectionHost, ctx)
     end)
     renameBtn:SetPoint("LEFT", saveNewBtn, "RIGHT", 8, 0)
     if not hasSelection and renameBtn.Disable then renameBtn:Disable() end
+    nameActionRow._buttons = { saveNewBtn, renameBtn }
+    card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Profile name"], nameField), nameActionRow)
+    builder.CloseCard(card)
+    builder.Spacer(6)
 
     -- Export / import string box
-    local boxRow = AddRow(72)
-    exportBox = gui:CreateScrollableTextBox(boxRow, 72, "")
+    local boxRow = AddRow(48)
+    exportBox = gui:CreateScrollableTextBox(boxRow, 48, "")
     exportBox:SetPoint("TOPLEFT", boxRow, "TOPLEFT", 4, 0)
     exportBox:SetPoint("TOPRIGHT", boxRow, "TOPRIGHT", -4, 0)
     exportBox.editBox:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
@@ -2570,16 +2613,20 @@ local function RenderNameplateProfilesSection(sectionHost, ctx)
         assignmentOptions[#assignmentOptions + 1] = { value = name, text = name }
     end
 
+    local assignmentCard = builder.Card()
+    local pendingAssignment
     local function AddAssignmentRow(labelText, current, onSelect)
-        local row = AddRow(26)
-        local label = gui:CreateLabel(row, labelText, 12)
-        label:SetPoint("LEFT", row, "LEFT", 4, 0)
         local state = { value = current or NP_PROFILE_NONE }
-        local dropdown = gui:CreateFormDropdown(row, nil, assignmentOptions, "value", state, function()
+        local dropdown = gui:CreateFormDropdown(assignmentCard.frame, nil, assignmentOptions, "value", state, function()
             onSelect(state.value ~= NP_PROFILE_NONE and state.value or nil)
         end)
-        dropdown:SetPoint("LEFT", row, "LEFT", 200, 0)
-        dropdown:SetWidth(280)
+        local cell = optionsAPI.BuildSettingRow(assignmentCard.frame, labelText, dropdown)
+        if pendingAssignment then
+            assignmentCard.AddRow(pendingAssignment, cell)
+            pendingAssignment = nil
+        else
+            pendingAssignment = cell
+        end
     end
 
     local numSpecs = 0
@@ -2603,7 +2650,10 @@ local function RenderNameplateProfilesSection(sectionHost, ctx)
         end
     end
 
-    builder.Spacer(6)
+    if pendingAssignment then
+        assignmentCard.AddRow(pendingAssignment)
+        pendingAssignment = nil
+    end
     local ROLE_ROWS = {
         { role = "TANK", label = ns.L["Tank (all characters)"] },
         { role = "HEALER", label = ns.L["Healer (all characters)"] },
@@ -2615,6 +2665,8 @@ local function RenderNameplateProfilesSection(sectionHost, ctx)
             Presets.GetRoleAssignment(role),
             function(profileName) Presets.AssignRole(role, profileName) end)
     end
+    if pendingAssignment then assignmentCard.AddRow(pendingAssignment) end
+    builder.CloseCard(assignmentCard)
 
     return builder.Height()
 end
@@ -2656,14 +2708,7 @@ local function BuildCopyFromSection(tabKey)
         local card = builder.Card()
         local copySelector = { selected = copyOptions[1].value }
         local copyDropdown = gui:CreateFormDropdown(card.frame, nil, copyOptions, "selected", copySelector, nil)
-        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Copy From"], copyDropdown))
-        builder.CloseCard(card)
-
-        local row = CreateFrame("Frame", nil, sectionHost)
-        row:SetHeight(26)
-        row:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, -builder.Height(0))
-        row:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, -builder.Height(0))
-        builder.Spacer(30)
+        local row = CreateActionCell(card.frame)
 
         local applyBtn = gui:CreateButton(row, ns.L["Apply Copy"], 100, 24, function()
             local sourceKey = copySelector.selected
@@ -2686,7 +2731,9 @@ local function BuildCopyFromSection(tabKey)
                 end,
             })
         end)
-        applyBtn:SetPoint("LEFT", row, "LEFT", 0, 0)
+        row._buttons = { applyBtn }
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Copy From"], copyDropdown), row)
+        builder.CloseCard(card)
 
         return builder.Height()
     end
@@ -2710,9 +2757,9 @@ local function CreateMultiSectionTabFeature(id, sectionDefs)
             nameplateTab = {
                 sections = sectionIds,
                 padding = 10,
-                sectionGap = 14,
-                topPadding = 10,
-                bottomPadding = 40,
+                sectionGap = 10,
+                topPadding = 6,
+                bottomPadding = 16,
             },
         },
         sections = sections,
@@ -2720,7 +2767,7 @@ local function CreateMultiSectionTabFeature(id, sectionDefs)
 end
 
 local GENERAL_TAB_FEATURE = CreateMultiSectionTabFeature("nameplatesGeneralTab", {
-    { id = "enable", minHeight = 64, render = RenderEnableSection },
+    { id = "enable", minHeight = 42, render = RenderEnableSection },
     { id = "starterStyles", minHeight = 150, render = RenderStarterStylesSection },
     { id = "nameplateProfiles", minHeight = 420, render = RenderNameplateProfilesSection },
     { id = "cvarsSection", minHeight = 130, render = RenderCVarsSection },

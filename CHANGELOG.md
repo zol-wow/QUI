@@ -4,6 +4,356 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-beta1 - 2026-10-10
+
+> **Alpha promoted to Beta.** One download supports WoW 12.1.0 live Retail,
+> WoW 12.1.5 PTR, and WoW Forever 1.60.1 (interfaces 120100, 120105, and 16001).
+> Forever support remains experimental.
+
+### Added and Changed
+
+- **Satin appearance** provides a profile-selectable finish across QUI surfaces
+  and icons, with matching Starter profile defaults.
+- **Rounded native panels and controls** extend consistent styling across
+  Blizzard windows, character controls, gameplay displays, bars, and icons while
+  preserving native interactions, configured borders, and profession colors.
+- **Options navigation and previews** use streamlined layouts, responsive sizing,
+  and updated search routes and translations.
+- **Forever client support** includes native swing timer controls, resource bars,
+  character stats and sidebar behavior, bank and group frames, clickcasting,
+  Quick Salvage, and optional Legacy System and Pet Stable skins. Profile exports
+  identify their client to prevent importing settings from a different client.
+- **All Beta11 features and fixes remain included**, including Spell Reminders,
+  Encounter Debuffs, recipe knowledge tinting, the Angler overlay checklist,
+  Guild and Communities fonts, and cold-login group frame initialization.
+
+### Fixed
+
+- Existing bag profiles retain their saved unusable-item tint preference.
+- Spell Reminders retry initialization when execution restrictions end.
+- Existing long profile names remain selected after login and continue to work
+  with profile selection and specialization switching. New profile names retain
+  the supported length limit.
+
+## v5.5.0-ptr-alpha10 - 2026-10-04
+
+> **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
+> interfaces 120105 and 16001. Forever support remains experimental.
+
+### Added
+
+- **Underlight Angler Helper** provides an unlock checklist, artifact trait tree
+  with purchase confirmations, and fishing tips for alts. Open it with
+  `/angler` or `/quiangler`; enable the module under **Module Addons**.
+- **Damage Meter result sharing** sends selected rows to Party, Raid, or Whisper.
+  Choose Top 3, Top 5, Top 10, or All from **Share Results**; the default is five
+  data rows, All is capped at 40, and reports use the chat-throttling queue.
+- **Mythic+ keystone reroll reminders** show a temporary “Re-roll key?” prompt
+  after eligible dungeon completions. The reminder defaults to enabled with a
+  15-second duration; Quality of Life → Automation offers Off and 15/30/60-second
+  duration controls. Missing owned-key data is retried for up to five seconds.
+- **Optional appearance-buff removal** lets you select supported transformations
+  and profession outfits to remove. It defaults to Off, waits until combat and
+  aura restrictions end, and keeps fishing outfits while casting.
+- **Optional Forever Legacy System and Pet Stable skins** follow the native
+  windows while preserving challenge lists, pet selection, and purchase controls.
+
+### Improved and Fixed
+
+- **Forever compatibility follows current native UI contracts.** Shared secure
+  UI paths and QUI-owned flyouts are available on the current client; character
+  sidebar tabs open the correct pages and popouts. Quick Salvage retains native
+  callbacks, and GSE integration remains unavailable on Forever.
+- **Blizzard window skins follow loaded panels and native controls**, including
+  Collections, Spellbook/Talents, guild charters, professions, and world maps.
+  Loot notifications refresh changed or emptied slots correctly; loot windows
+  preserve scroll position and native click controls, and roll timers follow
+  native remaining time. Encounter power bars retain native timers. Skin choices
+  remain selectable through profile imports and search.
+- **Aura Displays and action-bar previews match their live layouts.** Vertical
+  aura growth, wrapping, outlines, and spacing are corrected. Right-clicking an
+  aura display or group in Layout Mode opens Position/Anchor To controls;
+  action-bar buttons update while dragging size and spacing settings.
+- **Layout Mode and bags update consistently.** Shift-drag aligns chosen frame
+  edges; anchored movement/nudges preserve precision and detached frames stay
+  detached. Category bag views honor sort key/reverse settings and refresh after
+  sorting, item-detail updates, and stack changes.
+- **Combat and interface behavior is more reliable.** Consumable-check layout
+  waits until combat ends; resurrection automation accepts eligible raid offers
+  while retaining Shift override. Cooldown Manager reuses released icons, hidden
+  castbars preserve Edit Mode geometry, and selected movable panels stay in front.
+  Range indicators avoid duplicate scans, chat skips unroutable notices, guild
+  messages respect speaking permissions, and gold tooltips deduplicate legacy
+  realm aliases.
+
+## v5.5.0-ptr-alpha9 - 2026-09-18
+
+> **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
+> interfaces 120105 and 16001. Forever support remains experimental.
+
+### Changed
+
+- **Restored the original account-wide saving for Forever.** QUI settings,
+  profiles, and tracked data again use the account-wide database. The temporary
+  character-only storage workaround from alpha8 has been removed.
+  **Retail continues using its normal account-wide storage.**
+- This rollback does not fix the reported Forever client persistence issue;
+  that issue remains unresolved. Other alpha8 features are unchanged.
+
+### Upgrading from Alpha8 on Forever
+
+- **Before updating, export any profile you want to keep and back up your WTF
+  folder.** Settings and tracked data saved in alpha8's character-local files
+  are **not automatically migrated** into the account-wide database.
+- After updating, import your same-client profile export if needed. Profile
+  exports preserve settings; retain the WTF backup for character-local tracked
+  data. Your previous account-wide settings may differ from your alpha8 setup.
+
+## v5.5.0-ptr-alpha8 - 2026-09-18
+
+> **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
+> interfaces 120105 and 16001. Forever support remains experimental.
+
+### Added
+
+- **Forever native swing timers** for main hand, off hand, and ranged weapons,
+  with Gameplay settings and Layout Mode controls for position, size, texture,
+  labels, and visibility. Blizzard continues to handle swing timing.
+- **More Forever features are available:** QUI bank and group frames,
+  mouse-button clickcasting, Quick Salvage outside combat, and position controls
+  for supported open Blizzard panels.
+- **Forever resource bars support native combo points and druid mana**, and
+  defensive-spell suggestions include known spells from class metadata.
+
+### Fixed
+
+- **Forever character stats use the native stat catalog and correct viewport**,
+  including resistance labels, stat refreshes, and Character/Equipment navigation.
+- **Swing timer drawer controls no longer overlap** when choosing a bar texture
+  or font size.
+
+### Temporary Forever Storage Workaround
+
+- **Forever saves QUI settings and stored data per character** to work around
+  the reported client persistence issue. Existing account-wide data is not
+  automatically migrated, and settings/storage are not shared across characters.
+  **Retail retains its normal account-wide storage.** This workaround is intended
+  to be reverted after Blizzard fixes the underlying issue.
+- Back up your WTF folder before updating and retain those backups for the
+  eventual storage transition. A successful Forever persistence probe has been
+  reported; complete live validation remains pending.
+
+### Alpha Limits
+
+- Forever GSE integration and hover keyboard/wheel clickcasting remain
+  unavailable. Protected placement covers supported registered panels, not
+  arbitrary protected frames or protected scaling.
+- Automated checks cover both clients; combat behavior, feature visuals, and
+  defensive-spell coverage still need live verification.
+
+## v5.5.0-ptr-alpha7 - 2026-09-18
+
+> **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** One download supports
+> interfaces 120105 and 16001. Forever support remains experimental.
+
+### Added
+
+- **Optional automatic resurrection acceptance** under Quality of Life →
+  Automation, with separate Off, Out of Combat, and Always modes for dungeons,
+  raids, PvP, and the open world. All locations default to Off; hold Shift to
+  keep an incoming offer manual.
+
+### Changed
+
+- **Damage Meter improves readability on bright bars without text outlines**,
+  automatically darkening their fills while preserving hue and configured
+  transparency. Text without an outline also receives a black shadow.
+- **Forever compatibility workarounds now apply across Forever builds**,
+  including native action-bar fallback and Cooldown Manager Edit Mode previews.
+
+### Fixed
+
+- **Forever reload buttons and confirmation dialogs reload correctly**,
+  including module toggles in the settings sidebar.
+- **Forever preserves existing character settings and profile selection across
+  the character-identity update.** Invalid profile names show an error instead
+  of interrupting profile controls; automatic spec switching skips invalid
+  saved mappings without deleting their data.
+- **Forever Character and Reputation panels avoid anchor and progress-bar
+  errors**, main action-bar divider artwork stays hidden, and the Info Bar
+  Legacy button follows the native keyboard-toggle behavior.
+- **Loot windows, roll prompts, previews, and bag tooltips use the supported
+  item-quality color API**, fixing missing-function errors.
+
+### Alpha Limits
+
+- Forever retains native bank and group controls. QUI clickcasting, Quick
+  Salvage, GSE integration, protected-frame mover placement, secondary resource
+  bars, and automatic defensive-spell suggestions remain unavailable there.
+- This release has automated coverage for both clients. Combat behavior and
+  visual changes still need live testing; back up your WTF folder before updating.
+
+## v5.5.0-ptr-alpha6 - 2026-09-17
+
+> **WoW 12.1.5 PTR and WoW Forever 1.60.1 alpha.** This package supports
+> interfaces 120105 and 16001. It does not target the live 12.1 client.
+
+### Added
+
+- **Initial WoW Forever support in the same download as the PTR build**, with
+  client-aware API handling, bank tab ranges, and primary resource tracking.
+- **Profile exports identify their client**, and imports reject profiles tagged
+  for a different client. Existing untagged exports remain compatible.
+
+### Changed
+
+- **Forever build 69893 keeps Blizzard's secure action buttons and party/raid
+  controls**, with QUI action-bar styling, positioning, microbar and bag controls.
+  Native paging, flyouts, bindings, and casting remain available.
+- **Forever keeps its native bank and Edit Mode behavior.** Secondary resource
+  bars and defensive-spell suggestions requiring LibOpenRaid data are unavailable
+  on Forever in this initial alpha. On build 69893, QUI clickcasting, Quick Salvage,
+  GSE integration, and protected-frame mover placement are also unavailable.
+
+### Fixed
+
+- **Forever Collections tabs switch without the unsupported OnClick error**,
+  retain their icons, and highlight the selected tab correctly.
+
+## v5.5.0-ptr-alpha5 - 2026-09-14
+
+> ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
+> not load on the live 12.1 client.
+
+Includes the stable 5.3.1 fixes while retaining PTR features.
+
+### Fixed
+
+- **Cooldown Manager keeps native buff slots distinct and correctly placed in
+  combat**, hides duplicate base icons, and keeps mixed aura rows centered.
+- **Target and focus auras refresh when you switch units**, including native
+  buff mirrors, custom aura containers, and unit-frame auras.
+- **Pandemic glows honor the selected style and settings**, preserve the size
+  of resized and non-square native icons, and retain PTR pulse and flash styles.
+  Native proc and cast-highlight glows also avoid restricted-size errors.
+- **New party and raid members use the configured Group Frame dimensions**,
+  including separate raid groups, self frames, and spotlights.
+- **Chat honors realm-name preferences for restricted senders**, upgraded bag
+  items keep the correct item level, and imported click-cast macros retain
+  their names when edited or saved.
+
+## v5.5.0-ptr-alpha4 - 2026-09-12
+
+> ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
+> not load on the live 12.1 client.
+
+Includes the beta updates through v5.3.1-beta8 while retaining PTR features.
+
+### Added
+
+- **Reminders is a new optional module, off by default**, with defensive
+  callouts driven by BigWigs, DBM, or Blizzard's encounter timeline. Configure
+  per-spec priorities, movable callouts, sound or text-to-speech, and CDM glows.
+- **Bonus Roll filters** can hide prompts by raid difficulty, boss, dungeon,
+  Delve, or Mythic+ key level. Recover an unexpired hidden offer with
+  `/qui bonusroll show`.
+- **Group Frames can hide raid groups 7 and 8 in Mythic raids and hide unit
+  tooltips during combat.**
+
+### Changed
+
+- **Options load on demand and raid frames reuse secure unit buttons**,
+  reducing startup work and repeated styling during roster updates.
+- **Cooldown Manager custom auras use native tracking and rendering**, with
+  improved buff-row spacing, alignment, group boundaries, and aura glows.
+
+### Fixed
+
+- **Cooldown Manager aura sounds no longer modify Blizzard's native alert
+  layouts**, preventing taint in native cooldown and aura tracking. Configure
+  native sounds and text-to-speech in Blizzard's Cooldown Manager settings.
+- **Chat preserves whisper recipients, replies, and Battle.net routing**,
+  follows the active window, and safely handles restricted achievement messages
+  and channel names.
+- **Castbar anchor chains no longer restrict resizing during combat**, arena target health bars
+  retain class colors, and minimap datatexts keep their saved positions.
+- **Settings searches skip restricted preview text**, unchanged pinned values
+  avoid full refreshes, and Rotation Helper clears stale suggestions.
+
+## v5.5.0-ptr-alpha3 - 2026-09-08
+
+> ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
+> not load on the live 12.1 client.
+
+### Fixed
+
+- **Restored the Info Bar Shop button**, preserving its existing settings and
+  combat, kiosk, and shop-toggle guards.
+
+## v5.5.0-ptr-alpha2 - 2026-09-08
+
+> ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets interface 120105 and will
+> not load on the live 12.1 client.
+
+Includes the beta catch-ups and PTR improvements since alpha1.
+
+### Added
+
+- **Aura Displays offer templates, guided creation, nested groups, share strings,
+  and compact layouts**, with improved encounter-based preparation and imports.
+- **Aura icons support optional caster labels and pandemic pulse/flash styles.**
+  Settings and bag searches use native Unicode case folding on the PTR client.
+- **Cooldown Manager buff icons have growth-direction and anchor controls**,
+  with clearer setup guidance when Blizzard's native viewers are disabled.
+- **Alt equipment supports filtering, sorting, scrolling, and item tooltips**;
+  weekly progress includes inline lockouts and compact Great Vault summaries.
+- **Quality-of-life controls include summon automation, teleport cooldowns,
+  a dedicated Notifications tab, and the native Rotate Minimap setting.**
+
+### Fixed
+
+- **Possession abilities stay visible with their usual action keys**, including
+  after fade timers expire; deferred microbar construction recovers correctly.
+- **Raid markers display when WoW restricts their indices**, and boss castbar
+  retries are consolidated and cleaned up when no longer needed.
+- **Cooldown Manager preserves unusable tint and native frame ownership**,
+  defers settings updates, and avoids writes to Blizzard's layout serializer.
+- **Aura Displays retain sound configuration and validate imported settings**;
+  weapon-oil timers recover after zoning, and grouped displays handle previews
+  and encounter load conditions more reliably.
+- **Damage Meter retains the selected death recap**, dimmed group frames keep
+  their tooltips, and the info bar no longer overlaps foreground UI. The unsafe
+  info-bar Shop shortcut has been removed; bundled libraries include API fixes.
+
+## v5.5.0-ptr-alpha1 - 2026-09-03
+
+> ⚠️ **WoW 12.1.5 PTR ONLY.** This alpha targets PTR build 12.1.5.69594
+> (interface 120105) and will not load on the live 12.1 client.
+
+Opens the 5.5 PTR alpha line with 12.1.5 API compatibility and protected-frame
+hardening.
+
+### Changed
+
+- **QUI now targets the WoW 12.1.5 PTR**, including refreshed Blizzard API and
+  FrameXML corpora plus regenerated LuaLS and taint metadata.
+- **Protected cooldown updates use each receiver's native mutation verdict.**
+  Unprotected addon cooldowns continue updating during combat, while protected
+  receivers defer and repaint when combat ends.
+- **Settings and Blizzard-frame chrome use a unified higher-contrast visual
+  treatment**, including clearer controls, smoother scrolling, and shared
+  Character panel styling.
+
+### Fixed
+
+- **Action Bars, Group Frames, Bags, and world-map teleports recover deferred
+  cooldowns after combat** instead of leaving missing or stale swipes.
+- **Incoming targeted-cast markers avoid combat allocations**, preserve active
+  casts across combat exit, and repaint protected cooldowns when legal.
+- **Cooldown Manager leaves the native viewer enable state to Blizzard** and
+  suppresses native buff bars before data readiness, avoiding tainted callbacks
+  and startup flicker.
+
 ## v5.3.2-beta11 - 2026-10-10
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and

@@ -4,8 +4,20 @@ local Storage = ns.Storage or {}; ns.Storage = Storage
 local ScanBank = {}
 Storage.ScanBank = ScanBank
 
-local CHAR_FIRST, CHAR_LAST = 6, 11
-local WB_FIRST, WB_LAST = 12, 16
+function ScanBank.GetBagRange(bankType)
+    local prefix = bankType == Enum.BankType.Account and "AccountBankTab_" or "CharacterBankTab_"
+    local first = Enum.BagIndex[prefix .. "1"]
+    local last = first
+    for name, bagID in pairs(Enum.BagIndex) do
+        if name:match("^" .. prefix .. "%d+$") then
+            last = math.max(last, bagID)
+        end
+    end
+    return first, last
+end
+
+local CHAR_FIRST, CHAR_LAST = ScanBank.GetBagRange(Enum.BankType.Character)
+local WB_FIRST, WB_LAST = ScanBank.GetBagRange(Enum.BankType.Account)
 
 local dirtyChar, dirtyWarband = {}, {}
 local hasDirty = false
@@ -67,6 +79,16 @@ local function ReadTab(bagID, meta)
     return tab
 end
 
+local function IsEmptyBankBag(bagID, bankType)
+    if not (C_Bank.ShouldUsePlayerBagsInBank and C_Bank.ShouldUsePlayerBagsInBank()
+        and C_Bank.CanUseBank(bankType)) then return false end
+    local account = bankType == Enum.BankType.Account
+    local slot = bagID - (account and WB_FIRST or CHAR_FIRST) + 1
+    local container = account and Enum.BagIndex.Accountbanktab or Enum.BagIndex.Characterbanktab
+    return slot > 1 and C_Container.GetContainerNumSlots(container) >= slot
+        and C_Container.GetContainerItemInfo(container, slot) == nil
+end
+
 function ScanBank.Drain()
     if not hasDirty then return false end
     local rec = Storage.Store.GetCurrentCharacter()
@@ -79,7 +101,8 @@ function ScanBank.Drain()
     for bagID in pairs(charScan) do
         local tab = ReadTab(bagID, charMeta[bagID])
         local old = rec.bankTabs[bagID]
-        if tab.size == 0 and old and old.size > 0 then
+        if tab.size == 0 and old and old.size > 0
+            and not IsEmptyBankBag(bagID, Enum.BankType.Character) then
         else
             rec.bankTabs[bagID] = tab
             changedChar[#changedChar + 1] = bagID
@@ -88,7 +111,8 @@ function ScanBank.Drain()
     for bagID in pairs(wbScan) do
         local tab = ReadTab(bagID, warbandMeta[bagID])
         local old = warband.tabs[bagID]
-        if tab.size == 0 and old and old.size > 0 then
+        if tab.size == 0 and old and old.size > 0
+            and not IsEmptyBankBag(bagID, Enum.BankType.Account) then
         else
             warband.tabs[bagID] = tab
             changedWb[#changedWb + 1] = bagID

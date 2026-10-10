@@ -246,20 +246,19 @@ local function GetChatSurfaceColors(settings)
         bgR, bgG, bgB = legacyBg[1], legacyBg[2], legacyBg[3]
     else
         bgR, bgG, bgB = 0, 0, 0
-        if Helpers and Helpers.GetSkinBgColorWithOverride then
-            bgR, bgG, bgB = Helpers.GetSkinBgColorWithOverride(settings, "chat")
-        elseif Helpers and Helpers.GetSkinBgColor then
-            bgR, bgG, bgB = Helpers.GetSkinBgColor()
+        if Helpers and Helpers.GetWindowColors then
+            local _, _, _, _, r, g, b = Helpers.GetWindowColors(settings, "chat")
+            bgR, bgG, bgB = r, g, b
         end
     end
 
-    local brR, brG, brB = 1, 1, 1
-    if Helpers and Helpers.GetSkinBorderColor then
-        brR, brG, brB = Helpers.GetSkinBorderColor(settings, "chat")
+    local brR, brG, brB, brA = 1, 1, 1, 1
+    if Helpers and Helpers.GetWindowColors then
+        brR, brG, brB, brA = Helpers.GetWindowColors(settings, "chat")
     end
 
     return {bgR, bgG, bgB, backgroundEnabled and alpha or 0},
-           {brR, brG, brB, 0.55}
+           {brR, brG, brB, 0.55 * brA}
 end
 
 I.GetSettings         = GetSettings

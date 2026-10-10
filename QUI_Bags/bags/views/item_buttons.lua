@@ -193,6 +193,7 @@ function ItemButtons.DressCached(button, entry, searchResult)
     if entry then
         button._link = entry.link
         button._icon:SetTexture(entry.icon)
+        Helpers.ApplyIconStyle(button, button._icon)
         button._icon:Show()
         button._count:SetText("")
         local r, g, b = GetQualityColor(entry.quality or 1)
@@ -217,8 +218,8 @@ function ItemButtons.DressCached(button, entry, searchResult)
         button._link = nil
         button._icon:Hide()
         button._count:SetText("")
-        local sr, sg, sb = Helpers.GetSkinColors()
-        UIKit.UpdateBorderLines(button, 1, sr, sg, sb, 0.35)
+        local sr, sg, sb, sa = Helpers.GetWindowColors()
+        UIKit.UpdateBorderLines(button, 1, sr, sg, sb, 0.35 * sa)
         ApplyIconOverlay(button, nil)
         ItemButtons.SetUnusableTint(button, false)
         if Bags.CornerWidgets then Bags.CornerWidgets.Apply(button, nil, appearance) end
@@ -312,6 +313,7 @@ function ItemButtons.DressGuildLive(button, tab, slot, entry, searchResult)
     if entry then
         button._link = entry.link
         button._icon:SetTexture(entry.icon)
+        Helpers.ApplyIconStyle(button, button._icon)
         button._icon:Show()
         button._count:SetText("")
         local r, g, b = GetQualityColor(entry.quality or 1)
@@ -338,8 +340,8 @@ function ItemButtons.DressGuildLive(button, tab, slot, entry, searchResult)
         button._link = nil
         button._icon:Hide()
         button._count:SetText("")
-        local sr, sg, sb = Helpers.GetSkinColors()
-        UIKit.UpdateBorderLines(button, 1, sr, sg, sb, 0.35)
+        local sr, sg, sb, sa = Helpers.GetWindowColors()
+        UIKit.UpdateBorderLines(button, 1, sr, sg, sb, 0.35 * sa)
         ApplyIconOverlay(button, nil)
         button._icon:SetDesaturated(false)
         ItemButtons.SetUnusableTint(button, false)
@@ -359,11 +361,16 @@ function ItemButtons.Dress(button, entry, searchResult, newGuid)
     local appearance = GetSettings().appearance
     if entry then
         SetItemButtonTexture(button, entry.icon)
+        Helpers.ApplyIconStyle(button, button.icon or button.IconTexture)
         SetItemButtonCount(button, 0)
         local r, g, b = GetQualityColor(entry.quality or 1)
         ApplyIconOverlay(button, entry)
         local start, duration, enable = C_Container.GetContainerItemCooldown(button:GetBagID(), button:GetID())
-        CooldownFrame_Set(button.Cooldown, start, duration, enable)
+        if not Helpers.CanMutateCooldown or Helpers.CanMutateCooldown(button.Cooldown) then
+            CooldownFrame_Set(button.Cooldown, start, duration, enable)
+        else
+            Bags.cooldownRefreshPending = true
+        end
         local live = C_Container.GetContainerItemInfo(button:GetBagID(), button:GetID())
         local junkCfg = GetSettings().behavior.junk
         local isJunk = (Bags.Junk and live
@@ -411,10 +418,11 @@ function ItemButtons.Dress(button, entry, searchResult, newGuid)
         end
     else
         SetItemButtonTexture(button, nil)
+        Helpers.ApplyIconStyle(button, button.icon or button.IconTexture, "Empty")
         SetItemButtonCount(button, 0)
         ApplyIconOverlay(button, nil)
-        local sr, sg, sb = Helpers.GetSkinColors()
-        UIKit.UpdateBorderLines(button, 1, sr, sg, sb, 0.35)
+        local sr, sg, sb, sa = Helpers.GetWindowColors()
+        UIKit.UpdateBorderLines(button, 1, sr, sg, sb, 0.35 * sa)
         button.Cooldown:Hide()
         SetItemButtonDesaturated(button, false)
         ItemButtons.SetUnusableTint(button, false)

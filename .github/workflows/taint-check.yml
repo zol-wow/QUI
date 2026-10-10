@@ -44,53 +44,25 @@ jobs:
       - uses: leafo/gh-actions-lua@v13
         with:
           luaVersion: "5.1"
-      - name: Regenerate api-index
-        run: lua tools/test_taint.lua --update-index
+      - name: Regenerate client indexes and definitions
+        run: |
+          lua tools/test_taint.lua --update-index
+          lua tools/generate_lua_definitions.lua
+          lua tools/test_taint.lua --update-index --corpus tests/clients/forever/api-docs/blizzard --index tests/clients/forever/api-docs/api-index.lua
+          lua tools/generate_lua_definitions.lua --docs tests/clients/forever/api-docs/blizzard --out tests/clients/forever/meta --globals none
       - name: Verify no diff
         run: |
-          if ! git -C tests diff --exit-code -- api-docs/api-index.lua; then
-            echo "::error::api-index.lua is out of sync with the vendored corpus."
-            echo "::error::Run 'lua tools/test_taint.lua --update-index' locally and commit."
-            exit 1
-          fi
+          git -C tests diff --exit-code -- api-docs/api-index.lua clients/forever/api-docs/api-index.lua clients/forever/meta/
+          git diff --exit-code -- meta/wow-api.lua meta/wow-widgets.lua meta/wow-globals.lua
 
-  # Sharded across 12 runners. Analysis is per-file independent, so each shard
-  # takes a disjoint slice of the corpus (see --shard in tools/test_taint.lua)
-  # and the union is the same set of files an unsharded run would analyze.
-  # Measured before sharding: 182s of analysis behind 9s of checkout + Lua
-  # setup, which made this job the entire CI critical path -- every other
-  # workflow in the repo finishes in 7-58s.
-  #
-  # Strict enforcement and the advisory artifact are ONE job because they are
-  # one analysis. They always ran the same analyzer over the same corpus and
-  # differed only in renderer and severity filter, so splitting them paid for
-  # the whole corpus twice; --json-out archives the unfiltered set from the
-  # same pass that gates stdout. Merging halved the job count, which is what
-  # bought the room to go 6 -> 12 shards.
-  #
-  # Why 12: branches are pushed one at a time, so a wave is this workflow plus
-  # Lua Tests (2), Profile Tests (1) and the two regen workflows -- 7 fixed jobs
-  # against the Free plan's 20-concurrent-job cap, leaving 13 slots. Past ~12
-  # the run is mostly overhead anyway: each shard pays ~9s of checkout + Lua
-  # setup no matter how small its slice, and at 12 the slowest shard is already
-  # down to ~18s of analysis.
-  #
-  # No `needs: self-test`. Gating cost 11s plus ~8s of scheduling latency on
-  # EVERY run to save 12 wasted jobs on the rare run where the analyzer itself
-  # is broken -- and Actions minutes are free on this public repo, so the
-  # savings were worth nothing. This job now starts immediately; api-index-sync
-  # keeps its gate because it is not on the critical path.
-  #
-  # fail-fast: false is load-bearing. The default cancels sibling shards on the
-  # first failure, which would report one shard's strict findings and hide the
-  # rest -- you would fix those, push, and discover the next batch.
   analyze:
     name: Taint analysis
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        client: [retail, forever]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -101,18 +73,22 @@ jobs:
       # Strict findings fail the step via the analyzer's exit code; the
       # advisory set is archived either way, so `if: always()` on the upload
       # keeps the report available on exactly the runs you need it for.
-      - name: Analyze shard ${{ matrix.shard }}
+      - name: Analyze ${{ matrix.client }} shard ${{ matrix.shard }}
         run: |
+          index=tests/api-docs/api-index.lua
+          if [ "${{ matrix.client }}" = forever ]; then
+            index=tests/clients/forever/api-docs/api-index.lua
+          fi
           lua tools/test_taint.lua \
-            --report github --strict-only \
+            --report github --strict-only --index "$index" \
             --json-out taint-report.json \
-            --shard ${{ matrix.shard }}/12
+            --shard ${{ matrix.shard }}/6
       # Each shard uploads its own artifact: actions/upload-artifact rejects a
       # duplicate name, and --json-out covers only this shard's files. Anything
-      # consuming these has to read all twelve and concatenate.
+      # consuming these has to concatenate each client's six shards.
       - name: Upload advisory report artifact
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: taint-report-${{ matrix.shard }}
+          name: taint-report-${{ matrix.client }}-${{ matrix.shard }}
           path: taint-report.json

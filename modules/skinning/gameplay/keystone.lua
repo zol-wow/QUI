@@ -23,7 +23,7 @@ local function StyleButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         SkinBase.SetFrameData(button, "backdrop", btnBd)
     end
 
-    SkinBase.ApplyPixelBackdrop(btnBd, SkinBase.CHROME.BORDER_PX, true, true)
+    SkinBase.ApplyChromeBackdrop(btnBd, { radius = 5, withBackground = true })
     local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
     local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
     local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
@@ -70,7 +70,7 @@ local function StyleKeystoneSlot(slot, sr, sg, sb, sa)
         SkinBase.SetExpandedPixelPoints(slotBorder, slot, 4)
         slotBorder:SetFrameLevel(slot:GetFrameLevel() - 1)
         slotBorder:EnableMouse(false)
-        SkinBase.ApplyPixelBackdrop(slotBorder, SkinBase.CHROME.BORDER_PX, true, true)
+        SkinBase.ApplyChromeBackdrop(slotBorder, { radius = 5, withBackground = true })
         Helpers.SetFrameBackdropColor(slotBorder, 0, 0, 0, 0.5)
         Helpers.SetFrameBackdropBorderColor(slotBorder, sr, sg, sb, sa)
         SkinBase.SetFrameData(slot, "border", slotBorder)
@@ -95,9 +95,9 @@ local function SkinKeystoneFrame()
     local keystoneFrame = _G.ChallengesKeystoneFrame
     if not keystoneFrame or SkinBase.IsSkinned(keystoneFrame) then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "keystone")
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "keystone")
 
-    SkinBase.CreateBackdrop(keystoneFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    SkinBase.CreateBackdrop(keystoneFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga, 8)
 
     hooksecurefunc(keystoneFrame, "Reset", HideBlizzardDecorations)
     keystoneFrame:HookScript("OnShow", HideBlizzardDecorations)
@@ -129,11 +129,12 @@ local function SkinKeystoneFrame()
             if affix.Portrait and not SkinBase.GetFrameData(affix, "border") then
                 if affix.Border then affix.Border:SetAlpha(0) end
                 affix.Portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+                SkinBase.RoundIconTexture(affix, affix.Portrait)
                 local affixBorder = CreateFrame("Frame", nil, affix, "BackdropTemplate")
                 SkinBase.SetExpandedPixelPoints(affixBorder, affix.Portrait, 1)
                 affixBorder:SetFrameLevel(affix:GetFrameLevel())
                 affixBorder:EnableMouse(false)
-                SkinBase.ApplyPixelBackdrop(affixBorder, SkinBase.CHROME.BORDER_PX, false, false)
+                SkinBase.ApplyChromeBackdrop(affixBorder, { radius = 4, withBackground = false })
                 Helpers.SetFrameBackdropBorderColor(affixBorder, r, g, b, a)
                 SkinBase.SetFrameData(affix, "border", affixBorder)
             end
@@ -149,7 +150,7 @@ local function RefreshKeystoneColors()
 
     local core = GetCore()
     local settings = core and core.db and core.db.profile and core.db.profile.general
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "keystone")
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "keystone")
 
     local ksBd = SkinBase.GetBackdrop(keystoneFrame)
     if ksBd then

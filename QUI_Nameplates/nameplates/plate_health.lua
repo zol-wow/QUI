@@ -121,7 +121,7 @@ function NPHealth.ApplyAppearance(plate, settings)
 
     local healthBar = plate.healthBar
     QUICore:SetPixelPerfectSize(healthBar, health.width or 210, health.height or 24)
-    healthBar:SetStatusBarTexture(GetBarTexture(health.texture))
+    Helpers.ApplyBarStyle(healthBar, GetBarTexture(health.texture))
     local fillTex = healthBar:GetStatusBarTexture()
     if fillTex then
         fillTex:SetHorizTile(false)
@@ -145,7 +145,7 @@ function NPHealth.ApplyAppearance(plate, settings)
         absorbBar:SetPoint("BOTTOMLEFT", healthBar, "BOTTOMLEFT", 0, 0)
     end
     absorbBar:SetWidth(QUICore:Pixels(health.width or 210, plate))
-    absorbBar:SetStatusBarTexture(GetBarTexture(health.texture))
+    Helpers.ApplyBarStyle(absorbBar, GetBarTexture(health.texture))
     local ac = absorbS.color or { 1, 1, 1 }
     absorbBar:SetStatusBarColor(ac[1], ac[2], ac[3], absorbS.opacity or 0.3)
     plate.npAbsorbsEnabled = absorbS.enabled ~= false
@@ -161,7 +161,7 @@ function NPHealth.ApplyAppearance(plate, settings)
         healBar:SetPoint("BOTTOMLEFT", healthBar, "BOTTOMLEFT", 0, 0)
     end
     healBar:SetWidth(QUICore:Pixels(health.width or 210, plate))
-    healBar:SetStatusBarTexture(GetBarTexture(health.texture))
+    Helpers.ApplyBarStyle(healBar, GetBarTexture(health.texture))
     local hc = healS.color or { 0.25, 0.80, 0.25 }
     healBar:SetStatusBarColor(hc[1], hc[2], hc[3], healS.opacity or 0.4)
     plate.npHealPredictEnabled = healS.enabled == true
@@ -176,7 +176,7 @@ function NPHealth.ApplyAppearance(plate, settings)
     QUICore:SetPixelPerfectSize(powerBar, health.width or 210, pb.height or 6)
     powerBar:ClearAllPoints()
     powerBar:SetPoint("TOP", healthBar, "BOTTOM", 0, -QUICore:Pixels(1, plate))
-    powerBar:SetStatusBarTexture(GetBarTexture(health.texture))
+    Helpers.ApplyBarStyle(powerBar, GetBarTexture(health.texture))
     UIKit.UpdateBorderLines(powerBar, health.borderSize or 1, bc[1] or 0, bc[2] or 0, bc[3] or 0, 1,
         (health.borderSize or 1) <= 0)
     if not plate.npPowerBarEnabled then powerBar:Hide() end

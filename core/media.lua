@@ -37,6 +37,7 @@ LSM:Register(STATUSBAR, "Square", squareTexturePath)
 LSM:Register(BORDER, "Square", squareTexturePath)
 
 LSM:Register(STATUSBAR, "Flat", "Interface\\Buttons\\WHITE8X8")
+LSM:Register(STATUSBAR, "Satin", AssetPath .. "appearance\\Satin.tga")
 
 local quaziiV2TexturePath = AssetPath .. "Quazii_v2.tga"
 LSM:Register(BACKGROUND, "Quazii v2", quaziiV2TexturePath)

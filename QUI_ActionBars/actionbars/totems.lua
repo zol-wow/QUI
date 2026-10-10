@@ -16,6 +16,10 @@ ns.QUI_TotemBar = TotemBar
 local QUICore = ns.Addon
 local Helpers = ns.Helpers
 local ApplyCooldownFromStart = Helpers.ApplyCooldownFromStart
+local ClearCooldown = Helpers.ClearCooldown or function(cooldown)
+    cooldown:Clear()
+    return true
+end
 
 local MAX_SLOTS = MAX_TOTEMS or 4
 local BASE_CROP = 0.08
@@ -345,13 +349,13 @@ local function UpdateTotems()
                 end
             end
             if not ApplyCooldownFromStart(cd, durObj, startTime, duration, nil, nil) then
-                cd:Clear()
+                if not ClearCooldown(cd) then pendingReconcile = true end
             end
             StyleButton(btn)
             SafeShowButton(btn)
             hasActive = true
         else
-            btn.cooldown:Clear()
+            if not ClearCooldown(btn.cooldown) then pendingReconcile = true end
             SafeHideButton(btn)
         end
     end

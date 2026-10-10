@@ -131,7 +131,7 @@ read_globals = {
     "C_NamePlate", "C_NamePlateManager", "C_ItemCallbacks", "C_Secrets", "C_VoiceChat", "C_RestrictedActions",
     "C_ChallengeMode", "C_ClassTalents", "C_Container", "C_CooldownViewer",
     "C_CurveUtil", "C_DamageMeter", "C_DeathRecap", "C_DurationUtil", "C_Item", "C_ScenarioInfo",
-    "C_SpellActivationOverlay",
+    "C_SpellActivationOverlay", "C_Intl",
     "C_SpellBook", "C_StringUtil", "C_TradeSkillUI", "C_Traits", "C_Widget",
 
     -- M+ constants
@@ -141,6 +141,7 @@ read_globals = {
     "Enum", "AuraUtil", "TextureKitConstants", "AnchorUtil", "TimeUtil",
     "AuraContainerSortMethod", "AuraContainerSortDirection",
     "AuraContainerItemEnchantmentSlot", "CustomAuraContainerItemEnchantmentPlacement",
+    "GetScriptBucketThrottleLimits",
 
     -- WoW Lua extensions (Lua 5.1 base + Blizzard additions)
     "wipe", "strsplit", "strjoin", "strtrim", "strconcat", "format",
@@ -390,6 +391,9 @@ files["QUI_ActionBars/actionbars/actionbars_glow.lua"] = {
     ignore = { "111", "112", "113" },
 }
 files["QUI_ActionBars/actionbars/actionbars_helpers.lua"] = {
+    ignore = { "111", "112", "113" },
+}
+files["QUI_ActionBars/actionbars/actionbars_native.lua"] = {
     ignore = { "111", "112", "113" },
 }
 files["QUI_ActionBars/actionbars/actionbars_public.lua"] = {

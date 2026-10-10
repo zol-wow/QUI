@@ -311,7 +311,7 @@ local ELEMENT_FIELD_TYPES = {
     rightClickCancel = "boolean", hidePermanent = "boolean", nameplateOnly = "boolean",
     classDetection = "boolean", tooltipHideInCombat = "boolean",
     gateEncounterDebuffs = "boolean",
-    spells = "table", onlyMineSpells = "table", duration = "table", stack = "table",
+    spells = "table", onlyMineSpells = "table", duration = "table", stack = "table", casterName = "table",
     bar = "table", border = "table", color = "table", auraSounds = "table",
     filterFlags = "table", classifications = "table", whitelist = "table", blacklist = "table",
     healthTint = "table", dispelColors = "table", dispelAssets = "table", pandemicGlow = "table",
@@ -321,6 +321,10 @@ local TEXT_FIELD_TYPES = {
     show = "boolean", fontSize = "number", anchor = "string",
     offsetX = "number", offsetY = "number", color = "table",
 }
+local CASTER_FIELD_TYPES = CopyData(TEXT_FIELD_TYPES)
+CASTER_FIELD_TYPES.showRealmName = "boolean"
+CASTER_FIELD_TYPES.useClassColors = "boolean"
+CASTER_FIELD_TYPES.font = "string"
 local BAR_FIELD_TYPES = {
     thickness = "number", length = "number", orientation = "string",
     matchFrameSize = "boolean", hideBorder = "boolean", borderSize = "number",
@@ -361,7 +365,8 @@ local function ValidColorMap(map)
     return true
 end
 
-local PANDEMIC_FIELD_TYPES = { color = "table" }
+local PANDEMIC_FIELD_TYPES = { color = "table", style = "string" }
+local PANDEMIC_FIELD_ENUMS = { style = Set({ "steady", "pulse", "flash" }) }
 local HEALTH_TINT_FIELD_TYPES = { animation = "string" }
 
 local function ValidElement(element)
@@ -376,12 +381,14 @@ local function ValidElement(element)
     end
     if not ValidRecord(element.duration, TEXT_FIELD_TYPES, TEXT_FIELD_ENUMS, TEXT_FIELD_RANGES)
         or not ValidRecord(element.stack, TEXT_FIELD_TYPES, TEXT_FIELD_ENUMS, TEXT_FIELD_RANGES)
+        or not ValidRecord(element.casterName, CASTER_FIELD_TYPES, TEXT_FIELD_ENUMS, TEXT_FIELD_RANGES)
         or not ValidRecord(element.bar, BAR_FIELD_TYPES, BAR_FIELD_ENUMS, BAR_FIELD_RANGES)
         or not ValidRecord(element.border, BORDER_FIELD_TYPES, nil, BORDER_FIELD_RANGES)
         or not ValidColor(element.color) or not ValidColor(element.borderColor)
         or not ValidColor(element.duration and element.duration.color)
         or not ValidColor(element.stack and element.stack.color)
-        or not ValidRecord(element.pandemicGlow, PANDEMIC_FIELD_TYPES)
+        or not ValidColor(element.casterName and element.casterName.color)
+        or not ValidRecord(element.pandemicGlow, PANDEMIC_FIELD_TYPES, PANDEMIC_FIELD_ENUMS)
         or not ValidColor(element.pandemicGlow and element.pandemicGlow.color)
         or not ValidColorMap(element.dispelColors)
         or not ValidRecord(element.healthTint, HEALTH_TINT_FIELD_TYPES)

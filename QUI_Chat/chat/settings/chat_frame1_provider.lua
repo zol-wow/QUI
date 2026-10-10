@@ -1,3 +1,4 @@
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
 
 local Settings = ns.Settings
@@ -193,6 +194,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             container:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, L.getY())
             container:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
             container:SetHeight(defaultHeight or 1)
+            container:SetWidth(math.max(1, content:GetWidth() - PAD * 2))
             local measuredHeight = buildFunc(container) or defaultHeight or 1
             L.placeCustom(container, math.max(8, measuredHeight))
             return container
@@ -203,6 +205,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             local G = Q and Q.GUI
             if G and type(G.ShowConfirmation) == "function" then
                 G:ShowConfirmation({
+                    reload = true,
                     title      = ns.L["Reload UI?"],
                     message    = ns.L["This change takes full effect after a reload."],
                     acceptText = ns.L["Reload"],

@@ -1,3 +1,5 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 do
 -- Inlined from containers_page_model.lua
 local _, ns = ...
@@ -2736,11 +2738,12 @@ local function BuildPreviewBlock(pv)
 
     local leftCol = CreateFrame("Frame", nil, pv)
     leftCol:SetPoint("TOPLEFT", pv, "TOPLEFT", 0, 0)
-    leftCol:SetSize(LEFT_COL_WIDTH, LEFT_COL_HEIGHT)
+    leftCol:SetSize(LEFT_COL_WIDTH, 28)
 
     local loadoutLabel = GUI:CreateLabel(leftCol, "", 11, C.accent)
     loadoutLabel:SetJustifyH("LEFT")
     loadoutLabel:Hide()
+    local LayoutHeader
 
     local function UpdateLoadoutLabel()
         local db = QUI and QUI.db and QUI.db.profile and QUI.db.profile.ncdm
@@ -2780,11 +2783,15 @@ local function BuildPreviewBlock(pv)
                     end
                     loadoutLabel:SetText(labelText)
                     loadoutLabel:Show()
+                    leftCol:SetHeight(LEFT_COL_HEIGHT)
+                    if LayoutHeader then LayoutHeader() end
                     return
                 end
             end
         end
         loadoutLabel:Hide()
+        leftCol:SetHeight(28)
+        if LayoutHeader then LayoutHeader() end
     end
 
     local function refreshCDM()
@@ -2901,20 +2908,13 @@ local function BuildPreviewBlock(pv)
             if _G.QUI_BuildCDMPreview then
                 _G.QUI_BuildCDMPreview(previewHost, State.activeContainer, {
                     outer = pv,
-                    outerChromeHeight = LEFT_COL_HEIGHT + 4 + 8,
+                    outerChromeHeight = leftCol:GetHeight() + 12,
                 })
             end
         end,
     })
 
-    if block and block.headerRow then
-        block.headerRow:SetPoint("TOPLEFT", leftCol, "TOPRIGHT", LEFT_COL_PAD, 0)
-    end
-    if block and block.previewHost then
-        block.previewHost:SetPoint("TOPLEFT", leftCol, "BOTTOMLEFT", 0, -4)
-    end
-
-    if block and block.dropdown then
+    if block and block.headerRow and block.previewHost and block.dropdown then
         local container = block.dropdown
         local labelText, dropdownButton
         for _, region in ipairs({ container:GetRegions() }) do
@@ -2932,6 +2932,53 @@ local function BuildPreviewBlock(pv)
         if labelText and dropdownButton then
             labelText:ClearAllPoints()
             labelText:SetPoint("RIGHT", dropdownButton, "LEFT", -8, 0)
+            local rightInset = LEFT_COL_PAD
+            local layingOut = false
+            local headerRow = block.headerRow
+            headerRow:SetHeight(28)
+            LayoutHeader = function(inset)
+                if inset ~= nil then rightInset = inset end
+                if layingOut then return end
+                layingOut = true
+                local labelWidth = math.ceil(labelText:GetStringWidth()) + 8
+                dropdownButton:SetPoint("LEFT", container, "LEFT", labelWidth, 0)
+                local actionsWidth = 200
+                local wrap = pv:GetWidth() - LEFT_COL_WIDTH - LEFT_COL_PAD - rightInset
+                    - actionsWidth - labelWidth < 80
+                local top = leftCol:GetHeight() + 4
+                headerRow:ClearAllPoints()
+                if wrap then
+                    headerRow:SetPoint("TOPLEFT", pv, "TOPLEFT", LEFT_COL_PAD, -top)
+                    headerRow:SetPoint("TOPRIGHT", pv, "TOPRIGHT", -LEFT_COL_PAD, -top)
+                    top = top + headerRow:GetHeight() + 4
+                else
+                    headerRow:SetPoint("TOPLEFT", leftCol, "TOPRIGHT", LEFT_COL_PAD, 0)
+                    headerRow:SetPoint("TOPRIGHT", pv, "TOPRIGHT", -rightInset, 0)
+                end
+                local host = pv._quiPreviewViewport or block.previewHost
+                host:SetPoint("TOPLEFT", pv, "TOPLEFT", 0, -top)
+                local chrome = top + LEFT_COL_PAD
+                local delta = chrome - (pv._quiPreviewChromeHeight or chrome)
+                pv._quiPreviewChromeHeight = chrome
+                pv._quiPreviewCollapsedHeight = chrome
+                if delta ~= 0 then
+                    if pv._quiPreviewNaturalHeight then
+                        pv._quiPreviewNaturalHeight = pv._quiPreviewNaturalHeight + delta
+                    end
+                    if pv._quiPreviewLayout then
+                        pv._quiPreviewLayout()
+                    else
+                        pv:SetHeight(pv:GetHeight() + delta)
+                    end
+                    if pv:IsVisible() and _G.QUI_RefreshCDMPreview then
+                        _G.QUI_RefreshCDMPreview(State.activeContainer)
+                    end
+                end
+                layingOut = false
+            end
+            headerRow._quiPreviewLayoutHeader = LayoutHeader
+            pv:HookScript("OnSizeChanged", function() LayoutHeader() end)
+            LayoutHeader()
         end
     end
 end

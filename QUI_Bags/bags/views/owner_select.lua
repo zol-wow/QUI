@@ -57,8 +57,8 @@ function OwnerSelect.Attach(win, opts)
         end
         self._label:SetText(opts.current() or ns.L["Select"])
         self:SetSize(math.max(40, math.ceil(self._label:GetStringWidth()) + 14), 18)
-        local sr, sg, sb = Helpers.GetSkinColors()
-        UIKit.UpdateBorderLines(self, 1, sr, sg, sb, 0.35)
+        local sr, sg, sb, sa = Helpers.GetWindowColors()
+        UIKit.UpdateBorderLines(self, 1, sr, sg, sb, 0.35 * sa)
         self:Show()
     end
 

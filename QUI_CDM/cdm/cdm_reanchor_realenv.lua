@@ -264,7 +264,7 @@ local function _BarReskinWork(live, settings)
     if bar.SetStatusBarTexture and LSM and LSM.Fetch then
         local tex = LSM:Fetch("statusbar", settings.texture or "Quazii v5")
             or LSM:Fetch("statusbar", "Quazii v5")
-        if tex then bar:SetStatusBarTexture(tex) end
+        if tex then ns.Helpers.ApplyBarStyle(bar, tex) end
     end
     if bar.SetStatusBarColor then
         local opacity = settings.barOpacity or 1.0

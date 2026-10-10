@@ -263,7 +263,9 @@ function CDMReanchorBoot.BuildRuntime(env)
         if ns.CDMRenderers and ns.CDMRenderers.ApplyDurationObjectCooldown then
             CallNativeWidget(frame, cd, "ApplyDurationObjectCooldown",
                 ns.CDMRenderers.ApplyDurationObjectCooldown, duration, true, false)
-        elseif cd.SetCooldownFromDurationObject then
+        elseif cd.SetCooldownFromDurationObject
+            and (not ns.Helpers or not ns.Helpers.CanMutateCooldown
+                or ns.Helpers.CanMutateCooldown(cd)) then
             CallNativeWidget(frame, cd, "SetCooldownFromDurationObject", cd.SetCooldownFromDurationObject, duration, true)
         end
     end

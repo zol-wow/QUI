@@ -27,11 +27,13 @@ local function UpdateCooldowns()
                 cooldownRefreshPending = true
             else
                 local dur = C_Spell.GetSpellCooldownDuration(btn.spellID)
+                local updated
                 if dur then
-                    btn.cooldown:SetCooldownFromDurationObject(dur)
+                    updated = Helpers.ApplyCooldownFromStart(btn.cooldown, dur)
                 else
-                    btn.cooldown:Clear()
+                    updated = Helpers.ClearCooldown(btn.cooldown)
                 end
+                if updated == false then cooldownRefreshPending = true end
             end
         end
     end

@@ -115,7 +115,9 @@ Usage: lua tools/test_taint.lua [options] [rootDir]
                       Every shard must run for the result to mean anything.
   --verbose           Print each file analyzed, even if no findings
   --no-color          Plain output (no ANSI codes)
-  --update-index      Regenerate tests/api-docs/api-index.lua from vendored corpus, then exit
+  --corpus <dir>      Documentation directory for --update-index
+  --index <file>      API index to read or regenerate
+  --update-index      Regenerate the selected API index, then exit
   --self-test         Run fixture suite under tests/taint/fixtures/, then exit
   --help
 
@@ -135,6 +137,13 @@ while i <= #arg do
     elseif a == "--no-color"        then options.color          = false
     elseif a == "--update-index"    then options.update_index   = true
     elseif a == "--self-test"       then options.self_test      = true
+    elseif a == "--corpus" or a == "--index" then
+        i = i + 1
+        if not arg[i] or arg[i] == "" or arg[i]:sub(1, 2) == "--" then
+            io.stderr:write(a .. " requires a path\n")
+            os.exit(2)
+        end
+        options[a:sub(3)] = arg[i]
     elseif a == "--report" then
         i = i + 1
         if not arg[i] then
@@ -188,6 +197,11 @@ while i <= #arg do
     i = i + 1
 end
 
+if options.corpus and (not options.update_index or not options.index) then
+    io.stderr:write("--corpus requires --update-index and an explicit --index path\n")
+    os.exit(2)
+end
+
 local rootDir = options.rootDir and absPath(options.rootDir) or absPath(REPO_ROOT)
 
 -- ---------------------------------------------------------------------------
@@ -196,8 +210,8 @@ local rootDir = options.rootDir and absPath(options.rootDir) or absPath(REPO_ROO
 
 if options.update_index then
     local Extract = dofile(REPO_ROOT .. "tests/api-docs/extract_api_index.lua")
-    local corpusDir = rootDir .. "/tests/api-docs/blizzard"
-    local outPath   = rootDir .. "/tests/api-docs/api-index.lua"
+    local corpusDir = options.corpus or rootDir .. "/tests/api-docs/blizzard"
+    local outPath   = options.index or rootDir .. "/tests/api-docs/api-index.lua"
 
     local index = Extract.fromCorpus(corpusDir)
     local out   = Extract.renderLua(index)
@@ -270,23 +284,19 @@ local registry = Registry.new()
 local indexedEvents = {}
 
 -- Load api-index from <rootDir>/tests/api-docs/api-index.lua (if it exists)
-local apiIndexPath = rootDir .. "/tests/api-docs/api-index.lua"
+local apiIndexPath = options.index or rootDir .. "/tests/api-docs/api-index.lua"
 local fIdx = io.open(apiIndexPath, "rb")
+if options.index and not fIdx then error("Cannot read API index: " .. apiIndexPath) end
 if fIdx then
     local src = fIdx:read("*a")
     fIdx:close()
     local chunk, err = (rawget(_G, "loadstring") or load)(src, "api-index")
-    if not chunk then
-        io.stderr:write("WARNING: failed to parse api-index: " .. tostring(err) .. "\n")
-    else
-        local ok, indexTable = pcall(chunk)
-        if ok and type(indexTable) == "table" then
-            indexedEvents = IndexLoad.populate(registry, indexTable, cfg,
-                function(msg) io.stderr:write(msg) end)
-        else
-            io.stderr:write("WARNING: api-index did not return a table\n")
-        end
-    end
+    assert(chunk, apiIndexPath .. ": " .. tostring(err))
+    local ok, indexTable = pcall(chunk)
+    assert(ok and type(indexTable) == "table",
+        apiIndexPath .. ": API index must return a table: " .. tostring(indexTable))
+    indexedEvents = IndexLoad.populate(registry, indexTable, cfg,
+        function(msg) io.stderr:write(msg) end)
 end
 
 -- Apply extra_safe_sinks and extra_unwraps from config

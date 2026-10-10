@@ -167,7 +167,7 @@ end
 
 local function ApplySkinColors()
     UpdateKeyTrackerPixelSize()
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = Helpers.GetWindowColors()
     KeyTrackerFrame:SetBackdropColor(bgr, bgg, bgb, bga)
     KeyTrackerFrame:SetBackdropBorderColor(sr, sg, sb, sa)
     UpdateTitleColor()
@@ -364,6 +364,7 @@ local function UpdateButton(button, keystoneInfo, unitName, unit, isLeader)
         local kr, kg, kb = GetKeyColor(keystoneInfo.level)
 
         button.icon:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+        Helpers.ApplyIconStyle(button, button.icon)
         button.keyLevel:SetText("+" .. keystoneInfo.level)
         button.keyLevel:SetTextColor(kr, kg, kb)
         button.dungeonName:SetText(shortName)

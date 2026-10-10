@@ -261,7 +261,11 @@ events:RegisterUnitEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
 events:SetScript("OnEvent", function(_, event, unit, _, spellID)
     local tracking = ns.SpellReminderTracking
     if event == "ADDON_RESTRICTION_STATE_CHANGED" then
-        Sounds.Refresh()
+        if R.pending and not R.Restricted() then
+            R.Refresh()
+        else
+            Sounds.Refresh()
+        end
         return
     end
     if event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER" then

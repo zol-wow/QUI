@@ -31,6 +31,7 @@ local FRAME_TO_KEY = {
     ItemUpgradeFrame = "itemUpgrade",
     ItemSocketingFrame = "socket",
     QUI_BankWindow = "bank",
+    BankFrame = "bank",
     QUI_GuildBankWindow = "guildBank",
 }
 

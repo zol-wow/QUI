@@ -31,7 +31,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 --]]
 
-local MAJOR, MINOR = "LibDualSpec-1.0", 32
+local MAJOR, MINOR = "LibDualSpec-1.0", 34
 assert(LibStub, MAJOR.." requires LibStub")
 local lib, minor = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
@@ -86,7 +86,7 @@ else -- Primary/secondary system
 	specNames[2] = TALENT_SPEC_SECONDARY
 end
 
-local GetSpecialization = isSpecBased and GetSpecialization or C_SpecializationInfo.GetActiveSpecGroup
+local GetSpecialization = isSpecBased and (C_SpecializationInfo.GetSpecialization or GetSpecialization) or C_SpecializationInfo.GetActiveSpecGroup
 local CanPlayerUseTalentSpecUI = C_SpecializationInfo.CanPlayerUseTalentSpecUI or function()
 	return true, HELPFRAME_CHARACTER_BULLET5
 end
@@ -198,6 +198,9 @@ function mixin:CheckDualSpecState()
 	if lib.currentSpec == 0 then return end
 
 	local profileName = self:GetDualSpecProfile()
+	local profileNameLength = type(profileName) == "string" and strlenutf8(profileName) or 0
+	if profileNameLength == 0 or profileName:find("^ +$")
+		or (profileNameLength > 50 and not (self.sv.profiles and type(self.sv.profiles[profileName]) == "table")) then return end
 	if profileName ~= self:GetCurrentProfile() then
 		self:SetProfile(profileName)
 	end

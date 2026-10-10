@@ -31,6 +31,7 @@ local State = {
     activeBody = nil,
     repaintTabs = nil,
     selectedType = nil,
+    previewZoom = 3,
 }
 
 local TabModel
@@ -165,8 +166,6 @@ end
 
 local DROPDOWN_ROW_H = 30
 
-local PREVIEW_SCALE_MAX = 3
-
 local STRIP_CARD_ROW_H = 32
 local STRIP_HEIGHT = (5 * STRIP_CARD_ROW_H) + 8 + 28 + 6
 
@@ -237,10 +236,6 @@ local REACTION_OPTIONS = {
     { value = "tapped", text = ns.L["Tapped"] },
 }
 
-local function CurrentOptionsWindow()
-    return (GUI and GUI.MainFrame) or _G.QUI_Options
-end
-
 local function EnsurePreviewState()
     if State.previewState then return State.previewState end
     local defaults = ns.QUI_GetNameplatePreviewStateDefaults
@@ -267,7 +262,7 @@ local function InstallPreviewObserver()
     ns.QUI_SetNameplatePreviewObserver(function(w, h)
         local p = State.previewPanel
         if not p or not w or not h or w <= 0 or h <= 0 then return end
-        p.Resize(w, h)
+        if p.frame:IsVisible() and p.contentHost:IsVisible() then p.Resize(w, h) end
     end)
 end
 
@@ -306,6 +301,10 @@ local function BuildControlStrip(panel)
     reactionRow:ClearAllPoints()
     reactionRow:SetPoint("TOPLEFT", card.frame, "BOTTOMLEFT", 12, -8)
     reactionRow:SetPoint("TOPRIGHT", card.frame, "BOTTOMRIGHT", -12, -8)
+    strip:SetHeight(card.frame:GetHeight() + 8 + reactionRow:GetHeight() + 8)
+    strip:HookScript("OnSizeChanged", function()
+        panel.Resize(nil, panel.contentHost:GetHeight())
+    end)
 
     panel.RefreshControlStrip = function()
         local s = CurrentProfileNameplates()
@@ -318,96 +317,112 @@ local function BuildControlStrip(panel)
     end
 end
 
-local function LifeSizeScale(win)
-    local Helpers = ns.Helpers
-    local SafeToNumber = Helpers and Helpers.SafeToNumber
-    if not SafeToNumber or not UIParent or not win
-        or type(win.GetEffectiveScale) ~= "function" then
-        return 1
+local function BuildPreviewBlock(pv, opts)
+    local model = ResolveModel()
+    local getTypeOptions = model and model.GetTypeOptions
+    local showDropdown = not opts or opts.showDropdown ~= false
+    State.selectedType = NormalizeTypeKey(State.selectedType)
+    local built = FullSurface.BuildDropdownPreviewBlock(pv, {
+        gui = GUI,
+        selectedValue = State.selectedType,
+        dropdownStateKey = "_selectedType",
+        dropdownLabel = ns.L["Nameplate Type"],
+        dropdownOptions = type(getTypeOptions) == "function" and getTypeOptions() or {},
+        dropdownConfig = { searchable = false, collapsible = false, compact = true },
+        headerHeight = 22,
+        headerTopOffset = -4,
+        previewFillAlpha = 0,
+        showDropdown = showDropdown,
+        onDropdownChanged = SetSelectedType,
+    })
+    if not built then return end
+    built.headerRow:ClearAllPoints()
+    built.headerRow:SetPoint("TOPLEFT", pv, "TOPLEFT", 8, -4)
+    built.headerRow:SetPoint("TOPRIGHT", pv, "TOPRIGHT", -8, -4)
+    local zoomState = { value = State.previewZoom }
+    local zoom = GUI:CreateFormDropdown(built.headerRow, ns.L["Preview zoom"], {
+        { value = 1, text = "1x" }, { value = 2, text = "2x" }, { value = 3, text = "3x" },
+    }, "value", zoomState, function()
+        State.previewZoom = zoomState.value
+        local driver = ns.QUI_NameplatesPreviewDriver
+        if driver and driver.SetZoom then driver.SetZoom(State.previewZoom) end
+    end, nil, { searchable = false, collapsible = false, compact = true })
+    zoom:SetPoint("LEFT", built.headerRow, "LEFT", showDropdown and 0 or 100, 0)
+    pv._quiPreviewZoom = zoom
+    local host = built.previewHost
+    local contentHost = CreateFrame("Frame", nil, host)
+    contentHost:SetPoint("TOP", host, "TOP", 0, 0)
+    contentHost:SetSize(210, 80)
+    local strip = CreateFrame("Frame", nil, host)
+    strip:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -88)
+    strip:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -88)
+    strip:SetHeight(STRIP_HEIGHT)
+    local panel = { frame = pv, contentHost = contentHost, controlStrip = strip }
+    local refreshControls
+    local controlsToggle = GUI:CreateButton(host, ns.L["Preview controls"], 0, 22, function()
+        State.previewControlsExpanded = not State.previewControlsExpanded
+        refreshControls(true)
+    end, "ghost")
+    controlsToggle.text:ClearAllPoints()
+    controlsToggle.text:SetPoint("LEFT", controlsToggle, "LEFT", 22, 0)
+    controlsToggle.text:SetPoint("RIGHT", controlsToggle, "RIGHT", -8, 0)
+    controlsToggle.text:SetJustifyH("LEFT")
+    local color = GUI.Colors.text
+    controlsToggle.chevron = ns.UIKit.CreateChevronCaret(controlsToggle, {
+        point = "LEFT", xPixels = 8, sizePixels = 8,
+        expanded = State.previewControlsExpanded == true, collapsedDirection = "right",
+        r = color[1], g = color[2], b = color[3],
+    })
+    pv._quiPreviewControlsToggle = controlsToggle
+    panel.Resize = function(width, height)
+        if not height or height <= 0 then return end
+        if width and width > 0 then contentHost:SetWidth(width) end
+        contentHost:SetHeight(height)
+        controlsToggle:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -(height + 8))
+        controlsToggle:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -(height + 8))
+        strip:SetPoint("TOPLEFT", controlsToggle, "BOTTOMLEFT", 0, -4)
+        strip:SetPoint("TOPRIGHT", controlsToggle, "BOTTOMRIGHT", 0, -4)
+        local controlsHeight = State.previewControlsExpanded and (4 + strip:GetHeight()) or 0
+        local natural = pv._quiPreviewChromeHeight + height + 8 + controlsToggle:GetHeight() + controlsHeight
+        if natural ~= (pv._quiPreviewNaturalHeight or pv:GetHeight()) then pv:SetHeight(natural) end
     end
-    local uiScale = SafeToNumber(UIParent:GetEffectiveScale(), 0)
-    local winScale = SafeToNumber(win:GetEffectiveScale(), 0)
-    if uiScale <= 0 or winScale <= 0 then return 1 end
-    return uiScale / winScale
-end
-
-local function EnsurePreviewPanel()
-    local win = CurrentOptionsWindow()
-    if not win then return nil end
-
-    local cached = State.previewPanel
-    if cached and cached.frame and cached.frame:GetParent() == win then
-        return cached
-    end
-
-    if cached then
-        State.previewPanel = nil
-        if cached.frame then
-            cached.frame:Hide()
-            cached.frame:ClearAllPoints()
+    refreshControls = function(resetScroll)
+        strip:SetShown(State.previewControlsExpanded == true)
+        ns.UIKit.SetChevronCaretExpanded(controlsToggle.chevron, State.previewControlsExpanded == true)
+        panel.Resize(nil, contentHost:GetHeight())
+        local viewport = pv._quiPreviewViewport
+        if resetScroll and viewport then
+            local scroll = ns.UIKit.GetSmoothScroll(viewport)
+            if scroll then scroll:ScrollTo(0, true) else viewport:SetVerticalScroll(0) end
         end
     end
-
-    if not FullSurface or type(FullSurface.CreateDockedPreviewPanel) ~= "function" then
-        return nil
-    end
-    if not ns.QUI_BuildNameplatePreview then
-        return nil
-    end
-
-    State.previewSession = State.previewSession or {}
-    local panel = FullSurface.CreateDockedPreviewPanel({
-        gui = GUI,
-        title = ns.L["Preview"],
-        idSuffix = "Nameplates",
-        window = win,
-        minWidth = 240,
-        controlStripHeight = STRIP_HEIGHT,
-        scaleMax = PREVIEW_SCALE_MAX,
-        defaultScale = LifeSizeScale(win),
-        sessionState = State.previewSession,
-    })
-    if not panel then return nil end
-
-    State.previewPanel = panel
-    InstallPreviewObserver()
+    EnsurePreviewState()
     BuildControlStrip(panel)
-    return panel
-end
-
-local function RefreshPreviewPanel()
-    local panel = EnsurePreviewPanel()
-    if not panel then return end
-    if panel.RefreshControlStrip then
-        panel.RefreshControlStrip()
+    InstallPreviewObserver()
+    refreshControls(false)
+    local function Activate()
+        if not host:IsVisible() then return end
+        State.previewPanel = panel
+        State.previewZoom = 3
+        refreshControls(false)
+        if built.dropdown then
+            State.dropdown = built.dropdown
+            built.dropdown.SetValue(GetSelectedType(), true)
+        end
+        if panel.RefreshControlStrip then panel.RefreshControlStrip() end
+        if ns.QUI_NameplatesPreviewDriver then
+            zoom.SetValue(State.previewZoom, true)
+            ns.QUI_NameplatesPreviewDriver.SetZoom(State.previewZoom)
+            ns.QUI_NameplatesPreviewDriver.SetSelectedType(GetSelectedType())
+        end
+        if ns.QUI_BuildNameplatePreview then ns.QUI_BuildNameplatePreview(contentHost) end
     end
-    if ns.QUI_BuildNameplatePreview then
-        ns.QUI_BuildNameplatePreview(panel.contentHost)
-    end
-end
-
-local function ActivatePreviewBody(body)
-    if not body then return end
-    local panel = EnsurePreviewPanel()
-    if panel then panel.Show() end
-    RefreshPreviewPanel()
-end
-
-local function BindPreviewBody(body)
-    if not body then return end
-    EnsurePreviewPanel()
-    if not body._npPreviewHooked then
-        body._npPreviewHooked = true
-        body:HookScript("OnShow", function()
-            ActivatePreviewBody(body)
-        end)
-        body:HookScript("OnHide", function()
-            if State.previewPanel then State.previewPanel.Hide() end
-        end)
-    end
-    if State.previewPanel and body:IsShown() then
-        ActivatePreviewBody(body)
-    end
+    host:HookScript("OnShow", Activate)
+    pv:HookScript("OnShow", Activate)
+    pv:HookScript("OnHide", function()
+        if State.previewPanel == panel then State.previewPanel = nil end
+    end)
+    Activate()
 end
 
 local function BuildTypeDropdown(body, feature)
@@ -455,11 +470,9 @@ local function BuildTileBody(body, _, _, feature)
         clearFrame = ClearFrame,
         createTabStrip = BuildTabStrip,
         resolveVariantKey = ResolveTabVariant,
-        tabTopOffset = -(DROPDOWN_ROW_H + 8),
         initialize = function()
             State.activeTab = State.activeTab or "general"
             SetSelectedType(State.selectedType)
-            BuildTypeDropdown(body, feature)
         end,
         getTabs = function()
             return tabModel:GetTabs()
@@ -475,17 +488,7 @@ local function BuildTileBody(body, _, _, feature)
         end,
     })
 
-    BindPreviewBody(body)
-
     return result
-end
-
-local function ShowPreviewOn(body)
-    BindPreviewBody(body)
-end
-
-local function HidePreview()
-    if State.previewPanel then State.previewPanel.Hide() end
 end
 
 local function RepaintActiveTab()
@@ -505,6 +508,5 @@ ns.QUI_NameplatesSettingsSurface = {
     GetSearchRoot = GetSearchRoot,
     RenderPage = BuildTileBody,
     BuildTypeDropdown = BuildTypeDropdown,
-    ShowPreviewOn = ShowPreviewOn,
-    HidePreview = HidePreview,
+    preview = { height = 360, build = BuildPreviewBlock },
 }

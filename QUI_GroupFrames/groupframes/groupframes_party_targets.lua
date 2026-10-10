@@ -104,7 +104,7 @@ local function StyleCompanion(frame, cfg, general)
     frame:SetSize(w, h)
 
     local tex = ResolveTexture(general)
-    if tex then frame.healthBar:SetStatusBarTexture(tex) end
+    if tex then Helpers.ApplyBarStyle(frame.healthBar, tex) end
 
     local fontPath = ResolveFont(general)
     local fontSize = (general and general.fontSize) or 11

@@ -502,6 +502,7 @@ RegisterLayoutModeElements = function()
                     local GUI = QUI and QUI.GUI
                     if GUI and GUI.ShowConfirmation then
                         GUI:ShowConfirmation({
+                            reload = true,
                             title = ns.L["Reload UI?"],
                             message = ns.L["DandersFrames changes require a reload to take effect."],
                             acceptText = ns.L["Reload"],

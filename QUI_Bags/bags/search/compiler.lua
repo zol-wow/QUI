@@ -6,7 +6,7 @@ Bags.Search = Search
 
 local function Fold(text)
     local helpers = ns.Helpers
-    if helpers and helpers.FoldUTF8 then return helpers.FoldUTF8(text) end
+    if helpers and helpers.FoldSearchUTF8 then return helpers.FoldSearchUTF8(text) end
     return (text or ""):lower()
 end
 

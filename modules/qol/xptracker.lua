@@ -193,7 +193,7 @@ local function CreateFrame_XPTracker()
     frame:SetFrameLevel(50)
     frame:SetClampedToScreen(true)
 
-    local bcR, bcG, bcB, bcA = Helpers.GetSkinBorderColor(settings, "")
+    local bcR, bcG, bcB, bcA = Helpers.GetWindowColors(settings, "")
 
     local detailsFrame = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     detailsFrame:SetHeight(detailsHeight)
@@ -277,9 +277,9 @@ local function CreateFrame_XPTracker()
         texturePath = LSM:Fetch("statusbar", settings.barTexture or "Solid")
     end
     if texturePath then
-        xpBar:SetStatusBarTexture(texturePath)
+        ns.Helpers.ApplyBarStyle(xpBar, texturePath)
     else
-        xpBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        ns.Helpers.ApplyBarStyle(xpBar, "Interface\\Buttons\\WHITE8x8")
     end
     xpBar:SetStatusBarColor(barColor[1], barColor[2], barColor[3], barColor[4] or 1)
     frame.xpBar = xpBar
@@ -507,7 +507,7 @@ local function UpdateAppearance()
         frame:SetPoint("CENTER", UIParent, "CENTER", settings.offsetX or 0, settings.offsetY or 150)
     end
 
-    local bcR, bcG, bcB, bcA = Helpers.GetSkinBorderColor(settings, "")
+    local bcR, bcG, bcB, bcA = Helpers.GetWindowColors(settings, "")
 
     local bg = settings.backdropColor or {0.05, 0.05, 0.07, 0.85}
     frame.detailsFrame:SetWidth(width)
@@ -549,7 +549,7 @@ local function UpdateAppearance()
         texturePath = LSM:Fetch("statusbar", settings.barTexture or "Solid")
     end
     if texturePath then
-        frame.xpBar:SetStatusBarTexture(texturePath)
+        ns.Helpers.ApplyBarStyle(frame.xpBar, texturePath)
         frame.restedOverlay:SetTexture(texturePath)
     end
 

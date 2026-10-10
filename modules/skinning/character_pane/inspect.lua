@@ -103,6 +103,7 @@ local function ApplyOnePixelBorder(frame, withBackground, borderColor, bgColor)
     local skinBase = GetSkinBase()
     if skinBase and skinBase.ApplyChromeBackdrop then
         skinBase.ApplyChromeBackdrop(frame, {
+            radius = 4,
             withBackground = withBackground,
             withInsets = withBackground,
             borderColor = borderColor,
@@ -509,6 +510,7 @@ local INSPECT_SLOT_NAMES = {
     "InspectFinger0Slot", "InspectFinger1Slot",
     "InspectTrinket0Slot", "InspectTrinket1Slot",
     "InspectMainHandSlot", "InspectSecondaryHandSlot",
+    "InspectRangedSlot",
 }
 
 local function GetCurrentInspectTab()
@@ -524,7 +526,9 @@ local function RepositionInspectTabs()
         firstTab:SetPoint("BOTTOMLEFT", InspectFrame, "BOTTOMLEFT", 15, -81)
     end
 
-    local talentsBtn = InspectPaperDollItemsFrame and InspectPaperDollItemsFrame.InspectTalents
+    local paperDoll = _G.InspectPaperDollFrame
+    local talentsBtn = (InspectPaperDollItemsFrame and InspectPaperDollItemsFrame.InspectTalents)
+        or (paperDoll and paperDoll.InspectTalents)
     if talentsBtn and InspectTrinket1Slot then
         talentsBtn:ClearAllPoints()
         talentsBtn:SetPoint("TOP", InspectTrinket1Slot, "BOTTOM", -12, -31)
@@ -665,8 +669,12 @@ local function BlockInspectIconBorder(iconBorder)
 end
 
 local function SkinInspectEquipmentSlot(slot)
-    if not slot or (frameState[slot] or EMPTY).skinned then return end
+    if not slot then return end
+    local fallback = GetSkinBase().GetFrameData(slot, "qInspectFallbackBorder")
+    if fallback then fallback:Hide() end
+    if (frameState[slot] or EMPTY).skinned then return end
     GetState(slot).skinned = true
+    if slot.BorderFrame then GetSkinBase().StripTextures(slot.BorderFrame) end
 
     local normalTex = slot:GetNormalTexture()
     if normalTex then normalTex:SetAlpha(0) end
@@ -700,6 +708,8 @@ local function SkinInspectEquipmentSlot(slot)
     local iconTex = slot.icon or slot.Icon
     if iconTex and iconTex.SetTexCoord then
         iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        local skinBase = GetSkinBase()
+        if skinBase then skinBase.RoundIconTexture(slot, iconTex) end
     end
 
     local slotState = GetState(slot)
@@ -708,12 +718,17 @@ local function SkinInspectEquipmentSlot(slot)
         slotState.borderFrame:SetFrameLevel(slot:GetFrameLevel() + 10)
         slotState.borderFrame:SetAllPoints(slot)
         ApplyOnePixelBorder(slotState.borderFrame, false)
+        GetSkinBase().SetFrameData(slot, "qInspectCustomBorder", slotState.borderFrame)
     end
 end
 
 local function UpdateInspectSlotBorder(slot, unit)
     local borderFrame = slot and (frameState[slot] or EMPTY).borderFrame
     if not borderFrame then return end
+    if GetSkinBase().GetFrameData(slot, "qInspectFallbackBorder") and not IsFullInspectEnabled() then
+        borderFrame:Hide()
+        return
+    end
 
     local slotID = slot:GetID()
     unit = unit or "target"
@@ -1291,17 +1306,17 @@ local function CreateInspectSettingsButton()
     y = y - appearHeader.gap
     ResetRows()
 
-    local scaleSlider = GUI:CreateFormSlider(scrollChild, ns.L["Panel Scale"], 0.75, 1.5, 0.05, "inspectPanelScale", charDB, function()
+    local scaleSlider = GUI:CreateFormSlider(scrollChild, nil, 0.75, 1.5, 0.05, "inspectPanelScale", charDB, function()
         local multiplier = charDB.inspectPanelScale or 1.0
         SetInspectScaleDeferred(INSPECT_CONFIG.BASE_SCALE * multiplier)
     end, { deferOnDrag = true },
         { description = ns.L["Zoom factor applied to the inspect panel on top of the base scale. 1.0 leaves the panel at the default QUI size."] })
-    y = PlaceRow(scaleSlider, y)
+    y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Panel Scale"], scaleSlider), y)
 
     local generalDB = core and core.db and core.db.profile and core.db.profile.general
     local bgColorPicker = nil
     if generalDB then
-        bgColorPicker = GUI:CreateFormColorPicker(scrollChild, ns.L["Background Color"], "skinBgColor", generalDB, function()
+        bgColorPicker = GUI:CreateFormColorPicker(scrollChild, nil, "skinBgColor", generalDB, function()
             if _G.QUI_RefreshInspectColors then
                 _G.QUI_RefreshInspectColors()
             end
@@ -1310,7 +1325,7 @@ local function CreateInspectSettingsButton()
             end
         end, nil,
             { description = ns.L["Background color applied to the inspect panel. Shared with the global skinning background so character and inspect panels match."] })
-        y = PlaceRow(bgColorPicker, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Background Color"], bgColorPicker), y)
 
         ctx.HookShow(function()
             if bgColorPicker and bgColorPicker.swatch and generalDB and generalDB.skinBgColor then
@@ -1327,21 +1342,21 @@ local function CreateInspectSettingsButton()
     y = y - overlayHeader.gap
     ResetRows()
 
-    local showItemName = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Equipment Name"], "showInspectItemName", charDB, RefreshInspect,
+    local showItemName = GUI:CreateFormCheckbox(scrollChild, nil, "showInspectItemName", charDB, RefreshInspect,
         { description = ns.L["Show the equipped item's name on each inspect slot overlay."] })
-    y = PlaceRow(showItemName, y)
+    y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Show Equipment Name"], showItemName), y)
 
-    local showIlvl = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Item Level"], "showInspectItemLevel", charDB, RefreshInspect,
+    local showIlvl = GUI:CreateFormCheckbox(scrollChild, nil, "showInspectItemLevel", charDB, RefreshInspect,
         { description = ns.L["Show the item level on each inspect slot overlay."] })
-    y = PlaceRow(showIlvl, y)
+    y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Show Item Level"], showIlvl), y)
 
-    local showEnchants = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Enchant Status"], "showInspectEnchants", charDB, RefreshInspect,
+    local showEnchants = GUI:CreateFormCheckbox(scrollChild, nil, "showInspectEnchants", charDB, RefreshInspect,
         { description = ns.L["Show the enchant name on each inspect slot, or a missing-enchant marker if the slot has no enchant."] })
-    y = PlaceRow(showEnchants, y)
+    y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Show Enchant Status"], showEnchants), y)
 
-    local showGems = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Gem Indicators"], "showInspectGems", charDB, RefreshInspect,
+    local showGems = GUI:CreateFormCheckbox(scrollChild, nil, "showInspectGems", charDB, RefreshInspect,
         { description = ns.L["Show colored gem dots indicating how many gem slots the item has and whether each is filled."] })
-    y = PlaceRow(showGems, y)
+    y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Show Gem Indicators"], showGems), y)
 
     y = y - 10
 
@@ -1350,9 +1365,9 @@ local function CreateInspectSettingsButton()
     y = y - textSizeHeader.gap
     ResetRows()
 
-    local slotTextSize = GUI:CreateFormSlider(scrollChild, ns.L["Slot Text Size"], 6, 40, 1, "inspectSlotTextSize", charDB, RefreshInspectFonts, nil,
+    local slotTextSize = GUI:CreateFormSlider(scrollChild, nil, 6, 40, 1, "inspectSlotTextSize", charDB, RefreshInspectFonts, nil,
         { description = ns.L["Font size used for the text labels on each inspect slot overlay (item name, item level, enchant status)."] })
-    y = PlaceRow(slotTextSize, y)
+    y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Slot Text Size"], slotTextSize), y)
 
     y = y - 10
 
@@ -1363,28 +1378,28 @@ local function CreateInspectSettingsButton()
 
     local widgetRefs = {}
 
-    local enchantClassColor = GUI:CreateFormCheckbox(scrollChild, ns.L["Enchant Class Color"], "inspectEnchantClassColor", charDB, function()
+    local enchantClassColor = GUI:CreateFormCheckbox(scrollChild, nil, "inspectEnchantClassColor", charDB, function()
         RefreshInspect()
         if widgetRefs.enchantColor then
             local alpha = charDB.inspectEnchantClassColor and 0.4 or 1.0
             widgetRefs.enchantColor:SetAlpha(alpha)
         end
     end, { description = ns.L["Color the enchant text using the inspected character's class color instead of the Enchant Text Color below."] })
-    y = PlaceRow(enchantClassColor, y)
+    y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Enchant Class Color"], enchantClassColor), y)
 
-    local enchantColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Enchant Text Color"], "inspectEnchantTextColor", charDB, RefreshInspect, nil,
+    local enchantColor = GUI:CreateFormColorPicker(scrollChild, nil, "inspectEnchantTextColor", charDB, RefreshInspect, nil,
         { description = ns.L["Fallback color for the enchant text when Enchant Class Color is off."] })
     widgetRefs.enchantColor = enchantColor
     enchantColor:SetAlpha(charDB.inspectEnchantClassColor and 0.4 or 1.0)
-    y = PlaceRow(enchantColor, y)
+    y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Enchant Text Color"], enchantColor), y)
 
-    local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, ns.L["No Enchant Color"], "inspectNoEnchantTextColor", charDB, RefreshInspect, nil,
+    local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, nil, "inspectNoEnchantTextColor", charDB, RefreshInspect, nil,
         { description = ns.L["Color used for the missing-enchant marker on slots that are not enchanted."] })
-    y = PlaceRow(noEnchantColor, y)
+    y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["No Enchant Color"], noEnchantColor), y)
 
-    local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Upgrade Track Color"], "inspectUpgradeTrackColor", charDB, RefreshInspect, nil,
+    local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, nil, "inspectUpgradeTrackColor", charDB, RefreshInspect, nil,
         { description = ns.L["Color used for the upgrade-track label (e.g. Explorer 2/8) next to item level."] })
-    y = PlaceRow(upgradeTrackColor, y)
+    y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Upgrade Track Color"], upgradeTrackColor), y)
 
     y = y - 10
 

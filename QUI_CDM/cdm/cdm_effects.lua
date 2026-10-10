@@ -636,7 +636,13 @@ local function StylePandemicGlow(icon, entry)
         icon.PandemicGlow = frame
         EnsureGlowBelowSwipe(icon, frame)
     end
-    local width, height = icon:GetSize()
+    local size = icon._quiGlowSize
+    local width, height
+    if size then
+        width, height = size.width, size.height
+    else
+        width, height = icon:GetSize()
+    end
     if _issecretvalue(width) then width = nil end
     if _issecretvalue(height) then height = nil end
     local profile = frame._quiPandemicProfile

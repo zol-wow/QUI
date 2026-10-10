@@ -1,4 +1,4 @@
--- luacheck: read globals ACCEPT CANCEL StaticPopup_OnClick BANK QUESTION_MARK_ICON MenuUtil bit
+-- luacheck: read globals ACCEPT CANCEL StaticPopup_OnClick BANK QUESTION_MARK_ICON MenuUtil bit BANK_BAG BANK_BAG_PURCHASE ItemLocation
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
 local Storage = ns.Storage
@@ -14,8 +14,8 @@ end
 local BankWindow = {}
 Bags.BankWindow = BankWindow
 
-local CHAR_FIRST, CHAR_LAST = 6, 11
-local WB_FIRST, WB_LAST = 12, 16
+local CHAR_FIRST, CHAR_LAST = Storage.ScanBank.GetBagRange(Enum.BankType.Character)
+local WB_FIRST, WB_LAST = Storage.ScanBank.GetBagRange(Enum.BankType.Account)
 local SEGMENT_H = 22
 local SEGMENT_GAP = 4
 local TAB_H = 22
@@ -40,6 +40,13 @@ local searchText = ""
 local matcher = nil
 local searchTimer = nil
 local hoverTabBagID = nil
+local bagButtons = {}
+local page = 1
+local PAGE_SIZE = 88
+
+local function UsesPlayerBags()
+    return C_Bank.ShouldUsePlayerBagsInBank and C_Bank.ShouldUsePlayerBagsInBank()
+end
 
 function BankWindow.BankTypeForBagID(bagID)
     if bagID and bagID >= WB_FIRST and bagID <= WB_LAST then
@@ -137,11 +144,13 @@ local function GetSelectedBagID()
 end
 
 local function SetSelectedBagID(bagID)
+    if selectedByBankType[activeBankType] ~= bagID then page = 1 end
     selectedByBankType[activeBankType] = bagID
     Storage.Bus.Publish("BagsChanged", Storage.Store.GetCurrentCharacterKey(), {})
 end
 
 local function SetActiveBankType(bankType)
+    page = 1
     activeBankType = bankType or Enum.BankType.Character
     if win and win:IsShown() then BankWindow.Refresh() end
     Storage.Bus.Publish("BagsChanged", Storage.Store.GetCurrentCharacterKey(), {})
@@ -305,6 +314,48 @@ local function ApplyTabHover(bagID)
     sweep(cachedButtons)
 end
 
+local function RenderBagSlots()
+    for _, button in pairs(bagButtons) do button:Hide() end
+    if not (liveMode and UsesPlayerBags() and C_Bank.CanViewBank(activeBankType)) then
+        return 0, 0
+    end
+    if not win._bagSlots then
+        local holder = CreateFrame("Frame", nil, win._body)
+        holder:SetPoint("TOPLEFT", 0, -TAB_STRIP_H)
+        holder:SetHeight(40)
+        holder.RefreshAll = ScheduleRefresh
+        holder.BankPanel = {
+            ToggleButtonGlowForItemsOfBankBag = function(_, bagID, show)
+                ApplyTabHover(show and bagID or nil)
+            end,
+        }
+        win._bagSlots = holder
+    end
+    local data = C_Bank.FetchPurchasedBankTabData(activeBankType)
+    local count = C_Bank.FetchMaxNumBankTabs(activeBankType)
+    for slot = 2, count do
+        local button = bagButtons[slot]
+        if not button then
+            button = CreateFrame("ItemButton", nil, win._bagSlots, "BankItemButtonBagTemplate")
+            button:SetScale(1)
+            button:SetSize(36, 36)
+            button:SetPoint("TOPLEFT", (slot - 2) * 40, 0)
+            bagButtons[slot] = button
+        end
+        button.bankType = activeBankType
+        button.bagSlotID = slot
+        button.DisabledOverlay:SetShown(not data[slot])
+        button.tooltipText = data[slot] and BANK_BAG or BANK_BAG_PURCHASE
+        local container = activeBankType == Enum.BankType.Account
+            and Enum.BagIndex.Accountbanktab or Enum.BagIndex.Characterbanktab
+        button:SetItemLocation(ItemLocation:CreateFromBagAndSlot(container, slot))
+        button:Show()
+    end
+    local width = math.max(0, count - 1) * 40
+    win._bagSlots:SetWidth(width)
+    return width, 44
+end
+
 local function CreateTabButton(purchase)
     local template = purchase and "BankPanelPurchaseButtonScriptTemplate" or nil
     local btn = Bags.Chassis.CreatePanelButton(win._tabStrip, true, template)
@@ -327,7 +378,7 @@ local function CreateTabButton(purchase)
                 return
             end
             if mouseButton == "RightButton" then
-                if liveMode then ShowTabSettingsMenu(self, entry) end
+                if liveMode and not UsesPlayerBags() then ShowTabSettingsMenu(self, entry) end
                 return
             end
             activeBankType = entry.bankType or activeBankType
@@ -343,7 +394,7 @@ local function CreateTabButton(purchase)
         if tip and tip ~= "" then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(tip)
-            if entry and not entry.purchase and not entry.all and liveMode then
+            if entry and not entry.purchase and not entry.all and liveMode and not UsesPlayerBags() then
                 GameTooltip:AddLine(ns.L["Right-click: rename + auto-deposit assignments."],
                     1, 1, 1, true)
             end
@@ -440,6 +491,28 @@ local function EnsureWindow()
         Enum.BankType.Account)
     win._warbandBankBtn:SetPoint("LEFT", win._charBankBtn, "RIGHT", SEGMENT_GAP, 0)
 
+    if UsesPlayerBags() then
+        win._pageNext = Bags.Chassis.CreatePanelButton(bankTypeStrip, true)
+        win._pageNext._label:SetText(">")
+        win._pageNext:SetSize(22, SEGMENT_H)
+        win._pageNext:SetPoint("TOPRIGHT")
+        win._pageNext:SetScript("OnClick", function()
+            page = page + 1
+            BankWindow.Refresh()
+        end)
+        win._pageText = bankTypeStrip:CreateFontString(nil, "ARTWORK")
+        CJKFont(win._pageText, Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 12, "OUTLINE")
+        win._pageText:SetPoint("RIGHT", win._pageNext, "LEFT", -4, 0)
+        win._pagePrev = Bags.Chassis.CreatePanelButton(bankTypeStrip, true)
+        win._pagePrev._label:SetText("<")
+        win._pagePrev:SetSize(22, SEGMENT_H)
+        win._pagePrev:SetPoint("RIGHT", win._pageText, "LEFT", -4, 0)
+        win._pagePrev:SetScript("OnClick", function()
+            page = math.max(1, page - 1)
+            BankWindow.Refresh()
+        end)
+    end
+
     local strip = CreateFrame("Frame", nil, win._body)
     strip:SetPoint("TOPLEFT", 0, -(SEGMENT_H + SEGMENT_GAP))
     strip:SetPoint("TOPRIGHT", 0, -(SEGMENT_H + SEGMENT_GAP))
@@ -526,7 +599,8 @@ end
 local function RenderTabStrip(tabs)
     for _, btn in ipairs(tabButtons) do btn:Hide() end
     if purchaseTabButton then purchaseTabButton:Hide() end
-    local sr, sg, sb = Helpers.GetSkinColors()
+    local sr, sg, sb, sa = Helpers.GetWindowColors()
+    local ar, ag, ab = Helpers.GetSkinColors()
     local selectedBagID = GetSelectedBagID()
     local x = 0
     for i, entry in ipairs(tabs) do
@@ -557,7 +631,7 @@ local function RenderTabStrip(tabs)
         btn:SetPoint("TOPLEFT", win._tabStrip, "TOPLEFT", x, 0)
         local selected = (entry.all and selectedBagID == "all")
             or (not entry.purchase and not entry.all and entry.bagID == selectedBagID)
-        UIKit.UpdateBorderLines(btn, 1, sr, sg, sb, selected and 1 or 0.35)
+        UIKit.UpdateBorderLines(btn, 1, selected and ar or sr, selected and ag or sg, selected and ab or sb, selected and 1 or (0.35 * sa))
         btn:Show()
         x = x + w + TAB_GAP
     end
@@ -565,12 +639,13 @@ local function RenderTabStrip(tabs)
 end
 
 local function RenderBankTypeSegment()
-    local sr, sg, sb = Helpers.GetSkinColors()
+    local sr, sg, sb, sa = Helpers.GetWindowColors()
+    local ar, ag, ab = Helpers.GetSkinColors()
     local totalW = 0
     local buttons = { win._charBankBtn, win._warbandBankBtn }
     for _, btn in ipairs(buttons) do
         local selected = btn._bankType == activeBankType
-        UIKit.UpdateBorderLines(btn, 1, sr, sg, sb, selected and 1 or 0.35)
+        UIKit.UpdateBorderLines(btn, 1, selected and ar or sr, selected and ag or sg, selected and ab or sb, selected and 1 or (0.35 * sa))
         btn:Show()
         totalW = totalW + btn:GetWidth()
     end
@@ -666,11 +741,11 @@ local function RenderFooter()
     end
     win._bankMoney:Show()
 
-    local sr, sg, sb = Helpers.GetSkinColors()
+    local sr, sg, sb, sa = Helpers.GetWindowColors()
     local shown = {}
     local function gate(btn, show)
         if show then
-            UIKit.UpdateBorderLines(btn, 1, sr, sg, sb, 0.35)
+            UIKit.UpdateBorderLines(btn, 1, sr, sg, sb, 0.35 * sa)
             btn:Show()
             shown[#shown + 1] = btn
         else
@@ -771,12 +846,19 @@ function BankWindow.Refresh()
             if target then SetSelectedBagID(target) end
         end
     end
+    local bagWidth, bagHeight = RenderBagSlots()
+    local gridTop = TAB_STRIP_H + bagHeight
     local segmentW = RenderBankTypeSegment()
+    if win._pageNext then
+        win._pageNext:Hide()
+        win._pagePrev:Hide()
+        win._pageText:Hide()
+    end
     local stripW = RenderTabStrip(tabs)
 
     if liveMode then
-        local sr, sg, sb = Helpers.GetSkinColors()
-        UIKit.UpdateBorderLines(win._sortBtn, 1, sr, sg, sb, 0.35)
+        local sr, sg, sb, sa = Helpers.GetWindowColors()
+        UIKit.UpdateBorderLines(win._sortBtn, 1, sr, sg, sb, 0.35 * sa)
         win._sortBtn:Show()
     else
         win._sortBtn:Hide()
@@ -811,13 +893,35 @@ function BankWindow.Refresh()
                 end
             end
         end
-        local layout = Bags.GridLayout.Compute(#cells, {
+        local first, last = 1, #cells
+        if UsesPlayerBags() then
+            local pageCount = math.max(1, math.ceil(#cells / PAGE_SIZE))
+            if focusItemID then
+                for index, cell in ipairs(cells) do
+                    if cell.entry and cell.entry.itemID == focusItemID then
+                        page = math.ceil(index / PAGE_SIZE)
+                        break
+                    end
+                end
+            end
+            page = math.min(page, pageCount)
+            first, last = (page - 1) * PAGE_SIZE + 1, math.min(page * PAGE_SIZE, #cells)
+            win._pageText:SetText(page .. "/" .. pageCount)
+            win._pageText:Show()
+            win._pagePrev:SetEnabled(page > 1)
+            win._pageNext:SetEnabled(page < pageCount)
+            win._pagePrev:Show()
+            win._pageNext:Show()
+            segmentW = segmentW + 96
+        end
+        local layout = Bags.GridLayout.Compute(math.max(0, last - first + 1), {
             columns = cols * 2, iconSize = snappedSize, spacing = snappedGap,
         })
-        for i, c in ipairs(cells) do
+        for index = first, last do
+            local i, c = index - first + 1, cells[index]
             pending[#pending + 1] = { bagID = c.bagID, slot = c.slot,
                 entry = c.entry,
-                x = layout[i].x, y = layout[i].y - TAB_STRIP_H }
+                x = layout[i].x, y = layout[i].y - gridTop }
         end
         gridW, gridH = layout.width, layout.height
     else
@@ -830,12 +934,12 @@ function BankWindow.Refresh()
         for slot = 1, size do
             pending[#pending + 1] = { bagID = selectedBagID, slot = slot,
                 entry = slots[slot],
-                x = layout[slot].x, y = layout[slot].y - TAB_STRIP_H }
+                x = layout[slot].x, y = layout[slot].y - gridTop }
         end
         gridW, gridH = layout.width, layout.height
     end
 
-    local finalW = math.max(gridW, stripW, segmentW, headerMinW)
+    local finalW = math.max(gridW, stripW, segmentW, headerMinW, bagWidth)
     local xOff = 0
     if finalW > gridW and gridW > 0 then
         xOff = (finalW - gridW) / 2
@@ -844,7 +948,7 @@ function BankWindow.Refresh()
     for _, pl in ipairs(pending) do
         PlaceGridButton(pl.bagID, pl.slot, pl.entry, pl.x + xOff, pl.y, snappedSize)
     end
-    win:SetContentSize(finalW, TAB_STRIP_H + gridH)
+    win:SetContentSize(finalW, gridTop + gridH)
 
     RenderFooter()
 end

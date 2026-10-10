@@ -1,4 +1,4 @@
--- luacheck: read globals BankFrame
+-- luacheck: read globals BankFrame BankFrame_Open RegisterPlayerInteraction
 local ADDON_NAME, ns = ...
 local Bags = ns.Bags or {}; ns.Bags = Bags
 
@@ -20,11 +20,23 @@ function BankTakeover.IsLive()
     return live
 end
 
+local function RegisterBankInteractions(custom)
+    if not (C_Bank.ShouldUsePlayerBagsInBank and C_Bank.ShouldUsePlayerBagsInBank()) then return end
+    for _, kind in ipairs({ "Banker", "CharacterBanker", "AccountBanker" }) do
+        RegisterPlayerInteraction(Enum.PlayerInteractionType[kind], {
+            frame = "BankFrame",
+            showFunc = custom and BankTakeover.OnBankOpened or BankFrame_Open,
+            hideFunc = custom and BankTakeover.OnBankClosed or nil,
+        })
+    end
+end
+
 function BankTakeover.Suppress()
     if suppressed then return end
     local bankFrame = BankFrame
     if not bankFrame then return end
     suppressed = true
+    RegisterBankInteractions(true)
 
     capturedScripts = {}
     for _, name in ipairs(SCRIPT_NAMES) do
@@ -41,12 +53,14 @@ function BankTakeover.Suppress()
 end
 
 function BankTakeover.OnBankOpened()
+    if live then return end
     live = true
     Bags.BankWindow.ShowLive()
     Bags.Takeover.OpenForFrame(BANK_OPENER)
 end
 
 function BankTakeover.OnBankClosed()
+    if not live then return end
     closing = false
     live = false
     Bags.BankWindow.OnBankClosed()
@@ -62,6 +76,7 @@ end
 function BankTakeover.Revert()
     if not suppressed then return end
     suppressed = false
+    RegisterBankInteractions(false)
 
     if live and not closing then
         C_Bank.CloseBankFrame()

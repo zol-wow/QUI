@@ -1,3 +1,6 @@
+-- luacheck: read globals GetComboPoints
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
 local QUICore = ns.Addon
 local LSM = ns.LSM
@@ -592,7 +595,12 @@ local RenewingMistChargeState = {
 local SafeNumberOrNil = Helpers.SafeNumberOrNil
 
 local function ReadPlayerPowerPair(resource, unmodified)
-    local current = UnitPower("player", resource, unmodified)
+    local current
+    if ns.Client and ns.Client.isForever and resource == Enum.PowerType.ComboPoints then
+        current = GetComboPoints("player", "target")
+    else
+        current = UnitPower("player", resource, unmodified)
+    end
     local max = UnitPowerMax("player", resource, unmodified)
     if Helpers.IsSecretValue(current) or Helpers.IsSecretValue(max) then
         return current, max, true -- @secret-policy: report-secret-detected
@@ -726,11 +734,10 @@ local function AdvanceRenewingMistRecharge(seconds)
     end
 end
 
-local tocVersion = select(4, GetBuildInfo())
 local HAS_UNIT_POWER_PERCENT = type(UnitPowerPercent) == "function"
 
 local function GetPowerPct(unit, powerType, usePredicted)
-    if (tonumber(tocVersion) or 0) >= 120000 and HAS_UNIT_POWER_PERCENT then
+    if HAS_UNIT_POWER_PERCENT then
         local ok, pct
         if CurveConstants and CurveConstants.ScaleTo100 then
             ok, pct = pcall(UnitPowerPercent, unit, powerType, usePredicted, CurveConstants.ScaleTo100)
@@ -1441,6 +1448,9 @@ local primaryResources = {
 }
 
 local function GetPrimaryResource()
+    if ns.Client and ns.Client.isForever then
+        return UnitPowerType("player") or Enum.PowerType.Mana
+    end
     local _, playerClass = UnitClass("player")
     -- @secret-policy: collapse-only — secret class renders the Mana default (matches
     if issecretvalue and issecretvalue(playerClass) then playerClass = nil end
@@ -1508,6 +1518,15 @@ local function GetSecondaryResource()
     -- @secret-policy: collapse-only — secret class shows no secondary bar (matches
     if issecretvalue and issecretvalue(playerClass) then playerClass = nil end
     if not playerClass then return nil end
+    if ns.Client and ns.Client.isForever then
+        if playerClass == "ROGUE" then return Enum.PowerType.ComboPoints end
+        if playerClass == "DRUID" then
+            local primary = UnitPowerType("player")
+            if primary == Enum.PowerType.Energy then return Enum.PowerType.ComboPoints end
+            if primary ~= nil and primary ~= Enum.PowerType.Mana then return Enum.PowerType.Mana end
+        end
+        return nil
+    end
     local spec = GetSpecialization()
     if not spec then return nil end
     local specID = GetSpecializationInfo(spec)
@@ -2112,7 +2131,7 @@ function QUICore:GetPowerBar()
     bar.StatusBar = CreateFrame("StatusBar", nil, bar)
     bar.StatusBar:SetAllPoints()
     local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
-    bar.StatusBar:SetStatusBarTexture(tex)
+    Helpers.ApplyBarStyle(bar.StatusBar, tex)
     bar.StatusBar:SetFrameLevel(bar:GetFrameLevel())
 
     local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor(cfg, "")
@@ -2368,7 +2387,7 @@ function QUICore:UpdatePowerBar()
 
     local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
     if bar._cachedTex ~= tex then
-        bar.StatusBar:SetStatusBarTexture(tex)
+        Helpers.ApplyBarStyle(bar.StatusBar, tex)
         bar._cachedTex = tex
     end
 
@@ -2709,7 +2728,7 @@ function QUICore:GetSecondaryPowerBar()
     bar.StatusBar = CreateFrame("StatusBar", nil, bar)
     bar.StatusBar:SetAllPoints()
     local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
-    bar.StatusBar:SetStatusBarTexture(tex)
+    Helpers.ApplyBarStyle(bar.StatusBar, tex)
     bar.StatusBar:SetFrameLevel(bar:GetFrameLevel())
 
     local sbR, sbG, sbB, sbA = Helpers.GetSkinBorderColor(cfg, "")
@@ -2761,7 +2780,7 @@ function QUICore:CreateFragmentedPowerBars(bar, resource, isVertical)
         if not bar.FragmentedPowerBars[i] then
             local fragmentBar = CreateFrame("StatusBar", nil, bar)
             local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
-            fragmentBar:SetStatusBarTexture(tex)
+            Helpers.ApplyBarStyle(fragmentBar, tex)
             fragmentBar:SetOrientation(isVertical and "VERTICAL" or "HORIZONTAL")
             fragmentBar:SetFrameLevel(bar.StatusBar:GetFrameLevel())
             bar.FragmentedPowerBars[i] = fragmentBar
@@ -2800,7 +2819,7 @@ function QUICore:UpdateFragmentedPowerDisplay(bar, resource, isVertical, current
     if bar._quiFragmentTexture ~= tex then
         bar._quiFragmentTexture = tex
         for i = 1, #bar.FragmentedPowerBars do
-            bar.FragmentedPowerBars[i]:SetStatusBarTexture(tex)
+            Helpers.ApplyBarStyle(bar.FragmentedPowerBars[i], tex)
         end
     end
 
@@ -3214,10 +3233,10 @@ function QUICore:UpdateChargedComboPoints(bar, resource, max, current, isVertica
             local isFilled = cpIndex <= current
             if isFilled then
                 local tex = LSM:Fetch("statusbar", GetBarTexture(self.db.profile.secondaryPowerBar))
-                overlay.tex:SetTexture(tex)
+                Helpers.ApplyTextureStyle(overlay, overlay.tex, tex)
                 overlay.tex:SetVertexColor(chargedColor[1], chargedColor[2], chargedColor[3], chargedColor[4] or 1)
             else
-                overlay.tex:SetTexture(nil)
+                Helpers.ApplyTextureStyle(overlay, overlay.tex, nil)
             end
 
             SkinBase.ApplyPixelBackdrop(overlay, px, false, false,
@@ -3763,7 +3782,7 @@ function QUICore:UpdateSecondaryPowerBar()
 
     local tex = LSM:Fetch("statusbar", GetBarTexture(cfg))
     if bar._cachedTex ~= tex then
-        bar.StatusBar:SetStatusBarTexture(tex)
+        Helpers.ApplyBarStyle(bar.StatusBar, tex)
         bar._cachedTex = tex
     end
 

@@ -9,10 +9,6 @@
 -- plain Lua decision; the tri-state exists for clients or APIs that answer
 -- with nothing at all.
 --
--- The candidate list for the picker comes from LibOpenRaid's per-spec dataset
--- (already vendored for party keystones) filtered to the player's class and
--- spec, plus whatever on-use trinkets are equipped. Anything the dataset lacks
--- can be added by spell id.
 local _, ns = ...
 
 local Helpers = ns.Helpers
@@ -185,15 +181,22 @@ function D.Describe(id)
     return DescribeSpell(id)
 end
 
--- Personal defensives this class/spec has, per LibOpenRaid's dataset.
 function D.SpecCandidates()
     local out = {}
-    local data = Dataset()
+    local isForever = ns.Client and ns.Client.isForever
+    local data
+    if isForever then
+        data = ns.RemindersDefensiveSpellClasses
+    else
+        data = Dataset()
+    end
     local class = D.PlayerClass()
-    local specID = D.PlayerSpecID()
+    local specID = not isForever and D.PlayerSpecID()
     if data and class then
         for spellID, info in pairs(data) do
-            if type(info) == "table" and type(spellID) == "number"
+            if isForever and info == class and D.SpellKnown(spellID) then
+                out[#out + 1] = DescribeSpell(spellID)
+            elseif not isForever and type(info) == "table" and type(spellID) == "number"
                 and info.class == class and info.type == TYPE_PERSONAL
                 and SpecMatches(info.specs, specID) then
                 out[#out + 1] = DescribeSpell(spellID)
