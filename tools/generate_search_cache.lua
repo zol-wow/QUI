@@ -90,7 +90,7 @@ local function collect_scripts_from_toc(toc_path, out, seen)
     for _, line in ipairs(read_lines(toc_path)) do
         line = line:gsub("\r", ""):gsub("^%s+", ""):gsub("%s+$", "")
         if line ~= "" and line:sub(1, 1) ~= "#" then
-            local entry = normalize_path(line)
+            local entry = join_path(toc_path, line)
             if entry:lower():match("%.lua$") then
                 out[#out + 1] = entry
             elseif entry:lower():match("%.xml$") then
@@ -149,6 +149,10 @@ end
 
 local function should_load_script(path)
     path = normalize_path(path)
+
+    if path == "QUI_Reminders/spell_reminders/model.lua" or path == "QUI_Reminders/spell_reminders/catalog.lua" then
+        return true
+    end
 
     if path == "init.lua" or path == OUTPUT_PATH then
         return false
@@ -209,7 +213,7 @@ local function should_load_script(path)
         if path:match("^QUI_ActionBars/actionbars/settings/") then
             return true
         end
-        if path == "QUI_Reminders/reminders/settings/reminders_content.lua" then
+        if path:match("^QUI_Reminders/.+/settings/") then
             return true
         end
         return false
@@ -1087,6 +1091,8 @@ ns.AddonLoader = {
     SetModuleAddonEnabled = function() return "reload" end,
 }
 
+ns.SpellReminders = { Store = function() return profile_db.spellReminders end }
+
 local function load_script(path, script_ns)
     local chunk, load_err = loadfile(path)
     if not chunk then
@@ -1101,6 +1107,7 @@ end
 local scripts = {}
 local script_xml_seen = {}
 collect_scripts_from_toc("QUI.toc", scripts, script_xml_seen)
+collect_scripts_from_toc("QUI_Reminders/QUI_Reminders.toc", scripts, script_xml_seen)
 collect_qui_options_scripts(scripts, script_xml_seen)
 
 local failures = {}
@@ -3061,6 +3068,17 @@ capture_aura_displays_elements()
 capture_action_bar_per_bar_settings()
 capture_minimap_datatext_settings()
 
+-- The reminder editor starts empty, so render its configurable tabs against
+-- a transient PI preset to index them before a player creates a reminder.
+if ns.SpellReminderOptions then
+    GUI:SetSearchContext({ tileId = "reminders", subPageIndex = 2, tabName = "Reminders",
+        subTabName = "Spell Reminders", featureId = "spellRemindersPage", category = "gameplay" })
+    local host = create_stub_node("Frame", nil, false)
+    host:SetSize(760, 1)
+    ns.SpellReminderOptions.CaptureSearch(host)
+    GUI:ClearSearchContext()
+end
+
 -- Tile registration runs AFTER install_search_capture_overrides() so the
 -- alias-emit wrappers actually intercept the RegisterFeatureTile /
 -- AddFeatureTile calls, and AFTER capture_all_search_features() because
@@ -3105,6 +3123,7 @@ local tile_order = {
     "QUI_AppearanceTile",
     "QUI_ChatTooltipsTile",
     "QUI_GameplayTile",
+    "QUI_RemindersTile",
     "QUI_QoLTile",
     "QUI_BagsTile",
     "QUI_AltsTile",

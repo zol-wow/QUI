@@ -56,6 +56,7 @@ local WHAT_TO_SHOW_LABELS = {
     crowdControl = ns.L["Crowd control"],
     boss         = ns.L["Boss debuffs"],
     roleBoss     = ns.L["Role-relevant boss debuffs"],
+    encounter    = ns.L["Encounter Debuffs"],
     whitelist    = ns.L["Specific spells"],
     custom       = ns.L["Custom…"],
 }
@@ -1185,6 +1186,13 @@ local function AddFilterStripConfig(ctx, element)
             }))
         end
         if element.auraType == "HARMFUL" then
+            row(ns.L["Encounter Debuffs"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "gateEncounterDebuffs", element, function(checked)
+                if checked then E.ApplyWhatToShow(element, "encounter") end
+                ctx.NotifyChanged()
+                rebuild()
+            end, {
+                description = ns.L["Hide player- and pet-applied debuffs and common noise, matching DBM's default aura filter."],
+            }))
             row(ns.L["Priority Debuffs"], GUI:CreateFormCheckbox(ctx.detailArea, nil, "gatePriorityAura", element, onChange, {
                 description = ns.L["Only show debuffs Blizzard flags as priority. Combines with the other filters."],
             }))

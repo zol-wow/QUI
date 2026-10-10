@@ -7,7 +7,7 @@ local groups = {
     { ns.L["Frames & Bars"], { "unit_frames", "group_frames", "nameplates", "action_bars" } },
     { ns.L["Abilities & Auras"], { "cooldown_manager", "resource_bars", "auras" } },
     { ns.L["Interface"], { "appearance", "minimap", "infobar", "chat_tooltips", "bags", "alts" } },
-    { ns.L["Gameplay & Utilities"], { "gameplay", "qol" } },
+    { ns.L["Gameplay & Utilities"], { "gameplay", "reminders", "qol" } },
 }
 
 local function Owner(body)
