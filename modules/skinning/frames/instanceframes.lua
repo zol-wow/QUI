@@ -309,6 +309,30 @@ local function StyleLFGRewards(frame)
     StyleLFGRewardItem(frame.MoneyReward)
 end
 
+local function StyleLFGDungeonRow(row)
+    if not row then return end
+    SkinBase.LockPooledRowText(row, 2)
+    if row.enableButton then
+        SkinBase.SkinCheckBox(row.enableButton)
+        local backdrop = SkinBase.GetBackdrop(row.enableButton)
+        if backdrop then SkinBase.SetInsetPixelPoints(backdrop, row.enableButton, 4) end
+    end
+    local button = row.expandOrCollapseButton
+    if button then
+        SkinBase.SkinButton(button, { font = false })
+        SkinBase.ClampTextureHidden(button:GetNormalTexture(), true)
+        local glyph = SkinBase.GetFrameData(button, "dungeonExpandGlyph")
+        if not glyph then
+            glyph = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            glyph:SetPoint("CENTER")
+            SkinBase.SkinFontString(glyph, { color = { 1, 1, 1, 1 } })
+            SkinBase.SetFrameData(button, "dungeonExpandGlyph", glyph)
+        end
+        glyph:SetText(row.isCollapsed and "+" or "-")
+    end
+end
+
+local lfgDungeonRowsHooked
 local lfgRewardsHooked
 local function SkinLFDFrame()
     local LFDQueueFrame = _G.LFDQueueFrame
@@ -354,13 +378,16 @@ local function SkinLFDFrame()
         SkinBase.SkinFontString(_G.LFDQueueFrameTypeDropdownName, { color = { 0.9, 0.9, 0.9, 1 } })
     end
 
-    local specificList = LFDQueueFrame.Specific
-    if specificList and specificList.ScrollBox then
-        SkinBase.HookScrollBoxRowFonts(specificList.ScrollBox, 2)
+    for _, key in ipairs({ "Specific", "Follower" }) do
+        local list = LFDQueueFrame[key]
+        if list and list.ScrollBox then
+            SkinBase.HookScrollBoxAcquired(list.ScrollBox, StyleLFGDungeonRow)
+        end
+        if list then SkinBase.SkinTrimScrollBar(list.ScrollBar) end
     end
-    local followerList = LFDQueueFrame.Follower
-    if followerList and followerList.ScrollBox then
-        SkinBase.HookScrollBoxRowFonts(followerList.ScrollBox, 2)
+    if not lfgDungeonRowsHooked and type(_G.LFGDungeonListButton_SetDungeon) == "function" then
+        hooksecurefunc("LFGDungeonListButton_SetDungeon", StyleLFGDungeonRow)
+        lfgDungeonRowsHooked = true
     end
 
     SkinBase.MarkSkinned(LFDQueueFrame)
@@ -402,6 +429,7 @@ local function SkinRaidFinderFrame()
         selectionDropdown:SetWidth(200)
         SkinBase.SkinDropdown(selectionDropdown, { skinArrow = true, insetY = 2 })
         SkinBase.LockDropdownText(selectionDropdown)
+        SkinBase.SkinFontString(_G.RaidFinderQueueFrameSelectionDropdownName, { color = { 1, 1, 1, 1 } })
     end
 
     SkinBase.MarkSkinned(RaidFinderQueueFrame)
@@ -458,6 +486,18 @@ local function HideLFGListDecorations()
     SkinBase.StripTextures(LFGListFrame)
 end
 
+local function StyleLFGSearchRow(row)
+    if not row then return end
+    SkinBase.SkinButton(row, { font = false, belowChildren = true })
+    SkinBase.ClampTextureHidden(row.ResultBG, true)
+    if row.Highlight then
+        local r, g, b = SkinBase.GetSkinColors()
+        row.Highlight:SetColorTexture(r, g, b, 0.15)
+        SkinBase.RoundBarTexture(row, row.Highlight, { radius = 4 })
+    end
+    SkinBase.LockPooledRowText(row, 2)
+end
+
 local function SkinLFGListFrame()
     local LFGListFrame = _G.LFGListFrame
     if not LFGListFrame or SkinBase.IsSkinned(LFGListFrame) then return end
@@ -469,6 +509,7 @@ local function SkinLFGListFrame()
 
     if LFGListFrame.CategorySelection then
         local cs = LFGListFrame.CategorySelection
+        SkinBase.SkinFontString(cs.Label, { color = { 1, 1, 1, 1 } })
         local function StyleCategoryNavButtons()
             if cs.StartGroupButton then
                 SkinBase.SkinButton(cs.StartGroupButton, { font = true, fontColor = actionTextColor })
@@ -512,6 +553,9 @@ local function SkinLFGListFrame()
 
     if LFGListFrame.SearchPanel then
         local sp = LFGListFrame.SearchPanel
+        SkinBase.SkinFontString(sp.CategoryName, { color = { 1, 1, 1, 1 } })
+        SkinBase.LockFontObject(sp.CategoryName, { color = { 1, 1, 1, 1 } })
+        SkinBase.SkinTrimScrollBar(sp.ScrollBar)
         if sp.BackButton then
             SkinBase.SkinButton(sp.BackButton, { font = true })
         end
@@ -547,7 +591,7 @@ local function SkinLFGListFrame()
             SkinBase.SkinDropdown(sp.FilterButton, { skinArrow = true })
         end
         if sp.ScrollBox then
-            SkinBase.HookScrollBoxRowFonts(sp.ScrollBox, 2)
+            SkinBase.HookScrollBoxAcquired(sp.ScrollBox, StyleLFGSearchRow)
             SkinBase.SkinButton(sp.ScrollBox.StartGroupButton, { font = true })
         end
         if sp.AutoCompleteFrame and type(_G.LFGListSearchPanel_UpdateAutoComplete) == "function"
@@ -1157,6 +1201,85 @@ local function SkinPVPFrame()
     SkinBase.MarkSkinned(PVPQueueFrame)
 end
 
+local function SkinForeverGroupFinderCheck(check, inset)
+    if not check then return end
+    SkinBase.SkinCheckBox(check)
+    local backdrop = SkinBase.GetBackdrop(check)
+    if backdrop then
+        -- Native checkbox hit areas are larger than their art and their rows.
+        -- Inset only the decoration; keep selection, hit area and check mark native.
+        backdrop:ClearAllPoints()
+        backdrop:SetPoint("TOPLEFT", check, "TOPLEFT", inset, -inset)
+        backdrop:SetPoint("BOTTOMRIGHT", check, "BOTTOMRIGHT", -inset, inset)
+    end
+end
+
+local function SkinForeverGroupFinderContents()
+    if not (ns.Client and ns.Client.isForever) then return end
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
+    if not settings or not settings.skinInstanceFrames then return end
+    for _, page in pairs({ _G.LFGListingFrame, _G.LFGBrowseFrame, _G.LFGWhoListFrame }) do
+        -- The inherited and replacement Bg regions can share a name. Hide both
+        -- page-level decorations; icons and controls live in child frames.
+        SkinBase.ClampAllTextures(page)
+        for _, key in ipairs({ "Inset", "RolesSection", "DividerFrame" }) do
+            SkinBase.StripTextures(page[key])
+        end
+        for _, key in ipairs({ "BackgroundArt", "Bg", "BarTop", "BarMiddle" }) do
+            SkinBase.ClampTextureHidden(page[key], true, { preserveLayout = true })
+        end
+        if page.RefreshButton then SkinBase.SkinButton(page.RefreshButton, { font = false }) end
+        if page.SearchButton then SkinBase.SkinButton(page.SearchButton, { font = false }) end
+    end
+    local listing = _G.LFGListingFrame
+    if not listing then return end
+    local roles = listing.SoloRoleButtons
+    for _, key in ipairs({ "Tank", "Healer", "DPS" }) do
+        local role = roles and roles[key]
+        if role then SkinForeverGroupFinderCheck(role.CheckButton, 4) end
+    end
+    local newcomer = listing.NewPlayerFriendlyButton
+    if newcomer then SkinForeverGroupFinderCheck(newcomer.CheckButton, 4) end
+    local groupRoles = listing.GroupRoleButtons
+    if groupRoles then
+        SkinBase.SkinButton(groupRoles.RolePollButton)
+        SkinBase.SkinDropdown(groupRoles.RoleDropdown)
+    end
+    local categories = listing.CategoryView
+    for _, button in ipairs(categories and categories.CategoryButtons or {}) do
+        SkinBase.ClampTextureHidden(button.Cover, true, { preserveLayout = true })
+        SkinBase.SkinButton(button)
+    end
+    if categories and _G.LFGListingCategorySelection_UpdateCategoryButtons
+        and not SkinBase.GetFrameData(categories, "qForeverCategoryButtonsHooked") then
+        hooksecurefunc("LFGListingCategorySelection_UpdateCategoryButtons", SkinForeverGroupFinderContents)
+        SkinBase.SetFrameData(categories, "qForeverCategoryButtonsHooked", true)
+    end
+    local activity = listing.ActivityView
+    if not activity then return end
+    SkinBase.ClampTextureHidden(activity.BarTop, true, { preserveLayout = true })
+    SkinBase.ClampTextureHidden(activity.BarMiddle, true, { preserveLayout = true })
+    SkinBase.SkinDropdown(activity.VoiceChatDropdown, { skinArrow = true })
+    local ranges = activity.LevelRangesCheckbox
+    if ranges then SkinForeverGroupFinderCheck(ranges.Checkbox, 4) end
+    local comment = activity.Comment
+    if comment then
+        SkinBase.StripTextures(comment)
+        SkinBase.KillNineSlice(comment.NineSlice, true)
+        local sr, sg, sb, sa, r, g, b, a = SkinBase.GetWindowColors()
+        SkinBase.CreateBackdrop(comment, sr, sg, sb, sa, r, g, b, a, 4)
+        -- Preserve secure text input, focus and native scroll sizing.
+        SkinBase.SkinFontString(comment.EditBox, { fontOnly = true })
+    end
+    if activity.ScrollBox and not SkinBase.GetFrameData(activity.ScrollBox, "qForeverActivityRowsHooked") then
+        SkinBase.HookScrollBoxAcquired(activity.ScrollBox, function(row)
+            SkinForeverGroupFinderCheck(row.CheckButton, 6)
+        end, { sync = true })
+        SkinBase.SetFrameData(activity.ScrollBox, "qForeverActivityRowsHooked", true)
+    end
+end
+
 local function SkinVanillaGroupFinder()
     local frame = _G.LFGParentFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
@@ -1183,6 +1306,10 @@ local function SkinVanillaGroupFinder()
             SkinBase.SkinTrimScrollBar(activity.ScrollBar)
         end
     end
+    SkinForeverGroupFinderContents()
+    if ns.Client and ns.Client.isForever and frame.HookScript then
+        frame:HookScript("OnShow", SkinForeverGroupFinderContents)
+    end
     SkinBase.MarkSkinned(frame)
 end
 
@@ -1190,6 +1317,7 @@ local function RefreshVanillaGroupFinder()
     local frame = _G.LFGParentFrame
     if not frame or not SkinBase.IsSkinned(frame) then return end
     SkinBase.RefreshFrameBackdropColors(frame)
+    SkinForeverGroupFinderContents()
     for _, key in ipairs({ "ListingTab", "BrowsingTab", "WhoListingTab" }) do
         if frame[key] then SkinBase.RefreshTabGroup({ frame[key] }, frame) end
     end

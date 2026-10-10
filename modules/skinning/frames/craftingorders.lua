@@ -11,6 +11,29 @@ local function IsEnabled()
     return settings and settings.skinCraftingOrders
 end
 
+local function StyleOrderChrome(frame)
+    if not IsEnabled() or not frame then return end
+    local title = frame.TitleText or (frame.TitleContainer and frame.TitleContainer.TitleText)
+    SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
+    SkinBase.LockFontObject(title, { color = { 1, 1, 1, 1 } })
+    local browse = frame.BrowseOrders
+    local filter = browse and browse.SearchBar and browse.SearchBar.FilterDropdown
+    SkinBase.SkinFontString(filter and filter.Text, { color = { 0.95, 0.95, 0.95, 1 } })
+    SkinBase.LockFontObject(filter and filter.Text, { color = { 0.95, 0.95, 0.95, 1 } })
+    local form = frame.Form
+    SkinBase.SkinFontString(form and form.MinimumQuality and form.MinimumQuality.Text, { color = { 0.9, 0.9, 0.9, 1 } })
+    SkinBase.LockFontObject(form and form.MinimumQuality and form.MinimumQuality.Text, { color = { 0.9, 0.9, 0.9, 1 } })
+    local target = form and form.OrderRecipientTarget
+    if target and target.GetRegions then
+        for _, region in ipairs({ target:GetRegions() }) do
+            if region.GetObjectType and region:GetObjectType() == "FontString" then
+                SkinBase.SkinFontString(region, { color = { 0.9, 0.9, 0.9, 1 } })
+                SkinBase.LockFontObject(region, { color = { 0.9, 0.9, 0.9, 1 } })
+            end
+        end
+    end
+end
+
 local function skinRow(row)
     if not IsEnabled() or not row or (row.IsForbidden and row:IsForbidden()) then return end
     SkinBase.SkinScrollRow(row)
@@ -130,7 +153,15 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         if categoryList.Background then categoryList.Background:SetAlpha(0) end
 
         local function StyleCategoryRow(button)
+            if not button then return end
+            if button.isSpacer then
+                local backdrop = SkinBase.GetBackdrop(button)
+                if backdrop then backdrop:Hide() end
+                return
+            end
             SkinBase.SkinCategoryButton(button)
+            local backdrop = SkinBase.GetBackdrop(button)
+            if backdrop then backdrop:Show() end
             SuppressCategoryTextures(button)
             SkinBase.RefreshCategorySelected(button)
             SkinBase.SkinFontString(button.Text)
@@ -146,7 +177,7 @@ local function SkinBrowseOrders(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         local catMixin = _G.ProfessionsCustomerOrdersCategoryButtonMixin
         if catMixin and catMixin.Init and not SkinBase.GetFrameData(categoryList, "categoryInitHooked") then
             hooksecurefunc(catMixin, "Init", function(self)
-                if not IsEnabled() or self.isSpacer then return end
+                if not IsEnabled() then return end
                 StyleCategoryRow(self)
             end)
             SkinBase.SetFrameData(categoryList, "categoryInitHooked", true)
@@ -605,6 +636,7 @@ local function SkinCraftingOrders()
     SkinMyOrders(frame)
     SkinForm(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     RefreshOrderTableHeaders(frame)
+    StyleOrderChrome(frame)
 
     SkinBase.MarkSkinned(frame)
 end
@@ -622,6 +654,7 @@ local function RefreshCraftingOrdersColors()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     RefreshOrderTableHeaders(frame)
+    StyleOrderChrome(frame)
 
     local mainBd = SkinBase.GetBackdrop(frame)
     if mainBd then

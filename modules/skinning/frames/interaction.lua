@@ -13,13 +13,13 @@ end
 local RefreshBackdropColors = SkinBase.RefreshFrameBackdropColors
 local SkinInteractionItem, SkinIconSelectorPopup
 
-local function SkinInteractionSurface(frame)
+local function SkinInteractionSurface(frame, backgroundAlpha)
     if not frame then return end
     SkinBase.StripTextures(frame)
     SkinBase.KillNineSlice(frame.NineSlice, true)
     local sr, sg, sb, sa = SkinBase.GetWindowColors()
     local r, g, b, a = SkinBase.GetDepthColor("SUBPANEL")
-    SkinBase.CreateBackdrop(frame, sr, sg, sb, sa * 0.5, r, g, b, a, 5)
+    SkinBase.CreateBackdrop(frame, sr, sg, sb, sa * 0.5, r, g, b, backgroundAlpha or a, 5)
 end
 
 local function SkinBankItem(button)
@@ -174,8 +174,48 @@ local function SkinBankConfirmation(frame)
     end
 end
 
+local function SkinForeverBankContents(frame)
+    if not (ns.Client and ns.Client.isForever) or not frame or not IsSettingEnabled("skinBank") then return end
+    local title = frame.GetTitleText and frame:GetTitleText() or frame.TitleText
+    SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
+    SkinBase.LockFontObject(title, { color = { 1, 1, 1, 1 } })
+    SkinBase.SkinFontString(frame.BagText, { color = { 0.9, 0.9, 0.9, 1 } })
+    SkinBase.SkinFontString(frame.BagCost, { color = { 0.9, 0.9, 0.9, 1 } })
+    for _, region in ipairs({ frame:GetRegions() }) do
+        if region.GetAtlas and region:GetAtlas() == "bank-divider" then
+            SkinBase.ClampTextureHidden(region, true)
+        end
+    end
+    local panel = frame.BankPanel
+    if panel then
+        SkinBase.SkinButton(panel.PurchaseButton, { strip = true, font = true })
+        SkinBase.RefreshWidget(panel.PurchaseButton)
+        SkinBase.SkinFrameText(panel.MoneyDisplay, { recurse = true, fontOnly = true })
+    end
+    if frame.itemButtonBagPool then
+        for button in frame.itemButtonBagPool:EnumerateActive() do
+            SkinBankItem(button)
+            SkinBase.ClampTextureHidden(button:GetNormalTexture(), true)
+        end
+    end
+    if frame.bankPageTabPool then
+        for tab in frame.bankPageTabPool:EnumerateActive() do
+            SkinBase.SkinTab(tab, frame, { font = false, hover = true })
+        end
+    end
+    if not SkinBase.GetFrameData(frame, "qForeverBankContentsHooked") then
+        for _, method in ipairs({ "RefreshBagButtons", "RefreshPageTabs" }) do
+            if type(frame[method]) == "function" then
+                hooksecurefunc(frame, method, SkinForeverBankContents)
+            end
+        end
+        SkinBase.SetFrameData(frame, "qForeverBankContentsHooked", true)
+    end
+end
+
 local function SkinBankContents(frame)
     if not frame or not IsSettingEnabled("skinBank") then return end
+    SkinForeverBankContents(frame)
     SkinBase.SkinEditBox(frame.BankItemSearchBox or _G.BankItemSearchBox)
     if frame.TabSystem and frame.TabSystem.tabs then
         SkinBase.SkinTabGroup(frame.TabSystem.tabs, frame, { resizeToText = true, dockBottom = true })
@@ -269,8 +309,59 @@ local function SkinMerchantIcon(button)
     SkinBase.HandleIconBorder(button.IconBorder, border)
 end
 
+local function SkinMerchantStackSplit(frame)
+    if not frame or not frame.owner then return end
+    local owner = frame.owner
+    local merchantOwner = false
+    for i = 1, math.max(12, _G.MERCHANT_ITEMS_PER_PAGE or 12) do
+        local row = _G["MerchantItem" .. i]
+        if row and owner == (row.ItemButton or _G["MerchantItem" .. i .. "ItemButton"]) then
+            merchantOwner = true
+            break
+        end
+    end
+    if merchantOwner then
+        if not IsSettingEnabled("skinMerchant") then return end
+    elseif not (ns.Client and ns.Client.isForever and IsSettingEnabled("skinStaticPopups")) then
+        return
+    end
+    -- Forever also uses this native quantity dialog for bag and bank stacks.
+    -- Only change its decoration; OnChar, key bindings and split callbacks stay native.
+    SkinInteractionSurface(frame, 1)
+    local field = SkinBase.GetFrameData(frame, "qMerchantStackSplitField")
+    if not field then
+        field = CreateFrame("Frame", nil, frame)
+        field:EnableMouse(false)
+        field:SetFrameLevel(frame:GetFrameLevel())
+        SkinBase.SetFrameData(frame, "qMerchantStackSplitField", field)
+    end
+    field:SetSize(112, 24)
+    field:ClearAllPoints()
+    field:SetPoint("CENTER", frame, "CENTER", 5, frame.isMultiStack and 30 or 18)
+    local sr, sg, sb, sa = SkinBase.GetWindowColors()
+    local r, g, b = SkinBase.GetDepthColor("SUBPANEL")
+    SkinBase.CreateBackdrop(field, sr, sg, sb, sa * 0.5, r * 0.8, g * 0.8, b * 0.8, 1, 4)
+    SkinBase.SkinFontString(frame.StackSplitText, { color = { 1, 1, 1, 1 } })
+    SkinBase.SkinFontString(frame.StackItemCountText, { color = { 0.9, 0.9, 0.9, 1 } })
+    SkinBase.SkinButton(frame.OkayButton, { strip = true, font = true })
+    SkinBase.SkinButton(frame.CancelButton, { strip = true, font = true })
+    SkinBase.SkinNextPrevButton(frame.LeftButton, "prev", { inset = 0, size = 12 })
+    SkinBase.SkinNextPrevButton(frame.RightButton, "next", { inset = 0, size = 12 })
+end
+
+local function HookMerchantStackSplit()
+    local frame = _G.StackSplitFrame
+    if not frame or SkinBase.GetFrameData(frame, "qMerchantStackSplitHooked") then return end
+    if frame.ChooseFrameType then
+        hooksecurefunc(frame, "ChooseFrameType", SkinMerchantStackSplit)
+        SkinBase.SetFrameData(frame, "qMerchantStackSplitHooked", true)
+    end
+    SkinMerchantStackSplit(frame)
+end
+
 local function SkinMerchantContents(frame)
     if not frame or not IsSettingEnabled("skinMerchant") then return end
+    HookMerchantStackSplit()
     local title = frame.GetTitleText and frame:GetTitleText() or frame.TitleText
     SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
     SkinBase.SkinFontString(_G.MerchantPageText, { color = { 0.9, 0.9, 0.9, 1 } })
@@ -280,23 +371,33 @@ local function SkinMerchantContents(frame)
         SkinBase.StripTextures(_G[name])
         SkinBase.KillNineSlice(_G[name] and _G[name].NineSlice, true)
     end
-    for _, name in ipairs({ "MerchantMoneyInset", "MerchantExtraCurrencyInset" }) do
-        SkinInteractionSurface(_G[name])
-    end
+    SkinInteractionSurface(_G.MerchantMoneyInset)
+    SkinBase.StripTextures(_G.MerchantExtraCurrencyInset)
+    SkinBase.KillNineSlice(_G.MerchantExtraCurrencyInset and _G.MerchantExtraCurrencyInset.NineSlice, true)
     for i = 1, math.max(12, _G.MERCHANT_ITEMS_PER_PAGE or 12) do
         local row = _G["MerchantItem" .. i]
         if row then
             SkinBase.StripTextures(row)
             SkinBase.CreateBackdrop(row, nil, nil, nil, nil, nil, nil, nil, nil, 4)
             SkinBase.SkinFontString(row.Name or _G["MerchantItem" .. i .. "Name"], { fontOnly = true })
-            SkinMerchantIcon(row.ItemButton or _G["MerchantItem" .. i .. "ItemButton"])
+            local button = row.ItemButton or _G["MerchantItem" .. i .. "ItemButton"]
+            SkinMerchantIcon(button)
+            local backdrop = SkinBase.GetBackdrop(row)
+            if backdrop and button then backdrop:SetShown(button:IsShown()) end
         end
     end
     local buyback = _G.MerchantBuyBackItem
     if buyback then
         SkinBase.StripTextures(buyback)
         SkinBase.CreateBackdrop(buyback, nil, nil, nil, nil, nil, nil, nil, nil, 4)
-        SkinMerchantIcon(buyback.ItemButton or _G.MerchantBuyBackItemItemButton)
+        local button = buyback.ItemButton or _G.MerchantBuyBackItemItemButton
+        SkinMerchantIcon(button)
+        local backdrop = SkinBase.GetBackdrop(buyback)
+        if backdrop and button then
+            local name = buyback.Name or _G.MerchantBuyBackItemName
+            local text = name and name:GetText()
+            backdrop:SetShown(button:IsShown() and text ~= nil and text ~= "")
+        end
     end
     for _, name in ipairs({ "MerchantRepairAllButton", "MerchantRepairItemButton",
         "MerchantGuildBankRepairButton", "MerchantSellAllJunkButton" }) do
@@ -409,6 +510,9 @@ end
 
 local function SkinGossipContents(frame)
     if not IsSettingEnabled("skinGossip") or not frame then return end
+    local title = frame.TitleText or (frame.TitleContainer and frame.TitleContainer.TitleText)
+    SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
+    SkinBase.LockFontObject(title, { color = { 1, 1, 1, 1 } })
     SkinBase.ClampTextureHidden(frame.Background, true)
     local greeting = frame.GreetingPanel
     if greeting then
@@ -760,7 +864,12 @@ local function SkinQuestContents()
         SkinBase.SkinFontString(_G[name])
     end
     local frame = _G.QuestFrame
-    if frame then SkinFriendshipBar(frame.FriendshipStatusBar) end
+    if frame then
+        local title = frame.TitleText or (frame.TitleContainer and frame.TitleContainer.TitleText)
+        SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
+        SkinBase.LockFontObject(title, { color = { 1, 1, 1, 1 } })
+        SkinFriendshipBar(frame.FriendshipStatusBar)
+    end
     local greeting = _G.QuestFrameGreetingPanel
     local pool = greeting and greeting.titleButtonPool
     if pool and type(pool.EnumerateActive) == "function" then
@@ -1094,6 +1203,11 @@ end
 
 local function SkinTrainerContents(frame)
     if not frame or not IsSettingEnabled("skinTrainer") then return end
+    local title = frame.GetTitleText and frame:GetTitleText()
+    title = title or frame.TitleText or (frame.TitleContainer and frame.TitleContainer.TitleText)
+    SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
+    SkinBase.SkinFrameText(frame.FilterDropdown, { chrome = true, color = { 0.95, 0.95, 0.95, 1 } })
+    SkinBase.ClampTextureHidden(_G.ClassTrainerFrameMoneyBg, true)
     local scrollBox = frame.ScrollBox
     if scrollBox and type(scrollBox.ForEachFrame) == "function" then
         scrollBox:ForEachFrame(SkinTrainerRow)
@@ -1214,10 +1328,12 @@ if ns.Registry then
 end
 
 SkinBase.OnAddOnLoaded("Blizzard_UIPanels_Game", function()
+    if ns.Client and ns.Client.isForever then HookMerchantStackSplit() end
     SkinBank()
     SkinMerchant()
     SkinGossip()
     SkinQuest()
+    SkinIconSelectorPopup(_G.GearManagerPopupFrame, "skinCharacterFrame")
 end, 0)
 
 SkinBase.OnAddOnLoaded("Blizzard_GuildBankUI", SkinGuildBank, 0)

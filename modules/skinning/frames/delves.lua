@@ -18,6 +18,15 @@ local function SkinDelvesFrame(frame)
     SkinBase.SkinDropdown(frame.Dropdown, { skinArrow = true })
     SkinBase.SkinButton(frame.EnterDelveButton, { strip = true, font = true })
     SkinBase.SkinButton(frame.CompanionConfigShowAbilitiesButton, { strip = true, font = true })
+    local abilitiesButton = frame.CompanionConfigShowAbilitiesButton
+    if abilitiesButton then
+        for _, region in ipairs({ abilitiesButton:GetRegions() }) do
+            if region:GetObjectType() == "FontString" then
+                SkinBase.SkinFontString(region, { color = { 0.95, 0.95, 0.95, 1 } })
+                SkinBase.LockFontObject(region, { color = { 0.95, 0.95, 0.95, 1 } })
+            end
+        end
+    end
     SkinBase.MarkSkinned(frame)
 end
 
