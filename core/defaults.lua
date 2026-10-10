@@ -177,6 +177,7 @@ local defaults = {
             font = "Quazii",
             fontOutline = "OUTLINE",
             texture = "Quazii v5",
+            visualStyle = "Satin",
             darkMode = false,
             darkModeHealthColor = { 0, 0, 0, 1 },
             darkModeBgColor = { 0.592, 0.592, 0.592, 1 },
@@ -256,6 +257,8 @@ local defaults = {
             showAuctionHouseGold = true,
             skinCraftingOrders = true,
             skinProfessions = true,
+            skinLegacySystem = false,
+            skinStable = false,
             skinBgColor = { 0.008, 0.008, 0.008, 1 },
             skinAlerts = true,
             controlAlertAnchors = false,
@@ -561,7 +564,7 @@ local defaults = {
                 cornerIconSize = 12,
                 qualityColorText = false,
                 greyJunk = false,
-                markUnusable = true,
+                markUnusable = false,
                 contextFading = true,
             },
             behavior = {
@@ -3793,7 +3796,7 @@ local defaults = {
             micromenu = {
                 buttons = {
                     character = true, spellbook = true, talents = true,
-                    professions = true, achievements = true, questlog = true,
+                    professions = true, achievements = true, legacy = true, questlog = true,
                     collections = true, lfg = true, adventureguide = true,
                     housing = true, shop = false, help = false,
                 },
@@ -4026,7 +4029,25 @@ local defaults = {
             groupFrames = 4,
             groupPetFrames = 3,
         },
+        swingTimers = {
+            ["*"] = {
+                width = 250, height = 20, texture = "Flat", fontSize = 11,
+                showTitle = true, showTime = true, visibility = 0,
+            },
+        },
         frameAnchoring = {
+            swingTimerMainHand = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = -180,
+            },
+            swingTimerOffHand = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = -206,
+            },
+            swingTimerRanged = {
+                point = "CENTER", parent = "screen", relative = "CENTER",
+                offsetX = 0, offsetY = -232,
+            },
             primaryPower = {
                 point = "TOP", parent = "cdmEssential", relative = "BOTTOM",
                 offsetX = 0, offsetY = 0,

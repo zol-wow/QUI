@@ -659,8 +659,8 @@ function BagWindow.Refresh()
     if win._stripToggle then
         if live then
             win._stripToggle._label:SetText(showStrip and "-" or "+")
-            local tr, tg, tb = Helpers.GetSkinColors()
-            UIKit.UpdateBorderLines(win._stripToggle, 1, tr, tg, tb, 0.35)
+            local tr, tg, tb, ta = Helpers.GetWindowColors()
+            UIKit.UpdateBorderLines(win._stripToggle, 1, tr, tg, tb, 0.35 * ta)
             win._stripToggle:ClearAllPoints()
             win._stripToggle:SetPoint("TOPLEFT", win._body, "TOPLEFT",
                 0, showStrip and -((BAG_SLOT_SIZE - 14) / 2) or -1)
@@ -677,6 +677,7 @@ function BagWindow.Refresh()
                 local tex = inv and GetInventoryItemTexture("player", inv) or nil
                 if tex then
                     b._icon:SetTexture(tex)
+                    Helpers.ApplyIconStyle(b, b._icon)
                     b._icon:Show()
                     local q = GetInventoryItemQuality("player", inv)
                     local qr, qg, qb = Bags.ItemButtons.GetQualityColor(q or 1)
@@ -685,8 +686,8 @@ function BagWindow.Refresh()
                 else
                     b._icon:Hide()
                     b._count:SetText("")
-                    local er, eg, eb = Helpers.GetSkinColors()
-                    UIKit.UpdateBorderLines(b, 1, er, eg, eb, 0.35)
+                    local er, eg, eb, ea = Helpers.GetWindowColors()
+                    UIKit.UpdateBorderLines(b, 1, er, eg, eb, 0.35 * ea)
                 end
                 b:SetAlpha(IsBagHidden(i) and 0.35 or 1)
                 b:ClearAllPoints()
@@ -717,8 +718,8 @@ function BagWindow.Refresh()
     win._ownerSelect:Update()
 
     if live then
-        local sr, sg, sb = Helpers.GetSkinColors()
-        UIKit.UpdateBorderLines(win._sortBtn, 1, sr, sg, sb, 0.35)
+        local sr, sg, sb, sa = Helpers.GetWindowColors()
+        UIKit.UpdateBorderLines(win._sortBtn, 1, sr, sg, sb, 0.35 * sa)
         win._sortBtn:Show()
     else
         win._sortBtn:Hide()
@@ -726,8 +727,9 @@ function BagWindow.Refresh()
 
     if not live and selectMode then ClearSelection() end
     if live then
-        local sr, sg, sb = Helpers.GetSkinColors()
-        UIKit.UpdateBorderLines(win._selectBtn, 1, sr, sg, sb, selectMode and 1 or 0.35)
+        local sr, sg, sb, sa = Helpers.GetWindowColors()
+        local ar, ag, ab = Helpers.GetSkinColors()
+        UIKit.UpdateBorderLines(win._selectBtn, 1, selectMode and ar or sr, selectMode and ag or sg, selectMode and ab or sb, selectMode and 1 or (0.35 * sa))
         win._selectBtn:Show()
     else
         win._selectBtn:Hide()

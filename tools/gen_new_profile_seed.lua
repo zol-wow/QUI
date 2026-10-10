@@ -386,18 +386,13 @@ local purgedCDMLists = PurgeCharacterCDMLists(profile)
 local purgedCustomBars = PurgeSeededCustomBars(profile)
 PurgeOrphanSatellites(profile)
 
--- Force the shipped new-user theme to QUI's Sky Blue, regardless of the
--- source profile's theme. general.themePreset is the live read (main.lua and
--- the options theme picker, QUI_Options/framework.lua); the top-level copy is
--- the legacy store. Set both + the derived accent color so every consumer
--- resolves sky blue. "Sky Blue" -> {0.376, 0.647, 0.980} (#60A5FA).
 local function ApplyThemeOverride(p)
-    local function skyBlue() return { 0.376, 0.647, 0.98, 1 } end
-    p.themePreset = "Sky Blue"
-    p.addonAccentColor = skyBlue()
+    local function satinGold() return { 0.8353, 0.7412, 0.5529, 1 } end
+    p.themePreset = "Satin Gold"
+    p.addonAccentColor = satinGold()
     if type(p.general) ~= "table" then p.general = {} end
-    p.general.themePreset = "Sky Blue"
-    p.general.addonAccentColor = skyBlue()
+    p.general.themePreset = "Satin Gold"
+    p.general.addonAccentColor = satinGold()
     p.general.skinUseClassColor = false   -- picker keeps this in sync with the preset
 end
 ApplyThemeOverride(profile)
@@ -407,6 +402,9 @@ ApplyThemeOverride(profile)
 -- ONLY way a curated value reaches the seed; hand-editing the blob is not an
 -- option. Keep each entry commented with why it is pinned.
 local function ApplySettingOverrides(p)
+    if type(p.general) ~= "table" then p.general = {} end
+    p.general.visualStyle = "Satin"
+    p.general.skinBgColor = { 0.0745, 0.1059, 0.1176, 1 }
     -- Drawer toggle icon: new installs get the QUI mark, not the legacy
     -- Quazii hammer. Existing profiles are untouched by design — a stored
     -- "hammer" cannot be told apart from a deliberate user choice.

@@ -22,12 +22,16 @@ function GUI:InitializeOptions()
 
     frame:EnableKeyboard(true)
     frame:SetScript("OnKeyDown", function(self, key)
+        local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
+        if (not focused or key == "ESCAPE") and GUI.HandleNavigationKey and GUI:HandleNavigationKey(self, key) then
+            SetKeyboardPropagation(self, false)
+            return
+        end
         if key == "ESCAPE" then
             SetKeyboardPropagation(self, false)
             self:Hide()
             return
         end
-        local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
         if focused and focused ~= frame._searchBox and focused ~= (frame._searchBox and frame._searchBox.editBox) then
             SetKeyboardPropagation(self, true)
             return
@@ -140,6 +144,8 @@ function GUI:InitializeOptions()
     })
 
     self:SeedStaticSearchRoutesFromTiles(frame)
+
+    if self.LayoutSidebarGroups then self:LayoutSidebarGroups(frame) end
 
     GUI:SelectFeatureTile(frame, 1)
 

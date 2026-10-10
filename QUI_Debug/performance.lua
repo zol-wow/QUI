@@ -81,10 +81,10 @@ end
 local SAMPLE_INTERVAL = 1.0
 local MAX_HISTORY = 150
 local FRAME_WIDTH = 340
-local FRAME_HEIGHT_BASE = 220
-local FRAME_HEIGHT_EVENTS = 320
-local FRAME_HEIGHT_MODULES = 340
-local FRAME_HEIGHT_BOTH = 440
+local FRAME_HEIGHT_BASE = 262
+local FRAME_HEIGHT_EVENTS = 362
+local FRAME_HEIGHT_MODULES = 382
+local FRAME_HEIGHT_BOTH = 482
 local GRAPH_WIDTH = 300
 local GRAPH_HEIGHT = 80
 local TOP_EVENTS_COUNT = 5
@@ -124,6 +124,7 @@ local debugprofilestart_fn = debugprofilestart
 local debugprofilestop_fn = debugprofilestop
 
 local memText, peakText, avgText, cpuText, sessionText, samplesText
+local normalLimitText, restrictedLimitText
 local graphBars = {}
 local graphMaxLabel
 local gcResultText
@@ -583,6 +584,13 @@ local function CreateMonitorFrame()
     y = y + rowSpacing
     samplesText = CreateStatRow(f, "Samples:", y)
 
+    y = y + rowSpacing
+    CreateStatRow(f, "Configured script throttle limits:", y):SetText("")
+    y = y + rowSpacing
+    normalLimitText = CreateStatRow(f, "Normal:", y)
+    y = y + rowSpacing
+    restrictedLimitText = CreateStatRow(f, "Restricted:", y)
+
     y = y + rowSpacing - 4
     eventSection = CreateFrame("Frame", nil, f)
     eventSection:SetPoint("TOPLEFT", f, "TOPLEFT", 0, y)
@@ -779,6 +787,20 @@ local function StartTracking()
         CreateMonitorFrame()
     end
     ResetSession()
+
+    normalLimitText:SetText("Unavailable")
+    restrictedLimitText:SetText("Unavailable")
+    if GetScriptBucketThrottleLimits then
+        local ok, limits = pcall(GetScriptBucketThrottleLimits)
+        if ok and limits then
+            normalLimitText:SetText(format("%g ms/s; %g ms burst",
+                limits.luaScriptBucketThrottleMaxMsPerSecondNormal,
+                limits.luaScriptBucketThrottleMaxMsBurstNormal))
+            restrictedLimitText:SetText(format("%g ms/s; %g ms burst",
+                limits.luaScriptBucketThrottleMaxMsPerSecondRestricted,
+                limits.luaScriptBucketThrottleMaxMsBurstRestricted))
+        end
+    end
 
     for i = 1, MAX_HISTORY do
         graphBars[i]:Hide()

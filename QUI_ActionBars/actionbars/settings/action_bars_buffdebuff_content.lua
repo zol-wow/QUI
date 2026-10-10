@@ -238,7 +238,7 @@ local function BuildBuffDebuffTab(tabContent)
     y, debuffEditorHost, debuffOriginalHeight, debuffSetOnLayoutChanged = BuildAuraEditorSection(
         tabContent, PAD, SECTION_GAP, y, settings, "debuffAuras", BB and BB.DefaultDebuffBucket, false, "HARMFUL")
 
-    local baseTabHeight = math.abs(y) + 40
+    local baseTabHeight = math.abs(y) - SECTION_GAP + 10
     tabContent:SetHeight(baseTabHeight)
 
     if buffSetOnLayoutChanged or debuffSetOnLayoutChanged then

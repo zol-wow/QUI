@@ -212,6 +212,14 @@ local function ValidateProfilePayloadDetailed(core, profileData)
         }
     end
 
+    local sourceClient = type(profileData) == "table" and profileData._quiClient
+    if ns.Client and sourceClient ~= nil and sourceClient ~= ns.Client.flavor then
+        return false, {
+            summary = "This profile was exported for a different WoW client. Import a profile from the same client.",
+            errors = { { kind = "client_mismatch" } },
+        }
+    end
+
     local defaults = core and core.db and core.db.defaults and core.db.defaults.profile
     if type(defaults) ~= "table" then
         return true, nil
@@ -379,6 +387,7 @@ local PROFILE_THEME_GENERAL_KEYS = {
     "font",
     "fontOutline",
     "texture",
+    "visualStyle",
     "darkMode",
     "darkModeHealthColor",
     "darkModeBgColor",
@@ -408,6 +417,8 @@ local PROFILE_QOL_GENERAL_KEYS = {
     "allowReloadInCombat",
     "disableScrollingCombatText",
     "showOptionTooltips",
+    "optionsMotion",
+    "optionsNavigationDocked",
     "autoInsertKey",
     "closeBagsOnKeystoneInsert",
     "keystoneRerollReminder",
@@ -550,6 +561,34 @@ local PROFILE_SKINNING_GENERAL_KEYS = {
     "showAuctionHouseGold",
     "skinCraftingOrders",
     "skinProfessions",
+    "skinLegacySystem",
+    "skinStable",
+    "skinPVPMatch",
+    "skinQuest",
+    "skinBank",
+    "skinMerchant",
+    "skinMail",
+    "skinGuildBank",
+    "skinFriends",
+    "skinFlightMap",
+    "skinMacro",
+    "skinMirrorTimers",
+    "skinGossip",
+    "skinCommunities",
+    "skinDelves",
+    "skinDressUp",
+    "skinItemUpgrade",
+    "skinSocket",
+    "skinTrade",
+    "skinTabard",
+    "skinGuildRegistrar",
+    "skinSpellBook",
+    "skinEncounterJournal",
+    "skinCollections",
+    "skinAchievement",
+    "skinWorldMap",
+    "skinWeeklyRewards",
+    "skinTrainer",
     "skinBgColor",
     "skinAlerts",
     "controlAlertAnchors",
@@ -1299,6 +1338,7 @@ local PROFILE_IMPORT_CATEGORIES = {
             "totemBar",
             "preyTracker",
             "incomingCasts",
+            "swingTimers",
         },
     },
     {
@@ -1981,7 +2021,8 @@ local function ApplyFullProfilePayload(core, importedProfile)
         profile[key] = nil
     end
     for key, value in pairs(importedProfile) do
-        if key ~= "_migrationBackup" and key ~= "_needsStarterReseed" and key ~= PROFILE_EXPORT_GLOBALS_KEY then
+        if key ~= "_migrationBackup" and key ~= "_needsStarterReseed"
+            and key ~= "_quiClient" and key ~= PROFILE_EXPORT_GLOBALS_KEY then
             profile[key] = CloneValue(value)
         end
     end
@@ -2221,6 +2262,9 @@ end
 local function SerializeProfileExportPayload(payload, prefix)
     if type(payload) ~= "table" then
         return nil, "Failed to serialize profile."
+    end
+    if ns.Client then
+        payload._quiClient = ns.Client.flavor
     end
     if not AceSerializer or not LibDeflate then
         return nil, "Export requires AceSerializer-3.0 and LibDeflate."
@@ -2617,7 +2661,7 @@ function QUICore:AnalyzeNameplateProfileImportString(str)
         return false, floorErr
     end
 
-    local wrapped = { nameplates = CloneValue(payload.settings) }
+    local wrapped = { nameplates = CloneValue(payload.settings), _quiClient = payload._quiClient }
     local sok, sanitized, stripped, serr = SanitizeProfilePayload(self, wrapped)
     if not sok or type(sanitized) ~= "table" or type(sanitized.nameplates) ~= "table" then
         return false, serr or "Import failed nameplate validation."

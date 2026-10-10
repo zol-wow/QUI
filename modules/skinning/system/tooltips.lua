@@ -52,8 +52,7 @@ end
 
 local function GetEffectiveColors()
     local settings = GetSettings()
-    local sr, sg, sb, sa = Helpers.GetSkinBorderColor(settings, "")
-    local bgr, bgg, bgb, bga = Helpers.GetSkinBgColor()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = Helpers.GetWindowColors(settings, "")
 
     if settings then
         if settings.bgColor then
@@ -359,9 +358,11 @@ local function GetStyleFrame(tooltip)
     frame:SetAllPoints()
     frame.ignoreInLayout = true
     frame:EnableMouse(false)
-    local bgF = SkinBase.CHROME.BG_FALLBACK
-    frame.bg = UIKit.CreateBackground(frame, bgF[1], bgF[2], bgF[3], bgF[4])
-    UIKit.CreateBorderLines(frame)
+    if not SkinBase.ApplyChromeBackdrop then
+        local bgF = SkinBase.CHROME.BG_FALLBACK
+        frame.bg = UIKit.CreateBackground(frame, bgF[1], bgF[2], bgF[3], bgF[4])
+        UIKit.CreateBorderLines(frame)
+    end
 
     styleFrames[tooltip] = frame
     return frame
@@ -414,7 +415,7 @@ local function StyleShoppingCompareHeader(header, sr, sg, sb, sa, bgr, bgg, bgb,
     end
 
     SkinBase.StripTextures(header)
-    SkinBase.CreateBackdrop(header, sr, sg, sb, sa, bgr, bgg, bgb, 0.92)
+    SkinBase.CreateBackdrop(header, sr, sg, sb, sa, bgr, bgg, bgb, 0.92, 5)
     local bd = SkinBase.GetBackdrop(header)
     if bd then
         SkinBase.SetPixelInsetPoints(bd, header, 3, 3, 3, 0)
@@ -461,10 +462,15 @@ local function ApplyTooltipChrome(tooltip)
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetEffectiveColors()
     local thickness = math.max(GetEffectiveBorderThickness(), 1)
 
-    if frame.bg then
-        frame.bg:SetVertexColor(bgr, bgg, bgb, bga)
+    if SkinBase.ApplyChromeBackdrop then
+        SkinBase.ApplyChromeBackdrop(frame, {
+            radius = 6, background = true, borderPixels = thickness,
+            borderColor = { sr, sg, sb, sa }, bgColor = { bgr, bgg, bgb, bga },
+        })
+    else
+        if frame.bg then frame.bg:SetVertexColor(bgr, bgg, bgb, bga) end
+        UIKit.UpdateBorderLines(frame, thickness, sr, sg, sb, sa, sa <= 0)
     end
-    UIKit.UpdateBorderLines(frame, thickness, sr, sg, sb, sa, sa <= 0)
     frame:Show()
 
     if tooltip.CompareHeader then
@@ -618,7 +624,7 @@ local gameTooltipFamily = {
 }
 
 local specializedTooltips = {
-    "QueueStatusFrame",
+    "QueueStatusFrame", "ConquestTooltip",
     "FloatingGarrisonFollowerTooltip", "FloatingGarrisonFollowerAbilityTooltip",
     "FloatingGarrisonMissionTooltip", "GarrisonFollowerTooltip",
     "GarrisonFollowerAbilityTooltip", "GarrisonMissionTooltip",

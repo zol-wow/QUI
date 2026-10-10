@@ -161,7 +161,8 @@ end
 
 local function combatMutationRestricted(frame, panel)
 	return InCombatLockdown()
-		and ((panel and panel.proxyParent) or Helpers.FrameMutationRestricted(frame))
+		and ((panel and (panel.proxyParent or (ns.Client and ns.Client.restrictedExecutionUnavailable and panel.secureFrame)))
+			or Helpers.FrameMutationRestricted(frame))
 end
 
 function M.functions.RegisterGroup(id, label, opts)
@@ -565,8 +566,106 @@ local function rememberAnchors(f)
 	if #copy > 0 then c.blizzardAnchors = copy end
 end
 
+local function usesNativePlacement(frame, panel)
+	return ns.Client and ns.Client.restrictedExecutionUnavailable
+		and ((frame.IsProtected and frame:IsProtected()) or (panel and (panel.secureFrame or panel.proxyParent)))
+end
+
+local GetUIPanel = _G.GetUIPanel
+local SetUIPanelAttribute = _G.SetUIPanelAttribute
+local UpdateUIPanelPositions = _G.UpdateUIPanelPositions
+local GetUIPanelLayoutAttribute = _G.GetUIPanelLayoutAttribute
+local nativePanelOffsets = { "xoffset", "yoffset", "centerXOffset" }
+local nativeAnchorFactors = {
+	TOPLEFT = { 0, 1 }, TOP = { 0.5, 1 }, TOPRIGHT = { 1, 1 },
+	LEFT = { 0, 0.5 }, CENTER = { 0.5, 0.5 }, RIGHT = { 1, 0.5 },
+	BOTTOMLEFT = { 0, 0 }, BOTTOM = { 0.5, 0 }, BOTTOMRIGHT = { 1, 0 },
+}
+
+local function restoreNativePanelLayout(frame)
+	local c = ctx(frame)
+	if not c.nativePanelLayout then return false end
+	if InCombatLockdown() then
+		c.pendingNativeRestore = true
+		return false
+	end
+	for _, name in ipairs(nativePanelOffsets) do
+		SetUIPanelAttribute(frame, name, c.nativePanelLayout[name])
+	end
+	c.nativePanelLayout, c.nativePlacedAnchor, c.pendingNativeRestore = nil, nil, nil
+	local applying = c.applyingLayout
+	c.applyingLayout = true
+	UpdateUIPanelPositions()
+	c.applyingLayout = applying
+	return true
+end
+
+local function nativePlace(frame, point, x, y)
+	if not point or InCombatLockdown() or not GetUIPanel or not SetUIPanelAttribute
+		or not UpdateUIPanelPositions or not GetUIPanelLayoutAttribute then return false end
+	local defaults = _G.UIPanelWindows and _G.UIPanelWindows[frame:GetName()]
+	local factors = nativeAnchorFactors[point]
+	if not defaults or not factors then return false end
+	local slot
+	for _, name in ipairs({ "left", "doublewide", "center", "right" }) do
+		if GetUIPanel(name) == frame then slot = name; break end
+	end
+	if not slot then return false end
+	local function attribute(name)
+		if frame:GetAttribute("UIPanelLayout-defined") then return frame:GetAttribute("UIPanelLayout-" .. name) end
+		return defaults[name]
+	end
+	local area = attribute("area")
+	if area == "centerOrLeft" then
+		area = "center"
+		for _, name in ipairs({ "left", "doublewide", "center", "right" }) do
+			local other = GetUIPanel(name)
+			if other and other ~= frame then area = "left"; break end
+		end
+	end
+	local centered = slot == "center" and area == "center"
+	if centered and attribute("centerFrameSkipAnchoring") then return false end
+	local values = { x, y, frame:GetScale(), frame:GetEffectiveScale(), UIParent:GetEffectiveScale(),
+		frame:GetWidth(), frame:GetHeight(), UIParent:GetWidth(), UIParent:GetHeight() }
+	for i = 1, 9 do
+		if (issecretvalue and issecretvalue(values[i])) or type(values[i]) ~= "number" then return false end
+	end
+	if values[3] <= 0 or values[4] <= 0 or values[5] <= 0 then return false end
+	local scale, ratio = values[3], values[5] / values[4]
+	local fx, fy = factors[1], factors[2]
+	local left = values[8] * fx * ratio + x - values[6] * fx
+	local top = values[9] * (fy - 1) * ratio + y + values[7] * (1 - fy)
+	local xName, xOffset = "xoffset", left * scale
+	if centered then
+		xName = "centerXOffset"
+		xOffset = left + values[6] / 2 - values[8] * ratio / 2
+	else
+		local baseName = slot == "center" and "CENTER_OFFSET" or slot == "right" and "RIGHT_OFFSET" or "LEFT_OFFSET"
+		xOffset = xOffset - GetUIPanelLayoutAttribute(baseName)
+		if slot == "center" or slot == "right" then
+			xOffset = xOffset - GetUIPanelLayoutAttribute("PANEl_SPACING_X")
+		end
+	end
+	local c = ctx(frame)
+	if not c.nativePanelLayout then
+		c.nativePanelLayout = {}
+		for _, name in ipairs(nativePanelOffsets) do c.nativePanelLayout[name] = attribute(name) end
+	end
+	c.pendingNativeRestore = nil
+	SetUIPanelAttribute(frame, xName, xOffset)
+	SetUIPanelAttribute(frame, "yoffset", top * scale - GetUIPanelLayoutAttribute("TOP_OFFSET"))
+	UpdateUIPanelPositions()
+	local anchor = { frame:GetPoint(1) }
+	for i = 1, 5 do
+		if issecretvalue and issecretvalue(anchor[i]) then return end
+	end
+	c.nativePlacedAnchor = anchor
+	return true
+end
+
 local function restoreAnchors(f)
 	local c = ctx(f)
+	if usesNativePlacement(f, c.panel) then return restoreNativePanelLayout(f) end
 	local copy = c.blizzardAnchors
 	if not copy or #copy == 0 then return false end
 	f:ClearAllPoints()
@@ -643,6 +742,7 @@ local securePositioner
 local secureAnchor
 
 local function ensureSecurePositioner()
+	if ns.Client and ns.Client.restrictedExecutionUnavailable then return nil end
 	if securePositioner then return securePositioner end
 	if type(CreateFrame) ~= "function" then return nil end
 	secureAnchor = CreateFrame("Frame", "QUI_MoverSecureAnchor", UIParent, "SecureFrameTemplate")
@@ -653,6 +753,7 @@ local function ensureSecurePositioner()
 end
 
 local function securePlace(frame, point, x, y, scale)
+	if ns.Client and ns.Client.restrictedExecutionUnavailable then return nativePlace(frame, point, x, y) end
 	local poser = ensureSecurePositioner()
 	if not poser then return false end
 	poser:SetFrameRef("frame", frame)
@@ -682,14 +783,19 @@ function M.functions.applyFrameSettings(f, entry)
 	local saved = readSavedOffset(panel, row)
 	local hasPos = saved and saved.point and saved.x ~= nil and saved.y ~= nil
 	local sc = storedScaleValue(row)
+	if not hasPos and usesNativePlacement(f, panel) then
+		restoreNativePanelLayout(f)
+		return
+	end
 	if not hasPos and not sc then return end
 	if combatMutationRestricted(f, panel) then
 		M.functions.deferApply(f, panel)
 		return
 	end
 	local c = ctx(f)
+	c.panel = panel
 	c.applyingLayout = true
-	if ((f.IsProtected and f:IsProtected()) or panel.proxyParent) and not panel.keepTwoPointSize then
+	if usesNativePlacement(f, panel) or ((f.IsProtected and f:IsProtected()) or panel.proxyParent) and not panel.keepTwoPointSize then
 		if hasPos then
 			securePlace(f, saved.point, saved.x, saved.y, sc)
 		elseif sc then
@@ -816,6 +922,7 @@ end
 
 local function installPlayerChoiceLayoutGuard(f)
 	if not f or playerChoiceGuarded[f] then return true end
+	if usesNativePlacement(f, R.panels.PlayerChoiceFrame) then return true end
 	if not playerChoiceMoverOn() then return false end
 	playerChoiceGuarded[f] = true
 
@@ -860,7 +967,7 @@ function M.functions.createHooks(root, entry)
 	end
 
 	local dp = panel.defaultPoint
-	if dp and dp.point then
+	if dp and dp.point and not usesNativePlacement(root, panel) then
 		root:ClearAllPoints()
 		root:SetPoint(dp.point, UIParent, dp.point, dp.x or 0, dp.y or 0)
 	end
@@ -925,7 +1032,7 @@ function M.functions.createHooks(root, entry)
 		root:StopMovingOrSizing()
 		c.dragging = false
 		M.functions.StoreFramePosition(root, panel)
-		if panel.keepTwoPointSize then M.functions.applyFrameSettings(root, panel) end
+		if panel.keepTwoPointSize or usesNativePlacement(root, panel) then M.functions.applyFrameSettings(root, panel) end
 	end
 
 	local function pushScale(next)
@@ -935,7 +1042,7 @@ function M.functions.createHooks(root, entry)
 			M.functions.deferApply(root, panel)
 			return
 		end
-		if root.IsProtected and root:IsProtected() then
+		if usesNativePlacement(root, panel) or (root.IsProtected and root:IsProtected()) then
 			securePlace(root, nil, nil, nil, next)
 		elseif root.SetScale then
 			root:SetScale(next)
@@ -943,6 +1050,7 @@ function M.functions.createHooks(root, entry)
 	end
 
 	local function nudgeScale(delta)
+		if usesNativePlacement(root, panel) then return end
 		if not panelIsActive(panel) then return end
 		if not db.scaleEnabled then return end
 		if not scaleModifierHeld() then return end
@@ -1178,6 +1286,10 @@ function M.functions.createHooks(root, entry)
 	end
 
 	local function reassertLayout(self)
+		if usesNativePlacement(self, panel) then
+			if not c.dragging and not c.applyingLayout then M.functions.applyFrameSettings(self, panel) end
+			return
+		end
 		if not panelIsActive(panel) then return end
 		if c.dragging or c.applyingLayout then return end
 		local row = storageRowForPanel(panel)
@@ -1250,6 +1362,13 @@ function M.functions.createHooks(root, entry)
 				or issecretvalue(relPt) or issecretvalue(x) or issecretvalue(y)) then
 				return false
 			end
+			if usesNativePlacement(f, panel) then
+				local anchor = c.nativePlacedAnchor
+				if not anchor then return false end
+				return pt ~= anchor[1] or rel ~= anchor[2] or relPt ~= anchor[3]
+					or type(x) ~= "number" or type(y) ~= "number"
+					or math.abs(x - anchor[4]) > 0.5 or math.abs(y - anchor[5]) > 0.5
+			end
 			if not pt then return true end
 			if pt ~= saved.point or rel ~= UIParent or relPt ~= saved.point then return true end
 			if type(x) ~= "number" or type(y) ~= "number" then return true end
@@ -1275,6 +1394,9 @@ function M.functions.createHooks(root, entry)
 				reassertTicks = 5
 			elseif becameHidden then
 				clearOpenPosition(panel, root)
+				if not panel.skipOnHide and db.positionPersistence == "close" and usesNativePlacement(root, panel) then
+					restoreNativePanelLayout(root)
+				end
 				if not panel.skipOnHide
 					and (db.positionPersistence or "reset") == "close"
 					and panelIsActive(panel)
@@ -1318,6 +1440,7 @@ function M.functions.createHooks(root, entry)
 		if not panel.skipOnHide then
 			root:HookScript("OnHide", function(self)
 				clearOpenPosition(panel, self)
+				if db.positionPersistence == "close" and usesNativePlacement(self, panel) then restoreNativePanelLayout(self) end
 				if (db.positionPersistence or "reset") ~= "close" then return end
 				if not panelIsActive(panel) then return end
 				if c.dragging or c.applyingLayout then return end
@@ -1352,6 +1475,7 @@ function M.functions.createHooks(root, entry)
 			end
 		end
 		if not on then
+			if usesNativePlacement(root, panel) then restoreNativePanelLayout(root) end
 			M.variables.scaleUnderMouse[root] = nil
 			for surf in pairs(partners) do M.variables.scaleUnderMouse[surf] = nil end
 			if c.stripOnRoot then M.variables.scaleUnderMouse[c.stripOnRoot] = nil end
@@ -1436,6 +1560,11 @@ function M.functions.ClearSessionPositions()
 	if sp then wipe(sp) end
 	local op = M.variables.openPositions
 	if op then wipe(op) end
+	if db and db.positionPersistence ~= "reset" then
+		for frame, c in pairs(rootContext) do
+			if c.nativePanelLayout then restoreNativePanelLayout(frame) end
+		end
+	end
 end
 
 function M.functions.InitRegistry()
@@ -1473,6 +1602,9 @@ local function onAddonLoaded(name)
 end
 
 local function onRegenEnabled()
+	for frame, c in pairs(rootContext) do
+		if c.pendingNativeRestore then restoreNativePanelLayout(frame) end
+	end
 	for f, panel in pairs(M.variables.combatQueue) do
 		M.variables.combatQueue[f] = nil
 		if f then M.functions.createHooks(f, panel) end

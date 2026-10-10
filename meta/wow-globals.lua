@@ -468,7 +468,6 @@ ITEM_LEVEL = nil ---@type any
 ITEM_QUALITY_COLORS = nil ---@type any
 ITEM_SOCKETING = nil ---@type any
 ITEM_UPGRADE_FRAME_CURRENT_UPGRADE_FORMAT_STRING = nil ---@type any
-InCombatLockdown = nil ---@type any
 InspectBackSlot = nil ---@type any
 InspectChestSlot = nil ---@type any
 InspectFeetSlot = nil ---@type any

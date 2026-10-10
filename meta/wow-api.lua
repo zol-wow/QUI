@@ -336,6 +336,11 @@ function C_ActionBar.IsInterruptAction(slotID, ...) end
 ---@param ... any
 ---@return boolean isItemAction
 function C_ActionBar.IsItemAction(actionID, ...) end
+--- Returns whether the given action button contains a macro with an explicit #showtooltip directive.
+---@param actionID? number
+---@param ... any
+---@return boolean isMacroActionWithShowTooltip
+function C_ActionBar.IsMacroActionWithShowTooltip(actionID, ...) end
 ---@param spellID? any
 ---@param ... any
 ---@return boolean isOnBarOrSpecialBar
@@ -554,6 +559,15 @@ C_AdventureMap = {}
 ---@param ... any
 ---@return any adventureMapTextureKit
 function C_AdventureMap.GetAdventureMapTextureKit(...) end
+---@param ... any
+---@return number numMapInsets
+function C_AdventureMap.GetNumMapInsets(...) end
+---@param ... any
+---@return number numQuestOffers
+function C_AdventureMap.GetNumQuestOffers(...) end
+---@param ... any
+---@return number numZoneChoices
+function C_AdventureMap.GetNumZoneChoices(...) end
 ---@param questID? number
 ---@param ... any
 ---@return any info
@@ -1331,6 +1345,10 @@ function C_AuraContainerUtil.ProcessCustomAuraButtonApplicationBarOptions(option
 ---@param ... any
 ---@return any result
 function C_AuraContainerUtil.ProcessCustomAuraButtonApplicationCountOptions(options, ...) end
+---@param options? any
+---@param ... any
+---@return any result
+function C_AuraContainerUtil.ProcessCustomAuraButtonCasterNameOptions(options, ...) end
 ---@param options? any
 ---@param ... any
 ---@return any result
@@ -2728,9 +2746,10 @@ function C_CinematicList.GetUICinematicList(...) end
 
 C_ClassColor = {}
 ---@param className? string
+---@param tintColor? number
 ---@param ... any
 ---@return number classColor
-function C_ClassColor.GetClassColor(className, ...) end
+function C_ClassColor.GetClassColor(className, tintColor, ...) end
 
 C_ClassTalents = {}
 --- Returns true only if the player has staged changes and can commit their talents in their current state.
@@ -8139,6 +8158,163 @@ C_InterfaceFileManifest = {}
 ---@return table images
 function C_InterfaceFileManifest.GetInterfaceArtFiles(...) end
 
+C_Intl = {}
+--- Compares two UTF-8 strings using the options specified on a collator.
+---@param left? string
+---@param right? string
+---@param strength? any
+---@param ... any
+---@return number result
+function C_Intl.CompareStrings(left, right, strength, ...) end
+--- Creates a locale context object for locale-scoped internationalization operations.
+---@param locale? string
+---@param ... any
+---@return any context
+function C_Intl.CreateLocaleContext(locale, ...) end
+--- Opens a break iterator for locating text boundaries in a specified locale.
+---@param text? string
+---@param breakType? any
+---@param ... any
+---@return table byteOffsets
+function C_Intl.FindBreaks(text, breakType, ...) end
+--- Creates a string search iterator using a collator and returns every match position.
+---@param text? string
+---@param pattern? string
+---@param strength? any
+---@param ... any
+---@return table byteOffsets
+function C_Intl.FindStringMatches(text, pattern, strength, ...) end
+--- Case-folds the characters in a string; case-folding is locale-independent and not context-sensitive.
+---@param text? string
+---@param ... any
+---@return string result
+function C_Intl.FoldCase(text, ...) end
+--- Formats a double as a localized currency value using the provided ISO 4217 currency code.
+---@param number? number
+---@param currencyCode? string
+---@param ... any
+---@return string result
+function C_Intl.FormatCurrency(number, currencyCode, ...) end
+--- Formats Unix time as localized date text using locale date patterns, symbols, style, and optional time zone.
+---@param unixTimeSeconds? number
+---@param style? any
+---@param timeZone? string
+---@param ... any
+---@return string result
+function C_Intl.FormatDate(unixTimeSeconds, style, timeZone, ...) end
+--- Formats Unix time as localized date and time text using locale patterns, symbols, styles, and optional time zone.
+---@param unixTimeSeconds? number
+---@param dateStyle? any
+---@param timeStyle? any
+---@param timeZone? string
+---@param ... any
+---@return string result
+function C_Intl.FormatDateTime(unixTimeSeconds, dateStyle, timeStyle, timeZone, ...) end
+--- Formats a double with locale number formatting using locale symbols, grouping, and the selected non-currency style.
+---@param number? number
+---@param style? any
+---@param ... any
+---@return string result
+function C_Intl.FormatNumber(number, style, ...) end
+--- Formats Unix time as localized time text using locale time patterns, symbols, style, and optional time zone.
+---@param unixTimeSeconds? number
+---@param style? any
+---@param timeZone? string
+---@param ... any
+---@return string result
+function C_Intl.FormatTime(unixTimeSeconds, style, timeZone, ...) end
+--- Returns Unicode property values for the first code point in a string.
+---@param text? string
+---@param ... any
+---@return any result
+function C_Intl.GetCharacterProperties(text, ...) end
+--- Returns the number of fraction digits that should be displayed for the given currency.
+---@param currencyCode? string
+---@param ... any
+---@return number result
+function C_Intl.GetCurrencyFractionDigits(currencyCode, ...) end
+--- Returns the display name for a currency in the given locale.
+---@param currencyCode? string
+---@param nameStyle? any
+---@param ... any
+---@return string result
+function C_Intl.GetCurrencyName(currencyCode, nameStyle, ...) end
+--- Gets the current locale used by C_Intl.
+---@param ... any
+---@return string result
+function C_Intl.GetCurrentLocale(...) end
+--- Gets a display name suitable for the specified locale.
+---@param displayLocale? string
+---@param ... any
+---@return string result
+function C_Intl.GetDisplayName(displayLocale, ...) end
+--- Transforms a string into a collation sort key.
+---@param text? string
+---@param strength? any
+---@param ... any
+---@return string sortKey
+function C_Intl.GetSortKey(text, strength, ...) end
+--- Tests if the string is normalized according to the specified normalization form.
+---@param text? string
+---@param form? any
+---@param ... any
+---@return boolean isNormalized
+function C_Intl.IsNormalized(text, form, ...) end
+--- Counts character break boundaries in UTF-8 text.
+---@param text? string
+---@param ... any
+---@return number result
+function C_Intl.Length(text, ...) end
+--- Writes the normalized form of the source string to the destination string.
+---@param text? string
+---@param form? any
+---@param ... any
+---@return string result
+function C_Intl.Normalize(text, form, ...) end
+--- Parses an entire localized currency string into a double amount and ISO 4217 currency code.
+---@param text? string
+---@param ... any
+---@return any result
+function C_Intl.ParseCurrency(text, ...) end
+--- Parses an entire localized number string into a double using the selected non-currency number formatter.
+---@param text? string
+---@param style? any
+---@param ... any
+---@return number result
+function C_Intl.ParseNumber(text, style, ...) end
+--- Returns the keyword of the first plural rule that applies to a number.
+---@param number? number
+---@param pluralType? any
+---@param ... any
+---@return string result
+function C_Intl.SelectPlural(number, pluralType, ...) end
+--- Lowercases the characters in a string; casing is locale-dependent and context-sensitive.
+---@param text? string
+---@param ... any
+---@return string result
+function C_Intl.ToLower(text, ...) end
+--- Titlecases a string using titlecase positions determined by the default Unicode algorithm.
+---@param text? string
+---@param ... any
+---@return string result
+function C_Intl.ToTitle(text, ...) end
+--- Uppercases the characters in a string; casing is locale-dependent and context-sensitive.
+---@param text? string
+---@param ... any
+---@return string result
+function C_Intl.ToUpper(text, ...) end
+--- Applies a locale transform to the current locale and returns the transformed locale string.
+---@param transform? any
+---@param ... any
+---@return string result
+function C_Intl.TransformLocale(transform, ...) end
+--- Opens a system transliterator by ID and transliterates the text in place.
+---@param text? string
+---@param transliteratorID? string
+---@param ... any
+---@return string result
+function C_Intl.Transliterate(text, transliteratorID, ...) end
+
 C_InvasionInfo = {}
 --- Returns true if invasions are active in the same physical area as the player.
 ---@param ... any
@@ -8917,6 +9093,9 @@ function C_LFGInfo.DoesActivePartyMeetPremadeLaunchCount(lfgDungeonID, ...) end
 ---@param ... any
 ---@return boolean doesCrossFactionQueueRequireFullPremade
 function C_LFGInfo.DoesCrossFactionQueueRequireFullPremade(lfgDungeonID, ...) end
+---@param ... any
+---@return string name
+function C_LFGInfo.GetActiveLFGDungeonName(...) end
 ---@param category? number
 ---@param ... any
 ---@return table lfgDungeonIDs
@@ -11549,7 +11728,14 @@ function C_PvP.GetRandomEpicBGRewards(...) end
 ---@return table itemRewards
 ---@return table currencyRewards
 ---@return any roleShortageBonus
-function C_PvP.GetRandomTrainingGroundRewards(...) end
+function C_PvP.GetRandomTrainingGroundArenaRewards(...) end
+---@param ... any
+---@return number honor
+---@return number experience
+---@return table itemRewards
+---@return table currencyRewards
+---@return any roleShortageBonus
+function C_PvP.GetRandomTrainingGroundBGRewards(...) end
 ---@param ... any
 ---@return number honor
 ---@return number experience
@@ -11636,8 +11822,11 @@ function C_PvP.HasArenaSkirmishWinToday(...) end
 ---@return boolean hasStarted
 function C_PvP.HasMatchStarted(...) end
 ---@param ... any
----@return boolean hasRandomTrainingGroundWinToday
-function C_PvP.HasRandomTrainingGroundWinToday(...) end
+---@return boolean hasRandomTrainingGroundArenaWinToday
+function C_PvP.HasRandomTrainingGroundArenaWinToday(...) end
+---@param ... any
+---@return boolean hasRandomTrainingGroundBGWinToday
+function C_PvP.HasRandomTrainingGroundBGWinToday(...) end
 ---@param ... any
 ---@return boolean isActiveBattlefield
 function C_PvP.IsActiveBattlefield(...) end
@@ -11705,6 +11894,14 @@ function C_PvP.IsSoloShuffle(...) end
 ---@param ... any
 ---@return boolean result
 function C_PvP.IsSubZonePVPPOI(...) end
+---@param lfgDungeonsID? number
+---@param ... any
+---@return boolean isTrainingGroundsArena
+function C_PvP.IsTrainingGroundsArena(lfgDungeonsID, ...) end
+---@param lfgDungeonsID? number
+---@param ... any
+---@return boolean isTrainingGroundsBG
+function C_PvP.IsTrainingGroundsBG(lfgDungeonsID, ...) end
 ---@param ... any
 ---@return boolean warModeActive
 function C_PvP.IsWarModeActive(...) end
@@ -11723,7 +11920,7 @@ function C_PvP.JoinBrawl(isSpecialBrawl, ...) end
 ---@param ... any
 function C_PvP.JoinRandomTrainingGroundArena(...) end
 ---@param ... any
-function C_PvP.JoinRandomTrainingGroundBattleground(...) end
+function C_PvP.JoinRandomTrainingGroundBG(...) end
 ---@param ... any
 function C_PvP.JoinRatedBGBlitz(...) end
 ---@param trainingGroundID? number
@@ -12604,9 +12801,6 @@ function C_RestrictedActions.CheckAllowProtectedFunctions(object, silent, ...) e
 ---@param ... any
 ---@return any state
 function C_RestrictedActions.GetAddOnRestrictionState(type, ...) end
----@param ... any
----@return boolean inCombatLockdown
-function C_RestrictedActions.InCombatLockdown(...) end
 --- Returns true if an addon restriction type is in an active state. Will always return false during dispatch of ADDON_RESTRICTION_STATE_CHANGED.
 ---@param type? any
 ---@param ... any
@@ -12950,6 +13144,8 @@ function C_SocialQueue.IsSystemSupported(...) end
 
 C_SocialRestrictions = {}
 ---@param ... any
+function C_SocialRestrictions.AcknowledgeAgeVerificationRestriction(...) end
+---@param ... any
 function C_SocialRestrictions.AcknowledgeRegionalChatDisabled(...) end
 --- Returns true if the player meets all conditions that allow them to receive chat messages.
 ---@param ... any
@@ -12959,6 +13155,14 @@ function C_SocialRestrictions.CanReceiveChat(...) end
 ---@param ... any
 ---@return boolean canSendChat
 function C_SocialRestrictions.CanSendChat(...) end
+--- Returns true if the account is restricted by the Age Verification feature.
+---@param ... any
+---@return boolean restricted
+function C_SocialRestrictions.IsAgeVerificationRestricted(...) end
+--- Returns true if the Age Verification restriction is because the account belongs to a minor, as opposed to an adult who has not yet verified their age.
+---@param ... any
+---@return boolean isMinor
+function C_SocialRestrictions.IsAgeVerificationRestrictedMinor(...) end
 ---@param ... any
 ---@return boolean disabled
 function C_SocialRestrictions.IsChatDisabled(...) end
@@ -13977,6 +14181,10 @@ function C_StorePublic.EventStoreUISetShown(newShown, contextKey, ...) end
 function C_StorePublic.IsEnabled(...) end
 
 C_StringUtil = {}
+---@param locale? any
+---@param ... any
+---@return table breakpoints
+function C_StringUtil.GetDefaultAbbreviationBreakpoints(locale, ...) end
 --- Creates a numeric formatter that converts numbers to abbreviated strings, eg. 123456 -> '123k'.
 ---@param ... any
 ---@return any formatter
@@ -14036,12 +14244,6 @@ function C_StringUtil.StripHyperlinks(text, maintainColor, maintainBrackets, str
 ---@param ... any
 ---@return any stripped
 function C_StringUtil.StripTextureMarkupForLooseFiles(text, ...) end
---- Returns a string with all bytes in the 'characters' set removed from the start and end.
----@param str? any
----@param characters? any
----@param ... any
----@return any trimmed
-function C_StringUtil.trim(str, characters, ...) end
 --- Formats the given number to a string as an integer (rounding down). If the integer is zero, returns an empty string.
 ---@param number? number
 ---@param ... any
@@ -14221,34 +14423,6 @@ function C_TTSSettings.SetVoiceOptionName(voiceType, voiceName, ...) end
 ---@return boolean overrideMessage
 function C_TTSSettings.ShouldOverrideMessage(language, messageText, ...) end
 
-C_TableUtil = {}
----@param table? any
----@param ... any
----@return number numTableNodes
----@return number numArrayNodes
----@return number maxArrayIndex
-function C_TableUtil.count(table, ...) end
----@param arraySizeHint? number
----@param nodeSizeHint? number
----@param ... any
----@return any table
-function C_TableUtil.create(arraySizeHint, nodeSizeHint, ...) end
---- Given two tables, finds the first index in the range (1, #t1) and (1, #t2) where two elements compare as inequal, or nil if no such elements are found.
----@param t1? any
----@param t2? any
----@param ... any
----@return number index
-function C_TableUtil.FindIndexedMismatch(t1, t2, ...) end
---- Marks a supplied table as frozen, preventing any modifications to its contents, or replacement of its metatable. If the table has a pre-existing metatable with a '__newindex' table or function, assignments will pass through without raising errors. For tainted code, only tables created by the same addon making this function call are permitted to be frozen.
----@param table? any
----@param ... any
-function C_TableUtil.freeze(table, ...) end
---- Returns true if a table has been marked as frozen.
----@param table? any
----@param ... any
----@return boolean frozen
-function C_TableUtil.isfrozen(table, ...) end
-
 C_TaskQuest = {}
 ---@param uiMapID? number
 ---@param ... any
@@ -14377,6 +14551,11 @@ function C_Timer.After(seconds, callback, ...) end
 ---@param ... any
 ---@return any cbObject
 function C_Timer.NewTicker(seconds, callback, iterations, ...) end
+--- Creates a new timed signal map that invokes the supplied callback with each key as it becomes due.
+---@param callback? any
+---@param ... any
+---@return any signalMap
+function C_Timer.NewTimedSignalMap(callback, ...) end
 ---@param seconds? number
 ---@param callback? any
 ---@param ... any
@@ -16440,6 +16619,7 @@ function C_UIWidgetManager.SetProcessingUnitGuid(unit, ...) end
 function C_UIWidgetManager.UnregisterUnitForWidgetUpdates(unitToken, isGuid, ...) end
 
 C_UnitAuras = {}
+--- Registers a sound for an aura event. The sound is stopped after five seconds of playback. The throttleSeconds value must be between 0 and 5 seconds, inclusive.
 ---@param trigger? any
 ---@param sound? any
 ---@param ... any
@@ -16489,6 +16669,11 @@ function C_UnitAuras.GetAuraApplicationDisplayCount(auraInstanceUnit, auraInstan
 ---@param ... any
 ---@return number newDuration
 function C_UnitAuras.GetAuraBaseDuration(auraInstanceUnit, auraInstanceID, spellID, ...) end
+---@param auraInstanceUnit? any
+---@param auraInstanceID? number
+---@param ... any
+---@return string casterGUID
+function C_UnitAuras.GetAuraCasterGUID(auraInstanceUnit, auraInstanceID, ...) end
 ---@param unit? any
 ---@param auraInstanceID? number
 ---@param ... any
@@ -16557,6 +16742,13 @@ function C_UnitAuras.GetHiddenGroupBuffs(...) end
 ---@param ... any
 ---@return any aura
 function C_UnitAuras.GetPlayerAuraBySpellID(spellID, ...) end
+--- Returns the client-predicted amount of time that a new spellcast of the same spell would carry over to the new application of that aura. Takes an optional spellID to use as the new duration if that cannot be derived from the aura, if that value isn't supplied the aura's spellID will be used
+---@param auraInstanceUnit? any
+---@param auraInstanceID? number
+---@param spellID? any
+---@param ... any
+---@return number newDuration
+function C_UnitAuras.GetRefreshCarryOverDuration(auraInstanceUnit, auraInstanceID, spellID, ...) end
 --- Returns the client-predicted new duration of this aura if it were cast again right now. Takes an optional spellID to use as the new duration if that cannot be derived from the aura, if that value isn't supplied the aura's spellID will be used
 ---@param auraInstanceUnit? any
 ---@param auraInstanceID? number
@@ -16980,6 +17172,12 @@ function C_WarbandScene.SearchWarbandSceneEntries(searchParams, ...) end
 ---@param ... any
 function C_WarbandScene.SetFavorite(warbandSceneID, favorite, ...) end
 
+C_Weather = {}
+--- C_Weather the outlook is favorable.
+---@param ... any
+---@return any info
+function C_Weather.GetCurrentWeather(...) end
+
 C_WeeklyRewards = {}
 ---@param ... any
 ---@return boolean isCurrentPeriod
@@ -17131,6 +17329,183 @@ function C_ZoneAbility.GetActiveAbilities(...) end
 ---@param ... any
 ---@return number zoneAbilityIconID
 function C_ZoneAbility.GetZoneAbilityIcon(zoneAbilitySpellID, ...) end
+
+math = {}
+--- Clamps a value to the inclusive range defined by the minimum and maximum values.
+---@param value? number
+---@param minimum? number
+---@param maximum? number
+---@param ... any
+---@return number clampedValue
+function math.clamp(value, minimum, maximum, ...) end
+--- Returns whether a value is finite.
+---@param value? number
+---@param ... any
+---@return boolean finite
+function math.isfinite(value, ...) end
+--- Returns whether a value is positive or negative infinity.
+---@param value? number
+---@param ... any
+---@return boolean infinite
+function math.isinf(value, ...) end
+--- Returns whether a value is NaN.
+---@param value? number
+---@param ... any
+---@return boolean nan
+function math.isnan(value, ...) end
+--- Linearly interpolates between two values.
+---@param startValue? number
+---@param endValue? number
+---@param amount? number
+---@param ... any
+---@return number interpolatedValue
+function math.lerp(startValue, endValue, amount, ...) end
+--- Returns the relative position of a value within a range, where the minimum maps to 0 and the maximum maps to 1.
+---@param value? number
+---@param minimum? number
+---@param maximum? number
+---@param ... any
+---@return number normalizedValue
+function math.normalize(value, minimum, maximum, ...) end
+--- Maps a value from one range to the corresponding position in another range.
+---@param value? number
+---@param sourceMinimum? number
+---@param sourceMaximum? number
+---@param destinationMinimum? number
+---@param destinationMaximum? number
+---@param ... any
+---@return number remappedValue
+function math.remap(value, sourceMinimum, sourceMaximum, destinationMinimum, destinationMaximum, ...) end
+--- Rounds a value to the specified number of decimal places, with halfway values rounded away from zero.
+---@param value? number
+---@param decimalPlaces? number
+---@param ... any
+---@return number roundedValue
+function math.round(value, decimalPlaces, ...) end
+--- Clamps a value to the inclusive range [0, 1].
+---@param value? number
+---@param ... any
+---@return number saturatedValue
+function math.saturate(value, ...) end
+--- Returns -1 for negative values, 0 for zero, and 1 for positive values.
+---@param value? number
+---@param ... any
+---@return number sign
+function math.sign(value, ...) end
+--- Wraps a value into the half-open range [minimum, maximum).
+---@param value? number
+---@param minimum? number
+---@param maximum? number
+---@param ... any
+---@return number wrapped
+function math.wrap(value, minimum, maximum, ...) end
+
+string = {}
+--- Returns a string with all bytes in the specified character set removed from the start.
+---@param str? any
+---@param characters? any
+---@param ... any
+---@return any trimmed
+function string.ltrim(str, characters, ...) end
+--- Returns a string with all bytes in the specified character set removed from the end.
+---@param str? any
+---@param characters? any
+---@param ... any
+---@return any trimmed
+function string.rtrim(str, characters, ...) end
+--- Returns true if a string contains the specified literal substring.
+---@param str? any
+---@param substring? any
+---@param ... any
+---@return boolean contains
+function string.contains(str, substring, ...) end
+--- Returns true if a string ends with the specified suffix.
+---@param str? any
+---@param suffix? any
+---@param ... any
+---@return boolean endsWith
+function string.endswith(str, suffix, ...) end
+--- Returns true if a string starts with the specified prefix.
+---@param str? any
+---@param prefix? any
+---@param ... any
+---@return boolean startsWith
+function string.startswith(str, prefix, ...) end
+--- Returns a string with all bytes in the specified character set removed from both ends.
+---@param str? any
+---@param characters? any
+---@param ... any
+---@return any trimmed
+function string.trim(str, characters, ...) end
+
+table = {}
+--- Returns true if any value in the table compares equal to the specified value.
+---@param table? table
+---@param value? any
+---@param ... any
+---@return boolean containsValue
+function table.contains(table, value, ...) end
+--- Returns the number of entries in the table.
+---@param table? table
+---@param ... any
+---@return number count
+function table.count(table, ...) end
+--- Creates an empty table with storage preallocated for the specified number of array and non-array entries.
+---@param arraySizeHint? number
+---@param nodeSizeHint? number
+---@param ... any
+---@return table table
+function table.create(arraySizeHint, nodeSizeHint, ...) end
+--- Returns the first integer index whose value compares equal to the specified value, searching consecutively from index 1 until the first nil value.
+---@param table? table
+---@param value? any
+---@param ... any
+---@return number index
+function table.indexof(table, value, ...) end
+--- Marks a supplied table as frozen, preventing any modifications to its contents, or replacement of its metatable. If the table has a pre-existing metatable with a '__newindex' table or function, assignments will pass through without raising errors. For tainted code, only tables created by the same addon making this function call are permitted to be frozen.
+---@param table? table
+---@param ... any
+---@return table frozen
+function table.freeze(table, ...) end
+--- Returns an array containing the keys of the specified table.
+---@param table? table
+---@param ... any
+---@return any keys
+function table.keys(table, ...) end
+--- Returns detailed information about the number and distribution of entries in the table.
+---@param table? table
+---@param ... any
+---@return number numEntries
+---@return number numPositiveIntegerKeys
+---@return number maxPositiveIntegerKey
+function table.getcountinfo(table, ...) end
+--- Returns an array containing the values of the specified table.
+---@param table? table
+---@param ... any
+---@return any values
+function table.values(table, ...) end
+--- Returns true if the table contains no entries.
+---@param table? table
+---@param ... any
+---@return boolean empty
+function table.isempty(table, ...) end
+--- Returns true if a table has been marked as frozen.
+---@param table? table
+---@param ... any
+---@return boolean frozen
+function table.isfrozen(table, ...) end
+--- Removes the value at the specified integer index by replacing it with the last value in the array and shortening the array by one element. The order of values in the array is not preserved.
+---@param table? table
+---@param index? number
+---@param ... any
+---@return any value
+function table.removeunordered(table, index, ...) end
+--- Removes all values equal to the specified value from the array portion of a table.
+---@param table? table
+---@param value? any
+---@param ... any
+---@return number removedCount
+function table.removevalue(table, value, ...) end
 
 -- Global (non-namespaced) functions
 ---@param number? number
@@ -17342,6 +17717,10 @@ function CreateAbbreviateConfig(data, ...) end
 ---@param ... any
 ---@return any fontFamily
 function CreateFontFamily(name, members, ...) end
+---@param options? any
+---@param ... any
+---@return any frame
+function CreateFrameWithOptions(options, ...) end
 ---@param mixins? any
 ---@param ... any
 ---@return any object
@@ -17440,6 +17819,11 @@ function GetAreaSpiritHealerTime(...) end
 ---@param ... any
 ---@return string text
 function GetAreaText(...) end
+---@param index? number
+---@param ... any
+---@return number specializationID
+---@return number gender
+function GetArenaOpponentSpec(index, ...) end
 ---@param stat? number
 ---@param value? number
 ---@param ... any
@@ -17574,10 +17958,6 @@ function GetCursorMoney(...) end
 ---@return number posX
 ---@return number posY
 function GetCursorPosition(...) end
----@param locale? any
----@param ... any
----@return table breakpoints
-function GetDefaultAbbreviationBreakpoints(locale, ...) end
 ---@param ... any
 ---@return number scale
 function GetDefaultScale(...) end
@@ -17904,6 +18284,7 @@ function GetPlayerFacing(...) end
 ---@return number sex
 ---@return string name
 ---@return string realmName
+---@return number level
 function GetPlayerInfoByGUID(guid, ...) end
 ---@param ... any
 ---@return number basePowerRegen
@@ -17981,6 +18362,9 @@ function GetScreenHeight(...) end
 ---@param ... any
 ---@return number width
 function GetScreenWidth(...) end
+---@param ... any
+---@return any limits
+function GetScriptBucketThrottleLimits(...) end
 ---@param ... any
 ---@return number result
 function GetScriptCPUUsage(...) end
@@ -18260,6 +18644,9 @@ function HasSPEffectsAttackPower(...) end
 ---@param ... any
 ---@return boolean inCinematic
 function InCinematic(...) end
+---@param ... any
+---@return boolean inCombatLockdown
+function InCombatLockdown(...) end
 ---@param ... any
 ---@return boolean result
 function InitiateRolePoll(...) end
@@ -18973,7 +19360,7 @@ function UnitCastingDuration(unit, ...) end
 ---@return string castID
 ---@return boolean notInterruptible
 ---@return number castingSpellID
----@return number castBarID
+---@return any castBarID
 ---@return number delayTimeMs
 function UnitCastingInfo(unit, ...) end
 ---@param unit? any
@@ -18992,7 +19379,7 @@ function UnitChannelDuration(unit, ...) end
 ---@return number spellID
 ---@return boolean isEmpowered
 ---@return number numEmpowerStages
----@return number castBarID
+---@return any castBarID
 function UnitChannelInfo(unit, ...) end
 ---@param unit? any
 ---@param ... any

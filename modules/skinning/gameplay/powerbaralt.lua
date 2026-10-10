@@ -128,7 +128,7 @@ local function UpdateBar(self)
 end
 
 local function OnEvent(self, event, arg1, arg2)
-    if event == "UNIT_POWER_UPDATE" then
+    if event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" then
         if arg1 == "player" and arg2 == "ALTERNATE" then
             UpdateBar(self)
         end
@@ -142,15 +142,17 @@ local function OnEvent(self, event, arg1, arg2)
 end
 
 local function CreateQUIAltPowerBar()
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetModuleSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "powerBarAlt")
 
     local bar = CreateFrame("StatusBar", "QUI_AltPowerBar", UIParent)
     bar:SetSize(BAR_WIDTH, BAR_HEIGHT)
 
     bar:SetPoint("TOP", UIParent, "TOP", 0, -100)
 
-    bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
-    bar:SetStatusBarColor(sr, sg, sb)
+    ns.Helpers.ApplyBarStyle(bar, "Interface\\Buttons\\WHITE8x8")
+    local ar, ag, ab = GetModuleSkinColors()
+    bar:SetStatusBarColor(ar, ag, ab)
+    SkinBase.RoundBarTexture(bar, bar:GetStatusBarTexture())
     bar:SetMinMaxValues(0, 100)
     bar:SetValue(0)
     bar:Hide()
@@ -165,7 +167,7 @@ local function CreateQUIAltPowerBar()
         safeLevel = 0
     end
     bar.backdrop:SetFrameLevel(safeLevel)
-    SkinBase.ApplyPixelBackdrop(bar.backdrop, 1, true, true)
+    SkinBase.ApplyChromeBackdrop(bar.backdrop, { radius = 3, borderPixels = 1, withBackground = true })
     Helpers.SetFrameBackdropColor(bar.backdrop, bgr, bgg, bgb, bga)
     Helpers.SetFrameBackdropBorderColor(bar.backdrop, sr, sg, sb, sa)
 
@@ -183,6 +185,7 @@ local function CreateQUIAltPowerBar()
     bar:SetScript("OnLeave", OnLeave)
 
     bar:RegisterUnitEvent("UNIT_POWER_UPDATE", "player")
+    bar:RegisterUnitEvent("UNIT_MAXPOWER", "player")
     bar:RegisterUnitEvent("UNIT_POWER_BAR_SHOW", "player")
     bar:RegisterUnitEvent("UNIT_POWER_BAR_HIDE", "player")
     bar:RegisterEvent("PLAYER_ENTERING_WORLD")
@@ -248,17 +251,38 @@ local function CarryPowerBarWidgetContainer()
     widgetCarryInstalled = true
 end
 
+local function RefreshNativeBuffTimerSkins()
+    if not GetGeneralSettings().skinPowerBarAlt then return end
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "powerBarAlt")
+    local index = 1
+    while _G["BuffTimer" .. index] do
+        local timer = _G["BuffTimer" .. index]
+        for _, key in ipairs({ "frame", "background", "BG", "BGL", "BGR", "artTop", "artBottom" }) do
+            if timer[key] then timer[key]:SetAlpha(0) end
+        end
+        SkinBase.ApplyPixelBackdrop(timer, 1, true, true)
+        Helpers.SetFrameBackdropColor(timer, bgr, bgg, bgb, bga)
+        Helpers.SetFrameBackdropBorderColor(timer, sr, sg, sb, sa)
+        if timer.statusFrame and timer.statusFrame.text then
+            SkinBase.SkinFontString(timer.statusFrame.text, { fontOnly = true })
+        end
+        index = index + 1
+    end
+end
+
 local function RefreshPowerBarAltColors()
     if not QUIAltPowerBar then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetModuleSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "powerBarAlt")
 
-    QUIAltPowerBar:SetStatusBarColor(sr, sg, sb)
+    local ar, ag, ab = GetModuleSkinColors()
+    QUIAltPowerBar:SetStatusBarColor(ar, ag, ab)
     Helpers.SetFrameBackdropColor(QUIAltPowerBar.backdrop, bgr, bgg, bgb, bga)
     Helpers.SetFrameBackdropBorderColor(QUIAltPowerBar.backdrop, sr, sg, sb, sa)
 
     SkinBase.SetFrameData(QUIAltPowerBar, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(QUIAltPowerBar, "bgColor", { bgr, bgg, bgb, bga })
+    RefreshNativeBuffTimerSkins()
 end
 
 _G.QUI_RefreshPowerBarAltColors = RefreshPowerBarAltColors
@@ -282,6 +306,13 @@ local function Initialize()
     HideBlizzardBar()
 
     QUIAltPowerBar = CreateQUIAltPowerBar()
+
+    if _G.PlayerBuffTimerManager_UpdateTimers then
+        hooksecurefunc("PlayerBuffTimerManager_UpdateTimers", function()
+            RunAfterFirstFrame(RefreshNativeBuffTimerSkins, 0)
+        end)
+        RefreshNativeBuffTimerSkins()
+    end
 
     CarryPowerBarWidgetContainer()
 

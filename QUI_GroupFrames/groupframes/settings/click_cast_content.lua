@@ -1,5 +1,7 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
-local FoldUTF8 = ns.Helpers.FoldUTF8
+local FoldSearchUTF8 = ns.Helpers.FoldSearchUTF8
 local function CJKFont(fs, p, s, f)
     if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
         ns.Helpers.ApplyFontWithFallback(fs, p, s, f)
@@ -328,6 +330,10 @@ end
 local function BuildClickCastGeneral(L, cc, refreshClickCast, state)
     L.headerAt(ns.L["Settings"])
     L.intro(ns.L["Note: If Clique addon is loaded, QUI click-casting is disabled by default to avoid conflicts."])
+
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then
+        L.intro(ns.L["Forever supports mouse buttons with modifiers. Hover keyboard and scroll-wheel bindings are unavailable; saved bindings are retained."])
+    end
 
     local s = L.sectionAt()
     local enableW = GUI:CreateFormCheckbox(s.frame, nil, "enabled", cc, refreshClickCast,
@@ -785,14 +791,14 @@ local function EnsureBrowsePopup()
         browseRowIndex = 0
 
         local spells = EnsureSpellCache()
-        local lower = filter and filter ~= "" and FoldUTF8(filter) or nil
+        local lower = filter and filter ~= "" and FoldSearchUTF8(filter) or nil
         local by = 0
         local currentTab = nil
 
         local ignoreCollapse = lower ~= nil
 
         for _, entry in ipairs(spells) do
-            if not lower or FoldUTF8(entry.name):find(lower, 1, true) or (entry.baseName and FoldUTF8(entry.baseName):find(lower, 1, true)) then
+            if not lower or FoldSearchUTF8(entry.name):find(lower, 1, true) or (entry.baseName and FoldSearchUTF8(entry.baseName):find(lower, 1, true)) then
                 if entry.tab ~= currentTab then
                     currentTab = entry.tab
                     local isCollapsed = not ignoreCollapse and not expandedTabs[currentTab]
@@ -888,6 +894,11 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
         { value = "ScrollUp",     text = ns.L["Scroll Up"] },
         { value = "ScrollDown",   text = ns.L["Scroll Down"] },
     }
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then
+        table.remove(BINDING_TYPE_OPTIONS, 2)
+        table.remove(BUTTON_OPTIONS, 7)
+        table.remove(BUTTON_OPTIONS, 6)
+    end
     local MOD_OPTIONS = {
         { value = "",              text = ns.L["None"] },
         { value = "shift",         text = ns.L["Shift"] },
@@ -1421,10 +1432,10 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
     local function ShowAutocomplete(searchText)
         if not searchText or #searchText < 2 then acMenu:Hide() return end
         local spells = EnsureSpellCache()
-        local lower = FoldUTF8(searchText)
+        local lower = FoldSearchUTF8(searchText)
         local matches = {}
         for _, entry in ipairs(spells) do
-            if FoldUTF8(entry.name):find(lower, 1, true) or (entry.baseName and FoldUTF8(entry.baseName):find(lower, 1, true)) then
+            if FoldSearchUTF8(entry.name):find(lower, 1, true) or (entry.baseName and FoldSearchUTF8(entry.baseName):find(lower, 1, true)) then
                 matches[#matches + 1] = entry
                 if #matches >= MAX_AC_ROWS then break end
             end
@@ -1930,7 +1941,7 @@ if Registry and Schema
         id = "clickCastPage",
         moverKey = "clickCast",
         category = "global",
-        nav = { tileId = "global", subPageIndex = 5 },
+        nav = { tileId = "global", subPageIndex = 6 },
         sections = {
             Schema.Section({
                 id = "settings",

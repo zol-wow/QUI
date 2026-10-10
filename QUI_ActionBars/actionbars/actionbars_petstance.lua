@@ -69,6 +69,10 @@ function ActionBarsOwned.UpdatePetButton(btn)
     end
     local cooldown = btn.cooldown
     if cooldown then
+        if Helpers.CanMutateCooldown and not Helpers.CanMutateCooldown(cooldown) then
+            ActionBarsOwned.pendingCooldownRefresh = true
+            return
+        end
         local painted = false
         if type(spellID) ~= "nil"
             and cooldown.SetCooldownFromDurationObject
@@ -121,6 +125,10 @@ function ActionBarsOwned.UpdateStanceButton(btn)
     end
     local cooldown = btn.cooldown
     if cooldown then
+        if Helpers.CanMutateCooldown and not Helpers.CanMutateCooldown(cooldown) then
+            ActionBarsOwned.pendingCooldownRefresh = true
+            return
+        end
         local painted = false
         if type(spellID) ~= "nil"
             and cooldown.SetCooldownFromDurationObject

@@ -16,10 +16,12 @@ local FALLBACK_DELAY = 0.5
 
 local PREFIX = Bags.OpsShared.PREFIX
 
+local CHAR_FIRST, CHAR_LAST = Storage.ScanBank.GetBagRange(Enum.BankType.Character)
+local WB_FIRST, WB_LAST = Storage.ScanBank.GetBagRange(Enum.BankType.Account)
 local SCOPES = {
     bags = { first = 0, last = 5, events = { "BagsChanged" }, label = ns.L["bags"], fallback = 0.5 },
-    characterBank = { first = 6, last = 11, events = { "BankChanged" }, label = ns.L["character bank"], fallback = 1.5 },
-    warbandBank = { first = 12, last = 16, events = { "WarbandChanged" }, label = ns.L["warband bank"], fallback = 1.5 },
+    characterBank = { first = CHAR_FIRST, last = CHAR_LAST, events = { "BankChanged" }, label = ns.L["character bank"], fallback = 1.5 },
+    warbandBank = { first = WB_FIRST, last = WB_LAST, events = { "WarbandChanged" }, label = ns.L["warband bank"], fallback = 1.5 },
 }
 
 local state = nil

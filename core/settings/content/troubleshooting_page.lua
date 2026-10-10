@@ -56,6 +56,7 @@ local function BuildTroubleshootingContent(content)
         end
         if entry.danger then
             GUI:ShowConfirmation({
+                reload        = entry.reload,
                 title         = ns.L["Run %1$s?"]:format(entry.command),
                 message       = ns.L["This will run a destructive diagnostic command."],
                 warningText   = ns.L["This cannot be undone."],
@@ -77,6 +78,9 @@ local function BuildTroubleshootingContent(content)
     for _, entry in ipairs(entries) do
         local btn = GUI:CreateButton(grid, entry.label, 0, BTN_H,
             function() OnDiagClick(entry) end, "ghost")
+        if entry.reload and not entry.danger and QUI.BindReloadButton then
+            QUI:BindReloadButton(btn)
+        end
 
         local natW = btn:GetWidth() or MIN_W
         if natW < MIN_W then natW = MIN_W end
@@ -165,14 +169,7 @@ local function BuildTroubleshootingContent(content)
     panel:SetHeight(320)
 
     local function RecalcContentHeight()
-        C_Timer.After(0, function()
-            if not content:GetParent() then return end
-            local contentTop = content:GetTop() or 0
-            local panelBottom = panel:GetBottom() or 0
-            if contentTop > 0 and panelBottom > 0 then
-                content:SetHeight(contentTop - panelBottom + 20)
-            end
-        end)
+        content:SetHeight(-y + grid:GetHeight() + 18 + outLabel:GetHeight() + 8 + panel:GetHeight() + 20)
     end
     grid:HookScript("OnSizeChanged", RecalcContentHeight)
     RecalcContentHeight()

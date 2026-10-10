@@ -20,8 +20,6 @@ InCombatLockdown = InCombatLockdown
 
 inInitSafeWindow = false
 
-IS_MIDNIGHT = select(4, GetBuildInfo()) >= 120000
-
 TEXTURE_PATH = (ns.Helpers and ns.Helpers.AssetPath or [[Interface\AddOns\QUI\assets\]]) .. [[iconskin\]]
 TEXTURES = {
     normal = TEXTURE_PATH .. "Normal",
@@ -115,6 +113,8 @@ SKINNABLE_BAR_KEYS = {
 
 ActionBarsOwned = {
     initialized = false,
+    restrictedExecutionUnavailable = ns.Client and ns.Client.restrictedExecutionUnavailable or false,
+    useNativeButtons = ns.Client and ns.Client.restrictedExecutionUnavailable or false,
     containers = {},
     nativeButtons = {},
     cachedLayouts = {},
@@ -364,7 +364,7 @@ function FinishBlockedOverrideBarExit()
     if _G.ValidateActionBarTransition then _G.ValidateActionBarTransition() end
 end
 
-if type(_G.BeginActionBarTransition) == "function" then
+if not ActionBarsOwned.restrictedExecutionUnavailable and type(_G.BeginActionBarTransition) == "function" then
     hooksecurefunc("BeginActionBarTransition", function(bar)
         if bar ~= _G.OverrideActionBar then return end
         if not bar.hideOnFinish then return end
@@ -410,48 +410,69 @@ function ReclaimBarButtons(barKey)
     LayoutNativeButtons(barKey)
 end
 
-layoutHandler = CreateFrame("Frame", "QUI_ActionBarLayoutHandler", UIParent, "SecureHandlerAttributeTemplate")
+if not ActionBarsOwned.restrictedExecutionUnavailable then
+    layoutHandler = CreateFrame("Frame", "QUI_ActionBarLayoutHandler", UIParent, "SecureHandlerAttributeTemplate")
 
-layoutHandler:SetAttribute("_onattributechanged", [=[
-    if name ~= "do-layout" then return end
-    local barKey = self:GetAttribute("layout-target")
-    if not barKey then return end
+    layoutHandler:SetAttribute("_onattributechanged", [=[
+        if name ~= "do-layout" then return end
+        local barKey = self:GetAttribute("layout-target")
+        if not barKey then return end
 
-    local prefix = "bl-" .. barKey
-    local count  = self:GetAttribute(prefix .. "-count") or 0
-    local anchor = self:GetAttribute(prefix .. "-anchor") or "TOPLEFT"
-    local scale  = tonumber(self:GetAttribute(prefix .. "-scale")) or 1
-    local cw     = tonumber(self:GetAttribute(prefix .. "-cw"))
-    local ch     = tonumber(self:GetAttribute(prefix .. "-ch"))
-    local barRef = self:GetFrameRef("bar-" .. barKey)
-    if not barRef then return end
+        local prefix = "bl-" .. barKey
+        local count  = self:GetAttribute(prefix .. "-count") or 0
+        local anchor = self:GetAttribute(prefix .. "-anchor") or "TOPLEFT"
+        local scale  = tonumber(self:GetAttribute(prefix .. "-scale")) or 1
+        local cw     = tonumber(self:GetAttribute(prefix .. "-cw"))
+        local ch     = tonumber(self:GetAttribute(prefix .. "-ch"))
+        local barRef = self:GetFrameRef("bar-" .. barKey)
+        if not barRef then return end
 
-    if cw and ch then
-        barRef:SetScale(1)
-        barRef:SetWidth(cw)
-        barRef:SetHeight(ch)
-    end
+        if cw and ch then
+            barRef:SetScale(1)
+            barRef:SetWidth(cw)
+            barRef:SetHeight(ch)
+        end
 
-    for i = 1, count do
-        local btnRef = self:GetFrameRef("btn-" .. barKey .. "-" .. i)
-        if btnRef then
-            local data = self:GetAttribute(prefix .. "-" .. i)
-            if data then
-                local x, y, show = strsplit("|", data)
-                btnRef:SetScale(scale)
-                btnRef:ClearAllPoints()
-                btnRef:SetPoint(anchor, barRef, anchor, tonumber(x) or 0, tonumber(y) or 0)
-                if show == "1" then
-                    btnRef:Show()
-                else
-                    btnRef:Hide()
+        for i = 1, count do
+            local btnRef = self:GetFrameRef("btn-" .. barKey .. "-" .. i)
+            if btnRef then
+                local data = self:GetAttribute(prefix .. "-" .. i)
+                if data then
+                    local x, y, show = strsplit("|", data)
+                    btnRef:SetScale(scale)
+                    btnRef:ClearAllPoints()
+                    btnRef:SetPoint(anchor, barRef, anchor, tonumber(x) or 0, tonumber(y) or 0)
+                    if show == "1" then
+                        btnRef:Show()
+                    else
+                        btnRef:Hide()
+                    end
                 end
             end
         end
-    end
-]=])
+    ]=])
+end
 
 function SecureLayoutBar(barKey, buttons, numVisible, anchor, btnScale, positions, groupWidth, groupHeight)
+    if ActionBarsOwned.useNativeButtons then
+        if InCombatLockdown() then
+            ActionBarsOwned.pendingRefresh = true
+            return
+        end
+        local container = ActionBarsOwned.containers[barKey]
+        for i, button in ipairs(buttons) do
+            SetNativeButtonLayoutVisible(button, i <= numVisible and IsNativeBarEnabled(barKey))
+            if i <= numVisible then
+                local pos = positions[i]
+                button:SetScale(btnScale)
+                button:ClearAllPoints()
+                button:SetPoint(anchor, container, anchor, pos.x, pos.y)
+            end
+        end
+        container:SetScale(1)
+        container:SetSize(groupWidth, groupHeight)
+        return
+    end
     local prefix = "bl-" .. barKey
     layoutHandler:SetAttribute(prefix .. "-count", #buttons)
     layoutHandler:SetAttribute(prefix .. "-anchor", anchor)

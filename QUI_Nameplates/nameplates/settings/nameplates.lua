@@ -17,6 +17,7 @@ end
 SurfaceFeatures:Register({
     id = "nameplatesPage",
     category = "frames",
+    previewHeight = 360,
     nav = {
         tileId = "nameplates",
         subPageIndex = 1,

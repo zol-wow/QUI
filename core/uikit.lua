@@ -995,8 +995,9 @@ function UIKit.SetInsetPointsPx(frame, anchor, leftPixels, rightPixels, topPixel
 end
 
 function UIKit.ResolveFontPath(fontName)
+    if type(fontName) == "string" and fontName:find("[/\\]") then return fontName end
     if fontName and LSM then
-        local path = LSM:Fetch("font", fontName)
+        local path = LSM:Fetch("font", fontName, true)
         if path then return path end
     end
     return Helpers.GetGeneralFont()
@@ -1023,6 +1024,7 @@ function UIKit.GetBackdropInfo(borderTextureName, borderSizePixels, frame)
 end
 
 function UIKit.CreateBorderLines(frame)
+    if frame._quiRoundedSurface then return frame._quiRoundedSurface.border end
     local state = borderLineState[frame]
     if state and state.edges then return state.edges end
 
@@ -1046,6 +1048,13 @@ function UIKit.CreateBorderLines(frame)
 end
 
 function UIKit.UpdateBorderLines(frame, sizePixels, r, g, b, a, hide)
+    if frame._quiRoundedSurface then
+        for _, texture in pairs(frame._quiRoundedSurface.border) do
+            texture:SetVertexColor(r or 0, g or 0, b or 0, a or 1)
+            texture:SetShown(not hide and (sizePixels or 1) > 0)
+        end
+        return
+    end
     local state = borderLineState[frame]
     if not state then
         UIKit.CreateBorderLines(frame)
@@ -1096,6 +1105,147 @@ function UIKit.CreateText(parent, fontSize, fontPath, fontOutline, layer)
     text:SetTextColor(1, 1, 1, 1)
     text:SetWordWrap(false)
     return text
+end
+
+function UIKit.CreateRoundedSurface(frame, opts)
+    opts = opts or {}
+    local surface = frame._quiRoundedSurface
+    if not surface then
+        surface = {frame = frame, fill = {}, border = {}, shown = true}
+        frame._quiRoundedSurface = surface
+        local path = Helpers.AssetPath .. "appearance\\RoundedSurfaceStrokes.tga"
+        for _, name in ipairs({"center", "left", "right", "tl", "tr", "bl", "br"}) do
+            local texture = frame:CreateTexture(nil, opts.layer or "BACKGROUND", nil, opts.subLevel or -7)
+            if #name == 2 then texture:SetTexture(path, "CLAMP", "CLAMP", "NEAREST") else texture:SetColorTexture(1, 1, 1, 1) end
+            UIKit.DisablePixelSnap(texture)
+            surface.fill[name] = texture
+        end
+        for _, name in ipairs({"top", "bottom", "left", "right", "tl", "tr", "bl", "br"}) do
+            local texture = frame:CreateTexture(nil, opts.layer or "BACKGROUND", nil, (opts.subLevel or -7) + 1)
+            if #name == 2 then texture:SetTexture(path, "CLAMP", "CLAMP", "NEAREST") else texture:SetColorTexture(1, 1, 1, 1) end
+            UIKit.DisablePixelSnap(texture)
+            surface.border[name] = texture
+        end
+        local background = {alpha = 1}
+        surface.background = background
+        function background:SetAlpha(alpha)
+            self.alpha = alpha
+            for _, texture in pairs(surface.fill) do texture:SetAlpha(alpha) end
+        end
+        function background:GetAlpha() return self.alpha end
+        function background:Show()
+            for _, texture in pairs(surface.fill) do texture:Show() end
+        end
+        function background:Hide()
+            for _, texture in pairs(surface.fill) do texture:Hide() end
+        end
+        function background:IsShown() return surface.fill.center:IsShown() end
+        function background:SetVertexColor(r, g, b, a)
+            self.color = {r, g, b, a or 1}
+            for _, texture in pairs(surface.fill) do texture:SetVertexColor(r, g, b, a or 1) end
+        end
+        background.SetColorTexture = background.SetVertexColor
+        function background:GetVertexColor() return unpack(self.color) end
+        function surface:SetColors(border, bg)
+            self.background:SetVertexColor(unpack(bg))
+            for _, texture in pairs(self.border) do texture:SetVertexColor(unpack(border)) end
+        end
+        function surface:Hide()
+            self.shown = false
+            for _, regions in ipairs({self.fill, self.border}) do
+                for _, texture in pairs(regions) do texture:Hide() end
+            end
+        end
+        function surface:Show()
+            self.shown = true
+            for _, regions in ipairs({self.fill, self.border}) do
+                for _, texture in pairs(regions) do texture:Show() end
+            end
+            self:Refresh()
+        end
+        local offsets = { left = 0, right = 0, top = 0, bottom = 0 }
+        local corners = {{"tl", "TOPLEFT", false, false}, {"tr", "TOPRIGHT", true, false},
+            {"bl", "BOTTOMLEFT", false, true}, {"br", "BOTTOMRIGHT", true, true}}
+        local function Aligned(point, x, y)
+            return x + (point:find("LEFT") and offsets.left or offsets.right),
+                y + (point:find("TOP") and offsets.top or offsets.bottom)
+        end
+        local function Corner(texture, point, tile, flipX, flipY, geometryChanged)
+            if geometryChanged then
+                texture:ClearAllPoints()
+                texture:SetSize(surface.cornerSize, surface.cornerSize)
+                local radius = surface.resolvedRadius
+                local l, right = tile / 64, tile / 64 + radius / 2048
+                local bottomUV = radius / 32
+                texture:SetTexCoord(flipX and right or l, flipX and l or right, flipY and bottomUV or 0, flipY and 0 or bottomUV)
+            end
+            texture:SetPoint(point, frame, point, Aligned(point, 0, 0))
+        end
+        local function Rect(texture, first, second, x1, y1, x2, y2, geometryChanged)
+            if geometryChanged then texture:ClearAllPoints() end
+            texture:SetPoint(first, frame, first, Aligned(first, x1, y1))
+            texture:SetPoint(second, frame, second, Aligned(second, x2, y2))
+        end
+        function surface:Refresh()
+            local owner = self.frame
+            local px = GetPixelSize(owner)
+            local radius = math.min(16, math.max(1, Round(self.radius)))
+            local width, height = owner:GetWidth(), owner:GetHeight()
+            if width > 0 then radius = math.min(radius, math.max(1, floor(width / (2 * px)))) end
+            if height > 0 then radius = math.min(radius, math.max(1, floor(height / (2 * px)))) end
+            local stroke = math.min(3, math.max(1, Round(self.borderPixels)))
+            local edge = stroke * px
+            local r = radius * px
+            local left = owner.GetLeft and owner:GetLeft()
+            local bottom = owner.GetBottom and owner:GetBottom()
+            self.left, self.bottom = left, bottom
+            local dl, dr, dt, db = 0, 0, 0, 0
+            if type(left) == "number" and type(bottom) == "number" then
+                dl = Round(left / px) * px - left
+                dr = Round((left + width) / px) * px - left - width
+                db = Round(bottom / px) * px - bottom
+                dt = Round((bottom + height) / px) * px - bottom - height
+            end
+            local geometryChanged = self.pixelSize ~= px or self.width ~= width or self.height ~= height
+                or self.resolvedRadius ~= radius or self.stroke ~= stroke
+            if not geometryChanged and offsets.left == dl and offsets.right == dr and offsets.top == dt and offsets.bottom == db then return end
+            offsets.left, offsets.right, offsets.top, offsets.bottom = dl, dr, dt, db
+            self.pixelSize, self.width, self.height = px, width, height
+            self.resolvedRadius, self.stroke, self.cornerSize = radius, stroke, r
+            for _, entry in ipairs(corners) do
+                Corner(self.fill[entry[1]], entry[2], radius - 1, entry[3], entry[4], geometryChanged)
+                Corner(self.border[entry[1]], entry[2], radius - 1 + stroke * 16, entry[3], entry[4], geometryChanged)
+            end
+            Rect(self.fill.center, "TOPLEFT", "BOTTOMRIGHT", r, 0, -r, 0, geometryChanged)
+            Rect(self.fill.left, "TOPLEFT", "BOTTOMLEFT", 0, -r, 0, r, geometryChanged)
+            Rect(self.fill.right, "TOPRIGHT", "BOTTOMRIGHT", 0, -r, 0, r, geometryChanged)
+            Rect(self.border.top, "TOPLEFT", "TOPRIGHT", r, 0, -r, 0, geometryChanged)
+            Rect(self.border.bottom, "BOTTOMLEFT", "BOTTOMRIGHT", r, 0, -r, 0, geometryChanged)
+            Rect(self.border.left, "TOPLEFT", "BOTTOMLEFT", 0, -r, 0, r, geometryChanged)
+            Rect(self.border.right, "TOPRIGHT", "BOTTOMRIGHT", 0, -r, 0, r, geometryChanged)
+            if geometryChanged then
+                self.fill.left:SetWidth(r)
+                self.fill.right:SetWidth(r)
+                self.border.top:SetHeight(edge)
+                self.border.bottom:SetHeight(edge)
+                self.border.left:SetWidth(edge)
+                self.border.right:SetWidth(edge)
+            end
+        end
+        if frame.HookScript then
+            frame:HookScript("OnSizeChanged", function() surface:Refresh() end)
+            frame:HookScript("OnShow", function() surface:Refresh() end)
+            frame:HookScript("OnUpdate", function()
+                if surface.shown and (frame:GetLeft() ~= surface.left or frame:GetBottom() ~= surface.bottom) then surface:Refresh() end
+            end)
+        end
+        UIKit.RegisterScaleRefresh(frame, "roundedSurface", function() surface:Refresh() end)
+    end
+    surface.radius = opts.radius or surface.radius or 8
+    surface.borderPixels = opts.borderPixels or surface.borderPixels or 1
+    surface:SetColors(opts.borderColor or {0.3, 0.36, 0.39, 0.5}, opts.bgColor or {0.12, 0.15, 0.18, 1})
+    surface:Refresh()
+    return surface
 end
 
 function UIKit.CreateBackground(parent, r, g, b, a)
@@ -1519,13 +1669,17 @@ function UIKit.CreateButton(parent, opts)
     -- tooltip) while the engine swallows OnClick.
     if button.SetMotionScriptsWhileDisabled then button:SetMotionScriptsWhileDisabled(true) end
 
-    UIKit.CreateBorderLines(button)
-
-    -- State fill (hover wash / pressed / disabledBg / selectedWash).
-    local hoverBg = button:CreateTexture(nil, "BACKGROUND")
-    hoverBg:SetAllPoints(button)
-    hoverBg:SetColorTexture(1, 1, 1, 0.06)
-    hoverBg:Hide()
+    local rounded = opts.radius and UIKit.CreateRoundedSurface(button, { radius = opts.radius })
+    local hoverBg
+    if rounded then
+        hoverBg = rounded.background
+    else
+        UIKit.CreateBorderLines(button)
+        hoverBg = button:CreateTexture(nil, "BACKGROUND")
+        hoverBg:SetAllPoints(button)
+        hoverBg:SetColorTexture(1, 1, 1, 0.06)
+        hoverBg:Hide()
+    end
     button._hoverBg = hoverBg
 
     local btnText = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -1597,13 +1751,18 @@ function UIKit.CreateButton(parent, opts)
             border = s.borderOverride or { 1, 1, 1, s.hovered and 0.35 or 0.2 }
         end
 
-        UIKit.UpdateBorderLines(button, 1, border[1], border[2], border[3], border[4] or 1, false)
-        hoverBg:SetAlpha(1)
-        if (fill[4] or 0) > 0 then
-            hoverBg:SetColorTexture(fill[1], fill[2], fill[3], fill[4])
+        if rounded then
             hoverBg:Show()
+            rounded:SetColors(border, fill)
         else
-            hoverBg:Hide()
+            UIKit.UpdateBorderLines(button, 1, border[1], border[2], border[3], border[4] or 1, false)
+            hoverBg:SetAlpha(1)
+            if (fill[4] or 0) > 0 then
+                hoverBg:SetColorTexture(fill[1], fill[2], fill[3], fill[4])
+                hoverBg:Show()
+            else
+                hoverBg:Hide()
+            end
         end
         btnText:SetTextColor(text[1], text[2], text[3], text[4] or 1)
         btnText:SetPoint("CENTER", 0, (s.enabled and s.pressed) and -1 or 0)
@@ -1613,7 +1772,7 @@ function UIKit.CreateButton(parent, opts)
     EnsureButtonAccentHook()
 
     local f, _, flags = button.text:GetFont()
-    local fontPath = f
+    local fontPath = opts.font or f
     if not fontPath then
         fontPath = (UIKit.ResolveFontPath and gui and gui.GetFontPath and UIKit.ResolveFontPath(gui:GetFontPath()))
             or (gui and gui.GetFontPath and gui:GetFontPath())
@@ -1847,7 +2006,13 @@ function UIKit.CreateTabButton(parent, opts)
     btn._label:SetText(opts.label or "")
     btn:SetWidth(max(opts.minWidth or 80, (btn._label:GetStringWidth() or 0) + 24))
 
-    UIKit.ApplyPixelBackdrop(btn, 1, true, false)
+    local surface = UIKit.CreateRoundedSurface(btn, {radius = opts.radius or 5})
+    function btn:SetBackdropColor(r, g, b, a)
+        surface.background:SetColorTexture(r, g, b, a or 1)
+    end
+    function btn:SetBackdropBorderColor(r, g, b, a)
+        surface:SetColors({r, g, b, a or 1}, {surface.background:GetVertexColor()})
+    end
 
     local function chrome(field, fallback)
         local C = (QUI and QUI.GUI and QUI.GUI.Colors) or nil
@@ -2057,6 +2222,18 @@ function SkinBase.HoverBrightenColor(r, g, b, a, factor)
     return math.min((r or 0) * factor, 1), math.min((g or 0) * factor, 1), math.min((b or 0) * factor, 1), a
 end
 
+function SkinBase.UsePhysicalPixelScale(frame)
+    if not frame then return end
+    local core = GetCore()
+    if not core or not core.GetPixelPerfectScale then return end
+    local function Refresh(owner)
+        owner:SetIgnoreParentScale(true)
+        owner:SetScale(core:GetPixelPerfectScale())
+    end
+    Refresh(frame)
+    UIKit.RegisterScaleRefresh(frame, "physicalPixelScale", Refresh)
+end
+
 function SkinBase.GetPixelSize(frame, default)
     local core = Helpers.GetCore()
     if core and type(core.GetPixelSize) == "function" then
@@ -2185,6 +2362,11 @@ function SkinBase.GetSkinColors(moduleSettings, prefix)
     return sr, sg, sb, sa, bgr, bgg, bgb, bga
 end
 
+function SkinBase.GetWindowColors(moduleSettings, prefix)
+    if Helpers.GetWindowColors then return Helpers.GetWindowColors(moduleSettings, prefix) end
+    return SkinBase.GetSkinColors(moduleSettings, prefix)
+end
+
 -- The skin BORDER colour as a TEXT colour, luminance-floored. A custom black
 -- border or "hide skin borders" (alpha 0) turned every border-coloured label
 -- black / invisible. Returns border RGB at alpha 1 only when the border is
@@ -2209,7 +2391,7 @@ end
 
 function SkinBase.GetDepthColor(tier, moduleSettings, prefix)
     local depth = SkinBase.CHROME.DEPTH[tier] or SkinBase.CHROME.DEPTH.PANEL
-    local _, _, _, _, bgr, bgg, bgb = SkinBase.GetSkinColors(moduleSettings, prefix)
+    local _, _, _, _, bgr, bgg, bgb = SkinBase.GetWindowColors(moduleSettings, prefix)
     bgr = bgr or SkinBase.CHROME.BG_FALLBACK[1]
     bgg = bgg or SkinBase.CHROME.BG_FALLBACK[2]
     bgb = bgb or SkinBase.CHROME.BG_FALLBACK[3]
@@ -2245,11 +2427,12 @@ end
 
 function SkinBase.GetChromePalette(opts)
     opts = opts or {}
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(opts.moduleSettings, opts.prefix)
+    local sr, sg, sb, sa = SkinBase.GetSkinColors(opts.moduleSettings, opts.prefix)
     local borderFallback = opts.borderFallback or SkinBase.CHROME.BORDER_FALLBACK
     local bgFallback = opts.bgFallback or SkinBase.CHROME.BG_FALLBACK
-    local border = ResolveChromeColor(opts.borderColor or { sr, sg, sb, sa }, borderFallback, 1)
-    local bg = ResolveChromeColor(opts.bgColor or { bgr, bgg, bgb, bga }, bgFallback, 0.95)
+    local wr, wg, wb, wa, wbr, wbg, wbb, wba = SkinBase.GetWindowColors(opts.moduleSettings, opts.prefix)
+    local border = ResolveChromeColor(opts.borderColor or { wr, wg, wb, wa }, borderFallback, 1)
+    local bg = ResolveChromeColor(opts.bgColor or { wbr, wbg, wbb, wba }, bgFallback, 0.95)
     local accentSource = opts.accentColor or opts.borderColor
     if not accentSource then
         accentSource = sr ~= nil and { sr, sg, sb, sa } or opts.accentFallback
@@ -2261,6 +2444,7 @@ end
 function SkinBase.ApplyChromeBackdrop(frame, opts)
     if not frame then return nil end
     opts = opts or {}
+    if opts.radius then SkinBase.SetFrameData(frame, "chromeRadius", opts.radius) end
     local palette = opts.palette or SkinBase.GetChromePalette(opts)
     local borderColor = ResolveChromeColor(opts.borderColor, palette.border, 1)
     local bgColor = ResolveChromeColor(opts.bgColor, palette.bg, 0.95)
@@ -2412,6 +2596,8 @@ end
 
 local function ManualSetBackdropColor(self, r, g, b, a)
     self._quiBgR, self._quiBgG, self._quiBgB, self._quiBgA = r, g, b, a
+    local rounded = self._quiRoundedSurface
+    if rounded and SkinBase.GetFrameData(self, "chromeRadius") then rounded.background:SetVertexColor(r, g, b, a or 1) end
     local data = manualBackdropData[self]
     if data then
         SetTextureColor(data.bg, data.bgFile, r, g, b, a)
@@ -2420,6 +2606,10 @@ end
 
 local function ManualSetBackdropBorderColor(self, r, g, b, a)
     self._quiBorderR, self._quiBorderG, self._quiBorderB, self._quiBorderA = r, g, b, a
+    local rounded = self._quiRoundedSurface
+    if rounded and SkinBase.GetFrameData(self, "chromeRadius") then
+        for _, texture in pairs(rounded.border) do texture:SetVertexColor(r, g, b, a or 1) end
+    end
     local data = manualBackdropData[self]
     if data then
         SetTextureColor(data.top, data.edgeFile, r, g, b, a)
@@ -2545,6 +2735,20 @@ local function RefreshPixelBackdrop(frame)
     local bgFile = data.withBackground and (data.bgFile or DEFAULT_BACKDROP_TEXTURE) or false
     local edgeFile = edgeSize > 0 and (data.edgeFile or DEFAULT_BACKDROP_TEXTURE) or false
     SkinBase.ApplyTextureBackdrop(frame, bgFile, edgeFile, edgeSize, borderColor, bgColor, bgInset)
+    local radius = SkinBase.GetFrameData(frame, "chromeRadius")
+    if radius and data.borderPixels >= 1 and data.borderPixels <= 3 then
+        local manual = manualBackdropData[frame]
+        for _, key in ipairs({ "bg", "top", "bottom", "left", "right" }) do manual[key]:Hide() end
+        local surface = UIKit.CreateRoundedSurface(frame, {
+            radius = radius,
+            borderPixels = data.borderPixels,
+            bgColor = data.withBackground and (bgColor or { 0, 0, 0, 0 }) or { 0, 0, 0, 0 },
+            borderColor = borderColor or { 0, 0, 0, 0 },
+        })
+        if not surface.shown then surface:Show() end
+    elseif frame._quiRoundedSurface then
+        frame._quiRoundedSurface:Hide()
+    end
 end
 
 function SkinBase.ApplyPixelBackdrop(frame, borderPixels, withBackground, withInsets, borderColor, bgColor, bgFile, edgeFile, insetPixels)
@@ -2588,7 +2792,7 @@ function SkinBase.SetBackdropColors(frame, borderColor, bgColor)
     RefreshPixelBackdrop(frame)
 end
 
-function SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+function SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga, radius)
     if not frameBackdrops[frame] then
         local backdrop = CreateFrame("Frame", nil, frame)
         backdrop:SetAllPoints()
@@ -2598,6 +2802,7 @@ function SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
 
     local backdrop = frameBackdrops[frame]
+    if radius ~= nil then SkinBase.SetFrameData(backdrop, "chromeRadius", radius) end
     backdrop._quiBgR = bgr or SkinBase.CHROME.BG_FALLBACK[1]
     backdrop._quiBgG = bgg or SkinBase.CHROME.BG_FALLBACK[2]
     backdrop._quiBgB = bgb or SkinBase.CHROME.BG_FALLBACK[3]
@@ -2638,7 +2843,7 @@ function SkinBase.RefreshFrameBackdropColors(frame)
     if not frame then return end
     local bd = SkinBase.GetBackdrop(frame)
     if not bd then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
     SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
 end
 
@@ -2772,9 +2977,9 @@ local function NukeTexture(t)
     if t.Hide then t:Hide() end
 end
 
-function SkinBase.ClampTextureHidden(tex)
+function SkinBase.ClampTextureHidden(tex, preserveLayout)
     if not tex then return end
-    NukeTexture(tex)
+    if preserveLayout then tex:SetAlpha(0) else NukeTexture(tex) end
     if tex.SetAlpha and not SkinBase.GetFrameData(tex, "qTexClamped") then
         hooksecurefunc(tex, "SetAlpha", function(self, a)
             if a and a > 0 then self:SetAlpha(0) end
@@ -2783,12 +2988,13 @@ function SkinBase.ClampTextureHidden(tex)
     end
 end
 
-function SkinBase.ClampAllTextures(frame)
+function SkinBase.ClampAllTextures(frame, preserveIcon, preservedRegion)
     if not frame or not frame.GetNumRegions then return end
     local regions = { frame:GetRegions() }
     for i = 1, #regions do
         local region = regions[i]
-        if region and region.IsObjectType and region:IsObjectType("Texture") then
+        if region and region ~= preservedRegion and region.IsObjectType and region:IsObjectType("Texture")
+            and not (preserveIcon and (region == frame.Icon or region == frame.Mask)) then
             SkinBase.ClampTextureHidden(region)
         end
     end
@@ -2981,7 +3187,7 @@ end
 
 local function ReassertTabSkin(tab)
     if not tab or not SkinBase.GetFrameData(tab, "qTabArtClamped") then return end
-    SkinBase.ClampAllTextures(tab)
+    SkinBase.ClampAllTextures(tab, true, SkinBase.GetFrameData(tab, "tabUnderline"))
     local hl = tab.GetHighlightTexture and tab:GetHighlightTexture()
     if hl then SkinBase.ClampTextureHidden(hl) end
     SkinBase.RefreshTabSelected(tab, SkinBase.GetFrameData(tab, "skinTabOwner"))
@@ -3013,15 +3219,16 @@ function SkinBase.SkinTabButton(tab, opts)
     if not tab or SkinBase.IsStyled(tab) then return end
     opts = opts or {}
 
-    SkinBase.ClampAllTextures(tab)
+    SkinBase.ClampAllTextures(tab, true)
     local highlight = tab.GetHighlightTexture and tab:GetHighlightTexture()
     SkinBase.ClampTextureHidden(highlight)
     SkinBase.SetFrameData(tab, "qTabArtClamped", true)
 
     HookPanelTabSkin()
 
-    local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetSkinColors()
-    SkinBase.CreateBackdrop(tab, sr, sg, sb, sa, bgr, bgg, bgb, 0.9)
+    local sr, sg, sb, sa = SkinBase.GetSkinColors()
+    local wr, wg, wb, wa, bgr, bgg, bgb = SkinBase.GetWindowColors()
+    SkinBase.CreateBackdrop(tab, wr, wg, wb, wa, bgr, bgg, bgb, 0.9, opts.radius or 5)
     local bd = SkinBase.GetBackdrop(tab)
     if bd then
         SkinBase.SetPixelInsetPoints(bd, tab, 3, 3, 3, 0)
@@ -3034,6 +3241,7 @@ function SkinBase.SkinTabButton(tab, opts)
     end
 
     SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(tab, "windowColor", { wr, wg, wb, wa })
     SkinBase.SetFrameData(tab, "bgColor",   { bgr, bgg, bgb })
     SkinBase.MarkStyled(tab)
 end
@@ -3042,19 +3250,22 @@ end
 -- no signal claims. PanelTemplates disables the selected tab, so checking the
 -- disabled flag first greyed out the active tab of every skinned window.
 local function IsTabSelected(tab, owner)
-    if tab.IsSelected and tab:IsSelected() then return true end
-    if tab.isSelected then return true end
     if owner then
         local tabSystem = owner.TabSystem
         if tabSystem and tabSystem.GetSelectedTab and tab.tabID then
-            if tab.tabID == tabSystem:GetSelectedTab() then return true end
+            return tab.tabID == tabSystem:GetSelectedTab()
         end
         local selected = (PanelTemplates_GetSelectedTab and PanelTemplates_GetSelectedTab(owner)) or owner.selectedTab
         if selected then
-            if owner.Tabs and owner.Tabs[selected] == tab then return true end
-            if tab.GetID and tab:GetID() == selected then return true end
+            local id = tab.GetID and tab:GetID()
+            if id and id > 0 then return id == selected end
+            if owner.Tabs and owner.Tabs[selected] then return owner.Tabs[selected] == tab end
         end
     end
+    local checked = SkinBase.GetFrameData(tab, "tabChecked")
+    if checked ~= nil then return checked end
+    if tab.IsSelected and tab:IsSelected() then return true end
+    if tab.isSelected then return true end
     if tab.SelectedTexture and tab.SelectedTexture.IsShown and tab.SelectedTexture:IsShown() then
         return true
     end
@@ -3069,8 +3280,17 @@ local function EnsureTabUnderline(tab, bd)
     if underline then return underline end
     if not tab.CreateTexture then return nil end
     underline = tab:CreateTexture(nil, "OVERLAY")
-    SkinBase.SetPixelPoint(underline, "BOTTOMLEFT", bd, "BOTTOMLEFT", 1, 1)
-    SkinBase.SetPixelPoint(underline, "BOTTOMRIGHT", bd, "BOTTOMRIGHT", -1, 1)
+    local function refreshGeometry()
+        local px = SkinBase.GetPixelSize(tab, 1)
+        underline:ClearAllPoints()
+        underline:SetPoint("BOTTOMLEFT", bd, "BOTTOMLEFT", px, px)
+        underline:SetPoint("BOTTOMRIGHT", bd, "BOTTOMRIGHT", -px, px)
+        underline:SetHeight(px)
+    end
+    refreshGeometry()
+    if UIKit and UIKit.RegisterScaleRefresh then
+        UIKit.RegisterScaleRefresh(underline, "skinningTabUnderline", refreshGeometry)
+    end
     SkinBase.SetFrameData(tab, "tabUnderline", underline)
     return underline
 end
@@ -3099,14 +3319,9 @@ function SkinBase.RefreshTabSelected(tab, owner)
     local bg = SkinBase.GetFrameData(tab, "bgColor")
     if not bd or not sc or not bg then return end
 
-    local borderColor, bgColor
-    if selected then
-        borderColor = { sc[1], sc[2], sc[3], sc[4] }
-        bgColor = { math.min(bg[1] + 0.10, 1), math.min(bg[2] + 0.10, 1), math.min(bg[3] + 0.10, 1), 1 }
-    else
-        borderColor = { sc[1] * 0.5, sc[2] * 0.5, sc[3] * 0.5, sc[4] * 0.6 }
-        bgColor = { bg[1], bg[2], bg[3], 0.7 }
-    end
+    local wc = SkinBase.GetFrameData(tab, "windowColor") or sc
+    local borderColor = { wc[1] * 0.5, wc[2] * 0.5, wc[3] * 0.5, wc[4] * 0.6 }
+    local bgColor = { bg[1], bg[2], bg[3], 1 }
     SkinBase.ApplyPixelBackdrop(bd, 1, true, true, borderColor, bgColor)
 
     if SkinBase.GetFrameData(tab, "skinTabFont") then
@@ -3193,7 +3408,19 @@ function SkinBase.SkinTab(tab, owner, opts)
     if opts.selectedTextColor ~= nil then SkinBase.SetFrameData(tab, "tabSelectedTextColor", opts.selectedTextColor) end
     if opts.disabledTextColor ~= nil then SkinBase.SetFrameData(tab, "tabDisabledTextColor", opts.disabledTextColor) end
     if opts.variant ~= nil then SkinBase.SetFrameData(tab, "tabVariant", opts.variant) end
+    if tab.SetChecked and tab.SelectedTexture and not SkinBase.GetFrameData(tab, "qTabCheckedHooked") then
+        SkinBase.SetFrameData(tab, "tabChecked", tab.SelectedTexture:IsShown())
+        hooksecurefunc(tab, "SetChecked", function(self, checked)
+            SkinBase.SetFrameData(self, "tabChecked", checked and true or false)
+            SkinBase.RefreshTabSelected(self, SkinBase.GetFrameData(self, "skinTabOwner"))
+        end)
+        SkinBase.SetFrameData(tab, "qTabCheckedHooked", true)
+    end
     SkinBase.SkinTabButton(tab, opts)
+    if opts.radius then
+        local backdrop = SkinBase.GetBackdrop(tab)
+        if backdrop then SkinBase.SetFrameData(backdrop, "chromeRadius", opts.radius) end
+    end
     if tab.SetTabSelected and not SkinBase.GetFrameData(tab, "qTabStateHooked") then
         hooksecurefunc(tab, "SetTabSelected", ReassertTabSkin)
         SkinBase.SetFrameData(tab, "qTabStateHooked", true)
@@ -3224,20 +3451,71 @@ function SkinBase.SkinTabGroup(tabs, owner, opts)
     end
 
     local function refreshAll()
+        if opts.uniform then
+            local width = opts.minWidth or 90
+            for _, tab in ipairs(tabs) do
+                local label = tab.Text or (tab.GetFontString and tab:GetFontString())
+                if label then width = math.max(width, label:GetStringWidth() + 28) end
+            end
+            for i, tab in ipairs(tabs) do
+                tab:SetSize(width, opts.height or 28)
+                if i > 1 then
+                    tab:ClearAllPoints()
+                    tab:SetPoint("LEFT", tabs[i - 1], "RIGHT", opts.gap or 4, 0)
+                end
+                local backdrop = SkinBase.GetBackdrop(tab)
+                if backdrop then backdrop:ClearAllPoints(); backdrop:SetAllPoints(tab) end
+                local label = tab.Text or (tab.GetFontString and tab:GetFontString())
+                if label then label:ClearAllPoints(); label:SetPoint("CENTER", tab, "CENTER", 0, 0) end
+            end
+        end
+        local previous
         for _, t in ipairs(tabs) do
             SkinBase.RefreshTabSelected(t, owner)
+            if opts.dockBottom and owner and t:IsShown() then
+                local px = SkinBase.GetPixelSize(t, 1)
+                t:ClearAllPoints()
+                if previous then
+                    t:SetPoint("TOPLEFT", previous, "TOPRIGHT", -px, 0)
+                else
+                    t:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", opts.inset or 12, px)
+                end
+                t:SetHeight(opts.height or 28)
+                local backdrop = SkinBase.GetBackdrop(t)
+                if backdrop then backdrop:ClearAllPoints(); backdrop:SetAllPoints(t) end
+                local join = SkinBase.GetFrameData(t, "tabWindowJoin")
+                if not join then
+                    join = backdrop:CreateTexture(nil, "OVERLAY")
+                    SkinBase.SetFrameData(t, "tabWindowJoin", join)
+                end
+                join:ClearAllPoints()
+                join:SetPoint("TOPLEFT", t, "TOPLEFT", px, px)
+                join:SetPoint("TOPRIGHT", t, "TOPRIGHT", -px, px)
+                join:SetHeight(7)
+                local bg = SkinBase.GetFrameData(t, "bgColor")
+                join:SetColorTexture(bg[1], bg[2], bg[3], 1)
+                previous = t
+            end
         end
     end
 
     for _, tab in ipairs(tabs) do
         if not SkinBase.GetFrameData(tab, "qTabSelHooked") then
-            tab:HookScript("OnClick", refreshAll)
+            local script = tab.HasScript and not tab:HasScript("OnClick") and "OnMouseUp" or "OnClick"
+            tab:HookScript(script, refreshAll)
             SkinBase.SetFrameData(tab, "qTabSelHooked", true)
         end
     end
 
     if owner then
         RegisterOwnerTabRefresh(owner, refreshAll)
+        if opts.dockBottom and not SkinBase.GetFrameData(owner, "qDockedTabsShowHooked") then
+            owner:HookScript("OnShow", function(self)
+                local refresh = ownerTabRefreshers[self]
+                if refresh then refresh() end
+            end)
+            SkinBase.SetFrameData(owner, "qDockedTabsShowHooked", true)
+        end
     end
 
     refreshAll()
@@ -3245,9 +3523,11 @@ end
 
 function SkinBase.RefreshTabGroup(tabs, owner)
     if not tabs then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa = SkinBase.GetSkinColors()
+    local wr, wg, wb, wa, bgr, bgg, bgb = SkinBase.GetWindowColors()
     for _, tab in ipairs(tabs) do
         SkinBase.SetFrameData(tab, "skinColor", { sr, sg, sb, sa })
+        SkinBase.SetFrameData(tab, "windowColor", { wr, wg, wb, wa })
         SkinBase.SetFrameData(tab, "bgColor", { bgr, bgg, bgb })
     end
     for _, tab in ipairs(tabs) do
@@ -3365,6 +3645,9 @@ end
 local function HoverLeave(self)
     local bd = SkinBase.GetBackdrop(self)
     local sc = SkinBase.GetFrameData(self, "skinColor")
+    if not SkinBase.GetFrameData(self, "skinVariant") then
+        sc = SkinBase.GetFrameData(self, "windowColor") or sc
+    end
     if bd and sc then
         bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], sc[4])
     end
@@ -3391,7 +3674,7 @@ function SkinBase.SkinFontString(fontString, opts)
     if not fontString or not fontString.SetFont then return end
     opts = opts or {}
 
-    local font = (Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
+    local font = opts.font or (Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
     local outline = opts.outline
     if outline == nil then
         outline = (Helpers.GetGeneralFontOutline and Helpers.GetGeneralFontOutline()) or ""
@@ -3474,13 +3757,14 @@ function SkinBase.LockFontObject(obj, opts)
 
     if obj.SetFontObject and obj.SetFont then
         hooksecurefunc(obj, "SetFontObject", function(self)
-            SkinBase.SkinFontString(self, opts)
+            if not opts.guard or opts.guard(self) then SkinBase.SkinFontString(self, opts) end
         end)
     end
 
     local function LockButtonStateSetter(methodName)
         if obj[methodName] then
             hooksecurefunc(obj, methodName, function(self)
+                if opts.guard and not opts.guard(self) then return end
                 local fs = self.GetFontString and self:GetFontString()
                 if fs then SkinBase.SkinFontString(fs, opts) end
             end)
@@ -3493,18 +3777,19 @@ function SkinBase.LockFontObject(obj, opts)
     SkinBase.SetFrameData(obj, "qFontLocked", true)
 end
 
-function SkinBase.LockFrameTextObjects(frame, maxDepth)
+function SkinBase.LockFrameTextObjects(frame, maxDepth, opts)
     if not frame then return end
     maxDepth = maxDepth or 4
+    opts = opts or { fontOnly = true }
     if frame.GetObjectType and frame:GetObjectType() == "Button" and frame.SetNormalFontObject then
-        SkinBase.LockFontObject(frame, { fontOnly = true })
+        SkinBase.LockFontObject(frame, opts)
     end
     if SafeWalkSkip(frame) then return end
     local regions = frame.GetRegions and SafeRegions(frame)
     if regions then
         for _, region in ipairs(regions) do
             if region and region.GetObjectType and region:GetObjectType() == "FontString" then
-                SkinBase.LockFontObject(region, { fontOnly = true })
+                SkinBase.LockFontObject(region, opts)
             end
         end
     end
@@ -3512,7 +3797,7 @@ function SkinBase.LockFrameTextObjects(frame, maxDepth)
         local children = SafeChildren(frame)
         if children then
             for _, child in ipairs(children) do
-                SkinBase.LockFrameTextObjects(child, maxDepth - 1)
+                SkinBase.LockFrameTextObjects(child, maxDepth - 1, opts)
             end
         end
     end
@@ -3627,9 +3912,11 @@ function SkinBase.SetButtonVariant(button, variant)
     SkinBase.SetFrameData(button, "skinVariant", variant)
     if not variant then
         local sr, sg, sb, sa = SkinBase.GetSkinColors()
+        local wr, wg, wb, wa = SkinBase.GetWindowColors()
         local bd = SkinBase.GetBackdrop(button)
         SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
-        if bd then SkinBase.SetBackdropColors(bd, { sr, sg, sb, sa }, nil) end
+        SkinBase.SetFrameData(button, "windowColor", { wr, wg, wb, wa })
+        if bd then SkinBase.SetBackdropColors(bd, { wr, wg, wb, wa }, nil) end
         return
     end
     ApplyButtonVariantBorder(button)
@@ -3673,7 +3960,8 @@ end
 function SkinBase.SkinButton(button, opts)
     if not button or SkinBase.IsStyled(button) then return end
     opts = opts or {}
-    local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetSkinColors()
+    local ar, ag, ab, aa = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetWindowColors()
     local boost = opts.bgBoost or BG_BOOST_BUTTON
 
     if opts.strip then
@@ -3683,12 +3971,13 @@ function SkinBase.SkinButton(button, opts)
     end
 
     SkinBase.CreateBackdrop(button, sr, sg, sb, sa,
-        math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), 1)
+        math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), 1, opts.radius or 5)
     if opts.belowChildren then
         local bd = SkinBase.GetBackdrop(button)
         if bd then bd:SetFrameLevel(math.max(0, button:GetFrameLevel() - 1)) end
     end
-    SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(button, "windowColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(button, "skinColor", { ar, ag, ab, aa })
     SkinBase.SetFrameData(button, "skinKind", "button")
     SkinBase.SetFrameData(button, "bgBoost", boost)
     if opts.variant then
@@ -3716,11 +4005,11 @@ end
 function SkinBase.SkinEditBox(editBox, opts)
     if not editBox or SkinBase.IsStyled(editBox) then return end
     opts = opts or {}
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
     if opts.borderAlpha then sa = sa * opts.borderAlpha end
     if opts.bgAlpha then bga = opts.bgAlpha end
     SkinBase.StripTextures(editBox)
-    SkinBase.CreateBackdrop(editBox, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    SkinBase.CreateBackdrop(editBox, sr, sg, sb, sa, bgr, bgg, bgb, bga, opts.radius or 4)
     SkinBase.SetFrameData(editBox, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(editBox, "skinKind", "editbox")
     if opts.font ~= false then
@@ -3735,15 +4024,17 @@ end
 function SkinBase.SkinScrollRow(row, opts)
     if not row or SkinBase.IsStyled(row) then return end
     opts = opts or {}
-    local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetSkinColors()
+    local ar, ag, ab, aa = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetWindowColors()
     local boost = opts.bgBoost or BG_BOOST_ROW
     local borderAlphaMult = opts.borderAlphaMult or 0.5
     local bgAlpha = opts.bgAlpha or 0.6
 
     SkinBase.StripTextures(row)
     SkinBase.CreateBackdrop(row, sr, sg, sb, sa * borderAlphaMult,
-        math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), bgAlpha)
-    SkinBase.SetFrameData(row, "skinColor", { sr, sg, sb, sa * borderAlphaMult })
+        math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), bgAlpha, opts.radius or 4)
+    SkinBase.SetFrameData(row, "windowColor", { sr, sg, sb, sa * borderAlphaMult })
+    SkinBase.SetFrameData(row, "skinColor", { ar, ag, ab, aa * borderAlphaMult })
     SkinBase.SetFrameData(row, "skinKind", "row")
     SkinBase.SetFrameData(row, "bgBoost", boost)
     SkinBase.SetFrameData(row, "bgAlpha", bgAlpha)
@@ -3759,13 +4050,15 @@ function SkinBase.SkinIcon(icon, opts)
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     end
 
+    local host = opts.parent or (icon.GetParent and icon:GetParent())
+    if host and Helpers.ApplyIconStyle then Helpers.ApplyIconStyle(host, icon, opts.skinName) end
+
     local existing = SkinBase.GetFrameData(icon, "iconBorder")
     if existing then
         if opts.border then SkinBase.SetBackdropColors(existing, opts.border, nil) end
         return existing
     end
 
-    local host = opts.parent or (icon.GetParent and icon:GetParent())
     if not host then return end
     local pixels = opts.pixels or SkinBase.CHROME.BORDER_PX or 1
     local border = CreateFrame("Frame", nil, host, "BackdropTemplate")
@@ -3777,7 +4070,7 @@ function SkinBase.SkinIcon(icon, opts)
 
     local bc = opts.border
     if not bc then
-        local sr, sg, sb, sa = SkinBase.GetSkinColors()
+        local sr, sg, sb, sa = SkinBase.GetWindowColors()
         bc = { sr, sg, sb, sa }
     end
     SkinBase.ApplyPixelBackdrop(border, pixels, false, false, bc)
@@ -3785,12 +4078,48 @@ function SkinBase.SkinIcon(icon, opts)
     return border
 end
 
+function SkinBase.RoundIconTexture(owner, texture)
+    if not owner or not texture or not texture.AddMaskTexture then return end
+    local mask = SkinBase.GetFrameData(texture, "roundedIconMask")
+    if not mask then
+        mask = owner:CreateMaskTexture()
+        mask:SetTexture(Helpers.AssetPath .. "appearance\\RoundedIconMask.tga", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetAllPoints(texture)
+        texture:AddMaskTexture(mask)
+        SkinBase.SetFrameData(texture, "roundedIconMask", mask)
+    end
+end
+
+function SkinBase.RoundBarTexture(owner, texture)
+    if not owner or not texture or not texture.AddMaskTexture then return end
+    local mask = SkinBase.GetFrameData(owner, "roundedBarMask")
+    if not mask then
+        mask = owner:CreateMaskTexture()
+        mask:SetTexture(Helpers.AssetPath .. "appearance\\RoundedBarMask.tga", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+        mask:SetAllPoints(owner)
+        SkinBase.SetFrameData(owner, "roundedBarMask", mask)
+    end
+    local attached = SkinBase.GetFrameData(texture, "roundedBarMaskAttachments")
+    if not attached then
+        attached = {}
+        SkinBase.SetFrameData(texture, "roundedBarMaskAttachments", attached)
+    end
+    if not attached[mask] then
+        texture:AddMaskTexture(mask)
+        attached[mask] = true
+    end
+end
+
 function SkinBase.SkinStatusBar(bar, opts)
     if not bar or SkinBase.IsStyled(bar) then return end
     opts = opts or {}
 
     if bar.SetStatusBarTexture then
-        bar:SetStatusBarTexture(opts.texture or DEFAULT_BACKDROP_TEXTURE)
+        if Helpers.ApplyBarStyle then
+            Helpers.ApplyBarStyle(bar, opts.texture or DEFAULT_BACKDROP_TEXTURE)
+        else
+            bar:SetStatusBarTexture(opts.texture or DEFAULT_BACKDROP_TEXTURE)
+        end
         UIKit.DisablePixelSnap(bar)
     end
     if bar.SetStatusBarColor then
@@ -3803,7 +4132,7 @@ function SkinBase.SkinStatusBar(bar, opts)
         bar:SetStatusBarColor(r or 0.5, g or 0.5, b or 0.5, a or 1)
     end
     if opts.backdrop ~= false then
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
         SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     end
     SkinBase.MarkStyled(bar)
@@ -3847,7 +4176,7 @@ function SkinBase.SkinCheckBox(check, opts)
     local hl = check.GetHighlightTexture and check:GetHighlightTexture()
     if hl and hl.SetAlpha then hl:SetAlpha(0) end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
     SkinBase.CreateBackdrop(check, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     local ar, ag, ab = UIKit.GetAccentColor()
@@ -3901,7 +4230,23 @@ function SkinBase.SkinTrimScrollBar(scrollBar, opts)
     if not scrollBar then return end
     opts = opts or {}
 
-    if scrollBar.Track then scrollBar.Track:SetAlpha(0) end
+    local track = scrollBar.Track
+    local nativeThumb = track and track.Thumb
+    if track then
+        track:SetAlpha(nativeThumb and 1 or 0)
+        if nativeThumb then
+            for _, key in ipairs({ "Begin", "Middle", "End" }) do
+                SkinBase.ClampTextureHidden(track[key], true)
+                SkinBase.ClampTextureHidden(nativeThumb[key], true)
+            end
+            local role = QUI and QUI.GUI and QUI.GUI.Colors and QUI.GUI.Colors.scrollThumb
+            local color = opts.color or role or { 1, 1, 1, 0.6 }
+            SkinBase.CreateBackdrop(nativeThumb, nil, nil, nil, nil, nil, nil, nil, nil, 4)
+            local bd = SkinBase.GetBackdrop(nativeThumb)
+            bd:SetBackdropColor(color[1], color[2], color[3], opts.alpha or color[4] or 0.6)
+            bd:SetBackdropBorderColor(color[1], color[2], color[3], opts.alpha or color[4] or 0.6)
+        end
+    end
     if scrollBar.Background then scrollBar.Background:SetAlpha(0) end
 
     local thumb = scrollBar.ThumbTexture or (scrollBar.GetThumbTexture and scrollBar:GetThumbTexture()) or scrollBar.Thumb
@@ -3993,7 +4338,8 @@ function SkinBase.RefreshCategorySelected(button)
         end
         SetFontStringColor(label, selectedText)
     else
-        bd:SetBackdropBorderColor(sc[1], sc[2], sc[3], (sc[4] or 1) * 0.5)
+        local wc = SkinBase.GetFrameData(button, "windowColor") or sc
+        bd:SetBackdropBorderColor(wc[1], wc[2], wc[3], (wc[4] or 1) * 0.5)
         bd:SetBackdropColor(r, g, b, 0.7)
         SetFontStringColor(label, SkinBase.GetFrameData(button, "categoryTextColor") or { 1, 1, 1, 1 })
     end
@@ -4008,7 +4354,9 @@ function SkinBase.SkinCategoryButton(button, opts)
     local hl = button.GetHighlightTexture and button:GetHighlightTexture()
     if hl then hl:SetAlpha(0) end
     local sr, sg, sb, sa = SkinBase.GetSkinColors()
-    SkinBase.CreateBackdrop(button, sr, sg, sb, sa)
+    local wr, wg, wb, wa = SkinBase.GetWindowColors()
+    SkinBase.CreateBackdrop(button, wr, wg, wb, wa, nil, nil, nil, nil, opts.radius or 5)
+    SkinBase.SetFrameData(button, "windowColor", { wr, wg, wb, wa })
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     SkinBase.SetFrameData(button, "skinKind", "category")
     SkinBase.SetFrameData(button, "categorySelectedTextColor", opts.selectedTextColor)
@@ -4027,7 +4375,8 @@ end
 function SkinBase.SkinDropdown(dropdown, opts)
     if not dropdown or SkinBase.IsStyled(dropdown) then return end
     opts = opts or {}
-    local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetSkinColors()
+    local ar, ag, ab, aa = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetWindowColors()
     local boost = opts.bgBoost or BG_BOOST_BUTTON
 
     if opts.noStrip then
@@ -4045,7 +4394,7 @@ function SkinBase.SkinDropdown(dropdown, opts)
     end
 
     SkinBase.CreateBackdrop(dropdown, sr, sg, sb, sa,
-        math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), 1)
+        math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), 1, opts.radius or 5)
     local bd = SkinBase.GetBackdrop(dropdown)
     if bd then
         if opts.insetY then
@@ -4057,7 +4406,8 @@ function SkinBase.SkinDropdown(dropdown, opts)
             bd:SetFrameLevel(math.max(0, dropdown:GetFrameLevel() - 1))
         end
     end
-    SkinBase.SetFrameData(dropdown, "skinColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(dropdown, "windowColor", { sr, sg, sb, sa })
+    SkinBase.SetFrameData(dropdown, "skinColor", { ar, ag, ab, aa })
     SkinBase.SetFrameData(dropdown, "bgColor", { bgr, bgg, bgb })
     SkinBase.SetFrameData(dropdown, "skinKind", "dropdown")
     SkinBase.SetFrameData(dropdown, "bgBoost", boost)
@@ -4105,14 +4455,16 @@ function SkinBase.RefreshWidget(frame)
     if not bd then return end
     local kind = SkinBase.GetFrameData(frame, "skinKind")
     if not kind then return end
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
+    local ar, ag, ab, aa = SkinBase.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     if kind == "button" or kind == "dropdown" then
         local boost = SkinBase.GetFrameData(frame, "bgBoost") or BG_BOOST_BUTTON
         SkinBase.SetBackdropColors(bd,
             { sr, sg, sb, sa },
             { math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), 1 })
-        SkinBase.SetFrameData(frame, "skinColor", { sr, sg, sb, sa })
+        SkinBase.SetFrameData(frame, "windowColor", { sr, sg, sb, sa })
+        SkinBase.SetFrameData(frame, "skinColor", { ar, ag, ab, aa })
         if kind == "dropdown" then
             SkinBase.SetFrameData(frame, "bgColor", { bgr, bgg, bgb })
         else
@@ -4128,9 +4480,11 @@ function SkinBase.RefreshWidget(frame)
         SkinBase.SetBackdropColors(bd,
             { sr, sg, sb, sa * mult },
             { math.min(bgr + boost, 1), math.min(bgg + boost, 1), math.min(bgb + boost, 1), bgAlpha })
-        SkinBase.SetFrameData(frame, "skinColor", { sr, sg, sb, sa * mult })
+        SkinBase.SetFrameData(frame, "windowColor", { sr, sg, sb, sa * mult })
+        SkinBase.SetFrameData(frame, "skinColor", { ar, ag, ab, aa * mult })
     elseif kind == "category" then
-        SkinBase.SetFrameData(frame, "skinColor", { sr, sg, sb, sa })
+        SkinBase.SetFrameData(frame, "windowColor", { sr, sg, sb, sa })
+        SkinBase.SetFrameData(frame, "skinColor", { ar, ag, ab, aa })
         SkinBase.RefreshCategorySelected(frame)
     end
 
@@ -4148,8 +4502,8 @@ end
 function SkinBase.SkinButtonFrameTemplate(frame)
     if not frame then return end
     SkinBase.HidePortraitFrameChrome(frame)
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
-    SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
+    SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga, 8)
     if frame.CloseButton then
         SkinBase.SkinCloseButton(frame.CloseButton)
     end
@@ -4162,8 +4516,8 @@ function SkinBase.SkinWindow(frame, opts)
 
     SkinBase.HidePortraitFrameChrome(frame)
     if not opts.noBackdrop then
-        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors()
-        SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
+        SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga, opts.radius or 8)
     end
     if not opts.noClose and frame.CloseButton then
         SkinBase.SkinCloseButton(frame.CloseButton)

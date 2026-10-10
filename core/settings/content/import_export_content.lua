@@ -443,7 +443,7 @@ local function BuildImportExportTab(tabContent)
     local importHeader = Shared.CreateAccentDotLabel(postExportContainer, ns.L["Import Profile String"], y)
 
     local pasteHint = GUI:CreateLabel(postExportContainer, ns.L["press Ctrl+V to paste"], 11, C.textMuted)
-    pasteHint:SetPoint("LEFT", importHeader, "RIGHT", 12, 0)
+    pasteHint:SetPoint("LEFT", importHeader._label, "RIGHT", 12, 0)
 
     y = y - 30
 
@@ -513,6 +513,7 @@ local function BuildImportExportTab(tabContent)
 
     local function ShowReloadPrompt(message)
         GUI:ShowConfirmation({
+            reload = true,
             title = ns.L["Reload UI?"],
             message = message or ns.L["Import complete. Reload UI to apply all changes?"],
             acceptText = ns.L["Reload"],
@@ -1035,7 +1036,7 @@ if Registry and Schema
         id = "importExportPage",
         moverKey = "importExport",
         category = "global",
-        nav = { tileId = "global", subPageIndex = 3 },
+        nav = { tileId = "global", subPageIndex = 4 },
         sections = {
             Schema.Section({
                 id = "settings",

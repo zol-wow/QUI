@@ -37,7 +37,6 @@ local PREVIEW_TEXTURES = {
     gloss  = PREVIEW_TEXTURE_PATH .. "Gloss",
 }
 local MAX_PREVIEW_BUTTONS = 12
-local SAMPLE_PREVIEW_KEYBINDS = { "1", "2", "3", "4", "R", "F", "C", "V", "Q", "E", "T", "G" }
 
 local function FormatPreviewKeybind(keybind)
     if QUI and QUI.FormatKeybind then
@@ -113,14 +112,6 @@ end
 
 local function IsPreviewSecretValue(value)
     return Helpers and Helpers.IsSecretValue and Helpers.IsSecretValue(value) or false
-end
-
-local function HasPreviewTextValue(value)
-    if IsPreviewSecretValue(value) then
-        return true -- @secret-policy: route-to-text-sink
-    end
-    if value == nil then return false end
-    return value ~= ""
 end
 
 local function ResolveContext()
@@ -220,7 +211,7 @@ local function GetPreviewBindingText(barKey, index, sourceButton)
     if IsPreviewSecretValue(displayed) then
         return displayed
     end
-    if type(displayed) == "string" and displayed ~= "" then
+    if type(displayed) == "string" and displayed ~= "" and displayed ~= RANGE_INDICATOR then
         return displayed
     end
 
@@ -649,7 +640,7 @@ end
 function ActionBarsPreviewDriver.Build(host, options)
     if state.host == host then
         state.autoHeight = options or state.autoHeight
-        return
+        return state.previewHost
     end
     if state.host then
         ActionBarsPreviewDriver.Teardown()
@@ -748,6 +739,7 @@ function ActionBarsPreviewDriver.Build(host, options)
         AdvanceGlowOwner(elapsed)
         AdvanceChargeOwner(elapsed)
     end)
+    return previewHost
 end
 
 function ActionBarsPreviewDriver.Refresh()
@@ -830,7 +822,6 @@ function ActionBarsPreviewDriver.Refresh()
     local usabColor = settings.usabilityColor or { 0.4, 0.4, 0.4, 1 }
     local manaColor = settings.manaColor or { 0.5, 0.5, 1.0, 1 }
     local fontPath, outline = GetPreviewFontSettings()
-    local hasVisibleKeybind = false
 
     for i = 1, visibleCount do
         local slotInfo = previewSlots[i]
@@ -838,16 +829,6 @@ function ActionBarsPreviewDriver.Refresh()
             slotInfo.binding = GetPreviewBindingText(state.selectedBar, slotInfo.index, slotInfo.sourceButton)
             slotInfo.macro = GetPreviewMacroText(slotInfo.slot, slotInfo.sourceButton)
             slotInfo.count = GetPreviewCountText(slotInfo.slot, slotInfo.sourceButton)
-            hasVisibleKeybind = hasVisibleKeybind or (not slotInfo.hiddenEmpty and HasPreviewTextValue(slotInfo.binding))
-        end
-    end
-
-    if settings.showKeybinds and not hasVisibleKeybind then
-        for i = 1, visibleCount do
-            local slotInfo = previewSlots[i]
-            if slotInfo and slotInfo.texture and not HasPreviewTextValue(slotInfo.binding) then
-                slotInfo.binding = SAMPLE_PREVIEW_KEYBINDS[i] or SAMPLE_PREVIEW_KEYBINDS[((i - 1) % #SAMPLE_PREVIEW_KEYBINDS) + 1]
-            end
         end
     end
 

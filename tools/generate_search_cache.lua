@@ -787,6 +787,9 @@ _G.C_CVar = {
         return _G.SetCVar(cvar, value)
     end,
 }
+_G.CVarCallbackRegistry = {
+    GetCVarValueBool = function(_, cvar) return _G.GetCVarBool(cvar) end,
+}
 _G.C_NamePlateManager = {
     SetNamePlateSimplified = function() end,
 }
@@ -1088,18 +1091,16 @@ ns.AddonLoader = {
     SetModuleAddonEnabled = function() return "reload" end,
 }
 
--- The options page requires the runtime to be present before offering actions.
--- Harvest its empty-profile controls without starting timers or aura tracking.
 ns.SpellReminders = { Store = function() return profile_db.spellReminders end }
 
-local function load_script(path)
+local function load_script(path, script_ns)
     local chunk, load_err = loadfile(path)
     if not chunk then
         return false, load_err
     end
 
     return xpcall(function()
-        return chunk(ADDON_NAME, ns)
+        return chunk(ADDON_NAME, script_ns or ns)
     end, debug.traceback)
 end
 
@@ -1111,6 +1112,21 @@ collect_qui_options_scripts(scripts, script_xml_seen)
 
 local failures = {}
 local loaded_count = 0
+
+do
+    local swing_ns = setmetatable({
+        Client = { isForever = true },
+        WhenLoggedIn = function() end,
+        Registry = { Register = function() end },
+    }, { __index = ns })
+    local path = "modules/skinning/gameplay/swing_timers.lua"
+    local ok, err = load_script(path, swing_ns)
+    if ok then
+        ns.SwingTimers = swing_ns.SwingTimers
+    else
+        failures[#failures + 1] = { path = path, error = err }
+    end
+end
 
 -- groupframes_aura_model.lua is now a compatibility shim: `local E =
 -- ns.AuraElements` captured at file scope, delegating every constructor to the
@@ -2127,6 +2143,9 @@ local function capture_group_frames_auras_elements()
     local function strip(filterMode, auraType)
         local element = Model.NewFilterStripElement(auraType or "HARMFUL")
         element.filterMode = filterMode
+        element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
+            anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
+        element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
         return element
     end
     local function tracked(displayType)
@@ -2384,6 +2403,9 @@ local function capture_nameplates_auras_elements()
         local function strip(filterMode, auraType)
             local element = E.NewFilterStripElement(auraType or "HARMFUL")
             element.filterMode = filterMode
+            element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
+                anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
+            element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
             return element
         end
         local function tracked(displayType)
@@ -2547,6 +2569,9 @@ local function capture_aura_displays_elements()
         local function strip(filterMode, auraType)
             local element = E.NewFilterStripElement(auraType or "HARMFUL")
             element.filterMode = filterMode
+            element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
+                anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
+            element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
             return element
         end
         local function tracked(displayType)
@@ -3027,6 +3052,12 @@ end
 
 install_search_capture_overrides()
 capture_all_search_features()
+do
+    local originalClient = ns.Client
+    ns.Client = { isForever = true }
+    capture_search_feature(ns.Settings.Registry:GetFeature("skinningPage"))
+    ns.Client = originalClient
+end
 capture_cdm_settings_tabs()
 capture_group_frames_settings_tabs()
 capture_group_frames_auras_elements()
@@ -3095,6 +3126,7 @@ local tile_order = {
     "QUI_RemindersTile",
     "QUI_QoLTile",
     "QUI_BagsTile",
+    "QUI_AltsTile",
     "QUI_HelpTile",
 }
 
@@ -3213,6 +3245,13 @@ clear_non_plain_arrays_before_route_seed()
 
 if type(GUI.SeedStaticSearchRoutesFromTiles) == "function" then
     GUI:SeedStaticSearchRoutesFromTiles(frame)
+end
+
+local swing_route = ns.Settings.Registry:GetFeature("swingTimersPage").nav
+for _, entry in ipairs(GUI.StaticNavigationRegistry) do
+    if entry.tileId == swing_route.tileId and entry.subPageIndex == swing_route.subPageIndex then
+        entry.featureId = entry.featureId or "swingTimersPage"
+    end
 end
 
 -- Phase 1+ Modules Control Center: emit moduleToggle navigation entries
@@ -3377,6 +3416,21 @@ table.sort(navigation_entries, function(a, b)
     return entry_sort_key(a) < entry_sort_key(b)
 end)
 apply_feature_keywords(navigation_entries)
+
+local previousFrame = GUI.MainFrame
+GUI.MainFrame = frame
+for _, entries in ipairs({ settings_entries, navigation_entries }) do
+    for _, entry in ipairs(entries) do
+        local route = GUI:ResolveV2SectionNavigation(entry.tabIndex, entry.sectionName, entry.tileId)
+        if route then
+            entry.tileId = route.tileId
+            entry.subPageIndex = route.subPageIndex
+            local tile = GUI:FindV2TileByID(frame, route.tileId)
+            entry.subTabName = tile.config.subPages[route.subPageIndex].name
+        end
+    end
+end
+GUI.MainFrame = previousFrame
 
 -- Records are emitted POSITIONALLY under a per-group schema header, and the
 -- whole payload ships as a long-bracket string. The keyed, indented table this

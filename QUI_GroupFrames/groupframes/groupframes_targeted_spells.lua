@@ -522,12 +522,20 @@ local function StopCooldown(cooldown)
     if not cooldown then
         return
     end
+    if Helpers.CanMutateCooldown and not Helpers.CanMutateCooldown(cooldown) then
+        cooldown:SetAlpha(0)
+        return
+    end
     ns.SafeCallMethodIfPresent("best-effort-style", cooldown, "Clear")
     cooldown:Hide()
 end
 
 local function StartCooldown(cooldown, durationObject, startMS, endMS)
     if not cooldown then
+        return
+    end
+    if Helpers.CanMutateCooldown and not Helpers.CanMutateCooldown(cooldown) then
+        cooldown:SetAlpha(0)
         return
     end
 
@@ -563,6 +571,7 @@ local function StartCooldown(cooldown, durationObject, startMS, endMS)
 
     if cooldown.SetCooldown then
         cooldown:SetCooldown(start, duration)
+        cooldown:SetAlpha(1)
         cooldown:Show()
     else
         StopCooldown(cooldown)

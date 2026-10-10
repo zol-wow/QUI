@@ -83,10 +83,11 @@ function Datapanels:CreatePanel(panelID, config)
 
     panel.bg = panel:CreateTexture(nil, "BACKGROUND")
     panel.bg:SetAllPoints()
-    panel.bg:SetColorTexture(0, 0, 0, (config.bgOpacity or 50) / 100)
+    local _, _, _, _, bgR, bgG, bgB = ns.Helpers.GetWindowColors(config, "")
+    panel.bg:SetColorTexture(bgR, bgG, bgB, (config.bgOpacity or 50) / 100)
 
     local borderSize = config.borderSize or 2
-    local bR, bG, bB, bA = ns.Helpers.GetSkinBorderColor(config, "")
+    local bR, bG, bB, bA = ns.Helpers.GetWindowColors(config, "")
     local borderColor = { bR, bG, bB, bA }
     panel.borderLeft = panel:CreateTexture(nil, "BORDER")
     panel.borderRight = panel:CreateTexture(nil, "BORDER")
@@ -263,10 +264,11 @@ function Datapanels:UpdatePanel(panelID)
 
     panel:SetSize(panel.config.width or 300, panel.config.height or 22)
 
-    panel.bg:SetColorTexture(0, 0, 0, (panel.config.bgOpacity or 50) / 100)
+    local _, _, _, _, bgR, bgG, bgB = ns.Helpers.GetWindowColors(panel.config, "")
+    panel.bg:SetColorTexture(bgR, bgG, bgB, (panel.config.bgOpacity or 50) / 100)
 
     local borderSize = panel.config.borderSize or 2
-    local bR, bG, bB, bA = ns.Helpers.GetSkinBorderColor(panel.config, "")
+    local bR, bG, bB, bA = ns.Helpers.GetWindowColors(panel.config, "")
     local borderColor = { bR, bG, bB, bA }
     panel.borderLeft:SetWidth(borderSize)
     panel.borderRight:SetWidth(borderSize)
@@ -406,7 +408,7 @@ if ns.Registry then
     ns.Registry:Register("datapanelsSkin", {
         refresh = function()
             for _, panel in pairs(Datapanels.activePanels) do
-                local bR, bG, bB, bA = ns.Helpers.GetSkinBorderColor(panel.config, "")
+                local bR, bG, bB, bA = ns.Helpers.GetWindowColors(panel.config, "")
                 panel.borderLeft:SetColorTexture(bR, bG, bB, bA)
                 panel.borderRight:SetColorTexture(bR, bG, bB, bA)
                 panel.borderTop:SetColorTexture(bR, bG, bB, bA)

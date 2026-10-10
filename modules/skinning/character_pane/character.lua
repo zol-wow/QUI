@@ -1,3 +1,5 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
 local QUI = ns.QUI or {}
 ns.QUI = QUI
@@ -36,15 +38,15 @@ local function AnchorCharacterFrameBottomTabs(firstTabYOffset)
 
     if CharacterFrameTab1 then
         CharacterFrameTab1:ClearAllPoints()
-        CharacterFrameTab1:SetPoint("TOPLEFT", CharacterFrame, "BOTTOMLEFT", 11, firstTabYOffset)
+        CharacterFrameTab1:SetPoint("TOPLEFT", CharacterFrame, "BOTTOMLEFT", 8, firstTabYOffset)
     end
     if CharacterFrameTab2 and CharacterFrameTab1 then
         CharacterFrameTab2:ClearAllPoints()
-        CharacterFrameTab2:SetPoint("TOPLEFT", CharacterFrameTab1, "TOPRIGHT", -5, 0)
+        CharacterFrameTab2:SetPoint("TOPLEFT", CharacterFrameTab1, "TOPRIGHT", 0, 0)
     end
     if CharacterFrameTab3 and CharacterFrameTab2 then
         CharacterFrameTab3:ClearAllPoints()
-        CharacterFrameTab3:SetPoint("TOPLEFT", CharacterFrameTab2, "TOPRIGHT", -5, 0)
+        CharacterFrameTab3:SetPoint("TOPLEFT", CharacterFrameTab2, "TOPRIGHT", 0, 0)
     end
 end
 
@@ -212,6 +214,8 @@ local function ApplyOnePixelBorder(frame, withBackground, borderColor, bgColor)
     local skinBase = GetSkinBase()
     if skinBase and skinBase.ApplyChromeBackdrop then
         skinBase.ApplyChromeBackdrop(frame, {
+            radius = 3,
+            borderPixels = 1,
             withBackground = withBackground,
             withInsets = withBackground,
             borderColor = borderColor,
@@ -229,6 +233,7 @@ end
 
 local function SetSlotBorderPoints(borderFrame, slot)
     local skinBase = GetSkinBase()
+    if skinBase and skinBase.UsePhysicalPixelScale then skinBase.UsePhysicalPixelScale(borderFrame) end
     if skinBase and skinBase.SetExpandedPixelPoints then
         skinBase.SetExpandedPixelPoints(borderFrame, slot, 1)
         return
@@ -244,6 +249,7 @@ local function ApplySlotPixelBackdrop(borderFrame, borderColor)
     local skinBase = GetSkinBase()
     if skinBase and skinBase.ApplyChromeBackdrop then
         skinBase.ApplyChromeBackdrop(borderFrame, {
+            radius = 3,
             withBackground = false,
             withInsets = false,
             borderColor = borderColor,
@@ -358,12 +364,6 @@ local function UpdateSidebarTabBorder(tab)
     end
 end
 
-local function FixSidebarTabRegionCoords(tex, x1)
-    if x1 ~= 0.16001 then
-        tex:SetTexCoord(0.16001, 0.86, 0.16, 0.86)
-    end
-end
-
 local function StyleSidebarTab(tab, index, uniformWidth, uniformHeight)
     if not tab then return end
 
@@ -371,21 +371,37 @@ local function StyleSidebarTab(tab, index, uniformWidth, uniformHeight)
         QUICore:SetPixelPerfectSize(tab, uniformWidth, uniformHeight)
     end
 
-    local icon = GetSidebarTabIcon(tab, index)
-    if icon then
+    local nativeIcon = GetSidebarTabIcon(tab, index)
+    local roles = ns.Client and ns.Client.isForever and { "stats", "equipment", "titles" }
+        or { "stats", "titles", "equipment" }
+    local role = roles[index]
+    if role then
+        if nativeIcon then GetSkinBase().ClampTextureHidden(nativeIcon) end
+        local state = GetState(tab)
+        if not state.viewIcon then state.viewIcon = tab:CreateTexture(nil, "OVERLAY") end
+        local icon = state.viewIcon
+        icon:SetTexture("Interface\\AddOns\\QUI\\assets\\character\\" .. role .. ".tga")
+        icon:SetSize(18, 18)
         icon:ClearAllPoints()
-        icon:SetAllPoints()
-        QUICore:ApplyPixelSnapping(icon)
+        icon:SetPoint("CENTER", tab, "CENTER", 0, 0)
+        icon:SetVertexColor(0.9, 0.9, 0.9, 1)
+        GetSkinBase().RoundIconTexture(tab, icon)
+    elseif nativeIcon then
+        nativeIcon:ClearAllPoints()
+        nativeIcon:SetAllPoints()
+        QUICore:ApplyPixelSnapping(nativeIcon)
+        GetSkinBase().RoundIconTexture(tab, nativeIcon)
     end
 
     if tab.Highlight then
         tab.Highlight:SetColorTexture(1, 1, 1, 0.3)
         tab.Highlight:ClearAllPoints()
         tab.Highlight:SetAllPoints(tab)
+        GetSkinBase().RoundIconTexture(tab, tab.Highlight)
     end
 
     if tab.Hider then
-        tab.Hider:SetColorTexture(0, 0, 0, 0.8)
+        tab.Hider:SetColorTexture(0, 0, 0, 0.45)
     end
 
     if tab.TabBg and tab.TabBg.Hide then
@@ -399,6 +415,7 @@ local function StyleSidebarTab(tab, index, uniformWidth, uniformHeight)
         border:EnableMouse(false)
         sidebarTabBorders[tab] = border
     end
+    GetSkinBase().UsePhysicalPixelScale(border)
     border:ClearAllPoints()
     local borderPx = QUICore:GetPixelSize(border)
     border:SetPoint("TOPLEFT", tab, "TOPLEFT", -borderPx, borderPx)
@@ -407,20 +424,11 @@ local function StyleSidebarTab(tab, index, uniformWidth, uniformHeight)
     if tab.Hider then
         tab.Hider:ClearAllPoints()
         tab.Hider:SetAllPoints(border)
+        GetSkinBase().RoundIconTexture(tab, tab.Hider)
     end
 
     ApplyOnePixelBorder(border, false)
     UpdateSidebarTabBorder(tab)
-
-    if index == 1 and not (frameState[tab] or EMPTY).sidebarTexCoordHooked then
-        for _, region in next, { tab:GetRegions() } do
-            if region and region.SetTexCoord then
-                region:SetTexCoord(0.16, 0.86, 0.16, 0.86)
-                hooksecurefunc(region, "SetTexCoord", FixSidebarTabRegionCoords)
-            end
-        end
-        GetState(tab).sidebarTexCoordHooked = true
-    end
 
     if sidebarTabHooked[tab] then return end
     tab:HookScript("OnEnter", function(self)
@@ -433,7 +441,7 @@ local function StyleSidebarTab(tab, index, uniformWidth, uniformHeight)
     end)
     tab:HookScript("OnClick", function()
         C_Timer.After(0, function()
-            for i = 1, 3 do
+            for i = 1, 4 do
                 UpdateSidebarTabBorder(_G["PaperDollSidebarTab" .. i])
             end
         end)
@@ -443,6 +451,21 @@ end
 
 local function StyleSidebarTabs()
     local tabs = { _G.PaperDollSidebarTab1, _G.PaperDollSidebarTab2, _G.PaperDollSidebarTab3 }
+    if ns.Client and ns.Client.isForever and CharacterFrame and CharacterFrame.RightPaneHost then
+        tabs[4] = _G.PaperDollSidebarTab4
+        if PaperDollSidebarTabs then
+            PaperDollSidebarTabs:ClearAllPoints()
+            PaperDollSidebarTabs:SetPoint("TOP", CharacterFrame.RightPaneHost, "TOP", 0, -4)
+            PaperDollSidebarTabs:SetSize(CharacterFrame.RightPaneHost:GetWidth(), 85)
+        end
+        for _, tab in ipairs(tabs) do
+            tab:SetSize(42, 42)
+        end
+        if _G.PaperDollFrame_UpdateSidebarTabLayout then
+            _G.PaperDollFrame_UpdateSidebarTabLayout()
+        end
+        return
+    end
 
     if not sidebarTabBaseWidth or not sidebarTabBaseHeight then
         local refTab = tabs[1]
@@ -468,9 +491,12 @@ local function StyleSidebarTabs()
         end
 
         if PaperDollSidebarTabs and tabs[1] and tabs[3] then
+            local pixelSize = QUICore:GetPixelSize(tabs[3])
             PaperDollSidebarTabs:ClearAllPoints()
-            PaperDollSidebarTabs:SetPoint("TOPLEFT", tabs[1], "TOPLEFT", 0, 0)
-            PaperDollSidebarTabs:SetPoint("BOTTOMRIGHT", tabs[3], "BOTTOMRIGHT", 0, 0)
+            PaperDollSidebarTabs:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", leftX, topY)
+            PaperDollSidebarTabs:SetPoint("BOTTOMRIGHT", CharacterFrame, "TOPRIGHT",
+                leftX + totalWidth - sidebarTabBaseWidth + sidebarTabBaseWidth * pixelSize,
+                topY - sidebarTabBaseHeight * pixelSize)
         end
     end
 
@@ -1071,7 +1097,7 @@ local function CreateSlotOverlay(slotFrame, slotInfo, unit)
     overlay.durabilityBar:SetSize(3, slotFrame:GetHeight() - 4)
     overlay.durabilityBar:SetPoint("LEFT", overlay, "LEFT", 2, 0)
     overlay.durabilityBar:SetOrientation("VERTICAL")
-    overlay.durabilityBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    ns.Helpers.ApplyBarStyle(overlay.durabilityBar, "Interface\\Buttons\\WHITE8X8")
     overlay.durabilityBar:SetMinMaxValues(0, 100)
     overlay.durabilityBar:SetStatusBarColor(0.2, 0.8, 0.2, 1)
     overlay.durabilityBar:Hide()
@@ -1271,8 +1297,6 @@ end
 
 local layoutApplied = false
 local customBg = nil
-local equipMgrPopup = nil
-local titlesPopup = nil
 local allEquipmentSlots = {}
 local UpdateEquipmentSlotBorder = nil
 
@@ -1317,7 +1341,7 @@ local function HideBlizzardDecorations()
         StyleCloseButton(CharacterFrame.CloseButton)
     end
 
-    AnchorCharacterFrameBottomTabs(-48)
+    AnchorCharacterFrameBottomTabs(-50)
 
     if CharacterFrameInset then
         if CharacterFrameInset.NineSlice then CharacterFrameInset.NineSlice:Hide() end
@@ -1382,6 +1406,7 @@ local function HideBlizzardDecorations()
 
     local function SkinEquipmentSlot(slot)
         if not slot then return end
+        if slot.BorderFrame then GetSkinBase().StripTextures(slot.BorderFrame) end
 
         local normalTex = slot:GetNormalTexture()
         if normalTex then normalTex:SetAlpha(0) end
@@ -1415,6 +1440,7 @@ local function HideBlizzardDecorations()
         local iconTex = slot.icon or slot.Icon
         if iconTex and iconTex.SetTexCoord then
             iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            GetSkinBase().RoundIconTexture(slot, iconTex)
         end
 
         if not (frameState[slot] or EMPTY).borderFrame then
@@ -1454,6 +1480,7 @@ local function HideBlizzardDecorations()
         "CharacterFinger0Slot", "CharacterFinger1Slot",
         "CharacterTrinket0Slot", "CharacterTrinket1Slot",
         "CharacterMainHandSlot", "CharacterSecondaryHandSlot",
+        "CharacterRangedSlot", "CharacterAmmoSlot",
     }
 
     local allSlots = {}
@@ -1632,20 +1659,30 @@ end
 
 local function PositionStatsPanelForLayout()
     local settings = GetSettings()
+    local chrome = GetChrome()
+    local nativePane = chrome and chrome.GetNativeStatsPane and chrome.GetNativeStatsPane()
+    local useNativeLayout = ns.Client and ns.Client.isForever and nativePane
 
     local justCreated = false
     if not statsPanel then
-        statsPanel = CreateStatsPanel(CharacterFrame, "player")
+        statsPanel = CreateStatsPanel(useNativeLayout and CharacterFrame.RightPaneHost or CharacterFrame, "player")
         justCreated = true
     end
 
     if statsPanel then
         statsPanel:ClearAllPoints()
-        statsPanel:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 42, -70)
-        statsPanel:SetPoint("BOTTOMRIGHT", CharacterFrame, "BOTTOMRIGHT", 42, -45)
-        statsPanel:SetWidth(160)
-        statsPanel:SetFrameLevel(10)
-        statsPanel:Show()
+        if useNativeLayout then
+            statsPanel:SetScale(1)
+            statsPanel:SetPoint("TOPLEFT", nativePane, "TOPLEFT", 5, 0)
+            statsPanel:SetPoint("BOTTOMRIGHT", nativePane, "BOTTOMRIGHT", -5, 0)
+            statsPanel:SetFrameLevel(nativePane:GetFrameLevel() + 10)
+        else
+            statsPanel:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 42, -70)
+            statsPanel:SetPoint("BOTTOMRIGHT", CharacterFrame, "BOTTOMRIGHT", 42, -45)
+            statsPanel:SetWidth(160)
+            statsPanel:SetFrameLevel(10)
+        end
+        statsPanel:SetShown(not nativePane or nativePane:IsShown())
 
         if justCreated then
             C_Timer.After(0.05, ScheduleUpdate)
@@ -1787,6 +1824,14 @@ CreateStatsPanel = function(parent, unit)
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
     scrollChild:SetSize(130, 1)
     scrollFrame:SetScrollChild(scrollChild)
+    if ns.Client and ns.Client.isForever then
+        scrollFrame:SetScript("OnSizeChanged", function(_, width)
+            scrollChild:SetWidth(width)
+            for _, row in ipairs(scrollChild.statRowPool or EMPTY) do
+                row:SetWidth(width - 10)
+            end
+        end)
+    end
 
     -- Shared scroll contract (eased wheel + thin proportional bar) from the
     -- chrome owner; the stats panel used to jump 20 px with no visible bar.
@@ -1940,6 +1985,10 @@ local function ShowStatTooltip(self)
     if not settings.showTooltips then
         return
     end
+    if self.onEnterFunc then
+        self:onEnterFunc()
+        return
+    end
     if not self.tooltip then
         return
     end
@@ -1961,6 +2010,9 @@ local function CreateStatRow(parent, yOffset)
     local statsColor = settings.statsTextColor or {0.953, 0.957, 0.965}
     local rowHeight = 14
     local fontSize = math.max(statsSize - 1, 8)
+    if ns.Client and ns.Client.isForever then
+        rowHeight = math.max(rowHeight, fontSize + 4)
+    end
 
     parent.statRowPool = parent.statRowPool or {}
     parent.statRowUsed = (parent.statRowUsed or 0) + 1
@@ -1971,12 +2023,21 @@ local function CreateStatRow(parent, yOffset)
         row.label:SetPoint("LEFT", row, "LEFT", 0, 0)
         row.value = row:CreateFontString(nil, "OVERLAY")
         row.value:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        if ns.Client and ns.Client.isForever then
+            row.label:SetPoint("RIGHT", row.value, "LEFT", -6, 0)
+            row.label:SetJustifyH("LEFT")
+            row.value:SetJustifyH("RIGHT")
+            row.label:SetWordWrap(false)
+            row.value:SetWordWrap(false)
+        end
         parent.statRowPool[parent.statRowUsed] = row
     end
 
     row:SetSize(parent:GetWidth() - 10, rowHeight)
     row:SetPoint("TOPLEFT", 5, yOffset)
-    row.tooltip, row.tooltip2, row.tooltip3 = nil, nil, nil
+    row.Label, row.Value = row.label, row.value
+    row.tooltip, row.tooltip2, row.tooltip3, row.tooltip4 = nil, nil, nil, nil
+    row.onEnterFunc, row.UpdateTooltip, row.numericValue, row.tooltipLabel = nil, nil, nil, nil
 
     if settings.showTooltips then
         row:EnableMouse(true)
@@ -2010,6 +2071,9 @@ local function CreateSectionHeader(parent, text, yOffset)
     local headerSize = settings.headerTextSize or 12
     local fontSize = math.max(headerSize - 2, 10)
     local headerHeight = 14
+    if ns.Client and ns.Client.isForever then
+        headerHeight = math.max(headerHeight, fontSize + 4)
+    end
     local headerColor
     if settings.headerClassColor then
         local _, class = UnitClass("player")
@@ -2084,7 +2148,7 @@ local function CreateStatBar(parent, yOffset, color)
         row.bar = CreateFrame("StatusBar", nil, row)
         row.bar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, barOffset)
         row.bar:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, barOffset)
-        row.bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+        ns.Helpers.ApplyBarStyle(row.bar, "Interface\\Buttons\\WHITE8X8")
         row.bar:SetMinMaxValues(0, 100)
         local barBg = row.bar:CreateTexture(nil, "BACKGROUND")
         barBg:SetAllPoints()
@@ -2126,11 +2190,53 @@ local function CreateStatBar(parent, yOffset, color)
     return row
 end
 
+local function UpdateForeverStatsPanel(scrollChild, unit, y)
+    for _, category in ipairs(_G.PAPERDOLL_STATCATEGORIES) do
+        if not category.unit or category.unit == unit then
+            local hasHeader = false
+            for _, stat in ipairs(category.stats) do
+                if (not stat.unit or stat.unit == unit) and (not stat.showFunc or stat.showFunc()) then
+                    local row = CreateStatRow(scrollChild, y)
+                    local value = _G.PAPERDOLL_STATINFO[stat.stat].updateFunc(row, unit, stat.id)
+                    if row:IsShown() and (stat.hideAt == nil or value ~= stat.hideAt) then
+                        if not hasHeader then
+                            local _, headerHeight = CreateSectionHeader(scrollChild, category.categoryName, y)
+                            y = y - headerHeight
+                            hasHeader = true
+                        end
+                        row:SetPoint("TOPLEFT", 5, y)
+                        y = y - row:GetHeight()
+                    else
+                        row:Hide()
+                    end
+                end
+            end
+            if hasHeader then y = y - 5 end
+        end
+    end
+
+    if unit == "player" or unit == "pet" then
+        local _, headerHeight = CreateSectionHeader(scrollChild, _G.STAT_CATEGORY_RESISTANCE, y)
+        y = y - headerHeight
+        for _, school in ipairs({ Enum.Damageclass.Arcane, Enum.Damageclass.Fire,
+            Enum.Damageclass.Frost, Enum.Damageclass.Nature, Enum.Damageclass.Shadow }) do
+            local row = CreateStatRow(scrollChild, y)
+            local name = _G["DAMAGE_SCHOOL" .. (school + 1)]
+            local _, effectiveResistance = _G.UnitResistance(unit, school)
+            row.label:SetText(name)
+            row.value:SetText(BreakUpLargeNumbers(effectiveResistance))
+            _G.PaperDollFrame_SetResistanceTooltips(row, name, effectiveResistance, unit, school)
+            y = y - row:GetHeight()
+        end
+    end
+    return y
+end
+
 local function FinalizeStatsPanelLayout(panel, scrollChild, yOffset)
     local contentHeight = math.abs(yOffset) + 20
     scrollChild:SetHeight(contentHeight)
 
-    panel:SetScale(0.92)
+    panel:SetScale(ns.Client and ns.Client.isForever and 1 or 0.92)
 
     local scrollFrame = panel.scrollFrame
     if scrollFrame then
@@ -2147,6 +2253,11 @@ local function FinalizeStatsPanelLayout(panel, scrollChild, yOffset)
 end
 
 local function MaskNativeStatsPane()
+    local chrome = GetChrome()
+    if chrome and chrome.MaskNativeStatsPane then
+        chrome.MaskNativeStatsPane()
+        return
+    end
     if not CharacterStatsPane then return end
     ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "Show")
     ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "SetAlpha", 0)
@@ -2159,6 +2270,14 @@ ns.QUI_MaskNativeStatsPane = MaskNativeStatsPane
 
 local function UpdateStatsPanel(panel, unit)
     if not panel or not panel.scrollChild then return end
+    if (unit or panel.unit or "player") == "player" then
+        local chrome = GetChrome()
+        local nativePane = chrome and chrome.GetNativeStatsPane and chrome.GetNativeStatsPane()
+        if nativePane and not nativePane:IsShown() then
+            panel:Hide()
+            return
+        end
+    end
 
     if InCombatLockdown() then
         pendingStatsPanelRefresh = true
@@ -2206,10 +2325,14 @@ local function UpdateStatsPanel(panel, unit)
         scrollChild.sectionHeaderUsed = 0
 
         local y = -5
-        local ROW_HEIGHT = 14
+        local ROW_HEIGHT = ns.Client and ns.Client.isForever and math.max(14, (settings.statsTextSize or 11) + 3) or 14
         local SECTION_GAP = 8
         local BAR_HEIGHT = 16
+        local _, row, headerHeight
 
+        if ns.Client and ns.Client.isForever then
+            y = UpdateForeverStatsPanel(scrollChild, unit, y)
+        else
         local statPolicy = GetSkinBase().CreateSecretAwareStatPolicy({
             unit = unit,
             secretDetector = AreCharacterStatsSecretsDisabled,
@@ -2225,7 +2348,7 @@ local function UpdateStatsPanel(panel, unit)
         end
         local secretsOff = statPolicy.secretsRestricted
 
-        local row = CreateStatRow(scrollChild, y)
+        row = CreateStatRow(scrollChild, y)
         row.label:SetText(ns.L["Health"])
         do
             local hOk, healthMax = pcall(UnitHealthMax, unit)
@@ -2264,7 +2387,7 @@ local function UpdateStatsPanel(panel, unit)
 
         y = y - 5
 
-        local _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Attributes"], y)
+        _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Attributes"], y)
         y = y - headerHeight
 
         local stats = {
@@ -2860,6 +2983,8 @@ local function UpdateStatsPanel(panel, unit)
         end
     end
 
+        end
+
         if settings.showGemSummary then
             y = y - 5
             _, headerHeight = CreateSectionHeader(scrollChild, ns.L["Gems"], y)
@@ -2917,7 +3042,10 @@ local function UpdateStatsPanel(panel, unit)
 
     if not success then
         if panel then ns.SafeCallMethod("best-effort-style", panel, "Hide") end
-        if CharacterStatsPane then
+        local chrome = GetChrome()
+        if chrome and chrome.RestoreNativeStatsPane then
+            chrome.RestoreNativeStatsPane()
+        elseif CharacterStatsPane then
             ns.SafeCallMethod("best-effort-style", CharacterStatsPane, "SetAlpha", 1)
             ns.SafeCallMethodIfPresent("best-effort-style", CharacterStatsPane, "EnableMouse", true)
             if CharacterStatsPane.ClassBackground then
@@ -3053,48 +3181,72 @@ ScheduleUpdate = function()
     end)
 end
 
--- Side popouts are built by the chrome owner with QUI chrome from the start
--- (no Blizzard dialog textures that a second module then has to restyle).
-local function CreateSidePopup(globalName, titleText)
-    local chrome = GetChrome()
-    if not (chrome and chrome.CreatePopout) then return nil end
-    return chrome.CreatePopout(titleText, { name = globalName })
-end
-
-local function CreateEquipMgrPopup()
-    if equipMgrPopup then return equipMgrPopup end
-    equipMgrPopup = CreateSidePopup("QUI_EquipMgrPopup", ns.L["Equipment Manager"])
-    return equipMgrPopup
-end
-
-local function CreateTitlesPopup()
-    if titlesPopup then return titlesPopup end
-    titlesPopup = CreateSidePopup("QUI_TitlesPopup", ns.L["Titles"])
-    return titlesPopup
-end
-
-local function RestoreCharacterPanePopoutPane(pane)
-    if not pane then return end
-
-    pane:Hide()
-
-    local state = frameState[pane] or EMPTY
-    if state.originalParent then
-        pane:SetParent(state.originalParent)
+local function ShowCharacterSidebarPane(pane, equipment)
+    if not pane or not statsPanel or not GetSettings().enabled then return end
+    statsPanel:Hide()
+    pane:ClearAllPoints()
+    pane:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 0, 0)
+    pane:SetPoint("BOTTOMRIGHT", statsPanel, "BOTTOMRIGHT", 0, 0)
+    if pane.ScrollBox then
+        pane.ScrollBox:ClearAllPoints()
+        pane.ScrollBox:SetPoint("TOPLEFT", pane, "TOPLEFT", 0, equipment and -34 or 0)
+        pane.ScrollBox:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -16, 0)
     end
+    if equipment then
+        local chrome = GetChrome()
+        if chrome and chrome.StyleSlotFlyoutButton then
+            for _, slot in ipairs(allEquipmentSlots) do
+                if slot.popoutButton then chrome.StyleSlotFlyoutButton(slot.popoutButton) end
+            end
+        end
+    end
+    if equipment and pane.EquipSet and pane.SaveSet then
+        local width = (statsPanel:GetWidth() - 4) / 2
+        pane.EquipSet:ClearAllPoints()
+        pane.EquipSet:SetPoint("TOPLEFT", pane, "TOPLEFT", 0, -6)
+        pane.EquipSet:SetWidth(width)
+        pane.SaveSet:SetWidth(width)
+        local chrome = GetChrome()
+        if chrome and chrome.StyleActionButton then
+            chrome.StyleActionButton(pane.EquipSet)
+            chrome.StyleActionButton(pane.SaveSet)
+        end
+        pane.SaveSet:ClearAllPoints()
+        pane.SaveSet:SetPoint("LEFT", pane.EquipSet, "RIGHT", 4, 0)
+    end
+    local skin = GetSkinBase()
+    if not equipment and pane.ScrollBox and skin and not (frameState[pane] or EMPTY).inlineRowHooked then
+        skin.HookScrollBoxAcquired(pane.ScrollBox, function(row)
+            if row.text then
+                row.text:SetWordWrap(false)
+                row.text:SetMaxLines(1)
+                if not (frameState[row] or EMPTY).fullTitleHooked then
+                    row:HookScript("OnEnter", function(self)
+                        if self.text and self.text:IsTruncated() then
+                            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                            GameTooltip:SetText(self.text:GetText(), 1, 1, 1, 1, true)
+                            GameTooltip:Show()
+                        end
+                    end)
+                    row:HookScript("OnLeave", function(self)
+                        if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
+                    end)
+                    GetState(row).fullTitleHooked = true
+                end
+            end
+        end)
+        GetState(pane).inlineRowHooked = true
+    end
+    local api = _G.QUI_CharacterFrameSkinning
+    local style = api and (equipment and api.SkinEquipmentManager or api.SkinTitleManager)
+    if style then style() end
 end
 
 local function RestoreCharacterPanePopouts()
-    if equipMgrPopup then
-        equipMgrPopup:Hide()
+    for _, pane in ipairs({ PaperDollFrame and PaperDollFrame.EquipmentManagerPane,
+        PaperDollFrame and PaperDollFrame.TitleManagerPane }) do
+        if pane then pane:Hide() end
     end
-
-    if titlesPopup then
-        titlesPopup:Hide()
-    end
-
-    RestoreCharacterPanePopoutPane(PaperDollFrame and PaperDollFrame.EquipmentManagerPane)
-    RestoreCharacterPanePopoutPane(PaperDollFrame and PaperDollFrame.TitleManagerPane)
 end
 
 local SIDEBAR_TAB_ACTIVE_TEXCOORDS = {0.01562500, 0.79687500, 0.78906250, 0.95703125}
@@ -3167,8 +3319,9 @@ local function SelectCharacterStatsSidebarTab()
     SetSidebarTabSelected(PaperDollSidebarTab1, true)
     SetSidebarTabSelected(PaperDollSidebarTab2, false)
     SetSidebarTabSelected(PaperDollSidebarTab3, false)
+    SetSidebarTabSelected(_G.PaperDollSidebarTab4, false)
 
-    for i = 1, 3 do
+    for i = 1, 4 do
         UpdateSidebarTabBorder(_G["PaperDollSidebarTab" .. i])
     end
 end
@@ -3213,14 +3366,26 @@ local function HookCharacterFrame()
         RestoreCharacterPanePopouts()
     end)
 
-    if CharacterStatsPane then
-        hooksecurefunc(CharacterStatsPane, "Show", function()
+    local chrome = GetChrome()
+    local nativeStatsPane = chrome and chrome.GetNativeStatsPane and chrome.GetNativeStatsPane() or CharacterStatsPane
+    if nativeStatsPane then
+        nativeStatsPane:HookScript("OnHide", function()
+            if statsPanel then statsPanel:Hide() end
+        end)
+        hooksecurefunc(nativeStatsPane, "Show", function()
             C_Timer.After(0, function()
                 local settings = GetSettings()
-                if settings.enabled and CharacterStatsPane then
+                if settings.enabled then
                     MaskNativeStatsPane()
+                    ScheduleUpdate()
                 end
             end)
+        end)
+    end
+
+    if ns.Client and ns.Client.isForever and type(_G.PaperDollFrame_UpdateStats) == "function" then
+        hooksecurefunc("PaperDollFrame_UpdateStats", function()
+            if GetSettings().enabled then ScheduleUpdate() end
         end)
     end
 
@@ -3236,81 +3401,60 @@ local function HookCharacterFrame()
         GetState(CharacterFrame).sidebarSkinHooked = true
     end
 
-    if PaperDollSidebarTab3 and not (frameState[PaperDollSidebarTab3] or EMPTY).hooked then
-        PaperDollSidebarTab3:HookScript("OnClick", function()
-            local settings = GetSettings()
-            if not settings.enabled then return end
-
-            RestoreCharacterPanePopouts()
-
-            local popup = CreateEquipMgrPopup()
-
-            local pane = PaperDollFrame and PaperDollFrame.EquipmentManagerPane
-            if pane then
-                if not (frameState[pane] or EMPTY).originalParent then
-                    GetState(pane).originalParent = pane:GetParent()
-                end
-
-                pane:SetParent(popup)
-                pane:ClearAllPoints()
-                pane:SetPoint("TOPLEFT", popup, "TOPLEFT", 5, -30)
-                pane:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -5, 5)
-                pane:Show()
-
-                if pane.ScrollBox then
-                    pane.ScrollBox:ClearAllPoints()
-                    pane.ScrollBox:SetPoint("TOPLEFT", pane, "TOPLEFT", 5, -35)
-                    pane.ScrollBox:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -25, 5)
-                end
-
-                popup:Show()
-
-                local skinningAPI = _G.QUI_CharacterFrameSkinning
-                if skinningAPI and skinningAPI.SkinEquipmentManager then
-                    skinningAPI.SkinEquipmentManager()
-                end
+    local equipmentTab = ns.Client and ns.Client.isForever and PaperDollSidebarTab2 or PaperDollSidebarTab3
+    if equipmentTab and not (frameState[equipmentTab] or EMPTY).hooked then
+        equipmentTab:HookScript("OnClick", function()
+            if not GetSettings().enabled then return end
+            if type(_G.PaperDollFrame_SetSidebar) == "function" then
+                _G.PaperDollFrame_SetSidebar(equipmentTab, ns.Client and ns.Client.isForever and 2 or 3)
             end
-
+            ShowCharacterSidebarPane(PaperDollFrame and PaperDollFrame.EquipmentManagerPane, true)
         end)
-        GetState(PaperDollSidebarTab3).hooked = true
+        GetState(equipmentTab).hooked = true
     end
 
-    if PaperDollSidebarTab2 and not (frameState[PaperDollSidebarTab2] or EMPTY).hooked then
-        PaperDollSidebarTab2:HookScript("OnClick", function()
-            local settings = GetSettings()
-            if not settings.enabled then return end
+    local titlesTab = PaperDollSidebarTab2
+    if ns.Client and ns.Client.isForever then titlesTab = _G.PaperDollSidebarTab4 and PaperDollSidebarTab3 end
+    if titlesTab and not (frameState[titlesTab] or EMPTY).hooked then
+        titlesTab:HookScript("OnClick", function()
+            if not GetSettings().enabled then return end
+            if type(_G.PaperDollFrame_SetSidebar) == "function" then
+                _G.PaperDollFrame_SetSidebar(titlesTab, ns.Client and ns.Client.isForever and 3 or 2)
+            end
+            ShowCharacterSidebarPane(PaperDollFrame and PaperDollFrame.TitleManagerPane, false)
+        end)
+        GetState(titlesTab).hooked = true
+    end
 
-            RestoreCharacterPanePopouts()
-
-            local popup = CreateTitlesPopup()
-
-            local pane = PaperDollFrame and PaperDollFrame.TitleManagerPane
-            if pane then
-                if not (frameState[pane] or EMPTY).originalParent then
-                    GetState(pane).originalParent = pane:GetParent()
-                end
-
-                pane:SetParent(popup)
-                pane:ClearAllPoints()
-                pane:SetPoint("TOPLEFT", popup, "TOPLEFT", 5, -30)
-                pane:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -5, 5)
-                pane:Show()
-
-                if pane.ScrollBox then
-                    pane.ScrollBox:ClearAllPoints()
-                    pane.ScrollBox:SetPoint("TOPLEFT", pane, "TOPLEFT", 5, -5)
-                    pane.ScrollBox:SetPoint("BOTTOMRIGHT", pane, "BOTTOMRIGHT", -25, 5)
-                end
-
-                popup:Show()
-
-                local skinningAPI = _G.QUI_CharacterFrameSkinning
-                if skinningAPI and skinningAPI.SkinTitleManager then
-                    skinningAPI.SkinTitleManager()
-                end
+    if type(_G.PaperDollFrame_SetSidebar) == "function" then
+        hooksecurefunc("PaperDollFrame_SetSidebar", function()
+            if not GetSettings().enabled or not PaperDollFrame then return end
+            local pane = PaperDollFrame.currentSideBar
+            if pane == PaperDollFrame.EquipmentManagerPane then
+                ShowCharacterSidebarPane(pane, true)
+            elseif pane == PaperDollFrame.TitleManagerPane then
+                ShowCharacterSidebarPane(pane, false)
             end
         end)
-        GetState(PaperDollSidebarTab2).hooked = true
+    end
+
+    local petTab = _G.PaperDollSidebarTab4 or PaperDollSidebarTab3
+    if ns.Client and ns.Client.isForever and petTab and not (frameState[petTab] or EMPTY).hooked then
+        petTab:HookScript("OnClick", function()
+            local settings = GetSettings()
+            if not settings.enabled then return end
+            RestoreCharacterPanePopouts()
+            if statsPanel then statsPanel:Hide() end
+        end)
+        GetState(petTab).hooked = true
+    end
+
+    if type(_G.EquipmentFlyoutPopoutButton_SetReversed) == "function" then
+        hooksecurefunc("EquipmentFlyoutPopoutButton_SetReversed", function(button)
+            if not GetSettings().enabled then return end
+            local chrome = GetChrome()
+            if chrome and chrome.StyleSlotFlyoutButton then chrome.StyleSlotFlyoutButton(button) end
+        end)
     end
 
     if GearManagerPopupFrame then
@@ -3321,9 +3465,9 @@ local function HookCharacterFrame()
 
         hooksecurefunc(GearManagerPopupFrame, "Show", function(self)
             C_Timer.After(0, function()
-                if self and equipMgrPopup and equipMgrPopup:IsShown() then
+                if self and PaperDollFrame and PaperDollFrame.EquipmentManagerPane:IsShown() then
                     self:ClearAllPoints()
-                    self:SetPoint("TOPLEFT", equipMgrPopup, "TOPRIGHT", 5, 0)
+                    self:SetPoint("TOPLEFT", PaperDollFrame.EquipmentManagerPane, "TOPRIGHT", 5, 0)
                 end
             end)
         end)
@@ -3343,15 +3487,15 @@ local function HookCharacterFrame()
     end
 
     local function AdjustForNonCharacterTab()
-        AnchorCharacterFrameBottomTabs(2)
+        AnchorCharacterFrameBottomTabs(-50)
         if CharacterFrame.CloseButton then
             CharacterFrame.CloseButton:ClearAllPoints()
-            CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", -3, -5)
+            CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPLEFT", (_G.CHARACTERFRAME_EXPANDED_WIDTH or 540) + 52, -5)
         end
     end
 
     local function RestoreCharacterTabPositions()
-        AnchorCharacterFrameBottomTabs(-48)
+        AnchorCharacterFrameBottomTabs(-50)
         if CharacterFrame.CloseButton then
             CharacterFrame.CloseButton:ClearAllPoints()
             CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 52, -5)
@@ -3382,7 +3526,7 @@ local function HookCharacterFrame()
             if CharacterFrameBg then CharacterFrameBg:Show() end
         end
 
-        SetCharacterFrameScale(1.0)
+        SetCharacterFrameScale(1.30 * (GetSettings().panelScale or 1.0))
         AdjustForNonCharacterTab()
     end
 
@@ -3392,6 +3536,12 @@ local function HookCharacterFrame()
 
     if TokenFrame then
         TokenFrame:HookScript("OnShow", HideCustomElements)
+    end
+
+    if type(CharacterFrame.ShowSubFrame) == "function" then
+        hooksecurefunc(CharacterFrame, "ShowSubFrame", function(_, frameName)
+            if frameName ~= "PaperDollFrame" then HideCustomElements() end
+        end)
     end
 
     if PaperDollFrame then
@@ -3440,7 +3590,11 @@ local function HookCharacterFrame()
                 end
                 RunAfterCharacterPaneLayoutTick(function()
                     if statsPanel then
-                        statsPanel:Show()
+                        if ns.Client and ns.Client.isForever then
+                            UpdateStatsPanel(statsPanel, "player")
+                        else
+                            statsPanel:Show()
+                        end
                     end
                 end)
             end
@@ -3474,6 +3628,8 @@ local function HookCharacterFrame()
         local flyout = chrome.CreateSettingsFlyout(CharacterFrame, {
             title = ns.L["QUI Character Panel"],
             name = "QUI_CharSettingsPanel",
+            width = 600,
+            columns = 2,
             triggerName = "QUI_CharacterSettingsBtn",
             triggerPoint = { "TOPRIGHT", CharacterFrame, "TOPRIGHT", 6, -6 },
             extension = chrome.CONFIG and chrome.CONFIG.PANEL_WIDTH_EXTENSION or 55,
@@ -3501,18 +3657,18 @@ local function HookCharacterFrame()
         ResetRows()
 
         local BASE_SCALE = 1.30
-        local scaleSlider = GUI:CreateFormSlider(scrollChild, ns.L["Panel Scale"], 0.75, 1.5, 0.05, "panelScale", charDB, function()
+        local scaleSlider = GUI:CreateFormSlider(scrollChild, nil, 0.75, 1.5, 0.05, "panelScale", charDB, function()
             local multiplier = charDB.panelScale or 1.0
             SetCharacterFrameScale(BASE_SCALE * multiplier)
         end, { deferOnDrag = true },
             { description = ns.L["Zoom factor applied to the character panel on top of the base scale. 1.0 leaves the panel at the default QUI size."] })
-        y = PlaceRow(scaleSlider, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Panel Scale"], scaleSlider), y)
 
         local core = GetCore()
         local generalDB = core and core.db and core.db.profile and core.db.profile.general
         local bgColorPicker = nil
         if generalDB then
-            bgColorPicker = GUI:CreateFormColorPicker(scrollChild, ns.L["Background Color"], "skinBgColor", generalDB, function()
+            bgColorPicker = GUI:CreateFormColorPicker(scrollChild, nil, "skinBgColor", generalDB, function()
                 if customBg and not IsSkinningHandlingBackground() then
                     local col = generalDB.skinBgColor or C.bg
                     SetOnePixelBorderColors(customBg, nil, { col[1], col[2], col[3], col[4] or 0.95 })
@@ -3522,7 +3678,7 @@ local function HookCharacterFrame()
                 end
             end, nil,
                 { description = ns.L["Background color applied to the character panel. Shared with the global skinning background so character and inspect panels match."] })
-            y = PlaceRow(bgColorPicker, y)
+            y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Background Color"], bgColorPicker), y)
 
             ctx.HookShow(function()
                 if bgColorPicker and bgColorPicker.swatch and generalDB and generalDB.skinBgColor then
@@ -3539,29 +3695,29 @@ local function HookCharacterFrame()
         y = y - overlayHeader.gap
         ResetRows()
 
-        local showItemName = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Equipment Name"], "showItemName", charDB, RefreshAll,
+        local showItemName = GUI:CreateFormCheckbox(scrollChild, nil, "showItemName", charDB, RefreshAll,
             { description = ns.L["Show the equipped item's name on each character panel slot overlay."] })
-        y = PlaceRow(showItemName, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Show Equipment Name"], showItemName), y)
 
-        local showIlvl = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Item Level & Track"], "showItemLevel", charDB, RefreshAll,
+        local showIlvl = GUI:CreateFormCheckbox(scrollChild, nil, "showItemLevel", charDB, RefreshAll,
             { description = ns.L["Show the item level and upgrade track label on each slot overlay."] })
-        y = PlaceRow(showIlvl, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Show Item Level & Track"], showIlvl), y)
 
-        local showEnchants = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Enchant Status"], "showEnchants", charDB, RefreshAll,
+        local showEnchants = GUI:CreateFormCheckbox(scrollChild, nil, "showEnchants", charDB, RefreshAll,
             { description = ns.L["Show the enchant name on each slot, or a missing-enchant marker if the slot has no enchant."] })
-        y = PlaceRow(showEnchants, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Show Enchant Status"], showEnchants), y)
 
-        local showGems = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Gem Indicators"], "showGems", charDB, RefreshAll,
+        local showGems = GUI:CreateFormCheckbox(scrollChild, nil, "showGems", charDB, RefreshAll,
             { description = ns.L["Show colored gem dots indicating how many gem slots the item has and whether each is filled."] })
-        y = PlaceRow(showGems, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Show Gem Indicators"], showGems), y)
 
-        local showGemSummary = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Gem Summary in Stats"], "showGemSummary", charDB, RefreshAll,
+        local showGemSummary = GUI:CreateFormCheckbox(scrollChild, nil, "showGemSummary", charDB, RefreshAll,
             { description = ns.L["Add a Gems section to the stats panel with socketed-gem counts per color and an empty-socket tally."] })
-        y = PlaceRow(showGemSummary, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Show Gem Summary in Stats"], showGemSummary), y)
 
-        local showDura = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Durability Bars"], "showDurability", charDB, RefreshAll,
+        local showDura = GUI:CreateFormCheckbox(scrollChild, nil, "showDurability", charDB, RefreshAll,
             { description = ns.L["Show a small durability bar on each slot overlay that has durability damage."] })
-        y = PlaceRow(showDura, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Show Durability Bars"], showDura), y)
 
         y = y - 10
 
@@ -3570,13 +3726,13 @@ local function HookCharacterFrame()
         y = y - statsPanelHeader.gap
         ResetRows()
 
-        local showTooltips = GUI:CreateFormCheckbox(scrollChild, ns.L["Show Stat Tooltips"], "showTooltips", charDB, function()
+        local showTooltips = GUI:CreateFormCheckbox(scrollChild, nil, "showTooltips", charDB, function()
             RefreshAll()
             if statsPanel then
                 UpdateStatsPanel(statsPanel, "player")
             end
         end, { description = ns.L["Show Blizzard's detailed stat tooltip when hovering any row in the QUI stats panel."] })
-        y = PlaceRow(showTooltips, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Show Stat Tooltips"], showTooltips), y)
 
         y = y - 10
 
@@ -3590,9 +3746,9 @@ local function HookCharacterFrame()
             { value = "rating", text = ns.L["Rating (1,234)"] },
             { value = "both", text = ns.L["Both (1,234 (19.5%))"] },
         }
-        local secondaryFormat = GUI:CreateFormDropdown(scrollChild, ns.L["Display Format"], formatOptions, "secondaryStatFormat", charDB, RefreshAll,
+        local secondaryFormat = GUI:CreateFormDropdown(scrollChild, nil, formatOptions, "secondaryStatFormat", charDB, RefreshAll,
             { description = ns.L["How secondary stats (Crit, Haste, Mastery, Versatility) are formatted: percent only, rating only, or both side by side."] })
-        y = PlaceRow(secondaryFormat, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Display Format"], secondaryFormat), y)
 
         y = y - 10
 
@@ -3601,17 +3757,17 @@ local function HookCharacterFrame()
         y = y - textSizeHeader.gap
         ResetRows()
 
-        local slotTextSize = GUI:CreateFormSlider(scrollChild, ns.L["Slot Text Size"], 6, 40, 1, "slotTextSize", charDB, RefreshAll, nil,
+        local slotTextSize = GUI:CreateFormSlider(scrollChild, nil, 6, 40, 1, "slotTextSize", charDB, RefreshAll, nil,
             { description = ns.L["Font size for the text labels on each equipment slot overlay (item name, item level, enchant status)."] })
-        y = PlaceRow(slotTextSize, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Slot Text Size"], slotTextSize), y)
 
-        local headerTextSize = GUI:CreateFormSlider(scrollChild, ns.L["Header Text Size"], 6, 40, 1, "headerTextSize", charDB, RefreshAll, nil,
+        local headerTextSize = GUI:CreateFormSlider(scrollChild, nil, 6, 40, 1, "headerTextSize", charDB, RefreshAll, nil,
             { description = ns.L["Font size for section headers in the stats panel (Attributes, Secondary Stats, etc.)."] })
-        y = PlaceRow(headerTextSize, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Header Text Size"], headerTextSize), y)
 
-        local statsTextSize = GUI:CreateFormSlider(scrollChild, ns.L["Stats Text Size"], 6, 40, 1, "statsTextSize", charDB, RefreshAll, nil,
+        local statsTextSize = GUI:CreateFormSlider(scrollChild, nil, 6, 40, 1, "statsTextSize", charDB, RefreshAll, nil,
             { description = ns.L["Font size for the stat rows under each section header."] })
-        y = PlaceRow(statsTextSize, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Stats Text Size"], statsTextSize), y)
 
         y = y - 10
 
@@ -3620,47 +3776,47 @@ local function HookCharacterFrame()
         y = y - textColorHeader.gap
         ResetRows()
 
-        local statsTextColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Stats Text Color"], "statsTextColor", charDB, RefreshAll, nil,
+        local statsTextColor = GUI:CreateFormColorPicker(scrollChild, nil, "statsTextColor", charDB, RefreshAll, nil,
             { description = ns.L["Color used for the stat values in the stats panel."] })
-        y = PlaceRow(statsTextColor, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Stats Text Color"], statsTextColor), y)
 
-        local headerClassColor = GUI:CreateFormCheckbox(scrollChild, ns.L["Header Class Color"], "headerClassColor", charDB, function()
+        local headerClassColor = GUI:CreateFormCheckbox(scrollChild, nil, "headerClassColor", charDB, function()
             RefreshAll()
             if widgetRefs.headerColor then
                 local alpha = charDB.headerClassColor and 0.4 or 1.0
                 widgetRefs.headerColor:SetAlpha(alpha)
             end
         end, { description = ns.L["Color the stats-panel section headers with your class color instead of the Header Color below."] })
-        y = PlaceRow(headerClassColor, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Header Class Color"], headerClassColor), y)
 
-        local headerColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Header Color"], "headerColor", charDB, RefreshAll, nil,
+        local headerColor = GUI:CreateFormColorPicker(scrollChild, nil, "headerColor", charDB, RefreshAll, nil,
             { description = ns.L["Fallback color for the stats-panel section headers when Header Class Color is off."] })
         widgetRefs.headerColor = headerColor
         headerColor:SetAlpha(charDB.headerClassColor and 0.4 or 1.0)
-        y = PlaceRow(headerColor, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Header Color"], headerColor), y)
 
-        local enchantClassColor = GUI:CreateFormCheckbox(scrollChild, ns.L["Enchant Class Color"], "enchantClassColor", charDB, function()
+        local enchantClassColor = GUI:CreateFormCheckbox(scrollChild, nil, "enchantClassColor", charDB, function()
             RefreshAll()
             if widgetRefs.enchantColor then
                 local alpha = charDB.enchantClassColor and 0.4 or 1.0
                 widgetRefs.enchantColor:SetAlpha(alpha)
             end
         end, { description = ns.L["Color the enchant text using your class color instead of the Enchant Text Color below."] })
-        y = PlaceRow(enchantClassColor, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Enchant Class Color"], enchantClassColor), y)
 
-        local enchantColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Enchant Text Color"], "enchantTextColor", charDB, RefreshAll, nil,
+        local enchantColor = GUI:CreateFormColorPicker(scrollChild, nil, "enchantTextColor", charDB, RefreshAll, nil,
             { description = ns.L["Fallback color for the enchant text when Enchant Class Color is off."] })
         widgetRefs.enchantColor = enchantColor
         enchantColor:SetAlpha(charDB.enchantClassColor and 0.4 or 1.0)
-        y = PlaceRow(enchantColor, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Enchant Text Color"], enchantColor), y)
 
-        local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, ns.L["No Enchant Color"], "noEnchantTextColor", charDB, RefreshAll, nil,
+        local noEnchantColor = GUI:CreateFormColorPicker(scrollChild, nil, "noEnchantTextColor", charDB, RefreshAll, nil,
             { description = ns.L["Color used for the missing-enchant marker on slots that are not enchanted."] })
-        y = PlaceRow(noEnchantColor, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["No Enchant Color"], noEnchantColor), y)
 
-        local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, ns.L["Upgrade Track Color"], "upgradeTrackColor", charDB, RefreshAll, nil,
+        local upgradeTrackColor = GUI:CreateFormColorPicker(scrollChild, nil, "upgradeTrackColor", charDB, RefreshAll, nil,
             { description = ns.L["Color used for the upgrade-track label (e.g. Explorer 2/8) next to item level."] })
-        y = PlaceRow(upgradeTrackColor, y)
+        y = PlaceRow(ns.QUI_Options.BuildSettingRow(scrollChild, ns.L["Upgrade Track Color"], upgradeTrackColor), y)
 
         y = y - 10
 

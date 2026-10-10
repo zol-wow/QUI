@@ -1,4 +1,4 @@
-## Interface: 120100
+## Interface: 120100, 120105, 16001
 ## Title: |cFF30D1FFQUI (Midnight)|r
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## AddonCompartmentFunc: QUI_CompartmentClick
@@ -6,7 +6,7 @@
 ## AddonCompartmentFuncOnLeave: QUI_CompartmentOnLeave
 ## Notes: Comprehensive UI customization addon
 ## Author: Zol and Drew
-## Version: 5.3.2-beta11
+## Version: 5.5.0-beta1
 ## Category: User Interface
 ## SavedVariables: QUIDB, QUI_StorageDB
 ## LoadSavedVariablesFirst: 1
@@ -19,6 +19,7 @@
 # Order is load-bearing.
 
 # == libs/libs.xml ==
+core\client.lua
 libs\LibStub\LibStub.lua
 libs\AceConsole-3.0\AceConsole-3.0.lua
 libs\AceDB-3.0\AceDB-3.0.lua
@@ -94,6 +95,7 @@ core\locale\locale.lua
 # == core/core.xml ==
 core\debug_gate.lua
 core\utils.lua
+core\appearance.lua
 core\pack.lua
 core\safecall.lua
 core\announce.lua
@@ -218,6 +220,7 @@ modules\skinning\frames\character.lua
 modules\skinning\frames\statustracking.lua
 modules\skinning\frames\inspect.lua
 modules\skinning\gameplay\powerbaralt.lua
+modules\skinning\gameplay\swing_timers.lua
 modules\skinning\notifications\readycheck.lua
 modules\skinning\system\gamemenu.lua
 modules\skinning\system\popups.lua

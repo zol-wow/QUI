@@ -357,8 +357,24 @@ function PrimeStandardOwnedButtonVisuals(buttons)
     end
 end
 
+local function SetMicroMenuArtworkShown(shown)
+    if not (ns.Client and ns.Client.isForever and MicroMenu) then return end
+    for _, name in ipairs({ "BorderArt", "BackgroundArt" }) do
+        local region = MicroMenu[name]
+        if region then region:SetAlpha(shown and 1 or 0) end
+    end
+end
+
 function BuildBar(barKey)
+    if ActionBarsOwned.useNativeButtons then
+        if InCombatLockdown() then
+            ActionBarsOwned.pendingRefresh = true
+            return
+        end
+        if barKey ~= "microbar" and barKey ~= "bags" then return BuildNativeBar(barKey) end
+    end
     local barFrame = GetBarFrame(barKey)
+    if ActionBarsOwned.useNativeButtons and not barFrame then return end
 
     if not ActionBarsOwned.containers[barKey] then
         ActionBarsOwned.containers[barKey] = CreateBarContainer(barKey)
@@ -452,27 +468,28 @@ function BuildBar(barKey)
             MicroMenu:SetParent(UIParent)
         end
 
-        ActionBarsOwned._microAnchors = {}
-        for i, name in ipairs(MICRO_BUTTON_NAMES) do
-            local btn = _G[name]
-            if btn then
+        SetMicroMenuArtworkShown(false)
+        if StoreMicroButton and ActionBarsOwned._storeNativeShown == nil then
+            ActionBarsOwned._storeNativeShown = StoreMicroButton:IsShown()
+        end
+        ActionBarsOwned._microAnchors = ActionBarsOwned._microAnchors or {}
+        for i, btn in ipairs(GetBarButtons("microbar")) do
+            if not ActionBarsOwned._microAnchors[i] then
                 ActionBarsOwned._microAnchors[i] = { btn:GetPoint() }
-                btn:SetParent(container)
-                btn:Show()
-                buttons[#buttons + 1] = btn
             end
+            btn:SetParent(container)
+            btn:Show()
+            buttons[#buttons + 1] = btn
         end
 
         local helpBtn = _G.HelpMicroButton
-        if helpBtn then
+        if helpBtn and (not (ns.Client and ns.Client.isForever) or helpBtn.layoutIndex) then
             helpBtn:SetParent(container)
         end
 
         local barDB = GetBarSettings("microbar")
-        if barDB and barDB.clickthrough then
-            for _, btn in ipairs(buttons) do
-                btn:EnableMouse(false)
-            end
+        for _, btn in ipairs(buttons) do
+            btn:EnableMouse(not (barDB and barDB.clickthrough))
         end
 
         if not ActionBarsOwned._microLayoutHooked then
@@ -482,6 +499,7 @@ function BuildBar(barKey)
             local function ReclaimMicroButtons()
                 if not ActionBarsOwned.initialized then return end
                 if ActionBarsOwned._microOwnedByUI then return end
+                SetMicroMenuArtworkShown(false)
 
                 local btns = ActionBarsOwned.nativeButtons["microbar"]
                 local cont = ActionBarsOwned.containers["microbar"]
@@ -514,7 +532,7 @@ function BuildBar(barKey)
                         end
                     end
                     local helpBtn = _G.HelpMicroButton
-                    if helpBtn and helpBtn:GetParent() ~= cont then
+                    if helpBtn and (not (ns.Client and ns.Client.isForever) or helpBtn.layoutIndex) and helpBtn:GetParent() ~= cont then
                         helpBtn:SetParent(cont)
                     end
                     local microDB = GetBarSettings("microbar")
@@ -548,6 +566,7 @@ function BuildBar(barKey)
 
             local function YieldMicroButtons()
                 ActionBarsOwned._microOwnedByUI = true
+                SetMicroMenuArtworkShown(true)
                 local btns = ActionBarsOwned.nativeButtons["microbar"]
                 if btns and MicroMenu then
                     local savedAnchors = ActionBarsOwned._microAnchors
@@ -562,6 +581,7 @@ function BuildBar(barKey)
                     local helpBtn = _G.HelpMicroButton
                     if helpBtn then
                         helpBtn:SetParent(MicroMenu)
+                        helpBtn:EnableMouse(true)
                     end
                 end
             end
@@ -604,6 +624,13 @@ function BuildBar(barKey)
                         ticketAnchorPending = false
                         AnchorHelpTicketButton()
                     end)
+                end)
+            end
+
+            if StoreMicroButton and StoreMicroButton.UpdateMicroButton then
+                hooksecurefunc(StoreMicroButton, "UpdateMicroButton", function(button)
+                    ActionBarsOwned._storeNativeShown = button:IsShown()
+                    ReclaimMicroButtons()
                 end)
             end
 
@@ -700,10 +727,12 @@ function BuildBar(barKey)
         end
 
         local bagButtons = GetBarButtons("bags")
+        local barDB = GetBarSettings("bags")
         ---@type fun(...)
         local noopFunc = function() end
         for i, btn in ipairs(bagButtons) do
             btn:SetParent(container)
+            btn:EnableMouse(not (barDB and barDB.clickthrough))
             btn:Show()
             if btn.SetBarExpanded then
                 btn.SetBarExpanded = noopFunc
@@ -815,6 +844,13 @@ function BuildBar(barKey)
 
     LayoutNativeButtons(barKey)
     RestoreContainerPosition(barKey)
+    if ActionBarsOwned.useNativeButtons and not SKINNABLE_BAR_KEYS[barKey] then
+        local anchorKey = barKey == "microbar" and "microMenu" or "bagBar"
+        if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(anchorKey) and _G.QUI_ApplyFrameAnchor then
+            _G.QUI_ApplyFrameAnchor(anchorKey)
+        end
+        RefreshNativeUtilityVisibility(barKey)
+    end
     SetupOwnedBarMouseover(barKey)
 
     if SKINNABLE_BAR_KEYS[barKey] then

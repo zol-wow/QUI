@@ -9,7 +9,7 @@ if ProviderFeatures and type(ProviderFeatures.Register) == "function" then
         moverKey = "bonusRollFrame",
         category = "qol",
         lookupKeys = { "bonusRoll" },
-        nav = { tileId = "qol", subPageIndex = 16 },
+        nav = { tileId = "qol", subPageIndex = 14 },
         searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 16, subTabName = "Bonus Roll" },
         getDB = function(profile)
             return profile and profile.general and profile.general.bonusRoll

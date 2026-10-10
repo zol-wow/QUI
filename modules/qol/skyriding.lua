@@ -302,7 +302,7 @@ local function CreateSkyridingFrame()
 
     vigorBar = CreateFrame("StatusBar", nil, skyridingFrame)
     vigorBar:SetAllPoints(skyridingFrame)
-    vigorBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    ns.Helpers.ApplyBarStyle(vigorBar, "Interface\\Buttons\\WHITE8x8")
     vigorBar:SetStatusBarColor(0.2, 0.8, 1.0, 1)
     vigorBar:SetMinMaxValues(0, 1)
     vigorBar:SetValue(0)
@@ -396,7 +396,7 @@ local function CreateSkyridingFrame()
 
     secondWindMiniBar = CreateFrame("StatusBar", nil, skyridingFrame)
     secondWindMiniBar:SetHeight(6)
-    secondWindMiniBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    ns.Helpers.ApplyBarStyle(secondWindMiniBar, "Interface\\Buttons\\WHITE8x8")
     secondWindMiniBar:SetStatusBarColor(1, 0.8, 0.2, 1)
     secondWindMiniBar:SetMinMaxValues(0, 1)
     secondWindMiniBar:Hide()
@@ -446,6 +446,7 @@ local function CreateSkyridingFrame()
     abilityIcon.texture:SetAllPoints()
     local iconTexture = C_Spell.GetSpellTexture(WHIRLING_SURGE_SPELL_ID)
     abilityIcon.texture:SetTexture(iconTexture or 136116)
+    Helpers.ApplyIconStyle(abilityIcon, abilityIcon.texture)
     abilityIcon.texture:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
     abilityIcon.border = CreateFrame("Frame", nil, abilityIcon, "BackdropTemplate")
@@ -861,7 +862,7 @@ local function UpdateAbilityIcon()
 
     local cooldownApplied = ApplyCooldownFromSpell(abilityIconCooldown, WHIRLING_SURGE_SPELL_ID)
     if not cooldownApplied then
-        abilityIconCooldown:Clear()
+        Helpers.ClearCooldown(abilityIconCooldown)
     end
 
     abilityIcon:Show()
@@ -998,9 +999,9 @@ local function ApplySettings()
 
     local textureName = settings.barTexture or "Quazii v4"
     local texturePath = LSM:Fetch("statusbar", textureName) or "Interface\\Buttons\\WHITE8x8"
-    vigorBar:SetStatusBarTexture(texturePath)
+    ns.Helpers.ApplyBarStyle(vigorBar, texturePath)
     if secondWindMiniBar then
-        secondWindMiniBar:SetStatusBarTexture(texturePath)
+        ns.Helpers.ApplyBarStyle(secondWindMiniBar, texturePath)
     end
 
     RefreshThrillOfTheSkiesBuffState()
@@ -1017,7 +1018,7 @@ local function ApplySettings()
     end
 
     local borderSize = settings.borderSize or 1
-    local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
+    local bR, bG, bB, bA = Helpers.GetWindowColors(settings, "")
     QUICore:SetPixelPerfectBackdrop(skyridingFrame.border, borderSize, nil, bR, bG, bB, bA)
     if skyridingFrame.border.Center then skyridingFrame.border.Center:Hide() end
 

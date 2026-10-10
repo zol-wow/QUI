@@ -1,3 +1,5 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
 local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
@@ -60,6 +62,7 @@ PetWarningFrame.icon = PetWarningFrame:CreateTexture(nil, "ARTWORK")
 PetWarningFrame.icon:SetSize(32, 32)
 PetWarningFrame.icon:SetPoint("LEFT", PetWarningFrame, "LEFT", 10, 0)
 PetWarningFrame.icon:SetTexture(132599)
+Helpers.ApplyIconStyle(PetWarningFrame, PetWarningFrame.icon)
 
 PetWarningFrame.text = PetWarningFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 PetWarningFrame.text:SetPoint("LEFT", PetWarningFrame.icon, "RIGHT", 10, 0)

@@ -46,7 +46,7 @@ local function EnsureContainer()
 
         row.bar = CreateFrame("StatusBar", nil, row)
         row.bar:SetAllPoints(row)
-        row.bar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+        ns.Helpers.ApplyBarStyle(row.bar, "Interface\\TargetingFrame\\UI-StatusBar")
         row.bar:SetStatusBarColor(0.25, 0.45, 0.95)
         local bg = row.bar:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()

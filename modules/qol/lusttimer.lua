@@ -46,7 +46,7 @@ local function BuildTimerSurface(frame, bindDuration)
     bar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -1, 1)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(0)
-    bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    ns.Helpers.ApplyBarStyle(bar, "Interface\\Buttons\\WHITE8x8")
     bar:SetStatusBarColor(0.6, 0.2, 0.2, 1)
     frame.bar = bar
 
@@ -111,7 +111,7 @@ end
 local function UpdateSurfaceAppearance(frame, settings)
     local texturePath = (ns.LSM and ns.LSM.Fetch and ns.LSM:Fetch("statusbar", settings.barTexture or "Solid"))
         or "Interface\\Buttons\\WHITE8x8"
-    frame.bar:SetStatusBarTexture(texturePath)
+    ns.Helpers.ApplyBarStyle(frame.bar, texturePath)
     local bc = settings.barColor or { 0.6, 0.2, 0.2, 1 }
     frame.bar:SetStatusBarColor(bc[1], bc[2], bc[3], bc[4] or 1)
 
@@ -124,7 +124,7 @@ local function UpdateSurfaceAppearance(frame, settings)
     if settings.showLabel == false then frame.label:Hide() else frame.label:Show() end
 
     local borderSize = settings.borderSize or 1
-    local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
+    local bR, bG, bB, bA = Helpers.GetWindowColors(settings, "")
     local bgColor = settings.backdropColor or { 0, 0, 0, 0.6 }
     local bgAlpha = settings.showBackdrop == false and 0 or (bgColor[4] or 0.6)
     local inset = settings.hideBorder and 0 or UIKit.Pixels(borderSize, frame)
