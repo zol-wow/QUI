@@ -127,7 +127,7 @@ local function SkinButton(button, isPool, sr, sg, sb, sa, bgr, bgg, bgb, fontSiz
     local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
     local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
     local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
-    SkinBase.ApplyFullBackdrop(info.inset, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
+    SkinBase.ApplyChromeBackdrop(info.inset, { radius = 5, withBackground = true, borderColor = { sr, sg, sb, sa }, bgColor = { btnBgR, btnBgG, btnBgB, 1 } })
 
     SkinBase.ApplyButtonFontObjects(button, { size = fontSize, color = COLORS.text })
 end
@@ -251,7 +251,7 @@ local function ApplyStaticSkin()
     EnsureDim()
     StripChromeOnce()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetGameMenuColors()
-    SkinBase.ApplyFullBackdrop(bg, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    SkinBase.ApplyChromeBackdrop(bg, { radius = 8, withBackground = true, borderColor = { sr, sg, sb, sa }, bgColor = { bgr, bgg, bgb, bga } })
     staticDone = true
 end
 
@@ -294,14 +294,14 @@ local function RefreshGameMenuColors()
     if not staticDone then return end
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = GetGameMenuColors()
     if menuBg then
-        SkinBase.ApplyFullBackdrop(menuBg, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        SkinBase.ApplyChromeBackdrop(menuBg, { radius = 8, withBackground = true, borderColor = { sr, sg, sb, sa }, bgColor = { bgr, bgg, bgb, bga } })
     end
     local btnBgR = math.min(bgr + SkinBase.CHROME.BUTTON_BOOST, 1)
     local btnBgG = math.min(bgg + SkinBase.CHROME.BUTTON_BOOST, 1)
     local btnBgB = math.min(bgb + SkinBase.CHROME.BUTTON_BOOST, 1)
     for _, info in pairs(buttonState) do
         if info.inset then
-            SkinBase.ApplyFullBackdrop(info.inset, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
+            SkinBase.ApplyChromeBackdrop(info.inset, { radius = 5, withBackground = true, borderColor = { sr, sg, sb, sa }, bgColor = { btnBgR, btnBgG, btnBgB, 1 } })
         end
     end
 end

@@ -152,6 +152,7 @@ local function CreateQUIAltPowerBar()
     ns.Helpers.ApplyBarStyle(bar, "Interface\\Buttons\\WHITE8x8")
     local ar, ag, ab = GetModuleSkinColors()
     bar:SetStatusBarColor(ar, ag, ab)
+    SkinBase.RoundBarTexture(bar, bar:GetStatusBarTexture())
     bar:SetMinMaxValues(0, 100)
     bar:SetValue(0)
     bar:Hide()
@@ -166,7 +167,7 @@ local function CreateQUIAltPowerBar()
         safeLevel = 0
     end
     bar.backdrop:SetFrameLevel(safeLevel)
-    SkinBase.ApplyPixelBackdrop(bar.backdrop, 1, true, true)
+    SkinBase.ApplyChromeBackdrop(bar.backdrop, { radius = 3, borderPixels = 1, withBackground = true })
     Helpers.SetFrameBackdropColor(bar.backdrop, bgr, bgg, bgb, bga)
     Helpers.SetFrameBackdropBorderColor(bar.backdrop, sr, sg, sb, sa)
 

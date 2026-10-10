@@ -42,19 +42,7 @@ local function SkinAuctionHouseTabs()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame or not AuctionHouseFrame.Tabs then return end
 
-    SkinBase.SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame, { font = true, resizeToText = true })
-
-    local tabs = AuctionHouseFrame.Tabs
-    if tabs[1] then
-        tabs[1]:ClearAllPoints()
-        tabs[1]:SetPoint("BOTTOMLEFT", AuctionHouseFrame, "BOTTOMLEFT", -3, -30)
-    end
-    for i = 2, #tabs do
-        if tabs[i] and tabs[i - 1] then
-            tabs[i]:ClearAllPoints()
-            tabs[i]:SetPoint("TOPLEFT", tabs[i - 1], "TOPRIGHT", -5, 0)
-        end
-    end
+    SkinBase.SkinTabGroup(AuctionHouseFrame.Tabs, AuctionHouseFrame, { font = true, resizeToText = true, dockBottom = true })
 end
 
 local function FrameAnchorsTo(frame, target, depth)
@@ -151,6 +139,74 @@ local function LockAuctionHouseBuyDialogText()
     end
 end
 
+local function StyleAuctionBuyDialog(dialog)
+    if not dialog or not IsEnabled() or (dialog.IsForbidden and dialog:IsForbidden()) then return end
+    if dialog.Border then dialog.Border:SetAlpha(0) end
+    local sr, sg, sb, sa, br, bg, bb, ba = SkinBase.GetWindowColors()
+    SkinBase.CreateBackdrop(dialog, sr, sg, sb, sa, br, bg, bb, ba, 8)
+    SkinBase.GetBackdrop(dialog):SetFrameLevel(math.max(0, dialog:GetFrameLevel() - 1))
+    for _, key in ipairs({ "BuyNowButton", "CancelButton", "OkayButton" }) do
+        local button = dialog[key]
+        if button and not (button.IsForbidden and button:IsForbidden()) then
+            SkinBase.SkinButton(button, { font = true, belowChildren = true })
+            SkinBase.RefreshWidget(button)
+        end
+    end
+    SkinBase.SkinFrameText(dialog.PriceFrame, { recurse = true })
+    for _, text in ipairs({ dialog.ItemDisplay and dialog.ItemDisplay.ItemText, dialog.TimeLeftText }) do
+        SkinBase.SkinFontString(text, { fontOnly = true })
+        SkinBase.LockFontObject(text, { fontOnly = true })
+    end
+    LockAuctionHouseBuyDialogText()
+    if not SkinBase.GetFrameData(dialog, "qAHBuyDialogHooked") then
+        for _, method in ipairs({ "SetState", "SetItemID" }) do
+            if type(dialog[method]) == "function" then hooksecurefunc(dialog, method, StyleAuctionBuyDialog) end
+        end
+        dialog:HookScript("OnShow", StyleAuctionBuyDialog)
+        SkinBase.SetFrameData(dialog, "qAHBuyDialogHooked", true)
+    end
+end
+
+local function StyleMultisellProgress(frame)
+    if not IsEnabled() or not frame or (frame.IsForbidden and frame:IsForbidden()) then return end
+    for _, key in ipairs({ "Fill", "Left", "Middle", "Right" }) do
+        SkinBase.ClampTextureHidden(frame[key], true)
+    end
+    local sr, sg, sb, sa, br, bg, bb, ba = SkinBase.GetWindowColors()
+    SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, br, bg, bb, ba, 8)
+    SkinBase.GetBackdrop(frame):SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
+    local bar = frame.ProgressBar
+    if bar and not (bar.IsForbidden and bar:IsForbidden()) then
+        for _, key in ipairs({ "Border", "TextBorder", "Background", "DropShadow" }) do
+            SkinBase.ClampTextureHidden(bar[key], true)
+        end
+        ns.Helpers.ApplyBarStyle(bar, "Interface\\Buttons\\WHITE8x8")
+        SkinBase.RoundBarTexture(bar, bar:GetStatusBarTexture())
+        SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, br, bg, bb, ba, 4)
+        SkinBase.SkinFontString(bar.Text, { fontOnly = true })
+        SkinBase.LockFontObject(bar.Text, { fontOnly = true })
+        if bar.Icon then
+            SkinBase.RoundIconTexture(bar, bar.Icon)
+            local border = SkinBase.SkinIcon(bar.Icon, { crop = false })
+            if border then
+                SkinBase.SetFrameData(border, "chromeRadius", 4)
+                SkinBase.SetBackdropColors(border, { sr, sg, sb, sa }, nil)
+                border:SetShown(bar.Icon:IsShown())
+            end
+        end
+    end
+    if frame.CancelButton and not (frame.CancelButton.IsForbidden and frame.CancelButton:IsForbidden()) then
+        SkinBase.SkinCloseButton(frame.CancelButton)
+    end
+    if not SkinBase.GetFrameData(frame, "qAHMultisellHooked") then
+        frame:HookScript("OnShow", StyleMultisellProgress)
+        for _, method in ipairs({ "Start", "Refresh" }) do
+            if type(frame[method]) == "function" then hooksecurefunc(frame, method, StyleMultisellProgress) end
+        end
+        SkinBase.SetFrameData(frame, "qAHMultisellHooked", true)
+    end
+end
+
 local function SkinSearchBar()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame then return end
@@ -161,7 +217,7 @@ local function SkinSearchBar()
             SkinBase.SkinEditBox(searchBar.SearchBox, { font = true })
         end
         if searchBar.FilterButton then
-            SkinBase.SkinDropdown(searchBar.FilterButton, { belowChildren = true })
+            SkinBase.SkinDropdown(searchBar.FilterButton, { skinArrow = true, belowChildren = true })
         end
         if searchBar.SearchButton then
             SkinBase.SkinButton(searchBar.SearchButton, { font = true })
@@ -173,24 +229,295 @@ local function SkinSearchBar()
     end
 end
 
+local auctionRows = setmetatable({}, { __mode = "k" })
+
 local function skinRow(row)
+    if not row or not IsEnabled() or (row.IsForbidden and row:IsForbidden()) then return end
+    local icon = row.Icon
+    local iconAlpha = icon and icon:GetAlpha()
+    local selectedAlpha = row.SelectedHighlight and row.SelectedHighlight:GetAlpha()
+    local hoverAlpha = row.HighlightTexture and row.HighlightTexture:GetAlpha()
     SkinBase.SkinScrollRow(row)
+    if icon then
+        icon:SetAlpha(iconAlpha)
+        SkinBase.SkinFontString(row.Text, { color = { 0.9, 0.9, 0.9, 1 } })
+        SkinBase.RoundIconTexture(row, icon)
+        local border = SkinBase.SkinIcon(icon, { crop = false })
+        if border then
+            SkinBase.SetFrameData(border, "chromeRadius", 3)
+            local sr, sg, sb, sa = SkinBase.GetWindowColors()
+            SkinBase.SetBackdropColors(border, { sr, sg, sb, sa }, nil)
+            border:SetShown(icon:IsShown())
+        end
+        if row.IconBorder then SkinBase.ClampTextureHidden(row.IconBorder, true) end
+        if not SkinBase.GetFrameData(row, "qAHSummaryHooked") then
+            for _, method in ipairs({ "Init", "SetIconShown" }) do
+                if type(row[method]) == "function" then hooksecurefunc(row, method, skinRow) end
+            end
+            SkinBase.SetFrameData(row, "qAHSummaryHooked", true)
+        end
+    end
+    SkinBase.RefreshWidget(row)
+    local backdrop = SkinBase.GetBackdrop(row)
+    if backdrop then backdrop:SetFrameLevel(math.max(0, row:GetFrameLevel() - 1)) end
+    SkinBase.ClampTextureHidden(row.NormalTexture or (row.GetNormalTexture and row:GetNormalTexture()), true)
+    local r, g, b = SkinBase.GetSkinColors()
+    for _, key in ipairs({ "SelectedHighlight", "HighlightTexture" }) do
+        local texture = row[key]
+        if texture then
+            texture:SetTexture("Interface\\Buttons\\WHITE8x8")
+            texture:SetTexCoord(0, 1, 0, 1)
+            texture:ClearAllPoints()
+            texture:SetAllPoints(row)
+            texture:SetVertexColor(r, g, b, key == "SelectedHighlight" and 0.15 or 0.08)
+            SkinBase.RoundBarTexture(row, texture)
+        end
+    end
+    if row.SelectedHighlight then row.SelectedHighlight:SetAlpha(selectedAlpha) end
+    if row.HighlightTexture then row.HighlightTexture:SetAlpha(hoverAlpha) end
     SkinBase.LockPooledRowText(row, 4)
+    auctionRows[row] = true
+end
+
+local auctionHeaders = setmetatable({}, { __mode = "k" })
+
+local function StyleAuctionHeader(header)
+    if not IsEnabled() or not header or (header.IsForbidden and header:IsForbidden()) then return end
+    auctionHeaders[header] = true
+    for _, key in ipairs({ "Left", "Middle", "Right" }) do
+        SkinBase.ClampTextureHidden(header[key], true)
+    end
+    local highlight = header.GetHighlightTexture and header:GetHighlightTexture()
+    SkinBase.ClampTextureHidden(highlight, true)
+    SkinBase.ApplyButtonFontObjects(header)
+    if type(header.Init) == "function" and not SkinBase.GetFrameData(header, "qAHHeaderInitHooked") then
+        hooksecurefunc(header, "Init", StyleAuctionHeader)
+        SkinBase.SetFrameData(header, "qAHHeaderInitHooked", true)
+    end
+end
+
+local function StyleAuctionListHeaders(list)
+    local builder = list.tableBuilder
+    if builder and type(builder.EnumerateHeaders) == "function" then
+        for header in builder:EnumerateHeaders() do StyleAuctionHeader(header) end
+    end
 end
 
 local function HookAuctionHeaderSkin()
     local mixin = _G.AuctionHouseTableHeaderStringMixin
-    if not mixin or mixin.Init == nil or SkinBase.GetFrameData(mixin, "headerSkinHooked") then return end
-    hooksecurefunc(mixin, "Init", function(self)
-        if not IsEnabled() then return end
-        if self.Left then self.Left:SetAlpha(0) end
-        if self.Middle then self.Middle:SetAlpha(0) end
-        if self.Right then self.Right:SetAlpha(0) end
-        local hl = self.GetHighlightTexture and self:GetHighlightTexture()
-        if hl then hl:SetAlpha(0) end
-        SkinBase.ApplyButtonFontObjects(self)
-    end)
+    if not mixin or type(mixin.Init) ~= "function" or SkinBase.GetFrameData(mixin, "headerSkinHooked") then return end
+    hooksecurefunc(mixin, "Init", StyleAuctionHeader)
     SkinBase.SetFrameData(mixin, "headerSkinHooked", true)
+end
+
+local function StyleCommodityBuyPanel()
+    if not IsEnabled() then return end
+    local frame = _G.AuctionHouseFrame
+    local panel = frame and frame.CommoditiesBuyFrame
+    if not panel or (panel.IsForbidden and panel:IsForbidden()) then return end
+    local display = panel.BuyDisplay
+    if not display or (display.IsForbidden and display:IsForbidden()) then return end
+    if display.Background then SkinBase.ClampTextureHidden(display.Background, true) end
+    if display.NineSlice then display.NineSlice:SetAlpha(0) end
+    for _, button in pairs({ panel.BackButton, display.BuyButton }) do
+        if not (button.IsForbidden and button:IsForbidden()) then
+            SkinBase.SkinButton(button, { font = true, belowChildren = true })
+            SkinBase.RefreshWidget(button)
+            local backdrop = SkinBase.GetBackdrop(button)
+            if backdrop then backdrop:SetFrameLevel(math.max(0, button:GetFrameLevel() - 1)) end
+        end
+    end
+    local quantity = display.QuantityInput
+    if quantity and not (quantity.IsForbidden and quantity:IsForbidden()) then
+        SkinBase.SkinEditBox(quantity.InputBox, { font = true })
+        SkinBase.RefreshWidget(quantity.InputBox)
+    end
+    for _, key in ipairs({ "QuantityInput", "UnitPrice", "TotalPrice" }) do
+        local control = display[key]
+        if control and not (control.IsForbidden and control:IsForbidden()) then
+            for _, labelKey in ipairs({ "Label", "LabelTitle" }) do
+                local label = control[labelKey]
+                SkinBase.SkinFontString(label, { color = { 0.9, 0.9, 0.9, 1 } })
+                SkinBase.LockFontObject(label, { fontOnly = true })
+            end
+            SkinBase.SkinFontString(control.Subtext, { fontOnly = true })
+            SkinBase.SkinFrameText(control.MoneyDisplayFrame, { recurse = true })
+        end
+    end
+    if not SkinBase.GetFrameData(display, "qAHCommodityBuyHooked") then
+        for _, method in ipairs({ "SetPrice", "SetItemIDAndPrice" }) do
+            if type(display[method]) == "function" then hooksecurefunc(display, method, StyleCommodityBuyPanel) end
+        end
+        display:HookScript("OnShow", StyleCommodityBuyPanel)
+        SkinBase.SetFrameData(display, "qAHCommodityBuyHooked", true)
+    end
+end
+
+local function StyleAuctionBidControls(panel)
+    if not IsEnabled() or not panel or (panel.IsForbidden and panel:IsForbidden()) then return end
+    local bid, buyout = panel.BidFrame, panel.BuyoutFrame
+    for _, button in pairs({ panel.BackButton, panel.CancelAuctionButton, bid and bid.BidButton, buyout and buyout.BuyoutButton }) do
+        if button and not (button.IsForbidden and button:IsForbidden()) then
+            SkinBase.SkinButton(button, { font = true, belowChildren = true })
+            SkinBase.RefreshWidget(button)
+            local backdrop = SkinBase.GetBackdrop(button)
+            if backdrop then backdrop:SetFrameLevel(math.max(0, button:GetFrameLevel() - 1)) end
+        end
+    end
+    local money = bid and bid.BidAmount
+    if money and not (money.IsForbidden and money:IsForbidden()) then
+        for _, key in ipairs({ "gold", "silver", "copper" }) do
+            local field = money[key]
+            if field and not (field.IsForbidden and field:IsForbidden()) then
+                local coin = field.texture
+                local coinAlpha = coin and coin:GetAlpha()
+                SkinBase.SkinEditBox(field, { font = false })
+                if coin then coin:SetAlpha(coinAlpha) end
+                SkinBase.SkinFontString(field.label, { fontOnly = true })
+                SkinBase.SkinFontString(field, { fontOnly = true })
+                SkinBase.LockFontObject(field, { fontOnly = true })
+                SkinBase.RefreshWidget(field)
+            end
+        end
+    end
+    for _, control in pairs({ bid, buyout }) do
+        if control and not (control.IsForbidden and control:IsForbidden())
+            and type(control.SetPrice) == "function" and not SkinBase.GetFrameData(control, "qAHItemPriceHooked") then
+            hooksecurefunc(control, "SetPrice", function() StyleAuctionBidControls(panel) end)
+            SkinBase.SetFrameData(control, "qAHItemPriceHooked", true)
+        end
+    end
+end
+
+local function StyleItemBuyPanel()
+    local frame = _G.AuctionHouseFrame
+    if not frame then return end
+    StyleAuctionBidControls(frame.ItemBuyFrame)
+    StyleAuctionBidControls(frame.AuctionsFrame)
+end
+
+local function StyleAuctionLabel(label)
+    if not label then return end
+    SkinBase.SkinFontString(label, { fontOnly = true })
+    SkinBase.LockFontObject(label, { fontOnly = true })
+    if NORMAL_FONT_COLOR and NORMAL_FONT_COLOR.GetRGB and label.GetTextColor then
+        local nr, ng, nb = NORMAL_FONT_COLOR:GetRGB()
+        local r, g, b, a = label:GetTextColor()
+        if r == nr and g == ng and b == nb then label:SetTextColor(0.9, 0.9, 0.9, a or 1) end
+    end
+end
+
+local function StyleTokenPanel(panel)
+    if not IsEnabled() or not panel or (panel.IsForbidden and panel:IsForbidden()) then return end
+    if panel.NineSlice then SkinBase.ClampTextureHidden(panel.NineSlice, true) end
+    local scrollbar = panel.DummyScrollBar
+    if scrollbar and not (scrollbar.IsForbidden and scrollbar:IsForbidden()) then
+        SkinBase.SkinTrimScrollBar(scrollbar)
+    end
+    local dummy = panel.DummyItemList
+    if dummy and not (dummy.IsForbidden and dummy:IsForbidden()) then
+        SkinBase.ClampTextureHidden(dummy.Background, true)
+        SkinBase.ClampTextureHidden(dummy.NineSlice, true)
+        scrollbar = dummy.DummyScrollBar
+        if scrollbar and not (scrollbar.IsForbidden and scrollbar:IsForbidden()) then
+            SkinBase.SkinTrimScrollBar(scrollbar)
+        end
+    end
+    for _, key in ipairs({ "Background", "CreateAuctionTabLeft", "CreateAuctionTabMiddle", "CreateAuctionTabRight" }) do
+        SkinBase.ClampTextureHidden(panel[key], true)
+    end
+    for _, key in ipairs({ "Buyout", "PostButton", "DummyRefreshButton" }) do
+        local button = panel[key]
+        if button and not (button.IsForbidden and button:IsForbidden()) then
+            SkinBase.SkinButton(button, { font = key ~= "DummyRefreshButton", belowChildren = true })
+            SkinBase.RefreshWidget(button)
+        end
+    end
+    for _, key in ipairs({ "BuyoutLabel", "BuyoutPriceLabel", "EstimatedTime", "CreateAuctionLabel", "TimeToSell" }) do
+        StyleAuctionLabel(panel[key])
+    end
+    local tutorial = panel.GameTimeTutorial
+    if tutorial and not (tutorial.IsForbidden and tutorial:IsForbidden()) then
+        SkinBase.HidePortraitFrameChrome(tutorial)
+        local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
+        SkinBase.CreateBackdrop(tutorial, sr, sg, sb, sa, bgr, bgg, bgb, bga, 8)
+        SkinBase.SkinCloseButton(tutorial.CloseButton)
+        SkinBase.SkinFrameText(tutorial)
+        for _, key in ipairs({ "LeftDisplay", "RightDisplay" }) do
+            local display = tutorial[key]
+            if display and not (display.IsForbidden and display:IsForbidden()) then
+                for _, textKey in ipairs({ "Label", "Tutorial1", "Tutorial2", "Tutorial3" }) do
+                    StyleAuctionLabel(display[textKey])
+                end
+                local store = display.StoreButton
+                if store and not (store.IsForbidden and store:IsForbidden()) then
+                    SkinBase.SkinButton(store, { font = true, belowChildren = true })
+                    SkinBase.RefreshWidget(store)
+                end
+            end
+        end
+        if not SkinBase.GetFrameData(tutorial, "qAHTokenTutorialHooked") then
+            tutorial:HookScript("OnShow", function() StyleTokenPanel(panel) end)
+            SkinBase.SetFrameData(tutorial, "qAHTokenTutorialHooked", true)
+        end
+    end
+    if not SkinBase.GetFrameData(panel, "qAHTokenPanelHooked") then
+        panel:HookScript("OnShow", StyleTokenPanel)
+        if type(panel.Refresh) == "function" then hooksecurefunc(panel, "Refresh", StyleTokenPanel) end
+        SkinBase.SetFrameData(panel, "qAHTokenPanelHooked", true)
+    end
+end
+
+local function StyleTokenPanels()
+    local frame = _G.AuctionHouseFrame
+    if frame then
+        StyleTokenPanel(frame.WoWTokenResults)
+        StyleTokenPanel(frame.WoWTokenSellFrame)
+    end
+end
+
+local auctionLists = setmetatable({}, { __mode = "k" })
+
+local function StyleAuctionListControls(list)
+    if not list or not IsEnabled() or (list.IsForbidden and list:IsForbidden()) then return end
+    auctionLists[list] = true
+    StyleAuctionListHeaders(list)
+    StyleAuctionLabel(list.ResultsText)
+    local spinner = list.LoadingSpinner
+    if spinner and not (spinner.IsForbidden and spinner:IsForbidden()) then
+        StyleAuctionLabel(spinner.SearchingText)
+    end
+    if not SkinBase.GetFrameData(list, "qAHMessageHooked") then
+        SkinBase.SetFrameData(list, "qAHMessageHooked", true)
+        for _, method in ipairs({ "SetState", "SetCustomError", "UpdateTableBuilderLayout" }) do
+            if type(list[method]) == "function" then
+                hooksecurefunc(list, method, function() StyleAuctionListControls(list) end)
+            end
+        end
+    end
+    local refresh = list.RefreshFrame
+    if not refresh or (refresh.IsForbidden and refresh:IsForbidden()) then return end
+    local button = refresh.RefreshButton
+    if button and not (button.IsForbidden and button:IsForbidden()) then
+        SkinBase.SkinButton(button, { font = false, belowChildren = true })
+        SkinBase.RefreshWidget(button)
+    end
+    if refresh.TotalQuantity then
+        SkinBase.SkinFontString(refresh.TotalQuantity, { color = { 0.9, 0.9, 0.9, 1 } })
+    end
+    if not SkinBase.GetFrameData(refresh, "qAHRefreshHooked") then
+        SkinBase.SetFrameData(refresh, "qAHRefreshHooked", true)
+        for _, method in ipairs({ "SetQuantity", "Deactivate" }) do
+            if type(refresh[method]) == "function" then
+                hooksecurefunc(refresh, method, function() StyleAuctionListControls(list) end)
+            end
+        end
+    end
+end
+
+local function SkinAuctionList(list)
+    SkinBase.SkinListContainer(list, skinRow)
+    StyleAuctionListControls(list)
 end
 
 local function SkinBrowsePanel()
@@ -201,7 +528,7 @@ local function SkinBrowsePanel()
     if browseResults then
         SkinBase.StripTextures(browseResults)
         if browseResults.ItemList then
-            SkinBase.SkinListContainer(browseResults.ItemList, skinRow)
+            SkinAuctionList(browseResults.ItemList)
         end
     end
 
@@ -209,7 +536,7 @@ local function SkinBrowsePanel()
     if commoditiesBuy then
         SkinBase.StripTextures(commoditiesBuy)
         if commoditiesBuy.ItemList then
-            SkinBase.SkinListContainer(commoditiesBuy.ItemList, skinRow)
+            SkinAuctionList(commoditiesBuy.ItemList)
         end
         if commoditiesBuy.BuyDisplay then
             if commoditiesBuy.BuyDisplay.BuyButton then
@@ -221,11 +548,15 @@ local function SkinBrowsePanel()
         end
     end
 
+    StyleCommodityBuyPanel()
+
+    StyleItemBuyPanel()
+
     local itemBuy = AuctionHouseFrame.ItemBuyFrame
     if itemBuy then
         SkinBase.StripTextures(itemBuy)
         if itemBuy.ItemList then
-            SkinBase.SkinListContainer(itemBuy.ItemList, skinRow)
+            SkinAuctionList(itemBuy.ItemList)
         end
         if itemBuy.BuyoutFrame then
             if itemBuy.BuyoutFrame.BuyoutButton then
@@ -256,6 +587,62 @@ local function RefreshQuantityInputFrame(quantityInput)
     SkinBase.RefreshWidget(quantityInput.MaxButton)
 end
 
+local function StyleLargeAuctionMoneyField(field)
+    if not field or (field.IsForbidden and field:IsForbidden()) then return end
+    local icon = field.Icon
+    local alpha = icon and icon:GetAlpha()
+    SkinBase.SkinEditBox(field, { font = false })
+    if icon then icon:SetAlpha(alpha) end
+    SkinBase.SkinFontString(field, { fontOnly = true })
+    SkinBase.LockFontObject(field, { fontOnly = true })
+    SkinBase.SkinFontString(field.Text, { fontOnly = true })
+    SkinBase.RefreshWidget(field)
+end
+
+local function StyleSellInnerControls(panel)
+    if not IsEnabled() or not panel or (panel.IsForbidden and panel:IsForbidden()) then return end
+    for _, key in ipairs({ "PriceInput", "SecondaryPriceInput", "QuantityInput", "Duration", "Deposit", "TotalPrice" }) do
+        local control = panel[key]
+        if control and not (control.IsForbidden and control:IsForbidden()) then
+            for _, labelKey in ipairs({ "Label", "LabelTitle", "Subtext", "PerItemPostfix" }) do
+                StyleAuctionLabel(control[labelKey])
+            end
+            SkinBase.SkinFrameText(control.MoneyDisplayFrame, { recurse = true })
+        end
+    end
+    local check = panel.BuyoutModeCheckButton
+    if check and not (check.IsForbidden and check:IsForbidden()) then
+        SkinBase.SkinCheckBox(check)
+        StyleAuctionLabel(check.Text)
+        local backdrop = SkinBase.GetBackdrop(check)
+        if backdrop then
+            local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
+            SkinBase.SetBackdropColors(backdrop, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
+        end
+        local ar, ag, ab = ns.UIKit.GetAccentColor()
+        local checked = check:GetCheckedTexture()
+        if checked then checked:SetVertexColor(ar, ag, ab, 1) end
+        local disabled = check:GetDisabledCheckedTexture()
+        if disabled then disabled:SetVertexColor(ar * 0.5, ag * 0.5, ab * 0.5, 1) end
+    end
+    local duration = panel.Duration
+    local dropdown = duration and duration.Dropdown or panel.DurationDropdown
+    if dropdown and not (dropdown.IsForbidden and dropdown:IsForbidden()) then
+        SkinBase.SkinDropdown(dropdown, { skinArrow = true, belowChildren = true })
+        SkinBase.RefreshWidget(dropdown)
+        LockDurationDropdownText(dropdown)
+    end
+    if not SkinBase.GetFrameData(panel, "qAHSellInnerHooked") then
+        panel:HookScript("OnShow", function() StyleSellInnerControls(panel) end)
+        for _, method in ipairs({ "UpdatePostState", "UpdateDeposit", "UpdateTotalPrice" }) do
+            if type(panel[method]) == "function" then
+                hooksecurefunc(panel, method, function() StyleSellInnerControls(panel) end)
+            end
+        end
+        SkinBase.SetFrameData(panel, "qAHSellInnerHooked", true)
+    end
+end
+
 local function SkinSellPanel()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame then return end
@@ -265,10 +652,11 @@ local function SkinSellPanel()
         SkinBase.StripTextures(commoditiesSell)
         if commoditiesSell.PriceInput and commoditiesSell.PriceInput.MoneyInputFrame then
             local moneyInput = commoditiesSell.PriceInput.MoneyInputFrame
-            if moneyInput.GoldBox then SkinBase.SkinEditBox(moneyInput.GoldBox) end
-            if moneyInput.SilverBox then SkinBase.SkinEditBox(moneyInput.SilverBox) end
-            if moneyInput.CopperBox then SkinBase.SkinEditBox(moneyInput.CopperBox) end
+            if moneyInput.GoldBox then StyleLargeAuctionMoneyField(moneyInput.GoldBox) end
+            if moneyInput.SilverBox then StyleLargeAuctionMoneyField(moneyInput.SilverBox) end
+            if moneyInput.CopperBox then StyleLargeAuctionMoneyField(moneyInput.CopperBox) end
         end
+        StyleSellInnerControls(commoditiesSell)
         SkinQuantityInputFrame(commoditiesSell.QuantityInput)
         if commoditiesSell.DurationDropdown then
             SkinBase.SkinDropdown(commoditiesSell.DurationDropdown)
@@ -284,10 +672,11 @@ local function SkinSellPanel()
         SkinBase.StripTextures(itemSell)
         if itemSell.PriceInput and itemSell.PriceInput.MoneyInputFrame then
             local moneyInput = itemSell.PriceInput.MoneyInputFrame
-            if moneyInput.GoldBox then SkinBase.SkinEditBox(moneyInput.GoldBox) end
-            if moneyInput.SilverBox then SkinBase.SkinEditBox(moneyInput.SilverBox) end
-            if moneyInput.CopperBox then SkinBase.SkinEditBox(moneyInput.CopperBox) end
+            if moneyInput.GoldBox then StyleLargeAuctionMoneyField(moneyInput.GoldBox) end
+            if moneyInput.SilverBox then StyleLargeAuctionMoneyField(moneyInput.SilverBox) end
+            if moneyInput.CopperBox then StyleLargeAuctionMoneyField(moneyInput.CopperBox) end
         end
+        StyleSellInnerControls(itemSell)
         SkinQuantityInputFrame(itemSell.QuantityInput)
         if itemSell.DurationDropdown then
             SkinBase.SkinDropdown(itemSell.DurationDropdown)
@@ -298,9 +687,9 @@ local function SkinSellPanel()
         end
         if itemSell.SecondaryPriceInput and itemSell.SecondaryPriceInput.MoneyInputFrame then
             local moneyInput = itemSell.SecondaryPriceInput.MoneyInputFrame
-            if moneyInput.GoldBox then SkinBase.SkinEditBox(moneyInput.GoldBox) end
-            if moneyInput.SilverBox then SkinBase.SkinEditBox(moneyInput.SilverBox) end
-            if moneyInput.CopperBox then SkinBase.SkinEditBox(moneyInput.CopperBox) end
+            if moneyInput.GoldBox then StyleLargeAuctionMoneyField(moneyInput.GoldBox) end
+            if moneyInput.SilverBox then StyleLargeAuctionMoneyField(moneyInput.SilverBox) end
+            if moneyInput.CopperBox then StyleLargeAuctionMoneyField(moneyInput.CopperBox) end
         end
     end
 end
@@ -316,19 +705,23 @@ local function SkinAuctionsPanel()
     SkinAuctionHouseAuctionsTabs(auctionsFrame)
 
     if auctionsFrame.SummaryList then
-        SkinBase.SkinListContainer(auctionsFrame.SummaryList, skinRow)
+        SkinAuctionList(auctionsFrame.SummaryList)
+    end
+
+    if auctionsFrame.BidsList then
+        SkinAuctionList(auctionsFrame.BidsList)
     end
 
     if auctionsFrame.AllAuctionsList then
-        SkinBase.SkinListContainer(auctionsFrame.AllAuctionsList, skinRow)
+        SkinAuctionList(auctionsFrame.AllAuctionsList)
     end
 
     if auctionsFrame.CommoditiesList then
-        SkinBase.SkinListContainer(auctionsFrame.CommoditiesList, skinRow)
+        SkinAuctionList(auctionsFrame.CommoditiesList)
     end
 
     if auctionsFrame.ItemList then
-        SkinBase.SkinListContainer(auctionsFrame.ItemList, skinRow)
+        SkinAuctionList(auctionsFrame.ItemList)
     end
 
     if auctionsFrame.CancelAuctionButton then
@@ -366,11 +759,15 @@ local function SkinCategoriesList()
     -- object on each rebind, so the font FACE is reapplied (colour-free) and
     -- RefreshCategorySelected owns the state colour.
     local function StyleCategoryRow(button)
+        if not IsEnabled() or not button or (button.IsForbidden and button:IsForbidden()) then return end
+        local lines = button.Lines
+        local linesAlpha = lines and lines:GetAlpha()
         SkinBase.SkinCategoryButton(button, {
             textColor = AH_CATEGORY_TEXT_COLOR,
             selectedTextColor = AH_CATEGORY_SELECTED_TEXT_COLOR,
         })
         SuppressCategoryTextures(button)
+        if lines and linesAlpha then lines:SetAlpha(linesAlpha) end
         SkinBase.ApplyButtonFontObjects(button)
         SkinBase.RefreshCategorySelected(button)
     end
@@ -406,6 +803,73 @@ local function SkinCategoriesList()
     end
 end
 
+local auctionItemDisplays = setmetatable({}, { __mode = "k" })
+
+local function StyleAuctionItemDisplay(display)
+    if not display or not IsEnabled() or (display.IsForbidden and display:IsForbidden()) then return end
+    local item = display.ItemButton or display
+    if item.IsForbidden and item:IsForbidden() then return end
+    local icon = item.Icon or item.icon
+    if not icon then return end
+    auctionItemDisplays[display] = true
+    if not SkinBase.GetFrameData(display, "qAHItemInstanceHooked") then
+        for _, method in ipairs({ "SetItemInternal", "Reset" }) do
+            if type(display[method]) == "function" then hooksecurefunc(display, method, StyleAuctionItemDisplay) end
+        end
+        SkinBase.SetFrameData(display, "qAHItemInstanceHooked", true)
+    end
+    if display.Background then SkinBase.ClampTextureHidden(display.Background, true) end
+    if display.NineSlice then display.NineSlice:SetAlpha(0) end
+    if display.GetRegions then
+        for i = 1, display:GetNumRegions() do
+            local region = select(i, display:GetRegions())
+            if region.GetAtlas and region:GetAtlas() == "auctionhouse-itemheaderframe" then
+                SkinBase.ClampTextureHidden(region, true)
+            end
+        end
+    end
+    local sr, sg, sb, sa, br, bg, bb, ba = SkinBase.GetWindowColors()
+    SkinBase.CreateBackdrop(display, sr, sg, sb, sa, br, bg, bb, ba, 5)
+    SkinBase.GetBackdrop(display):SetFrameLevel(math.max(0, display:GetFrameLevel() - 1))
+    if item.CircleMask and icon.RemoveMaskTexture then icon:RemoveMaskTexture(item.CircleMask) end
+    SkinBase.RoundIconTexture(item, icon)
+    local border = SkinBase.SkinIcon(icon)
+    if border then SkinBase.SetFrameData(border, "chromeRadius", 4) end
+    if border then
+        local quality
+        if display.itemLink and display.GetItemInfo then
+            local _, _, nativeQuality = display:GetItemInfo()
+            quality = nativeQuality
+        end
+        local colorData = quality and ColorManager and ColorManager.GetColorDataForItemQuality(quality)
+        local color = colorData and colorData.color
+        local r, g, b, a = sr, sg, sb, sa
+        if color and color.GetRGBA then r, g, b, a = color:GetRGBA() end
+        SkinBase.SetBackdropColors(border, { r, g, b, a }, nil)
+    end
+    if item.IconBorder then SkinBase.ClampTextureHidden(item.IconBorder, true) end
+    local highlight = item.GetHighlightTexture and item:GetHighlightTexture()
+    if highlight then
+        highlight:SetTexture("Interface\\Buttons\\WHITE8x8")
+        highlight:ClearAllPoints()
+        highlight:SetAllPoints(icon)
+        highlight:SetVertexColor(sr, sg, sb, 0.15)
+        SkinBase.RoundIconTexture(item, highlight)
+    end
+    SkinBase.SkinFontString(item.Count, { fontOnly = true })
+    SkinBase.SkinFontString(display.Name, { fontOnly = true })
+end
+
+local function RefreshAuctionItemDisplays()
+    local frame = _G.AuctionHouseFrame
+    if not frame or not IsEnabled() then return end
+    for _, key in ipairs({ "CommoditiesBuyFrame", "ItemBuyFrame", "CommoditiesSellFrame", "ItemSellFrame", "AuctionsFrame", "WoWTokenResults", "WoWTokenSellFrame" }) do
+        local panel = frame[key]
+        if panel then StyleAuctionItemDisplay((panel.BuyDisplay and panel.BuyDisplay.ItemDisplay) or panel.ItemDisplay or panel.TokenDisplay) end
+    end
+    for display in pairs(auctionItemDisplays) do StyleAuctionItemDisplay(display) end
+end
+
 local function SkinAuctionHouse()
     if not IsEnabled() then return end
 
@@ -416,7 +880,7 @@ local function SkinAuctionHouse()
 
     HideAuctionHouseDecorations()
 
-    SkinBase.CreateBackdrop(AuctionHouseFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    SkinBase.CreateBackdrop(AuctionHouseFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga, 8)
 
     SkinBase.SkinCloseButton(AuctionHouseFrame.CloseButton or _G.AuctionHouseFrameCloseButton)
 
@@ -434,21 +898,21 @@ local function SkinAuctionHouse()
     ns.SafeCall("best-effort-style", SkinAuctionsPanel)
 
     LockAuctionHouseTokenText()
+    StyleTokenPanels()
+    StyleMultisellProgress(_G.AuctionHouseMultisellProgressFrame)
     LockAuctionHouseBuyDialogText()
+    StyleAuctionBuyDialog(AuctionHouseFrame.BuyDialog)
 
     if SkinBase.SkinIcon and _G.AuctionHouseItemDisplayMixin
         and not SkinBase.GetFrameData(_G.AuctionHouseItemDisplayMixin, "qAHIconHooked") then
-        hooksecurefunc(_G.AuctionHouseItemDisplayMixin, "SetItemInternal", function(self)
-            if self and self.Icon then
-                local border = SkinBase.SkinIcon(self.Icon)
-                if border and self.IconBorder then
-                    SkinBase.HandleIconBorder(self.IconBorder, border)
-                end
-            end
-        end)
+        hooksecurefunc(_G.AuctionHouseItemDisplayMixin, "SetItemInternal", StyleAuctionItemDisplay)
+        if type(_G.AuctionHouseItemDisplayMixin.Reset) == "function" then
+            hooksecurefunc(_G.AuctionHouseItemDisplayMixin, "Reset", StyleAuctionItemDisplay)
+        end
         SkinBase.SetFrameData(_G.AuctionHouseItemDisplayMixin, "qAHIconHooked", true)
     end
 
+    RefreshAuctionItemDisplays()
     SkinBase.MarkSkinned(AuctionHouseFrame)
 end
 
@@ -507,6 +971,7 @@ local function RefreshAuctionHouseColors()
             SkinBase.RefreshWidget(mi.SilverBox)
             SkinBase.RefreshWidget(mi.CopperBox)
         end
+        StyleSellInnerControls(commoditiesSell)
         RefreshQuantityInputFrame(commoditiesSell.QuantityInput)
         LockDurationDropdownText(commoditiesSell.DurationDropdown)
     end
@@ -527,6 +992,7 @@ local function RefreshAuctionHouseColors()
             SkinBase.RefreshWidget(mi.SilverBox)
             SkinBase.RefreshWidget(mi.CopperBox)
         end
+        StyleSellInnerControls(itemSell)
         RefreshQuantityInputFrame(itemSell.QuantityInput)
         LockDurationDropdownText(itemSell.DurationDropdown)
     end
@@ -540,7 +1006,16 @@ local function RefreshAuctionHouseColors()
     end
 
     LockAuctionHouseTokenText()
+    StyleTokenPanels()
+    StyleMultisellProgress(_G.AuctionHouseMultisellProgressFrame)
     LockAuctionHouseBuyDialogText()
+    StyleAuctionBuyDialog(AuctionHouseFrame.BuyDialog)
+    StyleCommodityBuyPanel()
+    StyleItemBuyPanel()
+    RefreshAuctionItemDisplays()
+    for row in pairs(auctionRows) do skinRow(row) end
+    for list in pairs(auctionLists) do StyleAuctionListControls(list) end
+    for header in pairs(auctionHeaders) do StyleAuctionHeader(header) end
 end
 
 _G.QUI_RefreshAuctionHouseColors = RefreshAuctionHouseColors

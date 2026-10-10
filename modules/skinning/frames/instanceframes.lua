@@ -79,6 +79,7 @@ end
 local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if not button or SkinBase.IsStyled(button) then return end
 
+    if button.GetHighlightTexture then SkinBase.ClampTextureHidden(button:GetHighlightTexture()) end
     if button.ring then button.ring:Hide() end
     if button.Ring then button.Ring:Hide() end
     if button.bg then button.bg:SetAlpha(0) end
@@ -94,35 +95,44 @@ local function StyleGroupFinderButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
     end
 
     local btnBgR, btnBgG, btnBgB = ButtonBoostColors(bgr, bgg, bgb)
-    SkinBase.ApplyFullBackdrop(backdrop, sr, sg, sb, sa, btnBgR, btnBgG, btnBgB, 1)
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 5, withBackground = true, borderColor = { sr, sg, sb, sa }, bgColor = { btnBgR, btnBgG, btnBgB, 1 } })
 
-    if button.icon then
-        button.icon:SetSize(40, 40)
-        button.icon:ClearAllPoints()
-        button.icon:SetPoint("LEFT", 8, 0)
-        button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    local icon = button.icon or button.Icon
+    if icon then
+        icon:SetSize(40, 40)
+        icon:ClearAllPoints()
+        icon:SetPoint("LEFT", 8, 0)
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        SkinBase.RoundIconTexture(button, icon)
 
-        local iconBackdrop = SkinBase.GetFrameData(button.icon, "backdrop")
+        local iconBackdrop = SkinBase.GetFrameData(icon, "backdrop")
         if not iconBackdrop then
             iconBackdrop = CreateFrame("Frame", nil, button, "BackdropTemplate")
-            SkinBase.SetExpandedPixelPoints(iconBackdrop, button.icon, 1)
+            SkinBase.SetExpandedPixelPoints(iconBackdrop, icon, 1)
             iconBackdrop:SetFrameLevel(button:GetFrameLevel())
             iconBackdrop:EnableMouse(false)
-            SkinBase.ApplyPixelBackdrop(iconBackdrop, 1, false, false)
+            SkinBase.ApplyChromeBackdrop(iconBackdrop, { radius = 4, withBackground = false })
             Helpers.SetFrameBackdropBorderColor(iconBackdrop, sr, sg, sb, sa)
-            SkinBase.SetFrameData(button.icon, "backdrop", iconBackdrop)
+            SkinBase.SetFrameData(icon, "backdrop", iconBackdrop)
         end
     end
 
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
 
-    if button.name then
-        SkinBase.SkinFontString(button.name, { fontOnly = true })
+    local name = button.name or button.Name
+    if name then
+        SkinBase.SkinFontString(name, { color = { 0.9, 0.9, 0.9, 1 } })
     end
 
     AddSkinColorHoverBorder(button)
 
     SkinBase.MarkStyled(button)
+end
+
+local function StylePVEHeader(frame)
+    local title = frame.GetTitleText and frame:GetTitleText()
+    if not title then title = frame.TitleText or (frame.TitleContainer and frame.TitleContainer.TitleText) end
+    SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
 end
 
 local function SkinPVEFrame()
@@ -132,8 +142,11 @@ local function SkinPVEFrame()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     HidePVEDecorations()
+    StylePVEHeader(PVEFrame)
+    if type(PVEFrame.SetTitle) == "function" then hooksecurefunc(PVEFrame, "SetTitle", StylePVEHeader) end
+    PVEFrame:HookScript("OnShow", StylePVEHeader)
 
-    SkinBase.CreateBackdrop(PVEFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    SkinBase.CreateBackdrop(PVEFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga, 8)
 
     SkinBase.SkinCloseButton(PVEFrame.CloseButton or _G.PVEFrameCloseButton)
 
@@ -142,20 +155,20 @@ local function SkinPVEFrame()
         local tab = _G["PVEFrameTab" .. i]
         if tab then pveTabs[#pveTabs + 1] = tab end
     end
-    SkinBase.SkinTabGroup(pveTabs, PVEFrame, { resizeToText = true })
+    SkinBase.SkinTabGroup(pveTabs, PVEFrame, { resizeToText = true, dockBottom = true })
 
     local pveTab1, pveTab2, pveTab3 = _G.PVEFrameTab1, _G.PVEFrameTab2, _G.PVEFrameTab3
     if pveTab1 then
         pveTab1:ClearAllPoints()
-        pveTab1:SetPoint("BOTTOMLEFT", PVEFrame, "BOTTOMLEFT", -3, -30)
+        pveTab1:SetPoint("TOPLEFT", PVEFrame, "BOTTOMLEFT", 12, SkinBase.GetPixelSize(pveTab1, 1))
     end
     if pveTab2 then
         pveTab2:ClearAllPoints()
-        pveTab2:SetPoint("TOPLEFT", pveTab1 or PVEFrame, "TOPRIGHT", -5, 0)
+        pveTab2:SetPoint("TOPLEFT", pveTab1 or PVEFrame, "TOPRIGHT", -SkinBase.GetPixelSize(PVEFrame, 1), 0)
     end
     if pveTab3 then
         pveTab3:ClearAllPoints()
-        pveTab3:SetPoint("TOPLEFT", pveTab2 or pveTab1 or PVEFrame, "TOPRIGHT", -5, 0)
+        pveTab3:SetPoint("TOPLEFT", pveTab2 or pveTab1 or PVEFrame, "TOPRIGHT", -SkinBase.GetPixelSize(PVEFrame, 1), 0)
     end
 
     hooksecurefunc("PVEFrame_ShowFrame", function()
@@ -167,7 +180,7 @@ local function SkinPVEFrame()
             local twoShown = tab2 and tab2:IsShown()
             local threeShown = tab3 and tab3:IsShown()
             tab4:ClearAllPoints()
-            tab4:SetPoint("TOPLEFT", (twoShown and threeShown and tab3) or (twoShown and not threeShown and tab2) or _G.PVEFrameTab1, "TOPRIGHT", -5, 0)
+            tab4:SetPoint("TOPLEFT", (twoShown and threeShown and tab3) or (twoShown and not threeShown and tab2) or _G.PVEFrameTab1, "TOPRIGHT", -SkinBase.GetPixelSize(PVEFrame, 1), 0)
         end)
     end)
 
@@ -253,11 +266,60 @@ local function HideRaidFinderDecorations()
     end
 end
 
+local function StyleLFGRewardItem(item)
+    if not item then return end
+    SkinBase.SkinButton(item, { strip = true, font = false, belowChildren = true })
+    if item.Icon then
+        item.Icon:SetAlpha(1)
+        item.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        SkinBase.RoundIconTexture(item, item.Icon)
+    end
+    if item.IconOverlay then item.IconOverlay:SetAlpha(1) end
+    if item.IconBorder then item.IconBorder:SetAlpha(1) end
+    if item.GetRegions then
+        for _, region in ipairs({ item:GetRegions() }) do
+            if region:GetObjectType() == "Texture" and region ~= item.Icon
+                and region ~= item.IconBorder and region ~= item.IconOverlay then
+                SkinBase.ClampTextureHidden(region, true)
+            end
+        end
+    end
+    SkinBase.ClampTextureHidden(item.shortageBorder, true)
+    SkinBase.RoundIconTexture(item, item.IconBorder)
+    SkinBase.SkinFontString(item.Name, { fontOnly = true })
+    SkinBase.SkinFontString(item.Count, { fontOnly = true })
+end
+
+local function StyleLFGRewards(frame)
+    local core = GetCore()
+    local settings = core and core.db and core.db.profile and core.db.profile.general
+    if not frame or not settings or not settings.skinInstanceFrames then return end
+    for _, key in ipairs({ "title", "rewardsLabel" }) do
+        SkinBase.SkinFontString(frame[key], { color = { 1, 1, 1, 1 } })
+    end
+    for _, key in ipairs({ "description", "rewardsDescription", "xpLabel", "xpAmount" }) do
+        SkinBase.SkinFontString(frame[key], { color = { 0.9, 0.9, 0.9, 1 } })
+    end
+    local name = frame:GetName()
+    if name then
+        for i = 1, frame.numRewardFrames or 1 do
+            StyleLFGRewardItem(_G[name .. "Item" .. i])
+        end
+    end
+    StyleLFGRewardItem(frame.MoneyReward)
+end
+
+local lfgRewardsHooked
 local function SkinLFDFrame()
     local LFDQueueFrame = _G.LFDQueueFrame
     if not LFDQueueFrame or SkinBase.IsSkinned(LFDQueueFrame) then return end
 
     HideLFDDecorations()
+    StyleLFGRewards(_G.LFDQueueFrameRandomScrollFrameChildFrame)
+    if not lfgRewardsHooked and type(_G.LFGRewardsFrame_UpdateFrame) == "function" then
+        hooksecurefunc("LFGRewardsFrame_UpdateFrame", StyleLFGRewards)
+        lfgRewardsHooked = true
+    end
 
     local roles = { "Tank", "Healer", "DPS" }
     for _, role in ipairs(roles) do
@@ -272,6 +334,8 @@ local function SkinLFDFrame()
             if button.cover then button.cover:SetAlpha(0) end
             if button.checkButton then
                 SkinBase.SkinCheckBox(button.checkButton)
+                local backdrop = SkinBase.GetBackdrop(button.checkButton)
+                if backdrop then SkinBase.SetInsetPixelPoints(backdrop, button.checkButton, 6) end
             end
             local incentiveIcon = _G["LFDQueueFrameRoleButton" .. role .. "IncentiveIcon"]
             if incentiveIcon then incentiveIcon:SetAlpha(0) end
@@ -285,8 +349,9 @@ local function SkinLFDFrame()
     local typeDropdown = LFDQueueFrame.TypeDropdown or _G.LFDQueueFrameTypeDropdown
     if typeDropdown then
         typeDropdown:SetWidth(200)
-        SkinBase.SkinDropdown(typeDropdown, { keepArrow = true, insetY = 2 })
+        SkinBase.SkinDropdown(typeDropdown, { skinArrow = true, insetY = 2 })
         SkinBase.LockDropdownText(typeDropdown)
+        SkinBase.SkinFontString(_G.LFDQueueFrameTypeDropdownName, { color = { 0.9, 0.9, 0.9, 1 } })
     end
 
     local specificList = LFDQueueFrame.Specific
@@ -320,6 +385,8 @@ local function SkinRaidFinderFrame()
             if button.cover then button.cover:SetAlpha(0) end
             if button.checkButton then
                 SkinBase.SkinCheckBox(button.checkButton)
+                local backdrop = SkinBase.GetBackdrop(button.checkButton)
+                if backdrop then SkinBase.SetInsetPixelPoints(backdrop, button.checkButton, 6) end
             end
             local incentiveIcon = _G["RaidFinderQueueFrameRoleButton" .. role .. "IncentiveIcon"]
             if incentiveIcon then incentiveIcon:SetAlpha(0) end
@@ -333,7 +400,7 @@ local function SkinRaidFinderFrame()
     local selectionDropdown = RaidFinderQueueFrame.SelectionDropdown
     if selectionDropdown then
         selectionDropdown:SetWidth(200)
-        SkinBase.SkinDropdown(selectionDropdown, { keepArrow = true, insetY = 2 })
+        SkinBase.SkinDropdown(selectionDropdown, { skinArrow = true, insetY = 2 })
         SkinBase.LockDropdownText(selectionDropdown)
     end
 
@@ -449,7 +516,26 @@ local function SkinLFGListFrame()
             SkinBase.SkinButton(sp.BackButton, { font = true })
         end
         if sp.SignUpButton then
-            SkinBase.SkinButton(sp.SignUpButton, { font = true })
+            SkinBase.SkinButton(sp.SignUpButton, { font = true, belowChildren = true })
+            local function StyleSignUpLabel()
+                local button = sp.SignUpButton
+                local label = button:GetFontString()
+                if not label then return end
+                local value = button:IsEnabled() and 0.9 or 0.5
+                SkinBase.SkinFontString(label, { color = { value, value, value, 1 } })
+                label:ClearAllPoints()
+                label:SetPoint("CENTER", button, "CENTER", 0, 0)
+                label:SetDrawLayer("OVERLAY", 7)
+                label:SetAlpha(1)
+            end
+            StyleSignUpLabel()
+            if type(_G.LFGListSearchPanel_UpdateButtonStatus) == "function"
+                and not SkinBase.GetFrameData(sp, "qSignUpStatusHooked") then
+                hooksecurefunc("LFGListSearchPanel_UpdateButtonStatus", function(panel)
+                    if panel == sp then StyleSignUpLabel() end
+                end)
+                SkinBase.SetFrameData(sp, "qSignUpStatusHooked", true)
+            end
         end
         if sp.RefreshButton then
             SkinBase.SkinButton(sp.RefreshButton, { font = true })
@@ -458,10 +544,11 @@ local function SkinLFGListFrame()
             SkinBase.SkinEditBox(sp.SearchBox)
         end
         if sp.FilterButton then
-            SkinBase.SkinButton(sp.FilterButton, { font = true })
+            SkinBase.SkinDropdown(sp.FilterButton, { skinArrow = true })
         end
         if sp.ScrollBox then
             SkinBase.HookScrollBoxRowFonts(sp.ScrollBox, 2)
+            SkinBase.SkinButton(sp.ScrollBox.StartGroupButton, { font = true })
         end
         if sp.AutoCompleteFrame and type(_G.LFGListSearchPanel_UpdateAutoComplete) == "function"
             and not SkinBase.GetFrameData(sp, "qAutoCompleteFontHooked") then
@@ -514,8 +601,17 @@ local function HideChallengesDecorations()
     local ChallengesFrame = _G.ChallengesFrame
     if not ChallengesFrame then return end
 
-    if ChallengesFrame.Background then ChallengesFrame.Background:Hide() end
-    if ChallengesFrame.Bg then ChallengesFrame.Bg:Hide() end
+    SkinBase.ClampTextureHidden(ChallengesFrame.Background)
+    local background = ChallengesFrame.Background
+    if background and not SkinBase.GetFrameData(background, "qChallengesTextureHooked") then
+        hooksecurefunc(background, "SetTexture", function(texture)
+            texture:SetAlpha(0)
+            texture:Hide()
+        end)
+        hooksecurefunc(background, "Show", function(texture) texture:Hide() end)
+        SkinBase.SetFrameData(background, "qChallengesTextureHooked", true)
+    end
+    SkinBase.ClampTextureHidden(ChallengesFrame.Bg, true)
     if ChallengesFrame.NineSlice then ChallengesFrame.NineSlice:Hide() end
 
     if ChallengesFrame.SeasonChangeNoticeFrame then
@@ -523,16 +619,37 @@ local function HideChallengesDecorations()
     end
 
     SkinBase.StripTextures(ChallengesFrame)
+    local inset = ChallengesFrame.Inset or _G.ChallengesFrameInset
+    if inset then
+        SkinBase.StripTextures(inset)
+        SkinBase.KillNineSlice(inset.NineSlice, true)
+    end
+    local child = ChallengesFrame.WeeklyInfo and ChallengesFrame.WeeklyInfo.Child
+    if child then
+        for _, key in ipairs({ "RuneBG", "RunesLarge", "RunesSmall", "LargeRuneGlow", "SmallRuneGlow" }) do
+            SkinBase.ClampTextureHidden(child[key])
+        end
+        SkinBase.SkinFontString(child.Description, { color = { 0.9, 0.9, 0.9, 1 } })
+    end
 end
 
 local function StyleDungeonIcon(icon, sr, sg, sb, sa, bgr, bgg, bgb, bga)
-    if not icon or SkinBase.IsStyled(icon) then return end
+    if not icon then return end
+    if icon.GetRegions then
+        for _, region in ipairs({ icon:GetRegions() }) do
+            if region ~= icon.Icon and region:GetObjectType() == "Texture" then
+                SkinBase.ClampTextureHidden(region, true)
+            end
+        end
+    end
+    if SkinBase.IsStyled(icon) then return end
 
     if icon.Bg then icon.Bg:SetAlpha(0) end
     if icon.Background then icon.Background:SetAlpha(0) end
 
     if icon.Icon then
         icon.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        SkinBase.RoundIconTexture(icon, icon.Icon)
 
         local iconBackdrop = SkinBase.GetFrameData(icon.Icon, "backdrop")
         if not iconBackdrop then
@@ -540,7 +657,7 @@ local function StyleDungeonIcon(icon, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.SetExpandedPixelPoints(iconBackdrop, icon.Icon, 1)
             iconBackdrop:SetFrameLevel(icon:GetFrameLevel())
             iconBackdrop:EnableMouse(false)
-            SkinBase.ApplyPixelBackdrop(iconBackdrop, 1, false, false)
+            SkinBase.ApplyChromeBackdrop(iconBackdrop, { radius = 4, withBackground = false })
             Helpers.SetFrameBackdropBorderColor(iconBackdrop, sr, sg, sb, sa)
             SkinBase.SetFrameData(icon.Icon, "backdrop", iconBackdrop)
         end
@@ -558,6 +675,7 @@ local function StyleAffixIcon(affix, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     if affix.Portrait then
         affix.Portrait:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        SkinBase.RoundIconTexture(affix, affix.Portrait)
 
         local portraitBackdrop = SkinBase.GetFrameData(affix.Portrait, "backdrop")
         if not portraitBackdrop then
@@ -565,13 +683,28 @@ local function StyleAffixIcon(affix, sr, sg, sb, sa, bgr, bgg, bgb, bga)
             SkinBase.SetExpandedPixelPoints(portraitBackdrop, affix.Portrait, 1)
             portraitBackdrop:SetFrameLevel(affix:GetFrameLevel())
             portraitBackdrop:EnableMouse(false)
-            SkinBase.ApplyPixelBackdrop(portraitBackdrop, 1, false, false)
+            SkinBase.ApplyChromeBackdrop(portraitBackdrop, { radius = 4, withBackground = false })
             Helpers.SetFrameBackdropBorderColor(portraitBackdrop, sr, sg, sb, sa)
             SkinBase.SetFrameData(affix.Portrait, "backdrop", portraitBackdrop)
         end
     end
 
     SkinBase.MarkStyled(affix)
+end
+
+local function StyleSeasonNotice(notice)
+    if not notice then return end
+    SkinBase.StripTextures(notice)
+    local sr, sg, sb, sa, r, g, b, a = SkinBase.GetWindowColors()
+    SkinBase.CreateBackdrop(notice, sr, sg, sb, sa, r, g, b, a, 8)
+    SkinBase.SkinFrameText(notice, { recurse = true, chrome = true, color = { 0.9, 0.9, 0.9, 1 } })
+    SkinBase.SkinButton(notice.Leave, { strip = true, font = true })
+    if notice.Affix then
+        SkinBase.ClampTextureHidden(notice.Affix.AffixBorder, true)
+        if notice.Affix.Portrait and notice.Affix.Portrait:GetTexture() then
+            StyleAffixIcon(notice.Affix, sr, sg, sb, sa, r, g, b, a)
+        end
+    end
 end
 
 local function SkinChallengesFrame()
@@ -581,6 +714,16 @@ local function SkinChallengesFrame()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     HideChallengesDecorations()
+    ChallengesFrame:HookScript("OnShow", function()
+        HideChallengesDecorations()
+        C_Timer.After(0, HideChallengesDecorations)
+    end)
+    local notice = ChallengesFrame.SeasonChangeNoticeFrame
+    StyleSeasonNotice(notice)
+    if notice and not SkinBase.GetFrameData(notice, "qSeasonNoticeHooked") then
+        notice:HookScript("OnShow", StyleSeasonNotice)
+        SkinBase.SetFrameData(notice, "qSeasonNoticeHooked", true)
+    end
 
     if ChallengesFrame.WeeklyInfo then
         local wi = ChallengesFrame.WeeklyInfo
@@ -604,7 +747,9 @@ local function SkinChallengesFrame()
 
     if ChallengesFrame.Update and not SkinBase.GetFrameData(ChallengesFrame, "updateHooked") then
         hooksecurefunc(ChallengesFrame, "Update", function(self)
+            HideChallengesDecorations()
             C_Timer.After(0, function()
+                HideChallengesDecorations()
                 if self.DungeonIcons then
                     local sr2, sg2, sb2, sa2, bgr2, bgg2, bgb2, bga2 = SkinBase.GetWindowColors()
                     for _, icon in pairs(self.DungeonIcons) do
@@ -700,7 +845,7 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
         SkinBase.SetFrameData(button, "backdrop", backdrop)
     end
 
-    SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true)
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 5, withBackground = true })
 
     local btnBgR, btnBgG, btnBgB = ButtonBoostColors(bgr, bgg, bgb)
     Helpers.SetFrameBackdropColor(backdrop, btnBgR, btnBgG, btnBgB, 1)
@@ -718,13 +863,14 @@ local function StylePVPActivityButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga
         if reward.CircleMask then reward.CircleMask:Hide() end
         if reward.Icon then
             reward.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        SkinBase.RoundIconTexture(reward, reward.Icon)
             local rewardIconBackdrop = SkinBase.GetFrameData(reward.Icon, "backdrop")
             if not rewardIconBackdrop then
                 rewardIconBackdrop = CreateFrame("Frame", nil, reward, "BackdropTemplate")
                 SkinBase.SetExpandedPixelPoints(rewardIconBackdrop, reward.Icon, 1)
                 rewardIconBackdrop:SetFrameLevel(reward:GetFrameLevel())
                 rewardIconBackdrop:EnableMouse(false)
-                SkinBase.ApplyPixelBackdrop(rewardIconBackdrop, 1, false, false)
+                SkinBase.ApplyChromeBackdrop(rewardIconBackdrop, { radius = 4, withBackground = false })
                 Helpers.SetFrameBackdropBorderColor(rewardIconBackdrop, sr, sg, sb, sa)
                 SkinBase.SetFrameData(reward.Icon, "backdrop", rewardIconBackdrop)
             end
@@ -765,7 +911,7 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         SkinBase.SetFrameData(button, "backdrop", backdrop)
     end
 
-    SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true)
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 5, withBackground = true })
 
     local btnBgR, btnBgG, btnBgB = ButtonBoostColors(bgr, bgg, bgb)
     Helpers.SetFrameBackdropColor(backdrop, btnBgR, btnBgG, btnBgB, 0.9)
@@ -780,13 +926,14 @@ local function StyleSpecificBGButton(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     if button.Icon then
         button.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        SkinBase.RoundIconTexture(button, button.Icon)
         local iconBackdrop = SkinBase.GetFrameData(button.Icon, "backdrop")
         if not iconBackdrop then
             iconBackdrop = CreateFrame("Frame", nil, button, "BackdropTemplate")
             SkinBase.SetExpandedPixelPoints(iconBackdrop, button.Icon, 1)
             iconBackdrop:SetFrameLevel(button:GetFrameLevel())
             iconBackdrop:EnableMouse(false)
-            SkinBase.ApplyPixelBackdrop(iconBackdrop, 1, false, false)
+            SkinBase.ApplyChromeBackdrop(iconBackdrop, { radius = 4, withBackground = false })
             Helpers.SetFrameBackdropBorderColor(iconBackdrop, sr, sg, sb, sa)
             SkinBase.SetFrameData(button.Icon, "backdrop", iconBackdrop)
         end
@@ -825,7 +972,7 @@ local function StyleConquestBar(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         SkinBase.SetFrameData(bar, "backdrop", backdrop)
     end
 
-    SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true)
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 5, withBackground = true })
     Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, 0.8)
     Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
 
@@ -834,6 +981,7 @@ local function StyleConquestBar(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         if bar.Reward.CircleMask then bar.Reward.CircleMask:Hide() end
         if bar.Reward.Icon then
             bar.Reward.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+            SkinBase.RoundIconTexture(bar.Reward, bar.Reward.Icon)
         end
     end
 
@@ -855,6 +1003,7 @@ local function StylePVPFrameRoleIcons(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     if dpsIcon then StylePVPRoleIcon(dpsIcon, sr, sg, sb, sa, bgr, bgg, bgb, bga) end
 end
 
+
 local function SkinPVPFrame()
     local PVPQueueFrame = _G.PVPQueueFrame
     if not PVPQueueFrame or SkinBase.IsSkinned(PVPQueueFrame) then return end
@@ -862,6 +1011,19 @@ local function SkinPVPFrame()
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
     HidePVPDecorations()
+    local inset = PVPQueueFrame.HonorInset
+    if inset then
+        SkinBase.ClampTextureHidden(inset.Background)
+        SkinBase.StripTextures(inset)
+        local r, g, b, a = SkinBase.GetDepthColor("SUBPANEL")
+        SkinBase.CreateBackdrop(inset, sr, sg, sb, sa * 0.5, r, g, b, a, 5)
+    end
+    local notice = PVPQueueFrame.NewSeasonPopup
+    StyleSeasonNotice(notice)
+    if notice and not SkinBase.GetFrameData(notice, "qSeasonNoticeHooked") then
+        notice:HookScript("OnShow", StyleSeasonNotice)
+        SkinBase.SetFrameData(notice, "qSeasonNoticeHooked", true)
+    end
 
     for i = 1, 5 do
         local catButton = PVPQueueFrame["CategoryButton" .. i] or _G["PVPQueueFrameCategoryButton" .. i]
@@ -882,7 +1044,7 @@ local function SkinPVPFrame()
         local typeDropdown = HonorFrame.TypeDropdown or _G.HonorFrameTypeDropdown
         if typeDropdown then
             typeDropdown:SetWidth(230)
-            SkinBase.SkinDropdown(typeDropdown, { keepArrow = true, insetY = 2 })
+            SkinBase.SkinDropdown(typeDropdown, { skinArrow = true, insetY = 2 })
             SkinBase.LockDropdownText(typeDropdown)
         end
 
@@ -922,7 +1084,7 @@ local function SkinPVPFrame()
         local conquestDropdown = ConquestFrame.TypeDropdown or _G.ConquestFrameTypeDropdown
         if conquestDropdown then
             conquestDropdown:SetWidth(230)
-            SkinBase.SkinDropdown(conquestDropdown, { keepArrow = true, insetY = 2 })
+            SkinBase.SkinDropdown(conquestDropdown, { skinArrow = true, insetY = 2 })
             SkinBase.LockDropdownText(conquestDropdown)
         end
 
@@ -957,8 +1119,8 @@ local function SkinPVPFrame()
         if bonusList then
             if bonusList.WorldBattlesTexture then bonusList.WorldBattlesTexture:Hide() end
             if bonusList.ShadowOverlay then bonusList.ShadowOverlay:Hide() end
-            if bonusList.RandomTrainingGroundButton then
-                StylePVPActivityButton(bonusList.RandomTrainingGroundButton, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+            for _, key in ipairs({ "RandomTrainingGroundButton", "RandomTrainingGroundBGButton", "RandomTrainingGroundArenaButton" }) do
+                StylePVPActivityButton(bonusList[key], sr, sg, sb, sa, bgr, bgg, bgb, bga)
             end
         end
 
@@ -968,7 +1130,7 @@ local function SkinPVPFrame()
 
         if TrainingGroundsFrame.TypeDropdown then
             TrainingGroundsFrame.TypeDropdown:SetWidth(230)
-            SkinBase.SkinDropdown(TrainingGroundsFrame.TypeDropdown, { keepArrow = true, insetY = 2 })
+            SkinBase.SkinDropdown(TrainingGroundsFrame.TypeDropdown, { skinArrow = true, insetY = 2 })
             SkinBase.LockDropdownText(TrainingGroundsFrame.TypeDropdown)
         end
 

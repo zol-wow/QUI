@@ -38,7 +38,7 @@ local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb)
         SkinBase.SetFrameData(button, "backdrop", btnBd)
     end
 
-    SkinBase.ApplyPixelBackdrop(btnBd, 1, true, true)
+    SkinBase.ApplyChromeBackdrop(btnBd, { radius = 4, borderPixels = 1, withBackground = true })
     Helpers.SetFrameBackdropColor(btnBd, bgr, bgg, bgb, 0.8)
     Helpers.SetFrameBackdropBorderColor(btnBd, sr, sg, sb, sa)
 
@@ -60,6 +60,7 @@ local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb)
     local icon = button.icon or button.Icon
     if icon then
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        SkinBase.RoundIconTexture(button, icon)
     end
 
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
@@ -123,7 +124,7 @@ local function SkinOverrideActionBar()
         SkinBase.SetFrameData(bar, "backdrop", barBd)
     end
 
-    SkinBase.ApplyPixelBackdrop(barBd, 1, true, true)
+    SkinBase.ApplyChromeBackdrop(barBd, { radius = 8, borderPixels = 1, withBackground = true })
     Helpers.SetFrameBackdropColor(barBd, bgr, bgg, bgb, bga)
     Helpers.SetFrameBackdropBorderColor(barBd, sr, sg, sb, sa)
 
@@ -149,7 +150,7 @@ local function SkinOverrideActionBar()
             SkinBase.SetFrameData(leaveBtn, "backdrop", leaveBd)
         end
 
-        SkinBase.ApplyPixelBackdrop(leaveBd, 1, true, true)
+        SkinBase.ApplyChromeBackdrop(leaveBd, { radius = 4, borderPixels = 1, withBackground = true })
         Helpers.SetFrameBackdropColor(leaveBd, 0.6, 0.1, 0.1, 0.9)
         Helpers.SetFrameBackdropBorderColor(leaveBd, sr, sg, sb, sa)
     end
@@ -163,6 +164,7 @@ local function SkinOverrideActionBar()
         healthBar:ClearAllPoints()
         healthBar:SetPoint("LEFT", bar, "LEFT", 4, 0)
         ns.Helpers.ApplyBarStyle(healthBar, "Interface\\Buttons\\WHITE8x8")
+        SkinBase.RoundBarTexture(healthBar, healthBar:GetStatusBarTexture())
 
         local hbBd = SkinBase.GetFrameData(healthBar, "backdrop")
         if not hbBd then
@@ -173,7 +175,7 @@ local function SkinOverrideActionBar()
             SkinBase.SetFrameData(healthBar, "backdrop", hbBd)
         end
 
-        SkinBase.ApplyPixelBackdrop(hbBd, 1, true, true)
+        SkinBase.ApplyChromeBackdrop(hbBd, { radius = 3, borderPixels = 1, withBackground = true })
         Helpers.SetFrameBackdropColor(hbBd, bgr, bgg, bgb, 0.8)
         Helpers.SetFrameBackdropBorderColor(hbBd, sr, sg, sb, sa)
     end
@@ -187,6 +189,7 @@ local function SkinOverrideActionBar()
         powerBar:ClearAllPoints()
         powerBar:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
         ns.Helpers.ApplyBarStyle(powerBar, "Interface\\Buttons\\WHITE8x8")
+        SkinBase.RoundBarTexture(powerBar, powerBar:GetStatusBarTexture())
 
         local pbBd = SkinBase.GetFrameData(powerBar, "backdrop")
         if not pbBd then
@@ -197,7 +200,7 @@ local function SkinOverrideActionBar()
             SkinBase.SetFrameData(powerBar, "backdrop", pbBd)
         end
 
-        SkinBase.ApplyPixelBackdrop(pbBd, 1, true, true)
+        SkinBase.ApplyChromeBackdrop(pbBd, { radius = 3, borderPixels = 1, withBackground = true })
         Helpers.SetFrameBackdropColor(pbBd, bgr, bgg, bgb, 0.8)
         Helpers.SetFrameBackdropBorderColor(pbBd, sr, sg, sb, sa)
     end
