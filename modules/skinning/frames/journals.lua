@@ -46,10 +46,50 @@ local function StyleSpellBookAssistant(rotation)
     end
 end
 
+local function StyleSpellSearchPreview(preview)
+    if not IsSettingEnabled("skinSpellBook") or not preview or (preview.IsForbidden and preview:IsForbidden()) then return end
+    for _, key in ipairs({ "Background", "BorderAnchor", "BotRightCorner", "BottomBorder", "LeftBorder", "RightBorder" }) do
+        SkinBase.ClampTextureHidden(preview[key], true, { preserveLayout = true })
+    end
+    SkinBase.ApplyChromeBackdrop(preview, { radius = 6, withBackground = true })
+    local function StyleResult(button)
+        if not button or (button.IsForbidden and button:IsForbidden()) then return end
+        SkinBase.ClampTextureHidden(button.GetNormalTexture and button:GetNormalTexture(), true)
+        SkinBase.ClampTextureHidden(button.GetPushedTexture and button:GetPushedTexture(), true)
+        SkinBase.ClampTextureHidden(button.IconFrame, true, { preserveLayout = true })
+        local label = button.Name or button.Text
+        SkinBase.SkinFontString(label, { fontOnly = true })
+        SkinBase.LockFontObject(label, { fontOnly = true })
+        if button.HighlightTexture then
+            button.HighlightTexture:SetColorTexture(1, 1, 1, 0.12)
+            button.HighlightTexture:SetAllPoints(button)
+        end
+    end
+    local scroll = preview.ScrollBox
+    if scroll and scroll.EnumerateFrames then
+        for _, button in scroll:EnumerateFrames() do StyleResult(button) end
+    end
+    local pool = preview.suggestedResultButtonsPool
+    if pool and pool.EnumerateActive then
+        for button in pool:EnumerateActive() do StyleResult(button) end
+    end
+    local overflow = preview.OverflowCount and preview.OverflowCount.Text
+    SkinBase.SkinFontString(overflow, { fontOnly = true })
+    SkinBase.LockFontObject(overflow, { fontOnly = true })
+    if not SkinBase.GetFrameData(preview, "qSpellSearchPreviewHooked") then
+        preview:HookScript("OnShow", StyleSpellSearchPreview)
+        if preview.UpdateResultsDisplay then
+            hooksecurefunc(preview, "UpdateResultsDisplay", StyleSpellSearchPreview)
+        end
+        SkinBase.SetFrameData(preview, "qSpellSearchPreviewHooked", true)
+    end
+end
+
 local function StyleSpellBookControls(frame)
     local book = GetSpellBookFrame(frame)
     if not book then return end
     StyleSpellBookAssistant(book.AssistedCombatRotationSpellFrame)
+    StyleSpellSearchPreview(book.SearchPreviewContainer)
     for _, key in ipairs({ "TopBar", "BookBGHalved", "BookBGLeft", "BookBGRight", "BookCornerFlipbook", "Bookmark" }) do
         if book[key] then SkinBase.ClampTextureHidden(book[key]) end
     end
@@ -57,6 +97,7 @@ local function StyleSpellBookControls(frame)
     if book.SearchBox and book.SearchBox.searchIcon then book.SearchBox.searchIcon:SetAlpha(1) end
     local categories = book.CategoryTabSystem and book.CategoryTabSystem.tabs
     SkinBase.SkinTabGroup(categories, book, { resizeToText = true, hover = true })
+    if book.ResizeSearchBox then book:ResizeSearchBox() end
 end
 
 local function SkinSpellRows(frame)
@@ -889,8 +930,64 @@ local function StyleJourneyProgress(page)
     end
 end
 
+local function SkinEncounterSearchSurface(panel)
+    if not panel then return end
+    SkinBase.StripTextures(panel)
+    local sr, sg, sb, sa = SkinBase.GetWindowColors()
+    local r, g, b = SkinBase.GetDepthColor("SUBPANEL")
+    SkinBase.CreateBackdrop(panel, sr, sg, sb, sa, r, g, b, 1, 5)
+end
+
+local function SkinEncounterSearchRow(row)
+    if not row then return end
+    SkinBase.ClampTextureHidden(row.iconFrame, true, { preserveLayout = true })
+    SkinBase.SkinButton(row, { font = false, hover = not row.selectedTexture, radius = 3 })
+    SkinBase.RefreshWidget(row)
+    SkinBase.RoundIconTexture(row, row.icon)
+    SkinBase.SkinFontString(row.name, { color = { 0.95, 0.95, 0.95, 1 } })
+    SkinBase.SkinFontString(row.text, { color = { 0.95, 0.95, 0.95, 1 } })
+    SkinBase.SkinFontString(row.path, { color = { 0.75, 0.75, 0.75, 1 } })
+    SkinBase.SkinFontString(row.resultType, { color = { 0.75, 0.75, 0.75, 1 } })
+    if row.selectedTexture then
+        local r, g, b = SkinBase.GetSkinColors()
+        row.selectedTexture:SetColorTexture(r, g, b, 0.18)
+        SkinBase.RoundBarTexture(row, row.selectedTexture)
+    end
+end
+
+local function SkinEncounterSearch(frame)
+    local search = frame and frame.searchBox
+    local preview = search and search.searchPreviewContainer
+    if preview then
+        SkinEncounterSearchSurface(preview)
+        local last
+        for _, row in ipairs(search.GetButtons and search:GetButtons() or {}) do
+            SkinEncounterSearchRow(row)
+            if row:IsShown() then last = row end
+        end
+        SkinEncounterSearchRow(search.showAllResults)
+        if search.showAllResults and search.showAllResults:IsShown() then last = search.showAllResults end
+        if search.searchProgress and search.searchProgress:IsShown() then last = search.searchProgress end
+        local bd = SkinBase.GetBackdrop(preview)
+        if bd and last then
+            bd:ClearAllPoints()
+            bd:SetPoint("TOPLEFT", preview, "TOPLEFT", -2, 2)
+            bd:SetPoint("BOTTOMRIGHT", last, "BOTTOMRIGHT", 2, -2)
+        end
+    end
+    local results = frame and frame.searchResults
+    if results then
+        SkinEncounterSearchSurface(results)
+        SkinBase.SkinFontString(results.TitleText, { color = { 0.95, 0.95, 0.95, 1 } })
+        SkinBase.SkinCloseButton(results.CloseButton or _G[(results:GetName() or "") .. "CloseButton"])
+        SkinBase.SkinTrimScrollBar(results.ScrollBar)
+        HookEncounterJournalScrollBox(results.ScrollBox, SkinEncounterSearchRow)
+    end
+end
+
 local function SkinEncounterJournalContents(frame)
     if not frame or not IsSettingEnabled("skinEncounterJournal") then return end
+    SkinEncounterSearch(frame)
     local select = frame.instanceSelect
     if select then
         SkinBase.ClampTextureHidden(select.bg)
@@ -1155,7 +1252,7 @@ local function SkinEncounterJournal()
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
     SkinEncounterJournalContents(frame)
-    for _, name in ipairs({ "EncounterJournal_SetTab", "EncounterJournal_DisplayInstance", "EncounterJournal_DisplayEncounter", "EJ_ContentTab_Select", "EJSuggestFrame_RefreshDisplay", "EncounterJournal_LootUpdate", "EncounterJournal_DisplayCreature" }) do
+    for _, name in ipairs({ "EncounterJournal_SetTab", "EncounterJournal_DisplayInstance", "EncounterJournal_DisplayEncounter", "EJ_ContentTab_Select", "EJSuggestFrame_RefreshDisplay", "EncounterJournal_LootUpdate", "EncounterJournal_DisplayCreature", "EncounterJournal_UpdateSearchPreview", "EncounterJournal_SearchUpdate", "EncounterJournal_ShowFullSearch" }) do
         if type(_G[name]) == "function" then
             hooksecurefunc(name, function() SkinEncounterJournalContents(frame) end)
         end
@@ -1318,8 +1415,60 @@ local function StyleCollectionListRow(row)
     SkinBase.RoundIconTexture(row, row.icon)
 end
 
+local function StylePetStatusBar(bar)
+    if not bar then return end
+    if not SkinBase.GetFrameData(bar, "petProgressChrome") then
+        local fill = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+        for _, region in ipairs({ bar:GetRegions() }) do
+            if region ~= fill and region:GetObjectType() == "Texture" then
+                SkinBase.ClampTextureHidden(region)
+            end
+        end
+        SkinBase.SetFrameData(bar, "petProgressChrome", true)
+    end
+    local color = bar.GetStatusBarColor and { bar:GetStatusBarColor() }
+    SkinBase.SkinStatusBar(bar, { color = color, backdrop = false })
+    SkinBase.ApplyChromeBackdrop(bar, { radius = 2, withBackground = true })
+    SkinBase.RoundBarTexture(bar, bar.GetStatusBarTexture and bar:GetStatusBarTexture())
+    SkinBase.SkinFontString(bar.rankText, { fontOnly = true })
+end
+
+local function StylePetAbilitySelector(selector)
+    if not selector or not IsSettingEnabled("skinCollections") then return end
+    SkinBase.ClampTextureHidden(selector.BgEnd, true)
+    SkinBase.ClampTextureHidden(selector.BgTiled, true)
+    local r, g, b, a = SkinBase.GetDepthColor("POPUP")
+    local sr, sg, sb, sa = SkinBase.GetWindowColors()
+    SkinBase.CreateBackdrop(selector, sr, sg, sb, sa, r, g, b, 1, 4)
+    local backdrop = SkinBase.GetBackdrop(selector)
+    if backdrop then
+        backdrop:ClearAllPoints()
+        backdrop:SetPoint("TOPLEFT", selector, "TOPLEFT", -4, 0)
+        backdrop:SetPoint("BOTTOMRIGHT", selector, "BOTTOMRIGHT", 4, 0)
+    end
+    for i = 1, 2 do
+        local spell = selector["Spell" .. i]
+        if spell then
+            local border = SkinBase.SkinIcon(spell.icon, { parent = spell })
+            SkinBase.ApplyChromeBackdrop(border, { radius = 4, withBackground = false })
+            SkinBase.RoundIconTexture(spell, spell.icon)
+            SkinBase.SkinFontString(spell.LevelRequirement, { fontOnly = true })
+            local checked = spell.GetCheckedTexture and spell:GetCheckedTexture()
+            if checked then
+                local sr, sg, sb = SkinBase.GetSkinColors()
+                checked:SetColorTexture(sr, sg, sb, 0.3)
+            end
+        end
+    end
+    if selector.HookScript and not SkinBase.GetFrameData(selector, "qPetAbilitySelectorHooked") then
+        selector:HookScript("OnShow", StylePetAbilitySelector)
+        SkinBase.SetFrameData(selector, "qPetAbilitySelectorHooked", true)
+    end
+end
+
 local function StylePetCollection(page)
     if not page then return end
+    StylePetAbilitySelector(page.SpellSelect)
     StyleCollectionSurface(page.PetCardInset)
     StyleCollectionSurface(page.PetCount)
     if page.loadoutBorder then SkinBase.StripTextures(page.loadoutBorder) end
@@ -1338,6 +1487,8 @@ local function StylePetCollection(page)
                 SkinBase.RoundIconTexture(spell, spell.icon)
             end
         end
+        StylePetStatusBar(card.xpBar)
+        StylePetStatusBar(card.HealthFrame and card.HealthFrame.healthBar)
         SkinBase.SkinFrameText(card, { recurse = true, chrome = true })
     end
     for i = 1, 3 do
@@ -1348,6 +1499,17 @@ local function StylePetCollection(page)
             local sr, sg, sb, sa = SkinBase.GetWindowColors()
             local r, g, b, a = SkinBase.GetDepthColor("ROW")
             SkinBase.CreateBackdrop(slot, sr, sg, sb, sa * 0.4, r, g, b, a, 5)
+            StylePetStatusBar(slot.xpBar)
+            StylePetStatusBar(slot.healthFrame and slot.healthFrame.healthBar)
+            for j = 1, 3 do
+                local spell = slot["spell" .. j]
+                if spell then
+                    SkinBase.ClampTextureHidden(_G["PetJournalLoadoutPet" .. i .. "Spell" .. j .. "Background"])
+                    local border = SkinBase.SkinIcon(spell.icon, { parent = spell })
+                    SkinBase.ApplyChromeBackdrop(border, { radius = 4, withBackground = false })
+                    SkinBase.RoundIconTexture(spell, spell.icon)
+                end
+            end
             SkinBase.SkinFrameText(slot, { recurse = true, chrome = true })
         end
     end
@@ -1581,6 +1743,7 @@ local function StyleCollectionsControls()
     StyleCollectionPaging(controls and controls.PagingControls)
     local checkbox = controls and controls.ShowOwned and controls.ShowOwned.Checkbox
     if checkbox then SkinBase.SkinCheckBox(checkbox) end
+    StyleCollectionNeutralLabel(controls and controls.ShowOwned and controls.ShowOwned.Text)
 end
 
 local function SkinCollections()
@@ -1590,7 +1753,12 @@ local function SkinCollections()
     SkinBase.SkinButtonFrameTemplate(frame)
     local tabs = frame.TabContainer and frame.TabContainer.Tabs
         or SkinBase.CollectNumberedTabs("CollectionsJournal", 6)
-    SkinBase.SkinTabGroup(tabs, frame, { resizeToText = true, dockBottom = true })
+    -- Forever owns a vertical icon-tab container; Retail uses bottom text tabs.
+    if ns.Client and ns.Client.isForever then
+        SkinBase.SkinTabGroup(tabs, frame, { hover = true })
+    else
+        SkinBase.SkinTabGroup(tabs, frame, { resizeToText = true, dockBottom = true })
+    end
     HookCollectionsText(frame)
     StyleCollectionsControls()
     frame:HookScript("OnShow", StyleCollectionsControls)

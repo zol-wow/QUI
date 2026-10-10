@@ -3478,11 +3478,11 @@ function SkinBase.SkinTabGroup(tabs, owner, opts)
                 if previous then
                     t:SetPoint("TOPLEFT", previous, "TOPRIGHT", -px, 0)
                 else
-                    t:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", opts.inset or 12, px)
+                    t:SetPoint("TOPLEFT", opts.dockOwner or owner, "BOTTOMLEFT", opts.inset or 12, px)
                 end
                 t:SetHeight(opts.height or 28)
                 local backdrop = SkinBase.GetBackdrop(t)
-                if backdrop then backdrop:ClearAllPoints(); backdrop:SetAllPoints(t) end
+                if backdrop then SkinBase.SetPixelInsetPoints(backdrop, t, 0, 0, 0, 0) end
                 local join = SkinBase.GetFrameData(t, "tabWindowJoin")
                 if not join then
                     join = backdrop:CreateTexture(nil, "OVERLAY")
@@ -4243,8 +4243,8 @@ function SkinBase.SkinTrimScrollBar(scrollBar, opts)
             local color = opts.color or role or { 1, 1, 1, 0.6 }
             SkinBase.CreateBackdrop(nativeThumb, nil, nil, nil, nil, nil, nil, nil, nil, 4)
             local bd = SkinBase.GetBackdrop(nativeThumb)
-            bd:SetBackdropColor(color[1], color[2], color[3], opts.alpha or color[4] or 0.6)
-            bd:SetBackdropBorderColor(color[1], color[2], color[3], opts.alpha or color[4] or 0.6)
+            local thumbColor = { color[1], color[2], color[3], opts.alpha or color[4] or 0.6 }
+            SkinBase.SetBackdropColors(bd, thumbColor, thumbColor)
         end
     end
     if scrollBar.Background then scrollBar.Background:SetAlpha(0) end

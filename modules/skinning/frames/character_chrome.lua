@@ -270,12 +270,45 @@ local ApplyHalfSkinnedChrome
 -- Hides the portrait frame art behind the shell. `permanent` (skin owner)
 -- pins the nine slices hidden; the enhancement fallback re-shows native
 -- chrome on the Reputation/Currency tabs, so it gets a one-shot hide.
+local function SkinForeverCharacterChrome()
+    if not (ns.Client and ns.Client.isForever) then return end
+    -- Camelot puts decorative chrome on child frames above the title and model.
+    SkinBase.StripTextures(PaperDollFrame and PaperDollFrame.TopBackgroundStripHost)
+    local host = CharacterFrame.RightPaneHost
+    if host then
+        for _, child in ipairs({ host:GetChildren() }) do
+            for _, region in ipairs({ child:GetRegions() }) do
+                if region.GetAtlas and region:GetAtlas() == "common-framedivider" then
+                    SkinBase.ClampTextureHidden(region)
+                end
+            end
+        end
+    end
+    local toggle = CharacterFrame.RightPaneToggleButton
+    if toggle then
+        SkinBase.SkinButton(toggle, { strip = true, font = false })
+        local carets = SkinBase.GetFrameData(toggle, "characterPaneCarets")
+        if not carets then
+            carets = {
+                UIKit.CreateChevronCaret(toggle, { point = "CENTER", collapsedDirection = "left", sizePixels = 8 }),
+                UIKit.CreateChevronCaret(toggle, { point = "CENTER", collapsedDirection = "right", sizePixels = 8 }),
+            }
+            SkinBase.SetFrameData(toggle, "characterPaneCarets", carets)
+            hooksecurefunc(CharacterFrame, "UpdateRightPaneToggleButton", SkinForeverCharacterChrome)
+        end
+        local collapsed = CharacterFrame:IsRightPaneCollapsed()
+        carets[1]:SetShown(not collapsed)
+        carets[2]:SetShown(collapsed)
+    end
+end
+
 local function HideBlizzardDecorations(permanent)
     if not CharacterFrame then return end
     if permanent then
         SkinBase.HidePortraitFrameChrome(CharacterFrame)
         SkinBase.StripTextures(CharacterFrame.LeftPaneHost)
         SkinBase.StripTextures(CharacterFrame.RightPaneHost)
+        SkinForeverCharacterChrome()
         HideNineSlice(CharacterFrameInset and CharacterFrameInset.NineSlice, true)
         HideNineSlice(CharacterFrameInsetRight and CharacterFrameInsetRight.NineSlice, true)
     elseif CharacterFrame.Background then
@@ -321,7 +354,7 @@ function CharacterChrome.EnsureShell(opts)
 
     if opts and opts.extended ~= nil then
         shell:ClearAllPoints()
-        if opts.extended or ownership.enhancement then
+        if not (ns.Client and ns.Client.isForever) and (opts.extended or ownership.enhancement) then
             shell:SetPoint("TOPLEFT", CharacterFrame, "TOPLEFT", 0, 0)
             shell:SetPoint("BOTTOMRIGHT", CharacterFrame, "BOTTOMLEFT",
                 (_G.CHARACTERFRAME_EXPANDED_WIDTH or 540) + CONFIG.PANEL_WIDTH_EXTENSION, -CONFIG.PANEL_HEIGHT_EXTENSION)
@@ -330,7 +363,7 @@ function CharacterChrome.EnsureShell(opts)
         end
     end
 
-    if ownership.enhancement then
+    if ownership.enhancement and not (ns.Client and ns.Client.isForever) then
         for _, pane in ipairs({ ReputationFrame, TokenFrame }) do
             if pane then
                 pane:ClearAllPoints()
@@ -361,9 +394,10 @@ function CharacterChrome.StyleTabs()
     if not CharacterFrame or not CharacterChrome.GetOwnership().tabs then return end
     local tabs = CharacterFrame.ModeTabs and CharacterFrame.ModeTabs.Tabs
         or SkinBase.CollectNumberedTabs("CharacterFrame", 3)
-    local integrated = CharacterChrome.GetOwnership().enhancement
+    local sideTabs = CharacterFrame.ModeTabs and CharacterFrame.ModeTabs.Tabs
+    local integrated = CharacterChrome.GetOwnership().enhancement and not sideTabs
     SkinBase.SkinTabGroup(tabs, CharacterFrame, {
-        font = true, radius = 5, uniform = true, height = 28,
+        font = true, radius = 5, uniform = not sideTabs, height = 28,
         minWidth = integrated and ((_G.CHARACTERFRAME_EXPANDED_WIDTH or 540) + CONFIG.PANEL_WIDTH_EXTENSION - 16) / 3 or nil,
         gap = integrated and 0 or nil,
     })
@@ -604,7 +638,13 @@ function CharacterChrome.CreateSettingsFlyout(parent, opts)
     gearLabel:SetJustifyH("LEFT")
     CJKFont(gearLabel, GeneralFontFace(), 12, "")
     gearLabel:SetText(ns.L and ns.L["Settings"] or "Settings")
-    SetPixelSize(gearBtn, math.ceil(gearLabel:GetStringWidth()) + 36, 24)
+    SetPixelSize(gearBtn, opts.triggerWidth or CONFIG.TRIGGER_WIDTH, 24)
+    gearBtn:SetWidth(math.ceil(gearLabel:GetStringWidth()) + 36)
+    if ns.Client and ns.Client.isForever and parent == CharacterFrame then
+        -- Fit the native header in frame units, above its sidebar tabs.
+        -- Pixel sizing expands the button beyond this row at UI scales below 1.
+        gearBtn:SetHeight(24)
+    end
     local idle = Token("tabHover")
     gearLabel:SetTextColor(idle[1], idle[2], idle[3], idle[4] or 0.85)
     flyout.triggerLabel = gearLabel

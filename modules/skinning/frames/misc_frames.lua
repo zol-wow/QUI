@@ -23,7 +23,34 @@ local function StyleDressUpGlyph(button, glyph)
     text:SetText(glyph)
 end
 
+local function StyleForeverDressUpBackground(frame)
+    if not (ns.Client and ns.Client.isForever) or not IsSettingEnabled("skinDressUp") then return end
+    local scene = frame and frame.ModelScene
+    if not scene or not scene.BGTopLeft or not scene.BGTopRight
+        or not scene.BGBottomLeft or not scene.BGBottomRight then return end
+    -- Forever uses four race-art tiles with fixed native dimensions. Fit the
+    -- artwork to the preview when it resizes; leave the model and its anchors native.
+    local height, width = scene:GetHeight(), scene:GetWidth()
+    if height <= 0 or width <= 0 then return end
+    local topHeight, rightWidth = height * 348 / 523, width * 85 / 434
+    scene.BGTopLeft:SetHeight(topHeight)
+    scene.BGTopRight:SetHeight(topHeight)
+    scene.BGTopRight:SetWidth(rightWidth)
+    scene.BGBottomLeft:SetHeight(height - topHeight)
+    scene.BGBottomRight:SetHeight(height - topHeight)
+    scene.BGBottomRight:SetWidth(rightWidth)
+    -- The native top-left tile reserves a fixed 85 units for the right tile.
+    scene.BGTopLeft:ClearAllPoints()
+    scene.BGTopLeft:SetPoint("TOPLEFT", scene, "TOPLEFT", 0, 0)
+    scene.BGTopLeft:SetPoint("TOPRIGHT", scene, "TOPRIGHT", -rightWidth, 0)
+    if not SkinBase.GetFrameData(scene, "qForeverDressUpBackgroundHooked") then
+        scene:HookScript("OnSizeChanged", function() StyleForeverDressUpBackground(frame) end)
+        SkinBase.SetFrameData(scene, "qForeverDressUpBackgroundHooked", true)
+    end
+end
+
 local function StyleDressUpHeader(frame)
+    StyleForeverDressUpBackground(frame)
     local title = frame.GetTitleText and frame:GetTitleText() or frame.TitleText or _G.DressUpFrameTitleText
     if title then SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } }) end
     local maxMin = frame.MaximizeMinimizeFrame
@@ -122,6 +149,10 @@ local function StyleRegistrarFrame(frame)
     SkinBase.SkinFrameText(frame, { chrome = true, color = color })
     if frame.ScrollBar then SkinBase.SkinTrimScrollBar(frame.ScrollBar) end
     local petition = frame == _G.PetitionFrame
+    if not petition then
+        if frame.Bg then frame.Bg:Hide() end
+        if _G.GuildRegistrarFrameBg then _G.GuildRegistrarFrameBg:Hide() end
+    end
     if petition then
         for _, name in ipairs({
             "PetitionFrameCancelButton", "PetitionFrameSignButton", "PetitionFrameRequestButton", "PetitionFrameRenameButton",
@@ -240,6 +271,9 @@ end
 
 local function StyleItemUpgradeFrame(frame)
     if not IsSettingEnabled("skinItemUpgrade") or not frame then return end
+    local title = frame.TitleText or (frame.TitleContainer and frame.TitleContainer.TitleText)
+    SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
+    SkinBase.LockFontObject(title, { color = { 1, 1, 1, 1 } })
     for _, key in ipairs({ "TopBG", "BottomBG", "BottomBGShadow", "IdleGlow", "MicaFleckSheen" }) do
         local texture = frame[key]
         if texture then texture:SetAlpha(0) end
@@ -273,6 +307,13 @@ local function StyleItemUpgradeFrame(frame)
         SkinBase.StripTextures(currencies)
         SkinBase.KillNineSlice(currencies.NineSlice, true)
         SkinBase.CreateBackdrop(currencies, sr, sg, sb, sa, r, g, b, a, 4)
+        local display = frame.PlayerCurrencies
+        SkinBase.GetBackdrop(currencies):SetShown(display and display:IsShown())
+        if display and not SkinBase.GetFrameData(display, "qUpgradeCurrencyVisibilityHooked") then
+            display:HookScript("OnShow", function() StyleItemUpgradeFrame(frame) end)
+            display:HookScript("OnHide", function() StyleItemUpgradeFrame(frame) end)
+            SkinBase.SetFrameData(display, "qUpgradeCurrencyVisibilityHooked", true)
+        end
     end
     SkinBase.SkinFrameText(frame.PlayerCurrencies, { recurse = true })
     SkinBase.SkinFrameText(frame.ItemInfo)
@@ -421,7 +462,8 @@ local function register(key, getFrame)
                     elseif key == "skinItemUpgrade" then StyleItemUpgradeFrame(frame)
                     elseif key == "skinTrade" then StyleTradeFrame(frame)
                     elseif key == "skinGuildRegistrar" or key == "skinPetition" then StyleRegistrarFrame(frame)
-                    elseif key == "skinTabard" then StyleTabardFrame(frame) end
+                    elseif key == "skinTabard" then StyleTabardFrame(frame)
+                    elseif key == "skinDressUp" then StyleForeverDressUpBackground(frame) end
                 end
             end,
             priority = 80,
@@ -1385,7 +1427,7 @@ local function StyleMirrorTimer(frame, legacy)
         if region:IsObjectType("Texture") then
             local atlas = region.GetAtlas and region:GetAtlas()
             if legacy or region == frame.Border or region == frame.TextBorder
-                or atlas == "ui-castingbar-background" then
+                or (atlas and atlas:lower() == "ui-castingbar-background") then
                 region:SetAlpha(0)
             end
         end

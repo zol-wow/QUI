@@ -13,6 +13,38 @@ local function IsEnabled()
     return settings and settings.skinAuctionHouse
 end
 
+local function StyleAuctionHouseChrome()
+    if not IsEnabled() then return end
+    local frame = _G.AuctionHouseFrame
+    if not frame then return end
+    local title = frame.TitleText or (frame.TitleContainer and frame.TitleContainer.TitleText)
+    if title then
+        SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
+        SkinBase.LockFontObject(title, { color = { 1, 1, 1, 1 } })
+    end
+    local filter = frame.SearchBar and frame.SearchBar.FilterButton
+    local text = filter and (filter.Text or (filter.GetFontString and filter:GetFontString()))
+    if text then
+        SkinBase.SkinFontString(text, { color = { 0.95, 0.95, 0.95, 1 } })
+        SkinBase.LockFontObject(text, { color = { 0.95, 0.95, 0.95, 1 } })
+    end
+    local inset = frame.MoneyFrameInset
+    if inset then
+        SkinBase.StripTextures(inset)
+        if inset.NineSlice then SkinBase.StripTextures(inset.NineSlice) end
+    end
+    local border = frame.MoneyFrameBorder
+    if border then
+        SkinBase.StripTextures(border)
+        if border.NineSlice then SkinBase.StripTextures(border.NineSlice) end
+        local sr, sg, sb, sa, br, bg, bb, ba = SkinBase.GetWindowColors()
+        SkinBase.CreateBackdrop(border, sr, sg, sb, sa * 0.5, br, bg, bb, ba, 4)
+        local backdrop = SkinBase.GetBackdrop(border)
+        if backdrop then backdrop:SetFrameLevel(math.max(0, border:GetFrameLevel() - 1)) end
+        SkinBase.SkinFrameText(border.MoneyFrame, { recurse = true, fontOnly = true })
+    end
+end
+
 local function HideAuctionHouseDecorations()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame then return end
@@ -36,6 +68,7 @@ local function HideAuctionHouseDecorations()
     if AuctionHouseFrame.Inset then AuctionHouseFrame.Inset:Hide() end
 
     SkinBase.StripTextures(AuctionHouseFrame)
+    StyleAuctionHouseChrome()
 end
 
 local function SkinAuctionHouseTabs()
@@ -353,6 +386,28 @@ local function StyleCommodityBuyPanel()
     end
 end
 
+local function FitForeverBidFields(money)
+    if not (ns.Client and ns.Client.isForever) or not IsEnabled() or not money then return end
+    local gold, silver, copper = money.gold, money.silver, money.copper
+    if not gold or not silver or not copper then return end
+    local point, relative, relativePoint, _, y = gold:GetPoint(1)
+    if point ~= "TOPLEFT" then return end
+    local silverGap = select(4, silver:GetPoint(1)) or 0
+    local copperGap = select(4, copper:GetPoint(1)) or 0
+    local fieldsWidth = gold:GetWidth() + silver:GetWidth() + copper:GetWidth() + silverGap + copperGap
+    -- Forever's native money frame excludes one inter-field gap. Keep the
+    -- action buttons and field widths native, moving the inputs clear of Bid.
+    gold:ClearAllPoints()
+    gold:SetPoint(point, relative or money, relativePoint or point,
+        math.min(0, money:GetWidth() - fieldsWidth - 8), y or 0)
+    if not SkinBase.GetFrameData(money, "qForeverBidSpacingHooked") then
+        for _, field in ipairs({ money, gold, silver, copper }) do
+            field:HookScript("OnSizeChanged", function() FitForeverBidFields(money) end)
+        end
+        SkinBase.SetFrameData(money, "qForeverBidSpacingHooked", true)
+    end
+end
+
 local function StyleAuctionBidControls(panel)
     if not IsEnabled() or not panel or (panel.IsForbidden and panel:IsForbidden()) then return end
     local bid, buyout = panel.BidFrame, panel.BuyoutFrame
@@ -379,6 +434,7 @@ local function StyleAuctionBidControls(panel)
                 SkinBase.RefreshWidget(field)
             end
         end
+        FitForeverBidFields(money)
     end
     for _, control in pairs({ bid, buyout }) do
         if control and not (control.IsForbidden and control:IsForbidden())
@@ -403,7 +459,15 @@ local function StyleAuctionLabel(label)
     if NORMAL_FONT_COLOR and NORMAL_FONT_COLOR.GetRGB and label.GetTextColor then
         local nr, ng, nb = NORMAL_FONT_COLOR:GetRGB()
         local r, g, b, a = label:GetTextColor()
-        if r == nr and g == ng and b == nb then label:SetTextColor(0.9, 0.9, 0.9, a or 1) end
+        local normalColor = r == nr and g == ng and b == nb
+        if ns.Client and ns.Client.isForever then
+            -- Forever's font color can differ from NORMAL_FONT_COLOR by one
+            -- 8-bit color step. Retain distinct error and quality colors.
+            local tolerance = 1 / 255 + 0.00001
+            normalColor = math.abs(r - nr) <= tolerance and math.abs(g - ng) <= tolerance
+                and math.abs(b - nb) <= tolerance
+        end
+        if normalColor then label:SetTextColor(0.9, 0.9, 0.9, a or 1) end
     end
 end
 
@@ -601,6 +665,16 @@ end
 
 local function StyleSellInnerControls(panel)
     if not IsEnabled() or not panel or (panel.IsForbidden and panel:IsForbidden()) then return end
+    SkinBase.ClampTextureHidden(panel.Background, true)
+    SkinBase.ClampTextureHidden(panel.NineSlice, true)
+    for _, key in ipairs({ "CreateAuctionTabLeft", "CreateAuctionTabMiddle", "CreateAuctionTabRight" }) do
+        SkinBase.ClampTextureHidden(panel[key], true)
+    end
+    SkinBase.SkinFontString(panel.CreateAuctionLabel, { color = { 0.9, 0.9, 0.9, 1 } })
+    SkinBase.LockFontObject(panel.CreateAuctionLabel, { color = { 0.9, 0.9, 0.9, 1 } })
+    local sr, sg, sb, sa, br, bg, bb, ba = SkinBase.GetWindowColors()
+    SkinBase.CreateBackdrop(panel, sr, sg, sb, sa * 0.5, br, bg, bb, ba, 5)
+    SkinBase.GetBackdrop(panel):SetFrameLevel(math.max(0, panel:GetFrameLevel() - 1))
     for _, key in ipairs({ "PriceInput", "SecondaryPriceInput", "QuantityInput", "Duration", "Deposit", "TotalPrice" }) do
         local control = panel[key]
         if control and not (control.IsForbidden and control:IsForbidden()) then
@@ -646,6 +720,10 @@ end
 local function SkinSellPanel()
     local AuctionHouseFrame = _G.AuctionHouseFrame
     if not AuctionHouseFrame then return end
+
+    for _, key in ipairs({ "ItemSellList", "CommoditiesSellList" }) do
+        if AuctionHouseFrame[key] then SkinAuctionList(AuctionHouseFrame[key]) end
+    end
 
     local commoditiesSell = AuctionHouseFrame.CommoditiesSellFrame
     if commoditiesSell then
@@ -889,6 +967,7 @@ local function SkinAuctionHouse()
     AuctionHouseFrame:HookScript("OnShow", function()
         C_Timer.After(0, FontAuctionHouseExtraTabs)
     end)
+    StyleAuctionHouseChrome()
     HookAuctionHeaderSkin()
 
     ns.SafeCall("best-effort-style", SkinCategoriesList)
@@ -922,6 +1001,7 @@ local function RefreshAuctionHouseColors()
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
+    StyleAuctionHouseChrome()
     local mainBd = SkinBase.GetBackdrop(AuctionHouseFrame)
     if mainBd then
         SkinBase.SetBackdropColors(mainBd, { sr, sg, sb, sa }, { bgr, bgg, bgb, bga })
