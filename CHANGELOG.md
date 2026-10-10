@@ -17,6 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Rounded native panels and controls** extend consistent styling across
   Blizzard windows, character controls, gameplay displays, bars, and icons while
   preserving native interactions, configured borders, and profession colors.
+- **Native window refinements** cover journals, achievements, professions,
+  auction listings, social panels, mail, and interaction dialogs, including
+  recycled rows and controls. Character and Inspect windows retain native
+  model controls and Forever sidebar geometry.
 - **Options navigation and previews** use streamlined layouts, responsive sizing,
   and updated search routes and translations.
 - **Forever client support** includes native swing timer controls, resource bars,
@@ -34,6 +38,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Existing long profile names remain selected after login and continue to work
   with profile selection and specialization switching. New profile names retain
   the supported length limit.
+- Existing profiles survive regional character-name changes, and Forever
+  specialization profiles follow the native talent groups.
+- Hidden bank, guild-bank, and macro icon selectors no longer trigger a
+  ScrollBox initialization error before their first opening.
+- Standalone item and pet-ability tooltips receive matching chrome while
+  preserving their native content layout. Status tracking bars retain hover
+  tooltips, and Suggested Content paging shows readable arrows.
 
 ## v5.5.0-ptr-alpha10 - 2026-10-04
 
