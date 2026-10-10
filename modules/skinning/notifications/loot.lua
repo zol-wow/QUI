@@ -129,7 +129,8 @@ local function CreateLootSlot(parent, index)
     slot.iconBorder = CreateFrame("Frame", nil, slot, "BackdropTemplate")
     slot.iconBorder:SetSize(ICON_BORDER_SIZE, ICON_BORDER_SIZE)
     slot.iconBorder:SetPoint("CENTER", slot.icon, "CENTER")
-    SkinBase.ApplyPixelBackdrop(slot.iconBorder, 1, false, false)
+    SkinBase.ApplyChromeBackdrop(slot.iconBorder, { radius = 4, background = false })
+    SkinBase.RoundIconTexture(slot, slot.icon)
 
     slot.name = slot:CreateFontString(nil, "OVERLAY")
     CJKFont(slot.name, LSM:Fetch("font", GetGeneralFont()), 11, "OUTLINE")
@@ -208,7 +209,7 @@ local function CreateLootWindow()
     frame:EnableMouse(true)
     frame:Hide()
 
-    SkinBase.ApplyPixelBackdrop(frame, 1, true, false)
+    SkinBase.ApplyChromeBackdrop(frame, { radius = 8, background = true, withInsets = false })
     Helpers.SetFrameBackdropColor(frame, unpack(bgColor))
     Helpers.SetFrameBackdropBorderColor(frame, unpack(borderColor))
 
@@ -375,7 +376,9 @@ local function CreateRollButton(parent, rollType, rollValue, texture)
 
     btn.bg = btn:CreateTexture(nil, "BACKGROUND")
     btn.bg:SetAllPoints()
-    btn.bg:SetColorTexture(0, 0, 0, 0.3)
+    btn.bg:SetColorTexture(0, 0, 0, 0)
+    SkinBase.ApplyChromeBackdrop(btn, { radius = 5, background = true })
+    SkinBase.RoundIconTexture(btn, btn.icon)
 
     btn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
 
@@ -422,12 +425,13 @@ local function CreateRollFrame(index)
     frame:SetFrameStrata("DIALOG")
     frame:SetToplevel(true)
 
-    SkinBase.ApplyPixelBackdrop(frame, 1, true, false)
+    SkinBase.ApplyChromeBackdrop(frame, { radius = 8, background = true, withInsets = false })
     Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], 0.95)
     Helpers.SetFrameBackdropBorderColor(frame, borderColor[1], borderColor[2], borderColor[3], 0.3)
 
     frame.qualityTint = frame:CreateTexture(nil, "BACKGROUND", nil, 1)
-    frame.qualityTint:SetAllPoints()
+    frame.qualityTint:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -4)
+    frame.qualityTint:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 4)
     frame.qualityTint:SetColorTexture(1, 1, 1, 0.1)
     frame.qualityTint:SetBlendMode("ADD")
 
@@ -439,7 +443,8 @@ local function CreateRollFrame(index)
     frame.iconBorder = CreateFrame("Frame", nil, frame, "BackdropTemplate")
     frame.iconBorder:SetSize(ROLL_ICON_SIZE + 4, ROLL_ICON_SIZE + 4)
     frame.iconBorder:SetPoint("CENTER", frame.icon, "CENTER")
-    SkinBase.ApplyPixelBackdrop(frame.iconBorder, SkinBase.CHROME.BORDER_PX, false, false)
+    SkinBase.ApplyChromeBackdrop(frame.iconBorder, { radius = 4, background = false })
+    SkinBase.RoundIconTexture(frame, frame.icon)
 
     frame.name = frame:CreateFontString(nil, "OVERLAY")
     CJKFont(frame.name, LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
@@ -725,7 +730,8 @@ local function SkinLootHistoryElement(button)
             if not itemBorders[item] then
                 local quiBorder = CreateFrame("Frame", nil, item, "BackdropTemplate")
                 SkinBase.SetExpandedPixelPoints(quiBorder, icon, 1)
-                SkinBase.ApplyPixelBackdrop(quiBorder, 1, false, false)
+                SkinBase.ApplyChromeBackdrop(quiBorder, { radius = 4, background = false })
+                SkinBase.RoundIconTexture(item, icon)
                 Helpers.SetFrameBackdropBorderColor(quiBorder, 0.6, 0.6, 0.6, 1)
                 itemBorders[item] = quiBorder
             end
@@ -763,7 +769,7 @@ local function SkinGroupLootHistoryFrame()
         hfBd = CreateFrame("Frame", nil, HistoryFrame, "BackdropTemplate")
         hfBd:SetAllPoints()
         hfBd:SetFrameLevel(HistoryFrame:GetFrameLevel())
-        SkinBase.ApplyPixelBackdrop(hfBd, 1, true, false)
+        SkinBase.ApplyChromeBackdrop(hfBd, { radius = 8, background = true, withInsets = false })
         SkinBase.SetFrameData(HistoryFrame, "backdrop", hfBd)
     end
     Helpers.SetFrameBackdropColor(hfBd, unpack(bgColor))
@@ -791,7 +797,7 @@ local function SkinGroupLootHistoryFrame()
 
     local Dropdown = HistoryFrame.EncounterDropdown
     if Dropdown then
-        SkinBase.SkinDropdown(Dropdown)
+        SkinBase.SkinDropdown(Dropdown, { skinArrow = true })
     end
 
     if HistoryFrame.ClosePanelButton then
@@ -811,7 +817,7 @@ local function SkinGroupLootHistoryFrame()
         if not rbBd then
             rbBd = CreateFrame("Frame", nil, ResizeButton, "BackdropTemplate")
             rbBd:SetAllPoints()
-            SkinBase.ApplyPixelBackdrop(rbBd, 1, true, false)
+            SkinBase.ApplyChromeBackdrop(rbBd, { radius = 5, background = true, withInsets = false })
             Helpers.SetFrameBackdropColor(rbBd, bgColor[1], bgColor[2], bgColor[3], 0.8)
             Helpers.SetFrameBackdropBorderColor(rbBd, unpack(borderColor))
             SkinBase.SetFrameData(ResizeButton, "backdrop", rbBd)
@@ -883,6 +889,11 @@ function Loot:ApplyLootHistoryTheme()
     if not themeBd then return end
 
     local bgColor, borderColor, textColor, accentColor = GetThemeColors()
+    local title = HistoryFrame.GetTitleText and HistoryFrame:GetTitleText()
+    if title then
+        CJKFont(title, LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
+        title:SetTextColor(unpack(textColor))
+    end
 
     themeBd:Show()
     if HistoryFrame.NineSlice then HistoryFrame.NineSlice:SetAlpha(0) end

@@ -139,7 +139,7 @@ local function UpdateBackdropLayout(backdrop)
     local g = GetGeneralSettings()
     local thick = g and g.statusTrackingBarsBorderThickness
     local borderPixels = (thick and thick > 0) and thick or 1
-    SkinBase.ApplyPixelBackdrop(backdrop, borderPixels, true, true, nil, nil, FALLBACK_TEXTURE, FALLBACK_TEXTURE)
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 3, borderPixels = borderPixels, withBackground = true })
 end
 
 local function ApplyBarTextStyle(bar)
@@ -236,6 +236,7 @@ local function RefreshBarFillAndTexture(bar)
     local g = GetGeneralSettings()
     if statusBar.SetStatusBarTexture then
         ns.Helpers.ApplyBarStyle(statusBar, FALLBACK_TEXTURE)
+        SkinBase.RoundBarTexture(statusBar, statusBar:GetStatusBarTexture())
     end
 
     local mode = g.statusTrackingBarsBarColorMode or "accent"

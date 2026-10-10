@@ -36,6 +36,12 @@ local function UpdateHolderAlpha(entry)
     entry.holder:SetAlpha(not entry.preview and (entry.hidden or overridden) and 0 or 1)
 end
 
+local function UpdateRangeChrome(entry)
+    if entry.chrome then
+        entry.chrome:SetAlpha(entry.frame:GetBackground():GetAlpha())
+    end
+end
+
 local function Apply(entry)
     if entry.applying or not entry.frame or InCombatLockdown() then return end
     local settings = SwingTimers.GetSettings(entry.key)
@@ -60,16 +66,27 @@ local function Apply(entry)
     if not ns.IsSkinningEnabled or ns.IsSkinningEnabled() then
         local core = Helpers.GetCore()
         local r, g, b, a, br, bg, bb, ba = SkinBase.GetWindowColors(core.db.profile.general, "swingTimers")
-        frame:GetBorder():SetColorTexture(r, g, b, a)
+        frame:GetBorder():SetTexture(nil)
         local background = frame:GetBackground()
-        background:SetColorTexture(br, bg, bb, ba)
-        background:SetDrawLayer("BORDER")
+        background:SetTexture(nil)
         SkinBase.SetInsetPixelPoints(background, frame, 1)
         SkinBase.SetInsetPixelPoints(bar, frame, 1)
+        if not entry.chrome then
+            entry.chrome = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+            entry.chrome:SetAllPoints(frame)
+            entry.chrome:SetFrameLevel(math.max(0, bar:GetFrameLevel() - 1))
+            entry.chrome:EnableMouse(false)
+        end
+        SkinBase.ApplyChromeBackdrop(entry.chrome, {
+            radius = 3, borderPixels = 1, withBackground = true,
+            borderColor = { r, g, b, a }, bgColor = { br, bg, bb, ba },
+        })
         ns.Helpers.ApplyBarStyle(bar, ns.LSM:Fetch("statusbar", settings.texture))
+        SkinBase.RoundBarTexture(bar, bar:GetStatusBarTexture())
         bar:SetStatusBarColor(SkinBase.GetSkinBarColor(core.db.profile.general, "swingTimers"))
         local pip = frame:GetStatusBarPip()
         pip:SetColorTexture(1, 1, 1, 0.8)
+        SkinBase.RoundBarTexture(bar, pip)
         pip:SetSize(2, height - 2)
         pip:ClearAllPoints()
         pip:SetPoint("TOPRIGHT", bar:GetStatusBarTexture(), "TOPRIGHT", 0, 0)
@@ -130,6 +147,7 @@ local function Register(entry, index)
         resolver = function() return holder end,
         displayName = ns.L[entry.label], category = "Display", order = 70 + index,
     })
+    hooksecurefunc(frame, "ApplyRangePresentation", function() UpdateRangeChrome(entry) end)
     hooksecurefunc(frame, "ApplySystemAnchor", function() Apply(entry) end)
     hooksecurefunc(frame, "UpdateSystemSetting", function() Apply(entry) end)
     hooksecurefunc(frame, "InitializeBarPresentation", function() Apply(entry) end)
