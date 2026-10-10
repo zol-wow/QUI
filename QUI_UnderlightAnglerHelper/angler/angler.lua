@@ -1,6 +1,7 @@
 -- QUI_UnderlightAnglerHelper/angler/angler.lua -- the two ways into the window:
--- a slash command, and Blizzard's artifact window, which the helper covers
--- while the Underlight Angler is the artifact being viewed.
+-- a slash command, which opens it free-standing on the checklist, and
+-- Blizzard's artifact window, which the helper covers while the Underlight
+-- Angler is the artifact being viewed.
 local _, ns = ...
 
 local Angler = ns.UnderlightAngler
@@ -42,9 +43,8 @@ SlashCmdList["QUIANGLER"] = function()
         Window.Hide()
         return
     end
-    local artifactHost = ArtifactHost()
-    Window.SetHost(artifactHost)
-    Window.Show(artifactHost and "tree" or "checklist")
+    Window.SetHost(nil)
+    Window.Show("checklist")
 end
 
 local watcher

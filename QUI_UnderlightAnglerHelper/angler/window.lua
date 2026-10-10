@@ -8,6 +8,8 @@
 -- It lives in one of two places. Free-standing, it is a movable window in the
 -- middle of the screen. Embedded, it is a child of Blizzard's artifact window
 -- and covers it, so opening the Underlight Angler shows the tree in place.
+-- Whoever has the artifact open is past the checklist, so embedded it is left
+-- out.
 local ADDON_NAME, ns = ...
 
 local Helpers = ns.Helpers
@@ -528,6 +530,7 @@ local function Reskin()
     win._titleSep:SetColorTexture(Color("border", { 1, 1, 1, 0.06 }))
     win._bodyBg:SetColorTexture(Color("bgContent", { 1, 1, 1, 0.02 }))
     win._title:SetTextColor(Color("accentLight", { 0.431, 0.906, 0.718, 1 }))
+    tabs.checklist:SetShown(not host)
     for id, tab in pairs(tabs) do
         tab:SetActive(id == activeView)
     end
@@ -691,6 +694,8 @@ function Window.SetHost(frame)
     if not win then return end
     win:StopMovingOrSizing()
     ApplyPlacement()
+    tabs.checklist:SetShown(not host)
+    if host and activeView == "checklist" then SelectView("tree") end
     if win:IsVisible() then MuteHostTabs(true) end
 end
 
@@ -710,7 +715,10 @@ function Window.Show(viewID)
     if not win then Build() end
     Reskin()
     win:Show()
-    SelectView(views[viewID] and viewID or "checklist")
+    if not views[viewID] or (host and viewID == "checklist") then
+        viewID = host and "tree" or "checklist"
+    end
+    SelectView(viewID)
 end
 
 function Window.Toggle(viewID)
