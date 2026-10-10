@@ -310,6 +310,7 @@ local ELEMENT_FIELD_TYPES = {
     dynamicLayout = "boolean", hideBorder = "boolean", sortReverse = "boolean",
     rightClickCancel = "boolean", hidePermanent = "boolean", nameplateOnly = "boolean",
     classDetection = "boolean", tooltipHideInCombat = "boolean",
+    gateEncounterDebuffs = "boolean",
     spells = "table", onlyMineSpells = "table", duration = "table", stack = "table",
     bar = "table", border = "table", color = "table", auraSounds = "table",
     filterFlags = "table", classifications = "table", whitelist = "table", blacklist = "table",
