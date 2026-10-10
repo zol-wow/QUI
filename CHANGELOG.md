@@ -4,6 +4,27 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.3.2-beta11 - 2026-10-10
+
+> ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
+> will not load on the 12.0.x client.
+
+### Added
+
+- **Encounter Debuffs** is a new Aura Display selection that hides player- and
+  pet-applied debuffs and common noise. Existing displays keep their current
+  selection until changed.
+
+### Improved
+
+- **The Underlight Angler artifact overlay hides the Checklist tab.**
+  `/quiangler` opens the standalone helper on its Checklist tab.
+
+### Fixed
+
+- **Guild and Communities chat messages and input follow the global font**,
+  including when the window loads after login.
+
 ## v5.3.2-beta10 - 2026-10-05
 
 > ⚠️ **WoW 12.1 ONLY.** This build targets patch 12.1 (interface 120100) and
