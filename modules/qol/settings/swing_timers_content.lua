@@ -73,7 +73,7 @@ end
 Registry:RegisterFeature(Schema.Feature({
     id = "swingTimersPage",
     category = "gameplay",
-    nav = { tileId = "gameplay", subPageIndex = 10 },
+    nav = { tileId = "gameplay", subPageIndex = 9 },
     getDB = function(profile) return profile and profile.swingTimers end,
     sections = {
         Schema.Section({ id = "settings", kind = "page", minHeight = 80, build = BuildPage }),
@@ -86,7 +86,7 @@ for _, entry in ipairs(SwingTimers.entries) do
         id = barEntry.key,
         moverKey = barEntry.key,
         category = "gameplay",
-        nav = { tileId = "gameplay", subPageIndex = 10 },
+        nav = { tileId = "gameplay", subPageIndex = 9 },
         getDB = function(profile) return profile and profile.swingTimers and profile.swingTimers[barEntry.key] end,
         apply = SwingTimers.Refresh,
         render = {

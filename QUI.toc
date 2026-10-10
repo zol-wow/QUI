@@ -135,6 +135,7 @@ core\storage\scan_reputations.lua
 core\storage\scan_weeklies.lua
 core\storage\scan_lockouts.lua
 core\storage\summaries.lua
+core\storage\recipe_learning.lua
 core\storage\collector.lua
 core\addon_loader.lua
 core\media.lua

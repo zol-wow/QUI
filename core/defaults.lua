@@ -171,6 +171,7 @@ end
 
 local defaults = {
     profile = {
+        spellReminders = { enabled = false, reminders = {} },
         general = {
             uiScale = 0.64,
             font = "Quazii",
@@ -563,7 +564,7 @@ local defaults = {
                 cornerIconSize = 12,
                 qualityColorText = false,
                 greyJunk = false,
-                markUnusable = false,
+                markUnusable = true,
                 contextFading = true,
             },
             behavior = {

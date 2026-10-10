@@ -17,3 +17,12 @@ reminders\defensive_spell_classes.lua
 reminders\defensives.lua
 reminders\callout.lua
 reminders\engine.lua
+
+spell_reminders\model.lua
+spell_reminders\catalog.lua
+spell_reminders\group_frames.lua
+spell_reminders\presentation.lua
+spell_reminders\sounds.lua
+spell_reminders\runtime.lua
+spell_reminders\tracking.lua
+spell_reminders\init.lua
