@@ -1021,6 +1021,22 @@ local initialized = false
 -- Two-phase apply: everything cheap happens here at login while the window is
 -- hidden (shell, tabs, close, half-skin borders, sub-surface hooks). OnShow
 -- only re-anchors the shell so ScrollBox data render is never blocked.
+local function RefreshCharacterTabSelection(frame)
+    if frame ~= CharacterFrame or not frame.Tabs or not CharacterChrome.GetOwnership().tabs then return end
+    local selected = frame.selectedTab
+    -- Resolve by native button ID rather than the width-sorted Tabs indices.
+    -- Change widget visuals only, leaving Blizzard's table and state untouched.
+    for _, tab in ipairs(SkinBase.CollectNumberedTabs("CharacterFrame", 3)) do
+        if tab.isDisabled then
+            if _G.PanelTemplates_SetDisabledTabState then _G.PanelTemplates_SetDisabledTabState(tab) end
+        elseif tab:GetID() == selected then
+            if _G.PanelTemplates_SelectTab then _G.PanelTemplates_SelectTab(tab) end
+        else
+            if _G.PanelTemplates_DeselectTab then _G.PanelTemplates_DeselectTab(tab) end
+        end
+    end
+end
+
 function CharacterChrome.Initialize()
     if initialized or not CharacterFrame then return initialized end
     local ownership = CharacterChrome.GetOwnership()
@@ -1033,14 +1049,14 @@ function CharacterChrome.Initialize()
     if type(CharacterFrame.UpdateTabBounds) == "function" then
         hooksecurefunc(CharacterFrame, "UpdateTabBounds", function(frame)
             if not CharacterChrome.GetOwnership().tabs then return end
-            if frame.Tabs then
-                table.sort(frame.Tabs, function(a, b) return a:GetID() < b:GetID() end)
-                if type(_G.PanelTemplates_UpdateTabs) == "function" then
-                    _G.PanelTemplates_UpdateTabs(frame)
-                end
-            end
+            -- Blizzard owns Tabs and can sort it by width. Never write to that
+            -- secure table: ToggleCharacter reads it before ShowUIPanel.
+            RefreshCharacterTabSelection(frame)
             CharacterChrome.StyleTabs()
         end)
+    end
+    if type(_G.PanelTemplates_UpdateTabs) == "function" then
+        hooksecurefunc("PanelTemplates_UpdateTabs", RefreshCharacterTabSelection)
     end
     CharacterChrome.StyleTabs()
     if ownership.close and CharacterFrame.CloseButton then
