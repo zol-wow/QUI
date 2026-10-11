@@ -4,6 +4,33 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-beta2 - 2026-10-11
+
+### Added and Changed
+
+- **Objective Tracker appearance controls** offer QUI theme, custom-color,
+  transparent, or Blizzard-opacity backgrounds, independent background opacity,
+  and shared or custom border colors. These settings are included in profile
+  exports.
+- **Settings pages build when selected**, with section and search jumps waiting
+  for the layout to settle. Nameplate previews fit their viewport and keep
+  preview controls accessible by scrolling.
+
+### Fixed
+
+- The Objective Tracker stays at its configured anchor during native panel
+  updates, and Layout Mode moves its holder with consistent scaled coordinates.
+- Scenario headers, countdowns, and status bars retain QUI styling during native
+  widget updates. Simple stages use tighter spacing while preserving native
+  timers, layout, and interactions.
+- Character tabs retain native state and ownership. Protected Spellbook control
+  sizing waits until combat ends.
+- Rounded surfaces handle restricted native coordinates and dimensions without
+  secret-value comparison or arithmetic errors.
+- Forever bank bag slots receive quality borders, and unavailable live bank
+  choices are disabled. Social invite borders fit their controls, and the
+  Encounter Journal keeps its circular overview portrait.
+
 ## v5.5.0-beta1 - 2026-10-10
 
 > **Alpha promoted to Beta.** One download supports WoW 12.1.0 live Retail,
