@@ -87,10 +87,10 @@ local WIDGET_POOL_TRACKER_NAMES = {
 }
 
 -- <<< QUI_TEST_EXTRACT line_icon_style
-local function StyleLineIcon(line)
+local function StyleLineIcon(line, fixedScenarioCriteria)
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker or not settings.objectiveTrackerCustomIcons then return end
-    if not line or IsWidgetPoolBlock(line.parentBlock) then return end
+    if not line or (not fixedScenarioCriteria and IsWidgetPoolBlock(line.parentBlock)) then return end
 
     local icon = line.Icon
     if not icon or not icon.GetAtlas then return end
@@ -98,14 +98,6 @@ local function StyleLineIcon(line)
         local shown = icon:IsShown()
         if issecretvalue and issecretvalue(shown) then return end -- @secret-policy: reject-secret-value (never touch an icon whose visibility is unreadable)
         if not shown then return end
-    end
-
-    -- Anim lines (quest objectives) only legitimately show their check while
-    -- completing/completed; never touch the icon in any other state so we
-    -- can't reveal a check that Blizzard is keeping invisible.
-    local animState = _G.ObjectiveTrackerAnimLineState
-    if line.state ~= nil and animState then
-        if line.state ~= animState.Completed and line.state ~= animState.Completing then return end
     end
 
     local atlas = icon:GetAtlas()
@@ -121,6 +113,11 @@ local function StyleLineIcon(line)
 
     local color
     if atlas:find("check", 1, true) then
+        -- Completion animation checks must stay hidden until native completion.
+        local animState = _G.ObjectiveTrackerAnimLineState
+        if line.state ~= nil and animState then
+            if line.state ~= animState.Completed and line.state ~= animState.Completing then return end
+        end
         color = settings.objectiveTrackerCheckColor
     elseif atlas:find("nub", 1, true) then
         color = settings.objectiveTrackerBulletColor
@@ -147,7 +144,7 @@ end
 
 local CUSTOM_BAR_FILL_TEXTURE = "Interface\\Buttons\\WHITE8x8"
 
-local function StyleTrackerProgressBar(pb)
+local function StyleTrackerProgressBar(pb, preserveColor)
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker or not settings.objectiveTrackerCustomBars then return end
 
@@ -174,6 +171,15 @@ local function StyleTrackerProgressBar(pb)
         SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga, 4)
         SkinBase.RoundBarTexture(bar, fill)
     end
+
+    local backdrop = SkinBase.GetBackdrop(bar)
+    if backdrop then backdrop:SetFrameLevel(math.max(0, bar:GetFrameLevel() - 1)) end
+    local label = bar.Label or pb.Label
+    if label then
+        CJKFont(label, GetFontPath(), settings.objectiveTrackerTextFontSize or 10, GetFontFlags())
+        if not preserveColor then SafeSetTextColor(label, settings.objectiveTrackerTextColor) end
+    end
+    if preserveColor then return end
 
     local color = settings.objectiveTrackerBarColor
     local r, g, b, a = 0.26, 0.42, 1, 1
@@ -267,7 +273,11 @@ end
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
 local function StyleQuestPOIIcon(button)
-    if not button or SkinBase.IsStyled(button) then return end
+    if not button then return end
+
+    SkinBase.SkinButton(button, { font = false, radius = 3, belowChildren = true })
+    SkinBase.RoundIconTexture(button, button.icon)
+    SkinBase.RefreshWidget(button)
 
     if button.NormalTexture then
         button.NormalTexture:SetAlpha(0)
@@ -324,11 +334,20 @@ local trackerModules = {
 }
 
 local function StyleExistingProgressBars()
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker or not settings.objectiveTrackerCustomBars then return end
     for _, trackerName in ipairs(trackerModules) do
-        local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
-        if tracker and tracker.usedProgressBars then
-            for _, pb in pairs(tracker.usedProgressBars) do
-                StyleTrackerProgressBar(pb)
+        local tracker = trackerName ~= "UIWidgetObjectiveTracker" and _G[trackerName] or nil
+        if tracker then
+            if tracker.usedProgressBars then
+                for _, pb in pairs(tracker.usedProgressBars) do
+                    StyleTrackerProgressBar(pb)
+                end
+            end
+            if tracker.usedTimerBars then
+                for _, timer in pairs(tracker.usedTimerBars) do
+                    StyleTrackerProgressBar(timer, true)
+                end
             end
         end
     end
@@ -336,16 +355,65 @@ end
 
 local function SkinTrackerHeader(header)
     if not header then return end
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then
+        pendingProtectedLayoutUpdate = true
+        local button = header.MinimizeButton
+        local glyph = button and SkinBase.GetFrameData(button, "qTrackerCollapseGlyph")
+        if glyph then
+            local owner = header:GetParent()
+            local collapsed = owner and type(owner.IsCollapsed) == "function" and owner:IsCollapsed()
+            if not Helpers.IsSecretValue(collapsed) then glyph:SetText(collapsed and "+" or "-") end
+        end
+        return
+    end
 
-    if header.Background then
-        header.Background:SetTexture(nil)
-        header.Background:SetAlpha(0)
+    for _, key in ipairs({ "Background", "Shine", "Glow" }) do
+        local texture = header[key]
+        if texture then
+            texture:SetTexture(nil)
+            texture:SetAlpha(0)
+        end
     end
 
     if header.Text then
         header.Text:ClearAllPoints()
         header.Text:SetPoint("LEFT", header, "LEFT", -7, 0)
         header.Text:SetJustifyH("LEFT")
+    end
+
+    local divider = SkinBase.GetFrameData(header, "qTrackerDivider")
+    if not divider then
+        divider = header:CreateTexture(nil, "BACKGROUND")
+        divider:SetPoint("BOTTOMLEFT", header, "BOTTOMLEFT", -7, 1)
+        divider:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", -18, 1)
+        SkinBase.SetFrameData(header, "qTrackerDivider", divider)
+    end
+    local r, g, b = SkinBase.GetSkinColors()
+    divider:SetHeight(SkinBase.GetPixelSize(header, 1))
+    divider:SetColorTexture(r, g, b, 0.65)
+
+    local button = header.MinimizeButton
+    if button then
+        SkinBase.SkinButton(button, { font = false, radius = 3 })
+        SkinBase.RefreshWidget(button)
+        local glyph = SkinBase.GetFrameData(button, "qTrackerCollapseGlyph")
+        if not glyph then
+            glyph = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            glyph:SetPoint("CENTER", button, "CENTER", 0, 0)
+            SkinBase.SetFrameData(button, "qTrackerCollapseGlyph", glyph)
+        end
+        CJKFont(glyph, GetFontPath(), 12, GetFontFlags())
+        glyph:SetTextColor(1, 1, 1, 1)
+        local owner = header:GetParent()
+        local collapsed = owner and type(owner.IsCollapsed) == "function" and owner:IsCollapsed()
+        if not Helpers.IsSecretValue(collapsed) then glyph:SetText(collapsed and "+" or "-") end
+    end
+
+    if type(header.SetCollapsed) == "function" and not SkinBase.GetFrameData(header, "qTrackerHeaderCollapseHooked") then
+        hooksecurefunc(header, "SetCollapsed", function(self)
+            C_Timer.After(0, function() SkinTrackerHeader(self) end)
+        end)
+        SkinBase.SetFrameData(header, "qTrackerHeaderCollapseHooked", true)
     end
 end
 
@@ -502,20 +570,30 @@ local function ApplyTrackerMaxHeight(settings)
 end
 -- <<< QUI_TEST_EXTRACT tracker_max_height
 
+-- The holder represents configured layout space, independently of transient
+-- native root dimensions. Content/background bounds remain dynamic.
+ns.GetObjectiveTrackerAnchorSize = function()
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker or IsScenarioActive() then return end
+    local maxHeight = settings.objectiveTrackerHeight or 600
+    return settings.objectiveTrackerWidth or 260,
+        math.min(maxHeight, blizzardTrackerHeight or maxHeight)
+end
+
 local function UpdateBackdropAnchors()
     local TrackerFrame = _G.ObjectiveTrackerFrame
     local quiBackdrop = TrackerFrame and SkinBase.GetFrameData(TrackerFrame, "backdrop")
     if not TrackerFrame or not quiBackdrop then return end
 
-    local settings = GetSettings()
-    local maxHeight = settings and settings.objectiveTrackerHeight or 600
-
-    local bottomModule = nil
-    local lowestBottom = math.huge
+    -- Even when every section is collapsed, the master header is visible.
+    local header = TrackerFrame.Header
+    local headerBottom = header and Helpers.SafeNumberOrNil(header:GetBottom())
+    local bottomModule = headerBottom and header or nil
+    local lowestBottom = headerBottom or math.huge
     local sawUnreadable = false
 
     for _, trackerName in ipairs(trackerModules) do
-        local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
+        local tracker = _G[trackerName]
         if tracker then
             local shown = tracker:IsShown()
             if issecretvalue and issecretvalue(shown) then -- @secret-policy: reject-secret-value (anchor scan holds current layout below)
@@ -559,17 +637,9 @@ local function UpdateBackdropAnchors()
     quiBackdrop:SetPoint("TOPRIGHT", TrackerFrame, "TOPRIGHT", 10, 0)
 
     if bottomModule then
-        local trackerTop = Helpers.SafeNumberOrNil(TrackerFrame:GetTop())
-        local contentHeight = 0
-        if trackerTop and lowestBottom and trackerTop > lowestBottom then
-            contentHeight = trackerTop - lowestBottom + 15
-        end
-
-        if contentHeight > maxHeight then
-            quiBackdrop:SetHeight(maxHeight)
-        else
-            quiBackdrop:SetPoint("BOTTOM", bottomModule, "BOTTOM", 0, -15)
-        end
+        -- Native layout already decides which objectives fit. The background
+        -- must follow what is actually visible, including scenario modules.
+        quiBackdrop:SetPoint("BOTTOM", bottomModule, "BOTTOM", 0, -15)
         quiBackdrop:Show()
     else
         quiBackdrop:Hide()
@@ -601,6 +671,39 @@ local function HidePOIButtonGlows()
                     end
                 end
             end
+        end
+    end
+end
+
+local SCENARIO_STAGE_TEXTURE_KEYS = { "NormalBG", "FinalBG", "ThemeOverlay", "GlowTexture" }
+local SCENARIO_STAGE_TEXT_KEYS = { "Stage", "Name", "CompleteLabel" }
+
+local function StyleScenarioTrackerDetails()
+    local settings = GetSettings()
+    local scenario = _G.ScenarioObjectiveTracker
+    if not scenario or not settings or not settings.skinObjectiveTracker then return end
+    -- These are fixed Blizzard frames. Leave UIWidget containers, pool
+    -- membership, native layout, transitions and interaction scripts intact.
+    local stage = scenario.StageBlock
+    if stage then
+        for _, key in ipairs(SCENARIO_STAGE_TEXTURE_KEYS) do
+            local texture = stage[key]
+            if texture then texture:SetAlpha(0) end
+        end
+        for _, key in ipairs(SCENARIO_STAGE_TEXT_KEYS) do
+            local text = stage[key]
+            if text then
+                CJKFont(text, GetFontPath(), settings.objectiveTrackerModuleFontSize or 12, GetFontFlags())
+                SafeSetTextColor(text, settings.objectiveTrackerTitleColor)
+            end
+        end
+    end
+    local objectives = scenario.ObjectivesBlock
+    if objectives and objectives.usedLines then
+        for _, line in pairs(objectives.usedLines) do
+            StyleLine(line, GetFontPath(), settings.objectiveTrackerTextFontSize or 10,
+                settings.objectiveTrackerTextColor, true)
+            StyleLineIcon(line, true)
         end
     end
 end
@@ -645,6 +748,7 @@ local function RunObjectiveTrackerPostLayoutUpdate()
     if RefreshTrackerContent and not inCombat then
         RefreshTrackerContent()
     end
+    StyleScenarioTrackerDetails()
     UpdateBackdropAnchors()
     HidePOIButtonGlows()
     StyleExistingProgressBars()
@@ -683,18 +787,27 @@ else
     SetupDebugInstrumentation()
 end
 
-local function ResolveBackdropOpacity(bga)
-    local manager = _G.ObjectiveTrackerManager
-    if manager and manager.backgroundAlpha ~= nil then
-        return manager.backgroundAlpha
+-- QUI owns its panel appearance; native Edit Mode opacity is an explicit option.
+local function ResolveTrackerBackground(settings, r, g, b, a)
+    settings = settings or {}
+    local style = settings.objectiveTrackerBackgroundStyle or "theme"
+    if style == "transparent" then return r, g, b, 0 end
+    if style == "blizzard" then
+        local manager = _G.ObjectiveTrackerManager
+        return r, g, b, manager and manager.backgroundAlpha or a or 0.75
     end
-    return bga or 0.95
+    local opacity = settings.objectiveTrackerBackgroundOpacity or 0.75
+    if style == "custom" then
+        local color = settings.objectiveTrackerBackgroundColor or { 0.035, 0.035, 0.035 }
+        return color[1], color[2], color[3], opacity
+    end
+    return r, g, b, opacity
 end
 
 local function ApplyBackdropColors(backdrop, hideBorder, sr, sg, sb, sa, bgr, bgg, bgb, opacity)
     local borderColor = hideBorder and { 0, 0, 0, 0 } or { sr, sg, sb, sa }
     local bgColor = { bgr, bgg, bgb, opacity }
-    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 8, borderPixels = hideBorder and 0 or 1, withBackground = true, borderColor = borderColor, bgColor = bgColor })
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 8, borderPixels = 1, withBackground = true, borderColor = borderColor, bgColor = bgColor })
 end
 
 local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
@@ -702,7 +815,8 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
 
     SkinBase.KillNineSlice(trackerFrame.NineSlice)
 
-    local opacity = ResolveBackdropOpacity(bga)
+    local opacity
+    bgr, bgg, bgb, opacity = ResolveTrackerBackground(GetSettings(), bgr, bgg, bgb, bga)
 
     local backdrop = SkinBase.GetFrameData(trackerFrame, "backdrop")
     if not backdrop then
@@ -770,7 +884,26 @@ RefreshTrackerContent = function()
         settings.objectiveTrackerTitleColor,
         settings.objectiveTrackerTextColor
     )
+    StyleScenarioTrackerDetails()
+    local trackerFrame = _G.ObjectiveTrackerFrame
+    if trackerFrame then SkinTrackerHeader(trackerFrame.Header) end
+    for _, trackerName in ipairs(trackerModules) do
+        local tracker = _G[trackerName]
+        if tracker then
+            SkinTrackerHeader(tracker.Header)
+            if not WIDGET_POOL_TRACKER_NAMES[trackerName] and tracker.usedBlocks then
+                for _, blocks in pairs(tracker.usedBlocks) do
+                    for _, block in pairs(blocks) do
+                        local itemButton = block.ItemButton or block.itemButton
+                        if itemButton then StyleQuestPOIIcon(itemButton) end
+                    end
+                end
+            end
+        end
+    end
 end
+
+local RefreshObjectiveTracker
 
 local function SkinObjectiveTracker()
     local settings = GetSettings()
@@ -779,7 +912,7 @@ local function SkinObjectiveTracker()
     local TrackerFrame = _G.ObjectiveTrackerFrame
     if not TrackerFrame then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "objectiveTracker")
 
     if TrackerFrame.UpdateHeight and not SkinBase.GetFrameData(TrackerFrame, "updateHeightHooked") then
         hooksecurefunc(TrackerFrame, "UpdateHeight", function(self)
@@ -834,12 +967,9 @@ local function SkinObjectiveTracker()
     if manager and manager.SetOpacity and not SkinBase.GetFrameData(manager, "opacityHooked") then
         hooksecurefunc(manager, "SetOpacity", function(self, opacityPercent)
             C_Timer.After(0, function()
-                local alpha = (opacityPercent or 0) / 100
-                local _, _, _, _, currBgR, currBgG, currBgB = SkinBase.GetWindowColors()
-                local bd = SkinBase.GetFrameData(TrackerFrame, "backdrop")
-                if bd then
-                    SkinBase.SetBackdropColors(bd, nil, { currBgR, currBgG, currBgB, alpha })
-                end
+                -- Re-resolve both the shared border source and the chosen fill mode.
+                -- Native opacity changes only affect the Blizzard Opacity mode.
+                RefreshObjectiveTracker()
             end)
         end)
         SkinBase.SetFrameData(manager, "opacityHooked", true)
@@ -854,14 +984,14 @@ local function SkinObjectiveTracker()
     SkinBase.MarkSkinned(TrackerFrame)
 end
 
-local function RefreshObjectiveTracker()
+RefreshObjectiveTracker = function()
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker then return end
 
     local TrackerFrame = _G.ObjectiveTrackerFrame
     if not TrackerFrame then return end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "objectiveTracker")
 
     ApplyLayoutSettingsSafely(settings)
 
@@ -869,7 +999,8 @@ local function RefreshObjectiveTracker()
     if refreshBackdrop then
         local hideBorder = settings.hideObjectiveTrackerBorder
 
-        local opacity = ResolveBackdropOpacity(bga)
+        local opacity
+        bgr, bgg, bgb, opacity = ResolveTrackerBackground(GetSettings(), bgr, bgg, bgb, bga)
 
         ApplyBackdropColors(refreshBackdrop, hideBorder, sr, sg, sb, sa, bgr, bgg, bgb, opacity)
     end
@@ -882,6 +1013,17 @@ local function RefreshObjectiveTracker()
 end
 
 _G.QUI_RefreshObjectiveTracker = RefreshObjectiveTracker
+
+if Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "objectiveTracker",
+        label = ns.L["Objective Tracker"],
+        category = "Skinning",
+        prefix = "objectiveTracker",
+        db = function(profile) return profile.general end,
+        refresh = function() RefreshObjectiveTracker() end,
+    })
+end
 
 if ns.Registry then
     ns.Registry:Register("skinObjectiveTracker", {
@@ -926,6 +1068,8 @@ local trackingEvents = {
     "QUEST_POI_UPDATE",
     "SCENARIO_SPELL_UPDATE",
     "SCENARIO_COMPLETED",
+    "UPDATE_UI_WIDGET",
+    "UPDATE_ALL_UI_WIDGETS",
     "SCENARIO_CRITERIA_SHOW_STATE_UPDATE",
 }
 

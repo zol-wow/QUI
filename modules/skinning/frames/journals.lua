@@ -16,8 +16,55 @@ local RefreshBackdropColors = SkinBase.RefreshFrameBackdropColors
 local WHITE_TEXT_STYLE = { color = { 1, 1, 1, 1 } }
 local BLACK_TEXT_STYLE = { color = { 0, 0, 0, 1 } }
 
+-- Keep visual styling live in combat. Only changes to protected frame
+-- geometry wait for combat end; native spell actions and handlers stay intact.
+local pendingPlayerSpellsStyles = {}
+local playerSpellsCombatFrame
+local function DeferPlayerSpellsStyle(callback, frame)
+    local callbacks = pendingPlayerSpellsStyles[frame]
+    if not callbacks then
+        callbacks = {}
+        pendingPlayerSpellsStyles[frame] = callbacks
+    end
+    callbacks[callback] = true
+    if not playerSpellsCombatFrame then
+        playerSpellsCombatFrame = CreateFrame("Frame")
+        playerSpellsCombatFrame:SetScript("OnEvent", function(self)
+            if InCombatLockdown() then return end
+            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+            local pending = pendingPlayerSpellsStyles
+            pendingPlayerSpellsStyles = {}
+            if not IsSettingEnabled("skinSpellBook") then return end
+            for owner, queued in pairs(pending) do
+                for apply in pairs(queued) do apply(owner) end
+            end
+        end)
+    end
+    playerSpellsCombatFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+end
+
 local function GetSpellBookFrame(frame)
     return frame and (frame.SpellBookFrame or _G.SpellBookFrame)
+end
+
+local function ApplySpellBookAssistantWidth(rotation)
+    local width = rotation.Label:GetWidth() + rotation.Button:GetWidth() + 21
+    if rotation:GetWidth() == width then return end
+    if InCombatLockdown and InCombatLockdown() and rotation.IsProtected and rotation:IsProtected() then
+        DeferPlayerSpellsStyle(ApplySpellBookAssistantWidth, rotation)
+        return
+    end
+    rotation:SetWidth(width)
+end
+
+local function ResizeSpellBookSearch(book)
+    if not book.ResizeSearchBox then return end
+    local target = book.SearchBox or book
+    if InCombatLockdown and InCombatLockdown() and target.IsProtected and target:IsProtected() then
+        DeferPlayerSpellsStyle(ResizeSpellBookSearch, book)
+        return
+    end
+    book:ResizeSearchBox()
 end
 
 local function StyleSpellBookAssistant(rotation)
@@ -39,7 +86,7 @@ local function StyleSpellBookAssistant(rotation)
     label:SetWidth(0)
     local width = math.ceil(label:GetUnboundedStringWidth()) + 2
     label:SetWidth(width)
-    rotation:SetWidth(width + button:GetWidth() + 21)
+    ApplySpellBookAssistantWidth(rotation)
     if rotation.UpdateDisplay and not SkinBase.GetFrameData(rotation, "qAssistantDisplayHooked") then
         hooksecurefunc(rotation, "UpdateDisplay", StyleSpellBookAssistant)
         SkinBase.SetFrameData(rotation, "qAssistantDisplayHooked", true)
@@ -86,6 +133,7 @@ local function StyleSpellSearchPreview(preview)
 end
 
 local function StyleSpellBookControls(frame)
+    if not frame then return end
     local book = GetSpellBookFrame(frame)
     if not book then return end
     StyleSpellBookAssistant(book.AssistedCombatRotationSpellFrame)
@@ -97,7 +145,7 @@ local function StyleSpellBookControls(frame)
     if book.SearchBox and book.SearchBox.searchIcon then book.SearchBox.searchIcon:SetAlpha(1) end
     local categories = book.CategoryTabSystem and book.CategoryTabSystem.tabs
     SkinBase.SkinTabGroup(categories, book, { resizeToText = true, hover = true })
-    if book.ResizeSearchBox then book:ResizeSearchBox() end
+    ResizeSpellBookSearch(book)
 end
 
 local function SkinSpellRows(frame)
