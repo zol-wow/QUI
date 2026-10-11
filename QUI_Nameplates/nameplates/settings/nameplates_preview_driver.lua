@@ -478,10 +478,36 @@ local function MeasureAndPlace()
     local contentH = (bounds.top - bounds.bottom) / hostEff
     if contentW <= 0 or contentH <= 0 then return false end
 
+    if host._npPreviewFit and state.observer then
+        -- Recover requested magnification after fitting, so repeated measures
+        -- cannot progressively shrink the card. Width fitting also limits height.
+        local ratio = (state.requestedScale or plate:GetScale()) / plate:GetScale()
+        local requestedW, requestedH = contentW * ratio, contentH * ratio
+        local widthFit = math.min(1, math.max(1, host:GetWidth() - 16) / requestedW)
+        state.observer(contentW, contentH, requestedH * widthFit)
+    end
+
+    -- Fit the painted composition, including icons outside the health bar,
+    -- into the fixed preview viewport. Live plate geometry stays untouched.
+    if host._npPreviewFit then
+        local availableW = math.max(1, host:GetWidth() - 16)
+        local availableH = math.max(1, host:GetHeight() - 16)
+        local fit = math.min(1, availableW / contentW, availableH / contentH)
+        if fit < 0.999 then
+            plate:SetScale(plate:GetScale() * fit)
+            return false -- remeasure after WoW has applied the new scale
+        end
+    end
+
     local hostLeft, hostTop = host:GetLeft(), host:GetTop()
     if hostLeft and hostTop then
-        local dx = (hostLeft * hostEff - bounds.left) / plateEff
-        local dy = (hostTop * hostEff - bounds.top) / plateEff
+        local insetX, insetY = 0, 0
+        if host._npPreviewFit then
+            insetX = (host:GetWidth() - contentW) / 2
+            insetY = (host:GetHeight() - contentH) / 2
+        end
+        local dx = ((hostLeft + insetX) * hostEff - bounds.left) / plateEff
+        local dy = ((hostTop - insetY) * hostEff - bounds.top) / plateEff
         if math.abs(dx) >= 0.5 or math.abs(dy) >= 0.5 then
             state.offsetX = (state.offsetX or PREVIEW_BASE_OFFSET_X) + dx
             state.offsetY = (state.offsetY or PREVIEW_BASE_OFFSET_Y) + dy
@@ -495,7 +521,7 @@ local function MeasureAndPlace()
     end
 
     state.extentW, state.extentH = contentW, contentH
-    if state.observer then
+    if state.observer and not host._npPreviewFit then
         state.observer(contentW, contentH)
     end
     return true
@@ -509,7 +535,10 @@ local function RequestMeasure(attempt)
     local function Apply()
         host._npPreviewMeasurePending = nil
         if state.host ~= host then return end
-        if MeasureAndPlace() then return end
+        if MeasureAndPlace() then
+            if host._npPreviewFit then host:SetAlpha(1) end
+            return
+        end
         local next = (attempt or 1) + 1
         if next <= PREVIEW_MEASURE_ATTEMPTS then
             RequestMeasure(next)
@@ -566,6 +595,9 @@ local function Refresh()
     local settings = GetSettings()
     local np = NP()
     if not settings or not np then return end
+    -- WoW settles painted bounds on the next frame. Keep the requested zoom
+    -- invisible until measurement has fitted and positioned the specimen.
+    if host._npPreviewFit then host:SetAlpha(0) end
     StampPreviewType(plate, settings)
     local typeSettings = GetTypeSettings(plate) or {}
 
@@ -573,6 +605,7 @@ local function Refresh()
 
     if np.Driver and np.Driver.PinPlateScale then np.Driver.PinPlateScale(plate) end
     if previewZoom ~= 1 then plate:SetScale(plate:GetScale() * previewZoom) end
+    state.requestedScale = plate:GetScale()
     np.Health.ApplyAppearance(plate, typeSettings)
     np.Castbar.ApplyAppearance(plate, typeSettings)
     if np.Extras and np.Extras.ApplyAppearance then

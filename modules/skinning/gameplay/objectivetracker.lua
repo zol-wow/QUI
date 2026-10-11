@@ -675,6 +675,91 @@ local function HidePOIButtonGlows()
     end
 end
 
+-- <<< QUI_TEST_EXTRACT scenario_status_widget
+local SCENARIO_STATUS_ART_KEYS = {
+    "BGLeft", "BGRight", "BGCenter", "BorderLeft", "BorderRight", "BorderCenter",
+    "Spark", "BackgroundGlow", "GlowLeft", "GlowRight", "GlowCenter",
+}
+local SCENARIO_WIDGET_CONTAINER_KEYS = { "StageBlock", "TopWidgetContainerBlock", "BottomWidgetContainerBlock" }
+local SCENARIO_STATUS_LABEL_ART_KEYS = { "LabelBG", "LabelBGDivider" }
+
+local function GetTrackerWidgetContainer(widget)
+    local parent = widget and widget:GetParent()
+    local container = parent and (parent.parentWidgetContainer or parent)
+    local scenario = _G.ScenarioObjectiveTracker
+    local owned = container and container == _G.ObjectiveTrackerUIWidgetContainer
+    if scenario then
+        for _, key in ipairs(SCENARIO_WIDGET_CONTAINER_KEYS) do
+            local block = scenario[key]
+            if block and block.WidgetContainer == container then owned = true; break end
+        end
+    end
+    if not owned then return end
+    for _, active in pairs(container.widgetFrames or {}) do
+        if active == widget then return container end
+    end
+end
+
+local function StyleScenarioStatusWidget(widget)
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker or not settings.objectiveTrackerCustomBars then return end
+    if not widget or not widget.Bar or not widget.Bar.GetStatusBarTexture or not GetTrackerWidgetContainer(widget) then return end
+    local shown = widget:IsShown()
+    if Helpers.IsSecretValue(shown) or not shown then return end
+    local bar = widget.Bar
+    -- Native Setup restores these regions, fonts and the fill atlas on each
+    -- health update. Keep geometry, values, colors and pool ownership native.
+    for _, key in ipairs(SCENARIO_STATUS_ART_KEYS) do
+        if bar[key] then bar[key]:SetAlpha(0) end
+    end
+    for _, key in ipairs(SCENARIO_STATUS_LABEL_ART_KEYS) do
+        if widget[key] then widget[key]:SetAlpha(0) end
+    end
+    Helpers.ApplyBarStyle(bar, CUSTOM_BAR_FILL_TEXTURE)
+    local wrapper = SkinBase.GetFrameData(widget, "qScenarioStatusProgressBar")
+    if not wrapper then
+        wrapper = { Bar = bar }
+        SkinBase.SetFrameData(widget, "qScenarioStatusProgressBar", wrapper)
+    end
+    StyleTrackerProgressBar(wrapper, true)
+    local path, size, flags = GetFontPath(), settings.objectiveTrackerTextFontSize or 10, GetFontFlags()
+    if widget.Label then
+        CJKFont(widget.Label, path, size, flags)
+        SafeSetTextColor(widget.Label, settings.objectiveTrackerTextColor)
+    end
+    if bar.Label then
+        CJKFont(bar.Label, path, size, flags)
+        SafeSetTextColor(bar.Label, settings.objectiveTrackerTextColor)
+    end
+end
+
+local function RestyleScenarioStatusWidgetImmediately(widget)
+    ns.SafeCall("best-effort-style", StyleScenarioStatusWidget, widget)
+end
+
+local function StyleScenarioStatusWidgets()
+    local function StyleContainer(container)
+        for _, widget in pairs(container and container.widgetFrames or {}) do
+            if widget.Bar and widget.Bar.GetStatusBarTexture then
+                StyleScenarioStatusWidget(widget)
+                if widget.Setup and not SkinBase.GetFrameData(widget, "qScenarioStatusSetupHook") then
+                    hooksecurefunc(widget, "Setup", RestyleScenarioStatusWidgetImmediately)
+                    SkinBase.SetFrameData(widget, "qScenarioStatusSetupHook", true)
+                end
+            end
+        end
+    end
+    local scenario = _G.ScenarioObjectiveTracker
+    if scenario then
+        for _, key in ipairs(SCENARIO_WIDGET_CONTAINER_KEYS) do
+            local block = scenario[key]
+            StyleContainer(block and block.WidgetContainer)
+        end
+    end
+    StyleContainer(_G.ObjectiveTrackerUIWidgetContainer)
+end
+-- <<< QUI_TEST_EXTRACT scenario_status_widget
+
 -- <<< QUI_TEST_EXTRACT scenario_header_widget
 local SCENARIO_WIDGET_ART_KEYS = { "Frame", "ThemeOverlay", "DecorationBottomLeft" }
 
@@ -738,6 +823,70 @@ local function StyleScenarioHeaderWidgets()
     end
 end
 -- <<< QUI_TEST_EXTRACT scenario_header_widget
+
+-- <<< QUI_TEST_EXTRACT scenario_stage_spacing
+local function CompactScenarioStageSpacing()
+    local scenario = _G.ScenarioObjectiveTracker
+    local stage = scenario and scenario.StageBlock
+    local settings = GetSettings()
+    if not stage or not settings or not settings.skinObjectiveTracker then return end
+    if InCombatLockdown() then return end
+    -- The fixed toast reserves 83 pixels for hidden background art. Widget
+    -- stages and transition labels retain their native dimensions.
+    local height = 83
+    local compact = not stage.widgetSetID and stage:IsShown() and not stage.CompleteLabel:IsShown()
+    local spacing = SkinBase.GetFrameData(scenario, "qScenarioLineSpacing")
+    if compact and spacing == nil then
+        spacing = scenario.lineSpacing
+        SkinBase.SetFrameData(scenario, "qScenarioLineSpacing", spacing)
+    end
+    local targetSpacing = compact and 4 or spacing
+    local spacingChanged = targetSpacing ~= nil and scenario.lineSpacing ~= targetSpacing
+    if spacingChanged then scenario.lineSpacing = targetSpacing end
+    local compactText = SkinBase.GetFrameData(stage, "qCompactScenarioText")
+    if not compact and compactText then
+        for label, original in pairs(compactText) do
+            label:SetHeight(original.height)
+            label:SetJustifyV(original.justify)
+            if original.point then label:SetPoint(unpack(original.point)) end
+        end
+        SkinBase.SetFrameData(stage, "qCompactScenarioText", nil)
+        compactText = nil
+    end
+    if not stage.widgetSetID and stage:IsShown() and not stage.CompleteLabel:IsShown() then
+        compactText = compactText or {}
+        SkinBase.SetFrameData(stage, "qCompactScenarioText", compactText)
+        for _, key in ipairs({ "Stage", "Name" }) do
+            local label = stage[key]
+            if label and label:IsShown() and (label:GetText() or "") ~= "" then
+                if not compactText[label] then
+                    compactText[label] = { height = label:GetHeight(), justify = label:GetJustifyV(),
+                        point = key == "Stage" and { label:GetPoint(1) } or nil }
+                end
+                label:SetHeight(math.max(1, label:GetStringHeight()))
+                label:SetJustifyV("TOP")
+                if key == "Stage" then label:SetPoint("TOPLEFT", stage, "TOPLEFT", 15, -4) end
+            end
+        end
+        -- Use the anchors just applied, rather than screen coordinates that
+        -- remain stale until the next native layout pass.
+        local bottom = 4 + stage.Stage:GetHeight()
+        if stage.Name:IsShown() and (stage.Name:GetText() or "") ~= "" then
+            bottom = bottom + 4 + stage.Name:GetStringHeight()
+        end
+        height = math.min(83, math.max(16, math.ceil(bottom + 2)))
+    end
+    local header = scenario.ObjectivesBlock and scenario.ObjectivesBlock.HeaderText
+    local emptyHeader = compact and header and (header:GetText() or "") == ""
+        and header:GetHeight() > 1
+    if emptyHeader then header:SetHeight(1) end
+    if stage.height ~= height or emptyHeader or spacingChanged then
+        stage.height = height
+        -- Let Blizzard place the following blocks through its normal layout.
+        scenario:MarkDirty()
+    end
+end
+-- <<< QUI_TEST_EXTRACT scenario_stage_spacing
 
 local SCENARIO_STAGE_TEXTURE_KEYS = { "NormalBG", "FinalBG", "ThemeOverlay", "GlowTexture" }
 local SCENARIO_STAGE_TEXT_KEYS = { "Stage", "Name", "CompleteLabel" }
@@ -813,7 +962,9 @@ local function RunObjectiveTrackerPostLayoutUpdate()
         RefreshTrackerContent()
     end
     StyleScenarioTrackerDetails()
+    CompactScenarioStageSpacing()
     StyleScenarioHeaderWidgets()
+    StyleScenarioStatusWidgets()
     UpdateBackdropAnchors()
     HidePOIButtonGlows()
     StyleExistingProgressBars()
@@ -950,7 +1101,9 @@ RefreshTrackerContent = function()
         settings.objectiveTrackerTextColor
     )
     StyleScenarioTrackerDetails()
+    CompactScenarioStageSpacing()
     StyleScenarioHeaderWidgets()
+    StyleScenarioStatusWidgets()
     local trackerFrame = _G.ObjectiveTrackerFrame
     if trackerFrame then SkinTrackerHeader(trackerFrame.Header) end
     for _, trackerName in ipairs(trackerModules) do
