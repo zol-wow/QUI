@@ -1131,7 +1131,20 @@ local function SkinEncounterJournalContents(frame)
             end
         end
         if info.instanceButton then
-            SkinBase.SkinButton(info.instanceButton, { font = false })
+            -- Its circular icon overlaps the first boss row; a full-button surface obscures the portrait.
+            local button = info.instanceButton
+            SkinBase.ClampTextureHidden(button:GetNormalTexture())
+            local highlight = button:GetHighlightTexture()
+            if highlight then
+                highlight:SetTexture("Interface\\AddOns\\QUI\\assets\\cursor\\qui_ring_thin.png")
+                highlight:SetTexCoord(0, 1, 0, 1)
+                highlight:SetBlendMode("BLEND")
+                highlight:ClearAllPoints()
+                highlight:SetPoint("CENTER", button.icon, "CENTER")
+                highlight:SetSize(44, 44)
+                local r, g, b = SkinBase.GetSkinColors()
+                highlight:SetVertexColor(r, g, b, 0.65)
+            end
         end
         for _, key in ipairs({ "difficulty" }) do
             if info[key] then SkinBase.SkinDropdown(info[key], { skinArrow = true }) end

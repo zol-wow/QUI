@@ -314,6 +314,30 @@ local function ApplyTabHover(bagID)
     sweep(cachedButtons)
 end
 
+local function StyleForeverBankBagButton(button)
+    if not (ns.Client and ns.Client.isForever) then return end
+    if not button._quiBankBagStyled then
+        button:ClearNormalTexture()
+        if button.Background then button.Background:SetAlpha(0) end
+        if button.IconBorder then button.IconBorder:SetAlpha(0) end
+        Bags.ItemButtons.AddSlotBackground(button)
+        UIKit.CreateBorderLines(button)
+        hooksecurefunc(button, "SetItemLocation", StyleForeverBankBagButton)
+        button._quiBankBagStyled = true
+    end
+    local bagID, slotID = button:GetBagAndSlot()
+    local info = bagID and C_Container.GetContainerItemInfo(bagID, slotID)
+    local r, g, b, a = Helpers.GetWindowColors()
+    if info and info.quality then
+        r, g, b = Bags.ItemButtons.GetQualityColor(info.quality)
+        a = 1
+    else
+        a = 0.35 * a
+    end
+    UIKit.UpdateBorderLines(button, 1, r, g, b, a)
+    Helpers.ApplyIconStyle(button, button.icon or button.Icon)
+end
+
 local function RenderBagSlots()
     for _, button in pairs(bagButtons) do button:Hide() end
     if not (liveMode and UsesPlayerBags() and C_Bank.CanViewBank(activeBankType)) then
@@ -349,6 +373,7 @@ local function RenderBagSlots()
         local container = activeBankType == Enum.BankType.Account
             and Enum.BagIndex.Accountbanktab or Enum.BagIndex.Characterbanktab
         button:SetItemLocation(ItemLocation:CreateFromBagAndSlot(container, slot))
+        StyleForeverBankBagButton(button)
         button:Show()
     end
     local width = math.max(0, count - 1) * 40
@@ -644,6 +669,11 @@ local function RenderBankTypeSegment()
     local totalW = 0
     local buttons = { win._charBankBtn, win._warbandBankBtn }
     for _, btn in ipairs(buttons) do
+        if ns.Client and ns.Client.isForever then
+            local available = not liveMode or C_Bank.CanViewBank(btn._bankType)
+            btn:SetEnabled(available)
+            btn:SetAlpha(available and 1 or 0.4)
+        end
         local selected = btn._bankType == activeBankType
         UIKit.UpdateBorderLines(btn, 1, selected and ar or sr, selected and ag or sg, selected and ab or sb, selected and 1 or (0.35 * sa))
         btn:Show()
