@@ -486,7 +486,7 @@ local function ApplyHideSettings()
                         container:EnableMouse(false)
                     else
                         container:SetAlpha(1)
-                        container:EnableMouse(true)
+                        container:EnableMouse(false)
                     end
                 end
             end

@@ -853,11 +853,11 @@ function CDMBars.ConfigureBar(bar, settings, overrideWidth, activeOverride)
     if statusBar and statusBar.SetStatusBarTexture then
         resolvedTexturePath = LSM:Fetch("statusbar", texture) or LSM:Fetch("statusbar", "Quazii v5")
         if resolvedTexturePath then
-            statusBar:SetStatusBarTexture(resolvedTexturePath)
+            Helpers.ApplyBarStyle(statusBar, resolvedTexturePath)
         end
     end
     if bar.PermanentFill and resolvedTexturePath then
-        bar.PermanentFill:SetTexture(resolvedTexturePath)
+        Helpers.ApplyTextureStyle(bar, bar.PermanentFill, resolvedTexturePath)
     end
 
     local resolvedR, resolvedG, resolvedB, resolvedA

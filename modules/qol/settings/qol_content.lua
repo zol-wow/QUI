@@ -292,7 +292,7 @@ local function BuildCombatText(L, db)
         end
     end, { description = ns.L["Use a custom font for the combat text instead of inheriting the global QUI default font."] })
     combatTextFontDropdown = GUI:CreateFormDropdown(s.frame, nil, fontList, "font", combatTextDB, RefreshCombatText,
-        { description = ns.L["Custom font used for the combat text when Use Custom Font is enabled."] })
+        { description = ns.L["Custom font used for the combat text when Use Custom Font is enabled."] }, { placeholder = ns.L["Global Font"] })
     if combatTextFontDropdown.SetEnabled then
         combatTextFontDropdown:SetEnabled(combatTextDB.useCustomFont == true)
     end
@@ -320,6 +320,74 @@ local function BuildCombatText(L, db)
         end, { description = ns.L["Turn off Blizzard's floating/scrolling combat text. QUI re-applies this on login. Does not affect QUI's +Combat indicator."] })
         s2.AddRow(row(s2.frame, ns.L["Disable Scrolling Combat Text"], disableSCTW))
         L.closeSection(s2)
+    end
+end
+
+local function BuildAppearanceChanges(L, generalDB)
+    if type(generalDB.autoRemoveAppearanceChanges) ~= "table" then generalDB.autoRemoveAppearanceChanges = {} end
+    local db = generalDB.autoRemoveAppearanceChanges
+    local function Refresh()
+        if ns.RefreshAppearanceChanges then ns.RefreshAppearanceChanges() end
+    end
+
+    L.headerAt(ns.L["Auto Remove Appearance Changes"])
+    L.intro(ns.L["Choose which appearance buffs to remove automatically. Removal waits until combat and aura restrictions end. Fishing outfits stay on until you finish casting. Your equipped transmog and class forms are unchanged."])
+    local s = L.sectionAt()
+    local enabled = GUI:CreateFormCheckbox(s.frame, nil, "enabled", db, Refresh,
+        { description = ns.L["Automatically cancel the selected appearance buffs. Each effect below can be included separately."] })
+    s.AddRow(row(s.frame, ns.L["Auto Remove Appearance Changes"], enabled))
+    L.closeSection(s)
+
+    local categories = {
+        { title = ns.L["Profession Outfits"], effects = {
+            { "blacksmithing", ns.L["Blacksmithing"] },
+            { "jewelcrafting", ns.L["Jewelcrafting"] },
+            { "tailoring", ns.L["Tailoring"] },
+            { "engineering", ns.L["Engineering"] },
+            { "enchanting", ns.L["Enchanting"] },
+            { "alchemy", ns.L["Alchemy"] },
+            { "inscription", ns.L["Inscription"] },
+            { "leatherworking", ns.L["Leatherworking"] },
+            { "herbalism", ns.L["Herbalism"] },
+            { "mining", ns.L["Mining"] },
+            { "skinning", ns.L["Skinning"] },
+            { "cooking", ns.L["Cooking (Chef's Hat)"] },
+            { "fishing", ns.L["Fishing"] },
+        } },
+        { title = ns.L["Holiday Costumes"], effects = {
+            { "lantern", ns.L["Weighted Jack-o'-Lantern"] },
+            { "hallowed", ns.L["Hallowed Wand"] },
+            { "noblebunny", ns.L["Noblegarden Bunny"] },
+            { "turkey", ns.L["Pilgrim's Turkey"] },
+        } },
+        { title = ns.L["Toy Transformations"], effects = {
+            { "aqir", ns.L["Aqir Egg Cluster"] },
+            { "atomic", ns.L["Atomically Recalibrator"] },
+            { "atomgoblin", ns.L["Atomically Regoblinator"] },
+            { "blight", ns.L["Detoxified Blight Grenade"] },
+            { "witch", ns.L["Lucille's Sewing Needle"] },
+            { "spraybots", ns.L["Spraybots"] },
+        } },
+        { title = ns.L["Consumables & Items"], effects = {
+            { "pickaxe", ns.L["Cursed Pickaxe"] },
+            { "noggenfogger", ns.L["Noggenfogger Elixir"], ns.L["Remove the skeleton and shrinking buffs, including the skeleton's underwater breathing effect. Keep the Slow Fall buff."] },
+            { "prism", ns.L["Reflecting Prism"] },
+        } },
+    }
+    for _, category in ipairs(categories) do
+        L.headerAt(category.title)
+        s = L.sectionAt()
+        for i = 1, #category.effects, 2 do
+            local cells = {}
+            for j = i, math.min(i + 1, #category.effects) do
+                local effect = category.effects[j]
+                local widget = GUI:CreateFormCheckbox(s.frame, nil, effect[1], db, Refresh,
+                    { description = effect[3] or ns.L["Remove this appearance buff while Auto Remove Appearance Changes is enabled."] })
+                cells[#cells + 1] = row(s.frame, effect[2], widget)
+            end
+            s.AddRow(cells[1], cells[2])
+        end
+        L.closeSection(s)
     end
 end
 
@@ -365,6 +433,26 @@ local function BuildAutomation(L, generalDB)
         { description = ns.L["Automatically confirm role checks in LFG using the role you already had selected."] })
     s.AddRow(row(s.frame, ns.L["Auto Accept Summons"], summonW), row(s.frame, ns.L["Auto Accept Role Check"], roleW))
 
+    if type(generalDB.autoAcceptResurrection) ~= "table" then generalDB.autoAcceptResurrection = {} end
+    local resurrectionDB = generalDB.autoAcceptResurrection
+    local resurrectionOptions = {
+        { value = "off", text = ns.L["Off"] },
+        { value = "outOfCombat", text = ns.L["Out of Combat"] },
+        { value = "always", text = ns.L["Always"] },
+    }
+    local resurrectionHelp = ns.L["Out of Combat skips offers from a resurrector known to be in combat. Offers from an unidentified resurrector are accepted. Always includes battle resurrections. Hold Shift when an offer arrives to accept manually. Offers with resurrection sickness or a recovery delay stay manual."]
+    local dungeonResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "dungeon", resurrectionDB, nil,
+        { description = ns.L["Automatically accept resurrection offers in dungeons, including Mythic+."] .. "\n\n" .. resurrectionHelp })
+    local raidResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "raid", resurrectionDB, nil,
+        { description = ns.L["Automatically accept resurrection offers in raid instances."] .. "\n\n" .. resurrectionHelp })
+    s.AddRow(row(s.frame, ns.L["Auto Accept Resurrection in Dungeons"], dungeonResW), row(s.frame, ns.L["Auto Accept Resurrection in Raids"], raidResW))
+
+    local pvpResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "pvp", resurrectionDB, nil,
+        { description = ns.L["Automatically accept resurrection offers in battlegrounds and arenas. Spirit-healer queues remain Blizzard-controlled."] .. "\n\n" .. resurrectionHelp })
+    local worldResW = GUI:CreateFormDropdown(s.frame, nil, resurrectionOptions, "world", resurrectionDB, nil,
+        { description = ns.L["Automatically accept resurrection offers outside instances. Delves and scenarios stay manual."] .. "\n\n" .. resurrectionHelp })
+    s.AddRow(row(s.frame, ns.L["Auto Accept Resurrection in PvP"], pvpResW), row(s.frame, ns.L["Auto Accept Resurrection in Open World"], worldResW))
+
     local questW = GUI:CreateFormCheckbox(s.frame, nil, "autoAcceptQuest", generalDB, nil,
         { description = ns.L["Automatically accept quests from NPCs without requiring a click."] })
     local turnInW = GUI:CreateFormCheckbox(s.frame, nil, "autoTurnInQuest", generalDB, nil,
@@ -382,6 +470,21 @@ local function BuildAutomation(L, generalDB)
     local closeBagsKeyW = GUI:CreateFormCheckbox(s.frame, nil, "closeBagsOnKeystoneInsert", generalDB, nil,
         { description = ns.L["Close your bags after the keystone is auto-inserted. Requires Auto Insert M+ Keys."] })
     s.AddRow(row(s.frame, ns.L["Auto Insert M+ Keys"], keyW), row(s.frame, ns.L["Close Bags After Inserting Key"], closeBagsKeyW))
+
+    local rerollW = GUI:CreateFormCheckbox(s.frame, nil, "keystoneRerollReminder", generalDB, nil,
+        { description = ns.L["Show a reminder after completing a Mythic+ run at or above your owned keystone's level."] })
+
+    local rerollDuration = generalDB.keystoneRerollReminderDuration
+    if rerollDuration ~= 15 and rerollDuration ~= 30 and rerollDuration ~= 60 then
+        generalDB.keystoneRerollReminderDuration = 15
+    end
+    local rerollDurationOptions = {
+        { value = 15, text = ns.L["15 seconds"] },
+        { value = 30, text = ns.L["30 seconds"] },
+        { value = 60, text = ns.L["60 seconds"] },
+    }
+    local rerollDurationW = GUI:CreateFormDropdown(s.frame, nil, rerollDurationOptions, "keystoneRerollReminderDuration", generalDB, nil,
+        { description = ns.L["How long the keystone reroll reminder stays visible. Changes apply to the next reminder."] })
 
     local logMW = GUI:CreateFormCheckbox(s.frame, nil, "autoCombatLog", generalDB, function()
         if _G.QUI_RefreshAutoCombatLogging then _G.QUI_RefreshAutoCombatLogging() end
@@ -510,7 +613,9 @@ local function BuildAutomation(L, generalDB)
     local delW = GUI:CreateFormCheckbox(s.frame, nil, "autoDeleteConfirm", generalDB, nil,
         { description = ns.L["Pre-fill the word DELETE into the confirmation box when destroying a rare or higher item."] })
     s.AddRow(row(s.frame, ns.L["Lock Audio Output Device"], audioW), row(s.frame, ns.L["Auto-Fill DELETE Confirmation Text"], delW))
+    s.AddRow(row(s.frame, ns.L["Keystone Reroll Reminder"], rerollW), row(s.frame, ns.L["Reminder Duration"], rerollDurationW))
     L.closeSection(s)
+    BuildAppearanceChanges(L, generalDB)
 end
 
 local function BuildNotifications(L, generalDB)
@@ -921,9 +1026,9 @@ local function BuildQuiPanel(L, db)
 
     local alphaW = GUI:CreateFormSlider(s.frame, nil, 0.3, 1.0, 0.01, "configPanelAlpha", db, function(val)
         local mainFrame = GUI.MainFrame
-        if mainFrame then
-            local bgColor = GUI.Colors.bg
-            mainFrame:SetBackdropColor(bgColor[1], bgColor[2], bgColor[3], val)
+        if mainFrame and mainFrame._bg then
+            local bgColor = GUI.Colors.optionsWindow or GUI.Colors.bg
+            mainFrame._bg:SetVertexColor(bgColor[1], bgColor[2], bgColor[3], val)
         end
     end, { description = ns.L["Background opacity of the QUI options panel itself."] })
 
@@ -939,6 +1044,13 @@ local function BuildQuiPanel(L, db)
         s.AddRow(row(s.frame, ns.L["Hide QUI Minimap Icon"], hideW), row(s.frame, ns.L["QUI Panel Transparency"], alphaW))
     else
         s.AddRow(row(s.frame, ns.L["QUI Panel Transparency"], alphaW))
+    end
+    if db.general then
+        if db.general.optionsMotion == nil then db.general.optionsMotion = true end
+        local motionW = GUI:CreateFormCheckbox(s.frame, nil, "optionsMotion", db.general, function()
+            if GUI.RefreshOptionsMotion then GUI:RefreshOptionsMotion() end
+        end, { description = ns.L["Use brief animations when navigating the options panel. Disable for reduced motion."] })
+        s.AddRow(row(s.frame, ns.L["Animate Options"], motionW))
     end
     L.closeSection(s)
 end
@@ -1241,14 +1353,14 @@ local generalSectionFeatures = {
     { id = "quickSalvage",      category = "qol",        nav = { tileId = "qol", subPageIndex = 5 }, sectionKey = "quickSalvage",     sectionTitle = "Quick Salvage",                    searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 5, subTabName = "Salvage" } },
     { id = "consumableMacros",  category = "qol",        nav = { tileId = "qol", subPageIndex = 6 }, sectionKey = "consumableMacros", sectionTitle = "Consumable Macros",                searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 6, subTabName = "Consumables" } },
     { id = "targetDistance",    category = "qol",        nav = { tileId = "qol", subPageIndex = 7 }, sectionKey = "targetDistance",   sectionTitle = "Target Distance Bracket Display",  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 7, subTabName = "Distance" } },
-    { id = "quiPanel",          category = "qol",        nav = { tileId = "qol", subPageIndex = 8 }, sectionKey = "quiPanel",         sectionTitle = "QUI Panel Settings",               searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 8, subTabName = "Panel" } },
-    { id = "reloadBehavior",    category = "qol",        nav = { tileId = "qol", subPageIndex = 9 }, sectionKey = "reloadBehavior",   sectionTitle = "Reload Behavior",                  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 9, subTabName = "Reload" } },
-    { id = "merchantGrid",      category = "qol",        nav = { tileId = "qol", subPageIndex = 10 }, sectionKey = "merchantGrid",     sectionTitle = "Merchant Grid",                    searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 10, subTabName = "Merchant" } },
-    { id = "friendsList",       category = "qol",        nav = { tileId = "qol", subPageIndex = 11 }, sectionKey = "friendsList",      sectionTitle = "Friends List",                     searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 11, subTabName = "Friends List" } },
-    { id = "extendedIgnore",    category = "qol",        nav = { tileId = "qol", subPageIndex = 12 }, sectionKey = "extendedIgnore",   sectionTitle = "Extended Ignore",                  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 12, subTabName = "Extended Ignore" } },
-    { id = "eventSounds",       category = "qol",        nav = { tileId = "qol", subPageIndex = 13 }, sectionKey = "eventSounds",      sectionTitle = "Event Sounds",                     searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 13, subTabName = "Event Sounds" } },
-    { id = "soundMute",         category = "qol",        nav = { tileId = "qol", subPageIndex = 14 }, sectionKey = "soundMute",        sectionTitle = "Sound Mute",                       searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 14, subTabName = "Sound Mute" } },
-    { id = "notifications",     category = "qol",        nav = { tileId = "qol", subPageIndex = 15 }, sectionKey = "notifications",    sectionTitle = "Group Death Alerts",               searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 15, subTabName = "Notifications" },
+    { id = "quiPanel",          category = "global",     nav = { tileId = "global", subPageIndex = 7 }, sectionKey = "quiPanel",         sectionTitle = "QUI Panel Settings",               searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 8, subTabName = "Panel" } },
+    { id = "reloadBehavior",    category = "global",     nav = { tileId = "global", subPageIndex = 7 }, sectionKey = "reloadBehavior",   sectionTitle = "Reload Behavior",                  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 9, subTabName = "Reload" } },
+    { id = "merchantGrid",      category = "qol",        nav = { tileId = "qol", subPageIndex = 8 }, sectionKey = "merchantGrid",     sectionTitle = "Merchant Grid",                    searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 10, subTabName = "Merchant" } },
+    { id = "friendsList",       category = "qol",        nav = { tileId = "qol", subPageIndex = 9 }, sectionKey = "friendsList",      sectionTitle = "Friends List",                     searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 11, subTabName = "Friends List" } },
+    { id = "extendedIgnore",    category = "qol",        nav = { tileId = "qol", subPageIndex = 10 }, sectionKey = "extendedIgnore",   sectionTitle = "Extended Ignore",                  searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 12, subTabName = "Extended Ignore" } },
+    { id = "eventSounds",       category = "qol",        nav = { tileId = "qol", subPageIndex = 11 }, sectionKey = "eventSounds",      sectionTitle = "Event Sounds",                     searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 13, subTabName = "Event Sounds" } },
+    { id = "soundMute",         category = "qol",        nav = { tileId = "qol", subPageIndex = 12 }, sectionKey = "soundMute",        sectionTitle = "Sound Mute",                       searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 14, subTabName = "Sound Mute" } },
+    { id = "notifications",     category = "qol",        nav = { tileId = "qol", subPageIndex = 13 }, sectionKey = "notifications",    sectionTitle = "Group Death Alerts",               searchContext = { tabIndex = 17, tabName = "Quality of Life", subTabIndex = 15, subTabName = "Notifications" },
       -- Legacy pin route: death alert settings lived under Automation; "general.deathAlert.*" pin paths resolve here.
       lookupKeys = { "deathAlert" } },
     { id = "uiScale",           category = "appearance", nav = { tileId = "appearance", subPageIndex = 1 }, sectionKey = "uiScale",   sectionTitle = "UI Scale",                         searchContext = { tabIndex = 10, tabName = "Appearance",      subTabIndex = 3, subTabName = "UI Scale" } },

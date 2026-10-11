@@ -466,7 +466,7 @@ RebuildBrowseRows = function(filter)
     local opts = browse.opts
     local accent = popup._accent
     local text = popup._text
-    local lower = (type(filter) == "string" and filter ~= "" and ns.Helpers.FoldUTF8(filter)) or nil
+    local lower = (type(filter) == "string" and filter ~= "" and ns.Helpers.FoldSearchUTF8(filter)) or nil
 
     -- Pass 1: match spells per section. Without a search, sections are capped
     -- so the popup opens fast; matched-but-hidden entries become a "+ N more"
@@ -486,7 +486,7 @@ RebuildBrowseRows = function(filter)
                 local name = spell.name or GetSpellName(id) or (ns.L["Spell"] .. " " .. tostring(id))
                 local displayID = BrowseDisplaySpellID(id, opts)
                 if not lower
-                    or ns.Helpers.FoldUTF8(name):find(lower, 1, true)
+                    or ns.Helpers.FoldSearchUTF8(name):find(lower, 1, true)
                     or tostring(id):find(lower, 1, true)
                     or tostring(displayID):find(lower, 1, true) then
                     entries[#entries + 1] = {

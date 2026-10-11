@@ -90,7 +90,7 @@ local function collect_scripts_from_toc(toc_path, out, seen)
     for _, line in ipairs(read_lines(toc_path)) do
         line = line:gsub("\r", ""):gsub("^%s+", ""):gsub("%s+$", "")
         if line ~= "" and line:sub(1, 1) ~= "#" then
-            local entry = normalize_path(line)
+            local entry = join_path(toc_path, line)
             if entry:lower():match("%.lua$") then
                 out[#out + 1] = entry
             elseif entry:lower():match("%.xml$") then
@@ -149,6 +149,10 @@ end
 
 local function should_load_script(path)
     path = normalize_path(path)
+
+    if path == "QUI_Reminders/spell_reminders/model.lua" or path == "QUI_Reminders/spell_reminders/catalog.lua" then
+        return true
+    end
 
     if path == "init.lua" or path == OUTPUT_PATH then
         return false
@@ -209,7 +213,7 @@ local function should_load_script(path)
         if path:match("^QUI_ActionBars/actionbars/settings/") then
             return true
         end
-        if path == "QUI_Reminders/reminders/settings/reminders_content.lua" then
+        if path:match("^QUI_Reminders/.+/settings/") then
             return true
         end
         return false
@@ -783,6 +787,9 @@ _G.C_CVar = {
         return _G.SetCVar(cvar, value)
     end,
 }
+_G.CVarCallbackRegistry = {
+    GetCVarValueBool = function(_, cvar) return _G.GetCVarBool(cvar) end,
+}
 _G.C_NamePlateManager = {
     SetNamePlateSimplified = function() end,
 }
@@ -1084,24 +1091,42 @@ ns.AddonLoader = {
     SetModuleAddonEnabled = function() return "reload" end,
 }
 
-local function load_script(path)
+ns.SpellReminders = { Store = function() return profile_db.spellReminders end }
+
+local function load_script(path, script_ns)
     local chunk, load_err = loadfile(path)
     if not chunk then
         return false, load_err
     end
 
     return xpcall(function()
-        return chunk(ADDON_NAME, ns)
+        return chunk(ADDON_NAME, script_ns or ns)
     end, debug.traceback)
 end
 
 local scripts = {}
 local script_xml_seen = {}
 collect_scripts_from_toc("QUI.toc", scripts, script_xml_seen)
+collect_scripts_from_toc("QUI_Reminders/QUI_Reminders.toc", scripts, script_xml_seen)
 collect_qui_options_scripts(scripts, script_xml_seen)
 
 local failures = {}
 local loaded_count = 0
+
+do
+    local swing_ns = setmetatable({
+        Client = { isForever = true },
+        WhenLoggedIn = function() end,
+        Registry = { Register = function() end },
+    }, { __index = ns })
+    local path = "modules/skinning/gameplay/swing_timers.lua"
+    local ok, err = load_script(path, swing_ns)
+    if ok then
+        ns.SwingTimers = swing_ns.SwingTimers
+    else
+        failures[#failures + 1] = { path = path, error = err }
+    end
+end
 
 -- groupframes_aura_model.lua is now a compatibility shim: `local E =
 -- ns.AuraElements` captured at file scope, delegating every constructor to the
@@ -1886,6 +1911,43 @@ local function create_timer_stub()
     }
 end
 
+-- Capture lightweight navigation while the offline harvester renders pages.
+-- Runtime menus consume this catalog without constructing settings controls.
+local navigation_catalog = {}
+local capturing_navigation_feature
+local function NavigationRecord()
+    if not capturing_navigation_feature then return end
+    local record = navigation_catalog[capturing_navigation_feature]
+    if not record then
+        record = { sections = {}, tabs = {} }
+        navigation_catalog[capturing_navigation_feature] = record
+    end
+    return record
+end
+local original_accent_label = ns.QUI_Options.CreateAccentDotLabel
+ns.QUI_Options.CreateAccentDotLabel = function(parent, text, offset, skip)
+    local record = not skip and NavigationRecord()
+    if record and type(text) == "string" and text ~= "" then
+        local found = false
+        for _, section in ipairs(record.sections) do if section.id == text then found = true; break end end
+        if not found then record.sections[#record.sections + 1] = { id = text, label = text } end
+    end
+    return original_accent_label(parent, text, offset, skip)
+end
+local original_surface_pages = GUI.RegisterTileSurfacePages
+GUI.RegisterTileSurfacePages = function(self, body, descriptor)
+    local record = NavigationRecord()
+    if record and type(descriptor.getTabs) == "function" then
+        record.tabs = {}
+        for _, tab in ipairs(descriptor.getTabs() or {}) do
+            if type(tab.key) == "string" and type(tab.label) == "string" then
+                record.tabs[#record.tabs + 1] = { key = tab.key, label = tab.label }
+            end
+        end
+    end
+    return original_surface_pages(self, body, descriptor)
+end
+
 local function capture_search_feature(feature)
     if type(feature) ~= "table" then
         return false
@@ -1913,6 +1975,7 @@ local function capture_search_feature(feature)
     end
 
     GUI:ClearSearchContext()
+    capturing_navigation_feature = feature.id
     local ok, err = xpcall(function()
         GUI:SetSearchContext(context)
         if context.sectionName then
@@ -1927,6 +1990,7 @@ local function capture_search_feature(feature)
         })
         GUI:ClearSearchContext()
     end, debug.traceback)
+    capturing_navigation_feature = nil
     GUI:ClearSearchContext()
 
     if C_Timer then
@@ -2118,6 +2182,9 @@ local function capture_group_frames_auras_elements()
     local function strip(filterMode, auraType)
         local element = Model.NewFilterStripElement(auraType or "HARMFUL")
         element.filterMode = filterMode
+        element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
+            anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
+        element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
         return element
     end
     local function tracked(displayType)
@@ -2375,6 +2442,9 @@ local function capture_nameplates_auras_elements()
         local function strip(filterMode, auraType)
             local element = E.NewFilterStripElement(auraType or "HARMFUL")
             element.filterMode = filterMode
+            element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
+                anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
+            element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
             return element
         end
         local function tracked(displayType)
@@ -2538,6 +2608,9 @@ local function capture_aura_displays_elements()
         local function strip(filterMode, auraType)
             local element = E.NewFilterStripElement(auraType or "HARMFUL")
             element.filterMode = filterMode
+            element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
+                anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
+            element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
             return element
         end
         local function tracked(displayType)
@@ -3018,6 +3091,12 @@ end
 
 install_search_capture_overrides()
 capture_all_search_features()
+do
+    local originalClient = ns.Client
+    ns.Client = { isForever = true }
+    capture_search_feature(ns.Settings.Registry:GetFeature("skinningPage"))
+    ns.Client = originalClient
+end
 capture_cdm_settings_tabs()
 capture_group_frames_settings_tabs()
 capture_group_frames_auras_elements()
@@ -3027,6 +3106,17 @@ capture_nameplates_auras_elements()
 capture_aura_displays_elements()
 capture_action_bar_per_bar_settings()
 capture_minimap_datatext_settings()
+
+-- The reminder editor starts empty, so render its configurable tabs against
+-- a transient PI preset to index them before a player creates a reminder.
+if ns.SpellReminderOptions then
+    GUI:SetSearchContext({ tileId = "reminders", subPageIndex = 2, tabName = "Reminders",
+        subTabName = "Spell Reminders", featureId = "spellRemindersPage", category = "gameplay" })
+    local host = create_stub_node("Frame", nil, false)
+    host:SetSize(760, 1)
+    ns.SpellReminderOptions.CaptureSearch(host)
+    GUI:ClearSearchContext()
+end
 
 -- Tile registration runs AFTER install_search_capture_overrides() so the
 -- alias-emit wrappers actually intercept the RegisterFeatureTile /
@@ -3072,8 +3162,10 @@ local tile_order = {
     "QUI_AppearanceTile",
     "QUI_ChatTooltipsTile",
     "QUI_GameplayTile",
+    "QUI_RemindersTile",
     "QUI_QoLTile",
     "QUI_BagsTile",
+    "QUI_AltsTile",
     "QUI_HelpTile",
 }
 
@@ -3192,6 +3284,13 @@ clear_non_plain_arrays_before_route_seed()
 
 if type(GUI.SeedStaticSearchRoutesFromTiles) == "function" then
     GUI:SeedStaticSearchRoutesFromTiles(frame)
+end
+
+local swing_route = ns.Settings.Registry:GetFeature("swingTimersPage").nav
+for _, entry in ipairs(GUI.StaticNavigationRegistry) do
+    if entry.tileId == swing_route.tileId and entry.subPageIndex == swing_route.subPageIndex then
+        entry.featureId = entry.featureId or "swingTimersPage"
+    end
 end
 
 -- Phase 1+ Modules Control Center: emit moduleToggle navigation entries
@@ -3357,6 +3456,21 @@ table.sort(navigation_entries, function(a, b)
 end)
 apply_feature_keywords(navigation_entries)
 
+local previousFrame = GUI.MainFrame
+GUI.MainFrame = frame
+for _, entries in ipairs({ settings_entries, navigation_entries }) do
+    for _, entry in ipairs(entries) do
+        local route = GUI:ResolveV2SectionNavigation(entry.tabIndex, entry.sectionName, entry.tileId)
+        if route then
+            entry.tileId = route.tileId
+            entry.subPageIndex = route.subPageIndex
+            local tile = GUI:FindV2TileByID(frame, route.tileId)
+            entry.subTabName = tile.config.subPages[route.subPageIndex].name
+        end
+    end
+end
+GUI.MainFrame = previousFrame
+
 -- Records are emitted POSITIONALLY under a per-group schema header, and the
 -- whole payload ships as a long-bracket string. The keyed, indented table this
 -- replaced was 3,179,748 bytes of which ~69% was `["field"] = ` scaffolding,
@@ -3417,6 +3531,8 @@ pack_emit.assert_long_bracket_safe(packed, "]==]")
 local output = table.concat({
     "-- Generated by tools/generate_search_cache.lua; do not edit by hand.",
     "local ADDON_NAME, ns = ...",
+    "",
+    "ns.QUI_OptionsNavigationCatalog = " .. pack_emit.quote(navigation_catalog),
     "",
     "ns.QUI_SearchCacheSchema = {",
     "    settings = " .. pack_emit.schema(settings_schema) .. ",",

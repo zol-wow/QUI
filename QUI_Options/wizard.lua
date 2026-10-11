@@ -392,6 +392,7 @@ PAGES = {
                 if QUI and QUI.SafeReload then QUI:SafeReload() end
             end)
             reload:SetPoint("TOPLEFT", 0, sy - 8)
+            if QUI and QUI.BindReloadButton then QUI:BindReloadButton(reload) end
         end,
     },
 }

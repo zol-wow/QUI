@@ -204,6 +204,46 @@ ns.QUI_GroupFrameIconLayout.HEADER_INIT_CONFIG_FUNC = [[
         self:GetParent():CallMethod("QUI_OnChildCreated", self:GetName())
     ]]
 
+function ns.QUI_GroupFrameIconLayout.ConfigureHeaderInitialization(header, initConfigFunc)
+    if not (ns.Client and ns.Client.restrictedExecutionUnavailable) then
+        header:SetAttribute("initialConfigFunction", initConfigFunc)
+        return
+    end
+    header:SetAttribute("initialConfigFunction", nil)
+    header:SetAttribute("_initialAttributeNames", "*type1,*type2")
+    header:SetAttribute("_initialAttribute-*type1", "target")
+    header:SetAttribute("_initialAttribute-*type2", "togglemenu")
+    if not header._quiNativeChildHook then
+        header._quiNativeChildHook = true
+        header:HookScript("OnAttributeChanged", function(self, name, child)
+            if not name:match("^child%d+$") or not child
+                or (InCombatLockdown() and not _state.inInitSafeWindow) then return end
+            child:SetSize(self:GetAttribute("qui-unit-width") or 200, self:GetAttribute("qui-unit-height") or 40)
+            ns.QUI_GroupFrames:InitializeHeaderChild(child)
+        end)
+    end
+end
+
+function ns.QUI_GroupFrameIconLayout.PreallocateHeaderChildren(header, count)
+    if not (ns.Client and ns.Client.restrictedExecutionUnavailable)
+        or (InCombatLockdown() and not _state.inInitSafeWindow) then return end
+    if header:GetAttribute("child" .. count) then return end
+    local attributes = { "showSolo", "showPlayer", "startingIndex", "maxColumns", "unitsPerColumn" }
+    local saved = {}
+    for _, name in ipairs(attributes) do saved[name] = header:GetAttribute(name) end
+    local shown = header:IsShown()
+    header:Hide()
+    header:SetAttribute("showSolo", true)
+    header:SetAttribute("showPlayer", true)
+    header:SetAttribute("maxColumns", 1)
+    header:SetAttribute("unitsPerColumn", count)
+    header:SetAttribute("startingIndex", -count)
+    header:Show()
+    header:Hide()
+    for _, name in ipairs(attributes) do header:SetAttribute(name, saved[name]) end
+    if shown then header:Show() end
+end
+
 local GetCachedBackdrop    = Chrome.GetCachedBackdrop
 local EnsureBackdrop       = Chrome.EnsureBackdrop
 local SetBackdropFillColor = Chrome.SetBackdropFillColor
@@ -309,6 +349,7 @@ local _pending = {
     resizeForce = false,
     refreshSettings = false,
     visibilityUpdate = false,
+    headerRosterRefresh = false,
     registerClicks = false,
     groupReflow = false,
     anchorUpdate = false,
@@ -3111,9 +3152,10 @@ function _state.EnsureRaidHeaders()
         or groupBy == "GROUP" and 8 or 1
     if useSections then
         local ready = #QUI_GF.raidGroupHeaders >= count
-        if ready and groupBy == "GROUP" then
+        if ready and (groupBy == "GROUP" or (ns.Client and ns.Client.restrictedExecutionUnavailable)) then
+            local capacity = groupBy == "GROUP" and 5 or 40
             for g = 1, count do
-                if not QUI_GF.raidGroupHeaders[g]:GetAttribute("child5") then
+                if not QUI_GF.raidGroupHeaders[g]:GetAttribute("child" .. capacity) then
                     ready = false
                     break
                 end
@@ -3151,7 +3193,7 @@ function _state.EnsureRaidHeaders()
             end
             header:SetAttribute("template", "SecureUnitButtonTemplate,BackdropTemplate,PingableUnitFrameTemplate")
             header.QUI_OnChildCreated = QUI_GF.HeaderChildCreated
-            header:SetAttribute("initialConfigFunction", ns.QUI_GroupFrameIconLayout.HEADER_INIT_CONFIG_FUNC)
+            ns.QUI_GroupFrameIconLayout.ConfigureHeaderInitialization(header, ns.QUI_GroupFrameIconLayout.HEADER_INIT_CONFIG_FUNC)
             header:SetMovable(true)
             header:SetClampedToScreen(true)
             header:SetSize(w, h)
@@ -3198,6 +3240,13 @@ function _state.EnsureRaidHeaders()
             if headerShown then header:Show() end
         end
     end
+    if ns.Client and ns.Client.restrictedExecutionUnavailable then
+        raidRoot:Show()
+        for g = 1, useSections and count or 1 do
+            local header = useSections and QUI_GF.raidGroupHeaders[g] or QUI_GF.headers.raid
+            ns.QUI_GroupFrameIconLayout.PreallocateHeaderChildren(header, groupBy == "GROUP" and useSections and 5 or 40)
+        end
+    end
     if not rootShown then raidRoot:Hide() end
     _state.ApplyHUDLayering()
 end
@@ -3214,7 +3263,7 @@ local function CreateHeaders()
     local partyHeader = CreateFrame("Frame", "QUI_PartyHeader", partyRoot, "SecureGroupHeaderTemplate")
     partyHeader:SetAttribute("template", "SecureUnitButtonTemplate,BackdropTemplate,PingableUnitFrameTemplate")
     partyHeader.QUI_OnChildCreated = QUI_GF.HeaderChildCreated
-    partyHeader:SetAttribute("initialConfigFunction", initConfigFunc)
+    ns.QUI_GroupFrameIconLayout.ConfigureHeaderInitialization(partyHeader, initConfigFunc)
     QUI_GF.headers.party = partyHeader
     ConfigurePartyHeader(partyHeader)
 
@@ -3257,7 +3306,7 @@ local function CreateHeaders()
     local selfHeader = CreateFrame("Frame", "QUI_SelfHeader", partyRoot, "SecureGroupHeaderTemplate")
     selfHeader:SetAttribute("template", "SecureUnitButtonTemplate,BackdropTemplate,PingableUnitFrameTemplate")
     selfHeader.QUI_OnChildCreated = QUI_GF.HeaderChildCreated
-    selfHeader:SetAttribute("initialConfigFunction", initConfigFunc)
+    ns.QUI_GroupFrameIconLayout.ConfigureHeaderInitialization(selfHeader, initConfigFunc)
     QUI_GF.headers.self = selfHeader
     selfHeader:SetAttribute("showPlayer", true)
     selfHeader:SetAttribute("showParty", false)
@@ -3348,7 +3397,7 @@ local function ApplySpotlightHeaderConfig(container, header, spot)
 
     header:SetAttribute("template", "SecureUnitButtonTemplate,BackdropTemplate,PingableUnitFrameTemplate")
     header.QUI_OnChildCreated = QUI_GF.HeaderChildCreated
-    header:SetAttribute("initialConfigFunction", initConfigFunc)
+    ns.QUI_GroupFrameIconLayout.ConfigureHeaderInitialization(header, initConfigFunc)
     header:SetAttribute("showRaid", true)
     header:SetAttribute("showParty", false)
     header:ClearAllPoints()
@@ -3426,6 +3475,7 @@ local function CreateSpotlightHeader()
     QUI_GF.spotlightContainer = container
 
     container:Show()
+    ns.QUI_GroupFrameIconLayout.PreallocateHeaderChildren(header, 40)
     header:Show()
 
     C_Timer.After(0, function()
@@ -3857,6 +3907,13 @@ _state.EnsureCombatVisibleRoots = function()
     end
 end
 
+_state.RefreshHeaderRoster = function(header)
+    if not header or not header:IsShown() then return end
+    -- Unchanged layout attributes do not trigger a secure membership update.
+    -- Toggle a dedicated attribute so FrameXML re-reads units after world entry.
+    header:SetAttribute("qui-roster-refresh", not header:GetAttribute("qui-roster-refresh"))
+end
+
 local function UpdateHeaderVisibility(skipDeferredRefresh)
     if InCombatLockdown() and not _state.inInitSafeWindow then
         _state.EnsureCombatVisibleRoots()
@@ -3960,6 +4017,17 @@ local function UpdateHeaderVisibility(skipDeferredRefresh)
     end
 
     UpdateHeaderSizes()
+
+    if _pending.headerRosterRefresh then
+        _pending.headerRosterRefresh = false
+        for _, header in pairs(QUI_GF.headers) do
+            _state.RefreshHeaderRoster(header)
+        end
+        for _, header in ipairs(QUI_GF.raidGroupHeaders) do
+            _state.RefreshHeaderRoster(header)
+        end
+        _state.RefreshHeaderRoster(QUI_GF.spotlightHeader)
+    end
 
     _pending.initSafe = false
 
@@ -4156,6 +4224,8 @@ local _range = {
 }
 
 local function ResolveRangeSpells()
+    local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+    local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
     if not _range.playerClass then
         _range.playerClass = select(2, UnitClass("player"))
     end
@@ -4736,6 +4806,10 @@ local function OnEvent(self, event, arg1, ...)
     elseif event == "PLAYER_REGEN_ENABLED" then
         wipe(_range.cache)
         wipe(_range.cacheTime)
+        local AuraRender = ns.QUI_GroupFrameAuraRender
+        if AuraRender and AuraRender.FlushDeferredCooldowns then
+            AuraRender.FlushDeferredCooldowns()
+        end
 
         -- Combat-end true-up: indicator reads that were secret during combat
         -- have no change event to repaint them once they become readable, so
@@ -4788,6 +4862,9 @@ local function OnEvent(self, event, arg1, ...)
         end
     elseif event == "PLAYER_ENTERING_WORLD" then
         C_Timer.After(0.5, function()
+            -- ADDON_LOADED may precede player/roster data on a cold login.
+            -- Keep this pending if visibility updates must wait for combat.
+            _pending.headerRosterRefresh = true
             UpdateHeaderVisibility()
             UpdateFrameScaling(true)
             ResolveRangeSpells()

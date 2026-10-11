@@ -64,9 +64,7 @@ end
 
 local function HideButtonStateTextures(button)
     if not button then return end
-    if button.GetHighlightTexture then ClampTexture(button:GetHighlightTexture()) end
     if button.GetPushedTexture then ClampTexture(button:GetPushedTexture()) end
-    if button.GetCheckedTexture then ClampTexture(button:GetCheckedTexture()) end
     if button.GetDisabledTexture then ClampTexture(button:GetDisabledTexture()) end
 end
 
@@ -87,6 +85,8 @@ local function HideMailButtonDecor(button)
     PreserveButtonTexture(preserved, button.IconBorder)
     PreserveButtonTexture(preserved, button.IconOverlay)
     PreserveButtonTexture(preserved, button.IconOverlay2)
+    if button.GetHighlightTexture then PreserveButtonTexture(preserved, button:GetHighlightTexture()) end
+    if button.GetCheckedTexture then PreserveButtonTexture(preserved, button:GetCheckedTexture()) end
 
     HideFrameTexturesExcept(button, preserved)
 
@@ -97,16 +97,44 @@ local function HideMailButtonDecor(button)
     end
 end
 
+local function RefreshMailIconBorder(button)
+    if not IsSettingEnabled("skinMail") or (button.IsForbidden and button:IsForbidden()) then return end
+    local nativeBorder = button.IconBorder
+    local backdrop = SkinBase.GetBackdrop(button)
+    if not nativeBorder or not backdrop then return end
+    local r, g, b, a = SkinBase.GetWindowColors()
+    if nativeBorder:IsShown() and nativeBorder.GetVertexColor then
+        r, g, b, a = nativeBorder:GetVertexColor()
+    end
+    SkinBase.SetBackdropColors(backdrop, { r, g, b, a or 1 }, nil)
+end
+
 local function SkinMailIconButton(button)
-    if not button then return end
+    if not button or (button.IsForbidden and button:IsForbidden()) then return end
 
     HideButtonStateTextures(button)
     HideMailButtonDecor(button)
 
+    local icon = button.Icon or button.icon or (button.GetNormalTexture and button:GetNormalTexture())
+    if icon then SkinBase.RoundIconTexture(button, icon) end
+    local highlight = button.GetHighlightTexture and button:GetHighlightTexture()
+    if highlight then
+        highlight:SetColorTexture(1, 1, 1, 0.12)
+        highlight:SetAllPoints(button)
+        SkinBase.RoundIconTexture(button, highlight)
+    end
+    local checked = button.GetCheckedTexture and button:GetCheckedTexture()
+    if checked then
+        local r, g, b = SkinBase.GetSkinColors()
+        checked:SetColorTexture(r, g, b, 0.25)
+        checked:SetAllPoints(button)
+        SkinBase.RoundIconTexture(button, checked)
+    end
+
     if SkinBase.IsStyled(button) then
         SkinBase.RefreshWidget(button)
     else
-        local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetSkinColors()
+        local sr, sg, sb, sa, bgr, bgg, bgb = SkinBase.GetWindowColors()
         SkinBase.CreateBackdrop(button, sr, sg, sb, sa,
             min(bgr + ICON_BUTTON_BG_BOOST, 1),
             min(bgg + ICON_BUTTON_BG_BOOST, 1),
@@ -119,17 +147,51 @@ local function SkinMailIconButton(button)
         SkinBase.MarkStyled(button)
     end
 
+    if button.IconBorder then
+        if not SkinBase.GetFrameData(button, "qMailQualityHooked") then
+            for _, method in ipairs({ "SetVertexColor", "Show", "Hide", "SetShown" }) do
+                if button.IconBorder[method] then
+                    hooksecurefunc(button.IconBorder, method, function() RefreshMailIconBorder(button) end)
+                end
+            end
+            SkinBase.SetFrameData(button, "qMailQualityHooked", true)
+        end
+        SkinBase.ClampTextureHidden(button.IconBorder, true)
+        RefreshMailIconBorder(button)
+    end
     SkinBase.LockPooledRowText(button, 2)
+end
+
+local function SkinMailLabels(frame)
+    if not frame or not frame.GetNumRegions then return end
+    for i = 1, frame:GetNumRegions() do
+        local region = select(i, frame:GetRegions())
+        if region and region.IsObjectType and region:IsObjectType("FontString") then
+            SkinBase.SkinFontString(region, { color = { 0.95, 0.95, 0.95, 1 } })
+        end
+    end
+end
+
+local function SkinMailTitle(frame)
+    if not frame then return end
+    local title = frame.GetTitleText and frame:GetTitleText()
+    title = title or frame.TitleText or (frame.TitleContainer and frame.TitleContainer.TitleText)
+    SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
+    SkinBase.LockFontObject(title, { color = { 1, 1, 1, 1 } })
 end
 
 local function SkinInboxArtwork()
     HideMailArtwork(_G.InboxFrameBg)
+    SkinMailTitle(_G.MailFrame)
+    SkinMailLabels(_G.InboxPrevPageButton)
+    SkinMailLabels(_G.InboxNextPageButton)
 
     if _G.InboxPrevPageButton then SkinBase.SkinNextPrevButton(_G.InboxPrevPageButton, "prev") end
     if _G.InboxNextPageButton then SkinBase.SkinNextPrevButton(_G.InboxNextPageButton, "next") end
 end
 
 local function SkinMailItems()
+    if not IsSettingEnabled("skinMail") then return end
     SkinInboxArtwork()
 
     for i = 1, 7 do
@@ -146,13 +208,27 @@ local function SkinMailItems()
 end
 
 local function SkinMoneyInputFrame(moneyInput)
-    if not moneyInput then return end
-    local gold = moneyInput.gold or moneyInput.GoldBox
-    local silver = moneyInput.silver or moneyInput.SilverBox
-    local copper = moneyInput.copper or moneyInput.CopperBox
-    if gold then SkinBase.SkinEditBox(gold) end
-    if silver then SkinBase.SkinEditBox(silver) end
-    if copper then SkinBase.SkinEditBox(copper) end
+    if not moneyInput or (moneyInput.IsForbidden and moneyInput:IsForbidden()) then return end
+    local fields = {
+        moneyInput.gold or moneyInput.GoldBox,
+        moneyInput.silver or moneyInput.SilverBox,
+        moneyInput.copper or moneyInput.CopperBox,
+    }
+    for i = 1, 3 do
+        local field = fields[i]
+        if field and not (field.IsForbidden and field:IsForbidden()) then
+            local coin = field.texture or field.Icon
+            local alpha = coin and coin:GetAlpha()
+            SkinBase.SkinEditBox(field, { font = false })
+            if coin then coin:SetAlpha(alpha) end
+            SkinBase.SkinFontString(field, { fontOnly = true })
+            SkinBase.LockFontObject(field, { fontOnly = true })
+            local symbol = field.label or field.CurrencySymbol
+            SkinBase.SkinFontString(symbol, { fontOnly = true })
+            SkinBase.LockFontObject(symbol, { fontOnly = true })
+            SkinBase.RefreshWidget(field)
+        end
+    end
 end
 
 local function SkinSendMailArtwork()
@@ -166,11 +242,28 @@ local function SkinSendMailArtwork()
 end
 
 local function SkinSendMailControls()
+    if not IsSettingEnabled("skinMail") then return end
     SkinSendMailArtwork()
+    SkinMailTitle(_G.MailFrame)
+    SkinMailLabels(_G.SendMailNameEditBox)
+    SkinMailLabels(_G.SendMailSubjectEditBox)
+    SkinMailLabels(_G.SendMailCostMoneyFrame)
+    SkinBase.SkinFontString(_G.SendMailMoneyText, { color = { 0.95, 0.95, 0.95, 1 } })
+    local scroll = _G.SendMailScrollFrame
+    SkinBase.SkinTrimScrollBar(scroll and scroll.ScrollBar or _G.SendMailScrollFrameScrollBar)
+    if scroll then
+        local sr, sg, sb, sa = SkinBase.GetWindowColors()
+        local r, g, b, a = SkinBase.GetDepthColor("SUBPANEL")
+        SkinBase.CreateBackdrop(scroll, sr, sg, sb, sa * 0.5, r, g, b, a, 4)
+        LowerFrameBackdrop(scroll)
+    end
 
     if _G.SendMailNameEditBox then SkinBase.SkinEditBox(_G.SendMailNameEditBox) end
     if _G.SendMailSubjectEditBox then SkinBase.SkinEditBox(_G.SendMailSubjectEditBox) end
-    if _G.SendMailBodyEditBox then SkinBase.SkinEditBox(_G.SendMailBodyEditBox) end
+    if _G.SendMailBodyEditBox then
+        SkinBase.SkinFontString(_G.SendMailBodyEditBox)
+        SkinBase.LockFontObject(_G.SendMailBodyEditBox, { fontOnly = true })
+    end
 
     SkinMoneyInputFrame(_G.SendMailMoney)
     SkinBase.SkinButton(_G.SendMailCancelButton)
@@ -256,6 +349,7 @@ local function RecolorOpenMailText()
 end
 
 local function SkinOpenMailFrame()
+    if not IsSettingEnabled("skinMail") then return end
     local frame = _G.OpenMailFrame
     if not frame then return end
 
@@ -266,6 +360,9 @@ local function SkinOpenMailFrame()
 
     LowerFrameBackdrop(frame)
     SkinOpenMailArtwork()
+    SkinMailTitle(frame)
+    local scroll = _G.OpenMailScrollFrame
+    SkinBase.SkinTrimScrollBar(scroll and scroll.ScrollBar or _G.OpenMailScrollFrameScrollBar)
     RecolorOpenMailText()
     SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
     SkinBase.SkinButton(_G.OpenMailReportSpamButton)
@@ -295,7 +392,7 @@ local function SkinMail()
     local frame = _G.MailFrame
     if frame and not SkinBase.IsSkinned(frame) then
         SkinBase.SkinButtonFrameTemplate(frame)
-        SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("MailFrame", 2), frame, { resizeToText = true })
+        SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("MailFrame", 2), frame, { resizeToText = true, dockBottom = true })
         SkinBase.MarkSkinned(frame)
     end
     if frame then

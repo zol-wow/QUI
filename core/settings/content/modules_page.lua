@@ -185,23 +185,11 @@ local function CreateModuleTogglePill(parent, featureId, entry)
 end
 
 local function BuildModuleCell(parent, item)
-    local cell = CreateFrame("Frame", nil, parent)
-    cell:SetHeight(32)
-
     local entry = item.entry
     local label = item.label
-
-    local nameLabel = cell:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    local nameColor = C and C.text or {0.953, 0.957, 0.965, 1}
-    nameLabel:SetTextColor(nameColor[1], nameColor[2], nameColor[3], nameColor[4] or 1)
-    nameLabel:SetText(label)
-    nameLabel:SetJustifyH("LEFT")
-    nameLabel:SetWordWrap(false)
-    nameLabel:SetPoint("LEFT", cell, "LEFT", 0, 0)
-    nameLabel:SetPoint("RIGHT", cell, "RIGHT", -30, 0)
-
-    local pill = CreateModuleTogglePill(cell, item.id, entry)
-    pill:SetPoint("RIGHT", cell, "RIGHT", 0, 0)
+    local pill = CreateModuleTogglePill(parent, item.id, entry)
+    local cell = Shared.BuildSettingRow(parent, label, pill)
+    local nameLabel = cell._label
 
     if entry.caption and entry.caption ~= "" then
         cell:EnableMouse(true)
@@ -391,7 +379,7 @@ if Registry and Schema
     Registry:RegisterFeature(Schema.Feature({
         id = "modulesPage",
         category = "global",
-        nav = { tileId = "global", subPageId = "modules" },
+        nav = { tileId = "global", subPageIndex = 3 },
         sections = {
             Schema.Section({
                 id = "modulesList",

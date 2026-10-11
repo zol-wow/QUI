@@ -14,6 +14,7 @@ local CAST_PROGRESS = 0.62
 local PREVIEW_BASE_OFFSET_X = 0
 local PREVIEW_BASE_OFFSET_Y = 0
 local PREVIEW_MEASURE_ATTEMPTS = 4
+local previewZoom = 1
 
 local PREVIEW_DEFAULT_STATE = {
     reaction = "hostile",
@@ -104,6 +105,7 @@ local function StampPreviewType(plate, settings)
     local mode = (np and np.ResolveRenderMode and np.ResolveRenderMode(typeSettings)) or "bars"
     if key == "friendly" and FriendlyIsOff(settings) then mode = "off" end
     plate.npRenderMode = mode
+    plate.npIsTarget = PreviewState().isTarget == true
     plate.npReaction = ReactionNameFor(fake.reaction)
     plate.npIsPlayer = fake.isPlayer == true
     plate.npClassToken = plate.npIsPlayer and PlayerClassToken() or nil
@@ -476,10 +478,36 @@ local function MeasureAndPlace()
     local contentH = (bounds.top - bounds.bottom) / hostEff
     if contentW <= 0 or contentH <= 0 then return false end
 
+    if host._npPreviewFit and state.observer then
+        -- Recover requested magnification after fitting, so repeated measures
+        -- cannot progressively shrink the card. Width fitting also limits height.
+        local ratio = (state.requestedScale or plate:GetScale()) / plate:GetScale()
+        local requestedW, requestedH = contentW * ratio, contentH * ratio
+        local widthFit = math.min(1, math.max(1, host:GetWidth() - 16) / requestedW)
+        state.observer(contentW, contentH, requestedH * widthFit)
+    end
+
+    -- Fit the painted composition, including icons outside the health bar,
+    -- into the fixed preview viewport. Live plate geometry stays untouched.
+    if host._npPreviewFit then
+        local availableW = math.max(1, host:GetWidth() - 16)
+        local availableH = math.max(1, host:GetHeight() - 16)
+        local fit = math.min(1, availableW / contentW, availableH / contentH)
+        if fit < 0.999 then
+            plate:SetScale(plate:GetScale() * fit)
+            return false -- remeasure after WoW has applied the new scale
+        end
+    end
+
     local hostLeft, hostTop = host:GetLeft(), host:GetTop()
     if hostLeft and hostTop then
-        local dx = (hostLeft * hostEff - bounds.left) / plateEff
-        local dy = (hostTop * hostEff - bounds.top) / plateEff
+        local insetX, insetY = 0, 0
+        if host._npPreviewFit then
+            insetX = (host:GetWidth() - contentW) / 2
+            insetY = (host:GetHeight() - contentH) / 2
+        end
+        local dx = ((hostLeft + insetX) * hostEff - bounds.left) / plateEff
+        local dy = ((hostTop - insetY) * hostEff - bounds.top) / plateEff
         if math.abs(dx) >= 0.5 or math.abs(dy) >= 0.5 then
             state.offsetX = (state.offsetX or PREVIEW_BASE_OFFSET_X) + dx
             state.offsetY = (state.offsetY or PREVIEW_BASE_OFFSET_Y) + dy
@@ -493,7 +521,7 @@ local function MeasureAndPlace()
     end
 
     state.extentW, state.extentH = contentW, contentH
-    if state.observer then
+    if state.observer and not host._npPreviewFit then
         state.observer(contentW, contentH)
     end
     return true
@@ -507,7 +535,10 @@ local function RequestMeasure(attempt)
     local function Apply()
         host._npPreviewMeasurePending = nil
         if state.host ~= host then return end
-        if MeasureAndPlace() then return end
+        if MeasureAndPlace() then
+            if host._npPreviewFit then host:SetAlpha(1) end
+            return
+        end
         local next = (attempt or 1) + 1
         if next <= PREVIEW_MEASURE_ATTEMPTS then
             RequestMeasure(next)
@@ -527,6 +558,7 @@ local function BuildPreviewPlate(host)
 
     local plate = CreateFrame("Frame", nil, host)
     plate:SetSize(1, 1)
+    if plate.SetIgnoreParentScale then plate:SetIgnoreParentScale(true) end
     plate:SetPoint("TOPLEFT", host, "TOPLEFT", PREVIEW_BASE_OFFSET_X, PREVIEW_BASE_OFFSET_Y)
 
     local core = ns.Addon
@@ -563,11 +595,17 @@ local function Refresh()
     local settings = GetSettings()
     local np = NP()
     if not settings or not np then return end
+    -- WoW settles painted bounds on the next frame. Keep the requested zoom
+    -- invisible until measurement has fitted and positioned the specimen.
+    if host._npPreviewFit then host:SetAlpha(0) end
     StampPreviewType(plate, settings)
     local typeSettings = GetTypeSettings(plate) or {}
 
     local core = PushLivePixelReference()
 
+    if np.Driver and np.Driver.PinPlateScale then np.Driver.PinPlateScale(plate) end
+    if previewZoom ~= 1 then plate:SetScale(plate:GetScale() * previewZoom) end
+    state.requestedScale = plate:GetScale()
     np.Health.ApplyAppearance(plate, typeSettings)
     np.Castbar.ApplyAppearance(plate, typeSettings)
     if np.Extras and np.Extras.ApplyAppearance then
@@ -588,6 +626,14 @@ local function Refresh()
     RequestMeasure()
 end
 
+function PreviewDriver.SetZoom(value)
+    if value ~= 1 and value ~= 2 and value ~= 3 then return false end
+    if previewZoom == value then return false end
+    previewZoom = value
+    Refresh()
+    return true
+end
+
 function PreviewDriver.SetSelectedType(key)
     if type(key) ~= "string" or not FAKE_STATE[key] then return false end
     if selectedType == key then return false end
@@ -605,6 +651,11 @@ function ns.QUI_BuildNameplatePreview(host)
         if not bound then
             local plate = BuildPreviewPlate(host)
             if plate then
+                if ns.UIKit and ns.UIKit.RegisterScaleRefresh then
+                    ns.UIKit.RegisterScaleRefresh(plate, "nameplatePreview", function(owner)
+                        if owner == state.plate and owner:IsVisible() then Refresh() end
+                    end)
+                end
                 bound = {
                     plate = plate,
                     offsetX = PREVIEW_BASE_OFFSET_X,

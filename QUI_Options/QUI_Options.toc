@@ -1,9 +1,9 @@
-## Interface: 120100
+## Interface: 120100, 120105, 16001
 ## Title: |cFF30D1FFQUI|r Options
 ## IconTexture: Interface\AddOns\QUI\assets\QUI
 ## Notes: Configuration UI for QUI
 ## Author: Zol and Drew
-## Version: 5.3.1
+## Version: 5.5.0-beta3
 ## Category: User Interface
 ## Group: QUI
 ## RequiredDeps: QUI
@@ -35,6 +35,7 @@ framework.lua
 border_control.lua
 reorder_list.lua
 shared.lua
+navigation.lua
 wizard.lua
 # Options-only settings framework, deferred out of the login path. Every
 # consumer reaches these lazily (inside a function) from UI-build code; none
@@ -79,6 +80,8 @@ tiles\help_content.lua
 ..\QUI_Chat\chat\settings\chat_features.lua
 ..\QUI_Chat\chat\settings\chat_frame1_provider.lua
 ..\QUI\modules\combat\settings\rotation_assist.lua
+..\QUI_Reminders\spell_reminders\settings\spell_reminders.lua
+..\QUI_Reminders\spell_reminders\settings\spell_reminder_tracking.lua
 ..\QUI_DamageMeter\damage_meter\settings\damage_meter_content.lua
 ..\QUI_Reminders\reminders\settings\reminders_content.lua
 ..\QUI\modules\dungeon\settings\mplus_timer.lua
@@ -115,6 +118,7 @@ aura_elements_editor.lua
 ..\QUI\modules\qol\settings\consumables.lua
 ..\QUI\modules\qol\settings\combat_timer.lua
 ..\QUI\modules\qol\settings\lust_timer.lua
+..\QUI\modules\qol\settings\swing_timers_content.lua
 ..\QUI\modules\qol\settings\tooltip_anchor.lua
 ..\QUI\modules\qol\settings\provider_panels.lua
 ..\QUI\modules\qol\settings\action_tracker.lua
@@ -176,6 +180,7 @@ tiles\resource_bars.lua
 tiles\appearance.lua
 tiles\chat_tooltips.lua
 tiles\gameplay.lua
+tiles\reminders.lua
 tiles\qol.lua
 tiles\bags.lua
 tiles\alts.lua

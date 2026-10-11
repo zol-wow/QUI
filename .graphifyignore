@@ -4,3 +4,4 @@
 tests/framexml/
 tests/api-docs/
 graphify-out/
+tests/clients/

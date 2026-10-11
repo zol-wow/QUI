@@ -191,6 +191,12 @@ local function RenderControlsSection(sectionHost, ctx, section)
             widget:ClearAllPoints()
             if index == 1 then
                 widget:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", field.offsetX or 0, field.offsetY or topOffset)
+                C_Timer.After(0, function()
+                    if widget:GetParent() == sectionHost then
+                        widget:ClearAllPoints()
+                        widget:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", field.offsetX or 0, field.offsetY or topOffset)
+                    end
+                end)
             else
                 widget:SetPoint(
                     field.point or "LEFT",
@@ -219,6 +225,7 @@ local function RenderProviderSection(sectionHost, ctx, section)
 
     local width = math.max(300, (ctx.width or 0) - ((ctx.surface.padding or 10) * 2))
     local providerOptions = MergeOptions({
+        providerPage = ctx.options and ctx.options.providerPage,
         includePosition = ctx.options and ctx.options.includePosition,
         tileLayout = ctx.options and ctx.options.tileLayout,
         layoutModePositionOnly = ctx.options and ctx.options.layoutModePositionOnly,
@@ -275,12 +282,14 @@ local SECTION_RENDERERS = {
 }
 
 local function LayoutSections(runtime)
+    runtime._layingOut = true
     local surface = runtime.surface or {}
     local pad = surface.padding or 10
     local gap = surface.sectionGap or 8
     local topPad = surface.topPadding or 10
     local bottomPad = surface.bottomPadding or 10
     local y = -topPad
+    local previousHost, previousGap
 
     for _, sectionId in ipairs(runtime.sectionOrder) do
         local sectionHost = runtime.sectionHosts[sectionId]
@@ -288,10 +297,19 @@ local function LayoutSections(runtime)
             local section = runtime.sectionsById[sectionId]
             local height = math.max(runtime.sectionHeights[sectionId] or section.minHeight or 1, 1)
             sectionHost:ClearAllPoints()
-            sectionHost:SetPoint("TOPLEFT", runtime.host, "TOPLEFT", pad, y)
-            sectionHost:SetPoint("RIGHT", runtime.host, "RIGHT", -pad, 0)
+            if previousHost then
+                sectionHost:SetPoint("TOPLEFT", previousHost, "BOTTOMLEFT", 0, -previousGap)
+            else
+                sectionHost:SetPoint("TOPLEFT", runtime.host, "TOPLEFT", pad, -topPad)
+            end
+            if sectionHost._quiRecoveredBounds then
+                sectionHost:SetWidth(math.max(1, runtime.host:GetWidth() - pad * 2))
+            else
+                sectionHost:SetPoint("RIGHT", runtime.host, "RIGHT", -pad, 0)
+            end
             sectionHost:SetHeight(height)
-            y = y - height - (section and section.gapAfter or gap)
+            previousHost, previousGap = sectionHost, section and section.gapAfter or gap
+            y = y - height - previousGap
         end
     end
 
@@ -299,6 +317,7 @@ local function LayoutSections(runtime)
     if runtime.host.SetHeight then
         runtime.host:SetHeight(total)
     end
+    runtime._layingOut = nil
     return total
 end
 
@@ -319,6 +338,33 @@ local function RenderSection(runtime, sectionId)
         runtime.sectionHosts[sectionId] = sectionHost
     else
         sectionHost:SetParent(runtime.host)
+    end
+    if sectionHost:GetWidth() <= 0 then
+        sectionHost:SetWidth(math.max(300, runtime.host:GetWidth() - ((runtime.surface.padding or 10) * 2)))
+    end
+    runtime._rendering = true
+    sectionHost._quiSettingsSectionId = sectionId
+    local layoutShared = ns.QUI_SettingsLayoutShared
+    if layoutShared and layoutShared.VerifyInitialBounds then
+        layoutShared.VerifyInitialBounds(sectionHost, runtime.host, function(self)
+            self._quiRecoveredBounds = true
+            LayoutSections(runtime)
+        end)
+    end
+    if sectionHost.HookScript and not sectionHost._quiSettingsHeightHook then
+        sectionHost._quiSettingsHeightHook = true
+        sectionHost:HookScript("OnSizeChanged", function(self)
+            local owner = self:GetParent()
+            local active = owner and owner._quiSettingsRuntime
+            local id = self._quiSettingsSectionId
+            if active and not active._rendering and not active._layingOut
+                and active.sectionHosts[id] == self then
+                local height = self:GetHeight()
+                if height > 0 and height ~= active.sectionHeights[id] then
+                    Schema:ResizeSection(active, id, height)
+                end
+            end
+        end)
     end
     sectionHost:Show()
 
@@ -344,6 +390,7 @@ local function RenderSection(runtime, sectionId)
         (type(height) == "number" and height) or section.minHeight or 1,
         1
     )
+    runtime._rendering = nil
     return runtime.sectionHeights[sectionId]
 end
 
@@ -448,5 +495,12 @@ function Schema:RenderFeature(feature, host, options)
     end
 
     host._quiSettingsRuntime = runtime
+    if host.HookScript and not host._quiSettingsWidthHook then
+        host._quiSettingsWidthHook = true
+        host:HookScript("OnSizeChanged", function(self)
+            local active = self._quiSettingsRuntime
+            if active and not active._rendering and not active._layingOut then LayoutSections(active) end
+        end)
+    end
     return self:RerenderFeature(runtime)
 end

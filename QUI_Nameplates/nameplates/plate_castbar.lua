@@ -306,7 +306,7 @@ function NPCastbar.ApplyAppearance(plate, settings)
     local castAnchorTo = (plate.npPowerBarEnabled and plate.powerBar) or plate.healthBar
     castBar:SetPoint("TOP", castAnchorTo, "BOTTOM", 0, -QUICore:Pixels((cast.gap or 0) + 1, plate))
     local castTexName = (cast.texture and cast.texture ~= "") and cast.texture or health.texture
-    castBar:SetStatusBarTexture(GetBarTexture(castTexName))
+    Helpers.ApplyBarStyle(castBar, GetBarTexture(castTexName))
     local tex = castBar:GetStatusBarTexture()
     if tex then
         tex:SetHorizTile(false)

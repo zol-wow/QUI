@@ -1,3 +1,4 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
 local _, ns = ...
 local Helpers = ns.Helpers
 local QUICore = ns.Addon
@@ -138,6 +139,7 @@ function _resolverRuntimePolicy.ApplyDurationObjectCooldown(cd, durObj, clearWhe
         clearWhenZero = true
     end
 
+    if Helpers.CanMutateCooldown and not Helpers.CanMutateCooldown(cd) then return false end
     cd.SetCooldownFromDurationObject(cd, durObj, clearWhenZero)
     if reverse ~= nil and cd.SetReverse then
         cd.SetReverse(cd, reverse and true or false)
@@ -1169,7 +1171,7 @@ ApplyResolvedCooldown = function(icon, preResolvedState, trustIsOnGCD)
                 if addonCD.SetReverse then
                     addonCD.SetReverse(addonCD, false)
                 end
-                addonCD:Clear()
+                if Helpers.ClearCooldown then Helpers.ClearCooldown(addonCD) else addonCD:Clear() end
             end
             _resolverRuntimePolicy.ClearGCDSwipe(icon)
             icon._showingRealCooldownSwipe = nil
@@ -1187,7 +1189,7 @@ ApplyResolvedCooldown = function(icon, preResolvedState, trustIsOnGCD)
                 if addonCD.SetReverse then
                     addonCD.SetReverse(addonCD, false)
                 end
-                addonCD:Clear()
+                if Helpers.ClearCooldown then Helpers.ClearCooldown(addonCD) else addonCD:Clear() end
             end
         end
         _resolverRuntimePolicy.ClearGCDSwipe(icon)
@@ -2018,6 +2020,7 @@ local function ConfigureIcon(icon, rowConfig)
             if icon.Border then icon.Border:Hide() end
             icon._quiBackdrop:Hide()
             icon._quiGloss:Hide()
+            Helpers.ApplyIconStyle(icon, icon.Icon, "External")
         else
             if icon._quiBridged and Bridge then
                 Bridge.RemoveButton("cdm", icon)
@@ -2037,6 +2040,7 @@ local function ConfigureIcon(icon, rowConfig)
                 icon._quiBackdrop:Hide()
                 icon._quiGloss:Hide()
             end
+            Helpers.ApplyIconStyle(icon, icon.Icon, skinName)
         end
     end
 

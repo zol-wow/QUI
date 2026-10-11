@@ -9,7 +9,7 @@ function V2.Register(frame)
         return
     end
 
-    Opts.RegisterFeatureTile(frame, {
+    local tile = {
         id = "gameplay",
         icon = "G",
         name = ns.L["Gameplay"],
@@ -75,18 +75,14 @@ function V2.Register(frame)
                 sectionNav = true,
                 featureId = "preyTrackerPage",
             },
-            {
-                id = "reminders",
-                name = ns.L["Reminders"],
-                sectionNav = true,
-                featureId = "remindersPage",
-                searchContext = {
-                    tileId = "gameplay",
-                    tabName = ns.L["Gameplay"],
-                    subPageIndex = 9,
-                    subTabName = ns.L["Reminders"],
-                },
-            },
         },
-    })
+    }
+    if ns.SwingTimers then
+        tile.subPages[#tile.subPages + 1] = {
+            id = "swingTimers",
+            name = ns.L["Swing Timers"],
+            featureId = "swingTimersPage",
+        }
+    end
+    Opts.RegisterFeatureTile(frame, tile)
 end

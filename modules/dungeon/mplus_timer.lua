@@ -400,9 +400,12 @@ function MPlusTimer:CreateFrames()
     self.frames.sleekBar = sleekBarContainer
     do
         local sr, sg, sb, sa = 0, 0, 0, 1
-        if Helpers and Helpers.GetSkinBorderColor then sr, sg, sb, sa = Helpers.GetSkinBorderColor(GetSettings(), "") end
+        if Helpers and Helpers.GetWindowColors then sr, sg, sb, sa = Helpers.GetWindowColors(GetSettings(), "") end
         local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.9
-        if Helpers and Helpers.GetSkinBgColor then bgr, bgg, bgb, bga = Helpers.GetSkinBgColor() end
+        if Helpers and Helpers.GetWindowColors then
+            local _, _, _, _, r, g, b, a = Helpers.GetWindowColors(GetSettings(), "")
+            bgr, bgg, bgb, bga = r, g, b, a
+        end
         if SkinBase and SkinBase.CreateBackdrop then
             SkinBase.CreateBackdrop(sleekBarContainer, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
@@ -417,7 +420,7 @@ function MPlusTimer:CreateFrames()
 
     for i = 3, 1, -1 do
         local segment = sleekBarContainer:CreateTexture(nil, "ARTWORK")
-        segment:SetTexture("Interface\\Buttons\\WHITE8x8")
+        Helpers.ApplyTextureStyle(sleekBarContainer, segment, "Interface\\Buttons\\WHITE8x8")
         segment:SetVertexColor(unpack(segmentColors[i]))
         segment:SetHeight(SLEEK_BAR_HEIGHT - 2)
         self.sleekSegments[i] = segment
@@ -464,9 +467,12 @@ function MPlusTimer:CreateProgressBar(parent, barType)
     bar.frame = frame
     do
         local sr, sg, sb, sa = 0, 0, 0, 1
-        if Helpers and Helpers.GetSkinBorderColor then sr, sg, sb, sa = Helpers.GetSkinBorderColor(GetSettings(), "") end
+        if Helpers and Helpers.GetWindowColors then sr, sg, sb, sa = Helpers.GetWindowColors(GetSettings(), "") end
         local bgr, bgg, bgb, bga = 0.05, 0.05, 0.05, 0.9
-        if Helpers and Helpers.GetSkinBgColor then bgr, bgg, bgb, bga = Helpers.GetSkinBgColor() end
+        if Helpers and Helpers.GetWindowColors then
+            local _, _, _, _, r, g, b, a = Helpers.GetWindowColors(GetSettings(), "")
+            bgr, bgg, bgb, bga = r, g, b, a
+        end
         if SkinBase and SkinBase.CreateBackdrop then
             SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
         end
@@ -477,7 +483,7 @@ function MPlusTimer:CreateProgressBar(parent, barType)
     statusBar:SetPoint("BOTTOMRIGHT", -1, 1)
     statusBar:SetMinMaxValues(0, 1)
     statusBar:SetValue(0)
-    statusBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    ns.Helpers.ApplyBarStyle(statusBar, "Interface\\Buttons\\WHITE8x8")
     bar.bar = statusBar
 
     local text = statusBar:CreateFontString(nil, "OVERLAY")
@@ -1295,6 +1301,7 @@ function MPlusTimer:RenderAffixIcons()
 
             if iconTexture then
                 iconFrame.icon:SetTexture(iconTexture)
+                Helpers.ApplyIconStyle(iconFrame, iconFrame.icon)
                 iconFrame.affixID = affixID
                 iconFrame:Show()
             end

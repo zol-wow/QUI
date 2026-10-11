@@ -253,7 +253,11 @@ local function StyleSlot(frame, element, index, profileOverrides)
         end
         if not fill then
             fill = CreateFrame("StatusBar", nil, frame)
-            fill:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+            if Helpers and Helpers.ApplyBarStyle then
+                Helpers.ApplyBarStyle(fill, "Interface\\Buttons\\WHITE8x8")
+            else
+                fill:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+            end
             fill:SetAllPoints(frame)
             frame._quiDurationBar = fill
         end

@@ -14,7 +14,7 @@ local pairs = pairs
 local string_find = string.find
 local string_format = string.format
 local string_gsub = string.gsub
-local FoldUTF8 = ns.Helpers.FoldUTF8
+local FoldSearchUTF8 = ns.Helpers.FoldSearchUTF8
 local tostring = tostring
 local type = type
 
@@ -126,7 +126,7 @@ local function StyleSurface(frame, backgroundAlpha, borderColor, borderAlpha, ba
 end
 
 local function NormalizeSearch(text)
-    text = FoldUTF8(text)
+    text = FoldSearchUTF8(text)
     text = string_gsub(text, "%s+", " ")
     text = string_gsub(text, "^%s+", "")
     text = string_gsub(text, "%s+$", "")
@@ -784,13 +784,13 @@ local function SortItems(items, mode)
     if mode == "feature" then
         crumbs = {}
         for i = 1, #items do
-            crumbs[items[i]] = FoldUTF8(BuildBreadcrumb(items[i]))
+            crumbs[items[i]] = FoldSearchUTF8(BuildBreadcrumb(items[i]))
         end
     end
     table.sort(items, function(a, b)
         if mode == "name" then
-            local aName = FoldUTF8(a.label or a.path)
-            local bName = FoldUTF8(b.label or b.path)
+            local aName = FoldSearchUTF8(a.label or a.path)
+            local bName = FoldSearchUTF8(b.label or b.path)
             if aName ~= bName then
                 return aName < bName
             end
@@ -800,8 +800,8 @@ local function SortItems(items, mode)
             if aCrumb ~= bCrumb then
                 return aCrumb < bCrumb
             end
-            local aName = FoldUTF8(a.label or a.path)
-            local bName = FoldUTF8(b.label or b.path)
+            local aName = FoldSearchUTF8(a.label or a.path)
+            local bName = FoldSearchUTF8(b.label or b.path)
             if aName ~= bName then
                 return aName < bName
             end
@@ -1130,8 +1130,8 @@ function Pins:AttachCountChip(header)
     local borderAlpha = count > 0 and 0.3 or 0.18
     local bgAlpha = count > 0 and 0.1 or 0.04
 
-    chip:SetWidth(count >= 100 and 70 or 62)
-    chip.text:SetText(string_format(ns.L["Pin %d"], count))
+    chip.text:SetText(ns.L["Favorites"] .. " " .. tostring(count))
+    chip:SetWidth(math.max(82, chip.text:GetStringWidth() + 20))
     chip.text:SetTextColor(textColor[1], textColor[2], textColor[3], count > 0 and 1 or 0.9)
     StyleSurface(chip, bgAlpha, borderColor, borderAlpha)
 

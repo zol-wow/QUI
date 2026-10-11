@@ -82,6 +82,7 @@ function V2.Register(frame)
                 id = "thirdParty",
                 name = ns.L["Third-party"],
                 featureId = "thirdPartyAnchoring",
+                navRoutes = { { tabIndex = 3, subTabIndex = 7 } },
             },
             {
                 id = "clickCast",
@@ -97,6 +98,16 @@ function V2.Register(frame)
                     tabName = ns.L["Group Frames"],
                     subTabIndex = 1,
                     subTabName = ns.L["Click-Cast"],
+                },
+            },
+            {
+                id = "optionsWindow",
+                name = ns.L["Options Window"],
+                sectionNav = true,
+                featureIds = { "quiPanel", "reloadBehavior" },
+                navRoutes = {
+                    { tabIndex = 17, subTabIndex = 8 },
+                    { tabIndex = 17, subTabIndex = 9 },
                 },
             },
         },

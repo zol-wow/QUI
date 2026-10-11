@@ -315,6 +315,7 @@ local function StepPlaceHoTs(host, ctx, y, C)
 
     local addRow = CreateFrame("Frame", nil, host)
     addRow:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -y)
+    addRow:SetPoint("RIGHT", host, "RIGHT", 0, 0)
     addRow:SetHeight(24)
     local input = CreateFrame("EditBox", nil, addRow, "InputBoxTemplate")
     input:SetSize(70, 20)
@@ -567,6 +568,7 @@ local function BuildAurasWizardContent(host, ctx, section)
     local railRow = CreateFrame("Frame", nil, host)
     railRow:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -y)
     railRow:SetHeight(24)
+    railRow:SetWidth(math.max(#steps * 122, 1))
     local rx = 0
     for i, key in ipairs(steps) do
         local isCurrent = (i == ctx.state.wizardStep)
@@ -580,7 +582,6 @@ local function BuildAurasWizardContent(host, ctx, section)
         btn:SetPoint("TOPLEFT", railRow, "TOPLEFT", rx, 0)
         rx = rx + 122
     end
-    railRow:SetWidth(math.max(rx, 1))
     y = y + 24 + 16
 
     local builder = STEP_BUILDERS[currentKey]

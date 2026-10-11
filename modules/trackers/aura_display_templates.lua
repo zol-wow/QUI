@@ -451,6 +451,7 @@ local WHAT_TO_SHOW_SUMMARY = {
     crowdControl = ns.L["Crowd control"],
     boss         = ns.L["Boss debuffs"],
     roleBoss     = ns.L["Role-relevant boss debuffs"],
+    encounter    = ns.L["Encounter Debuffs"],
     whitelist    = ns.L["Specific spells"],
     custom       = ns.L["Custom…"],
 }

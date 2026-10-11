@@ -207,6 +207,7 @@ local function DressRow(row, item)
     row._link = item.link
     row._item = item
     row._icon:SetTexture(item.icon or 134400)
+    Helpers.ApplyIconStyle(row, row._icon)
     if item.name then
         local r, g, b = Bags.ItemButtons.GetQualityColor(item.quality or 1)
         row._name:SetText(item.name)

@@ -107,6 +107,36 @@ local function GetOwnerInfo(ownerKey)
     }
 end
 
+function TooltipCounts.BuildRecipeLines(itemID, data, evaluated)
+    local recipes = Storage and Storage.RecipeLearning
+    if not recipes or not recipes.IsRecipe(itemID) then return {} end
+    local currentStatus = recipes.GetStatus(itemID, data, evaluated)
+    local groups = { canLearn = {}, known = {} }
+    local currentKey = Storage.Store.GetCurrentCharacterKey()
+    for _, key in ipairs(Storage.Store.ListCharacters()) do
+        local rec = Storage.Store.GetCharacter(key)
+        local snapshot = rec and rec.recipeLearning and rec.recipeLearning[itemID]
+        if snapshot and snapshot.version ~= recipes.SNAPSHOT_VERSION then snapshot = nil end
+        local status = (key == currentKey and currentStatus) or (snapshot and snapshot.status)
+        local group = status and groups[status]
+        if group then
+            local info = GetOwnerInfo(key)
+            local label = ColorLabel(info.label, info.classToken)
+            if key == currentKey then table.insert(group, 1, label)
+            else group[#group + 1] = label end
+        end
+    end
+    local lines = {}
+    for _, group in ipairs({
+        { "canLearn", ns.L["Can learn (last checked)"] },
+        { "known", ns.L["Already known (last checked)"] },
+    }) do
+        local names = groups[group[1]]
+        if #names > 0 then lines[#lines + 1] = group[2] .. ": " .. table.concat(names, ", ") end
+    end
+    return lines
+end
+
 function TooltipCounts.BuildCurrencyLines(currencyID)
     local lines = {}
     if type(currencyID) ~= "number" then return lines end
@@ -154,10 +184,17 @@ local function AddCountLines(tooltip, lines)
 end
 
 local function OnTooltipSetItem(tooltip, data)
-    if not ShouldShowCounts(tooltip) then return end
+    if tooltip ~= GameTooltip and tooltip ~= ItemRefTooltip then return end
+    if not (Bags.IsActive and Bags.IsActive()) then return end
     local itemID = data and data.id
     if type(itemID) ~= "number" then return end
     if type(issecretvalue) == "function" and issecretvalue(itemID) then return end
+    local info = tooltip.GetProcessingTooltipInfo and tooltip:GetProcessingTooltipInfo()
+    local getter = info and info.getterName
+    local evaluated = getter == "GetBagItem" or getter == "GetGuildBankItem"
+        or getter == "GetMerchantItem"
+    AddCountLines(tooltip, TooltipCounts.BuildRecipeLines(itemID, data, evaluated))
+    if not ShouldShowCounts(tooltip) then return end
     local counts = Storage.Summaries.GetCounts(itemID)
     if next(counts) == nil then return end
     AddCountLines(tooltip, TooltipCounts.BuildCountLines(counts, GetOwnerInfo))

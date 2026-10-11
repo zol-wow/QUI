@@ -63,7 +63,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local fonts = U.GetFontList()
         if #fonts > 0 then
             local fontW = GUI:CreateFormDropdown(section.frame, nil, fonts, "font", db, Refresh,
-                { description = fontDesc })
+                { description = fontDesc }, { placeholder = ns.L["Global Font"] })
             section.AddRow(row(section.frame, ns.L["Use Custom Font"], useCustomFontW), row(section.frame, ns.L["Font"], fontW))
         else
             section.AddRow(row(section.frame, ns.L["Use Custom Font"], useCustomFontW))
@@ -341,7 +341,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local fonts = U.GetFontList()
         if #fonts > 0 then
             local fontW = GUI:CreateFormDropdown(s2.frame, nil, fonts, "font", ac, Refresh,
-                { description = ns.L["Custom font for the count number. Requires Use Custom Font to be enabled."] })
+                { description = ns.L["Custom font for the count number. Requires Use Custom Font to be enabled."] }, { placeholder = ns.L["Global Font"] })
             s2.AddRow(row(s2.frame, ns.L["Font"], fontW))
         end
         L.closeSection(s2)
@@ -436,7 +436,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local s1 = L.sectionAt()
         local fonts = U.GetFontList(); table.insert(fonts, 1, { value = "", text = ns.L["(Global Font)"] })
         local fontW = GUI:CreateFormDropdown(s1.frame, nil, fonts, "font", fca, Refresh,
-            { description = ns.L["Font used for the focus cast alert text. Pick Global Font to inherit the UI font."] })
+            { description = ns.L["Font used for the focus cast alert text. Pick Global Font to inherit the UI font."] }, { placeholder = ns.L["Global Font"] })
         local sizeW = GUI:CreateFormSlider(s1.frame, nil, 8, 72, 1, "fontSize", fca, Refresh,
             { description = ns.L["Font size of the alert text."] })
         s1.AddRow(row(s1.frame, ns.L["Font"], fontW), row(s1.frame, ns.L["Font Size"], sizeW))
@@ -976,6 +976,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         local s1 = L.sectionAt()
         local skinW = GUI:CreateFormCheckbox(s1.frame, nil, "skinTooltips", tooltip, function()
             GUI:ShowConfirmation({
+                reload = true,
                 title = ns.L["Reload UI?"],
                 message = ns.L["Skinning changes require a reload to take effect."],
                 acceptText = ns.L["Reload"],

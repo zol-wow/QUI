@@ -248,6 +248,7 @@ function Callout.Show(entry, opts)
     if not f or type(entry) ~= "table" then return false end
     Callout.Refresh()
     f.iconTex:SetTexture(entry.icon or FALLBACK_ICON)
+    Helpers.ApplyIconStyle(f.iconFrame, f.iconTex)
     f.text:SetText((opts and opts.text) or entry.name or "")
     f:SetAlpha(1)
     fading = false
@@ -299,6 +300,7 @@ function Callout.SetPreview(on)
         Callout.Refresh()
         local entry = PreviewEntry()
         f.iconTex:SetTexture(entry.icon or FALLBACK_ICON)
+    Helpers.ApplyIconStyle(f.iconFrame, f.iconTex)
         f.text:SetText(entry.name or "")
         f:SetAlpha(1)
         hideAt = nil

@@ -68,11 +68,6 @@ local function BuildAurasNameplateContent(host, ctx, section)
         end
     end
 
-    local previewHost = (ctx and ctx.host) or host
-    if NPSurface and type(NPSurface.ShowPreviewOn) == "function" then
-        NPSurface.ShowPreviewOn(previewHost)
-    end
-
     local total = y + ((editorHost.GetHeight and editorHost:GetHeight()) or 1)
     host:SetHeight(total)
     return total

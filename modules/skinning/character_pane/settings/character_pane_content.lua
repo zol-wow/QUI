@@ -39,6 +39,7 @@ local function BuildCharacterPaneTab(tabContent)
     local sEn = L.sectionAt()
     local enableW = GUI:CreateFormCheckbox(sEn.frame, nil, "enabled", char, function()
         GUI:ShowConfirmation({
+            reload = true,
             title = ns.L["Reload Required"], message = ns.L["Character Pane styling requires a UI reload."],
             acceptText = ns.L["Reload Now"], cancelText = ns.L["Later"],
             onAccept = function() QUI:SafeReload() end,
@@ -51,6 +52,7 @@ local function BuildCharacterPaneTab(tabContent)
     local sIF = L.sectionAt()
     local ifEnableW = GUI:CreateFormCheckbox(sIF.frame, nil, "inspectEnabled", char, function()
         GUI:ShowConfirmation({
+            reload = true,
             title = ns.L["Reload UI?"], message = ns.L["Inspect overlay changes require a reload."],
             acceptText = ns.L["Reload"], cancelText = ns.L["Later"],
             onAccept = function() QUI:SafeReload() end,

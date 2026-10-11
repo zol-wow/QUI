@@ -288,7 +288,7 @@ function Module.Refresh(mock, unitKey, unitDB, general)
     mock:SetSize(barW, barH)
     mock._barInnerW = barW
 
-    mock.fill:SetTexture(ResolveStatusBarTexture(castDB.texture))
+    ns.Helpers.ApplyTextureStyle(mock, mock.fill, ResolveStatusBarTexture(castDB.texture))
     local bg = castDB.bgColor or { 0.149, 0.149, 0.149, 1 }
     mock.bg:SetColorTexture(bg[1], bg[2], bg[3], bg[4] or 1)
 

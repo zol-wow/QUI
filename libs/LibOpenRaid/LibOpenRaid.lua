@@ -62,6 +62,10 @@ LIB_OPEN_RAID_CAN_LOAD = false
 
 local versionString, revision, launchDate, gameVersion = GetBuildInfo()
 
+if type(versionString) == "string" and versionString:match("^1%.60%.") then
+    return
+end
+
 local isExpansion_Dragonflight = function()
 	if (gameVersion >= 100000) then
 		return true
@@ -729,7 +733,7 @@ end
             end
 
             if (bit.band(flags, CONST_COMM_SENDTO_GUILD)) then --send to guild
-                if (IsInGuild()) then
+                if (IsInGuild() and C_GuildInfo.CanSpeakInGuildChat()) then
                     --Guild has no 10 msg restriction so send it directly
                     sendData(dataEncoded, "GUILD");
                 end

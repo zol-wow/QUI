@@ -830,6 +830,7 @@ ConsumablesFrame.buttons = {}
 
 local consumableCombatDeferFrame
 local hideConsumablesAfterCombat = false
+local showConsumablesAfterCombat = false
 
 local function HideConsumablesFrameNow()
     if not ConsumablesFrame then return end
@@ -868,6 +869,7 @@ RequestHideConsumablesFrame = function()
     if settings and settings.consumablePersistent and settings.consumableCheckEnabled ~= false then
         return
     end
+    showConsumablesAfterCombat = false
     if InCombatLockdown() then
         hideConsumablesAfterCombat = true
         if ConsumablesFrame:IsShown() then
@@ -920,6 +922,7 @@ local function CreateConsumableButton(parent, index, buttonType, iconID, isClick
     button.icon = button:CreateTexture(nil, "BACKGROUND")
     button.icon:SetAllPoints()
     button.icon:SetTexture(iconID)
+    Helpers.ApplyIconStyle(button, button.icon)
 
     button.status = button:CreateTexture(nil, "OVERLAY")
     button.status:SetSize(STATUS_ICON_SIZE, STATUS_ICON_SIZE)
@@ -1055,17 +1058,14 @@ local function EnsurePickerFrame()
     pickerFrame.activeRows = {}
     do
         local bgr, bgg, bgb = 0.05, 0.05, 0.05
-        if Helpers and Helpers.GetSkinBgColor then
-            bgr, bgg, bgb = Helpers.GetSkinBgColor()
-        end
-        local sr, sg, sb = 0.35, 0.35, 0.35
-        if Helpers and Helpers.GetSkinBorderColor then
-            sr, sg, sb = Helpers.GetSkinBorderColor()
+        local sr, sg, sb, sa = 0.35, 0.35, 0.35, 1
+        if Helpers and Helpers.GetWindowColors then
+            sr, sg, sb, sa, bgr, bgg, bgb = Helpers.GetWindowColors()
         end
         if SkinBase and SkinBase.CreateBackdrop then
-            SkinBase.CreateBackdrop(pickerFrame, sr, sg, sb, 1, bgr, bgg, bgb, 0.95)
+            SkinBase.CreateBackdrop(pickerFrame, sr, sg, sb, sa, bgr, bgg, bgb, 0.95)
         elseif SkinBase and SkinBase.ApplyPixelBackdrop then
-            SkinBase.ApplyPixelBackdrop(pickerFrame, 1, true, false, { sr, sg, sb, 1 }, { bgr, bgg, bgb, 0.95 })
+            SkinBase.ApplyPixelBackdrop(pickerFrame, 1, true, false, { sr, sg, sb, sa }, { bgr, bgg, bgb, 0.95 })
         end
     end
     if UIKit and UIKit.CreateObjectPool then
@@ -1122,6 +1122,7 @@ local function ConfigurePickerRow(row, buttonType, data)
     row.buttonType = buttonType
     row.itemID = data.itemID
     row.icon:SetTexture(data.icon or FOOD_ICON_FALLBACK)
+    Helpers.ApplyIconStyle(row, row.icon)
     row.nameText:SetText(data.name or ("item:" .. data.itemID))
     row.countText:SetText(data.count and data.count > 0 and tostring(data.count) or "")
 
@@ -1591,9 +1592,7 @@ ConsumablesFrame:SetScript("OnHide", function(self)
 end)
 
 local function PositionConsumablesFrame()
-    if not InCombatLockdown() then
-        ConsumablesFrame:SetScale(GetConsumableScale())
-    end
+    ConsumablesFrame:SetScale(GetConsumableScale())
     ConsumablesFrame:SetParent(UIParent)
     ConsumablesFrame:SetFrameStrata("DIALOG")
     local anchoring = ns.QUI_Anchoring
@@ -1618,15 +1617,18 @@ local function IsInRaidInstance()
 end
 
 local function ShowConsumablesStandalone()
-    HideConsumablePicker()
-    InitializeButtons()
-    UpdateConsumables()
-    if not InCombatLockdown() then
-        ConsumablesFrame:SetScale(GetConsumableScale())
+    if InCombatLockdown() then
+        showConsumablesAfterCombat = true
+        return
     end
+    showConsumablesAfterCombat = false
+    hideConsumablesAfterCombat = false
+    HideConsumablePicker()
+    if not next(ConsumablesFrame.buttons) or ConsumablesFrame.buttonSize ~= GetButtonSize() then
+        InitializeButtons()
+    end
+    UpdateConsumables()
     ConsumablesFrame:SetAlpha(1)
-    ConsumablesFrame:SetParent(UIParent)
-    ConsumablesFrame:SetFrameStrata("DIALOG")
     PositionConsumablesFrame()
     ConsumablesFrame:Show()
 end
@@ -1636,11 +1638,7 @@ local function OnReadyCheck(starter, timer)
     if not settings or settings.consumableCheckEnabled == false then return end
     if settings.consumableOnReadyCheck == false then return end
 
-    HideConsumablePicker()
-    PositionConsumablesFrame()
-    UpdateConsumables()
-    ConsumablesFrame:SetAlpha(1)
-    ConsumablesFrame:Show()
+    ShowConsumablesStandalone()
 end
 
 local function OnReadyCheckFinished()
@@ -1877,6 +1875,13 @@ combatFrame:SetScript("OnEvent", function(self, event)
         end
         snapshotCache.lastStates = nil
     elseif event == "PLAYER_REGEN_ENABLED" then
+        if showConsumablesAfterCombat then
+            showConsumablesAfterCombat = false
+            local settings = GetSettings()
+            if settings and settings.consumableCheckEnabled ~= false then
+                ShowConsumablesStandalone()
+            end
+        end
         if hideConsumablesAfterCombat then
             return
         end
@@ -1908,18 +1913,15 @@ _G.QUI_RefreshConsumables = function()
     end
     if pickerFrame then
         local bgr, bgg, bgb = 0.05, 0.05, 0.05
-        if Helpers and Helpers.GetSkinBgColor then
-            bgr, bgg, bgb = Helpers.GetSkinBgColor()
-        end
-        local sr, sg, sb = 0.35, 0.35, 0.35
-        if Helpers and Helpers.GetSkinBorderColor then
-            sr, sg, sb = Helpers.GetSkinBorderColor()
+        local sr, sg, sb, sa = 0.35, 0.35, 0.35, 1
+        if Helpers and Helpers.GetWindowColors then
+            sr, sg, sb, sa, bgr, bgg, bgb = Helpers.GetWindowColors()
         end
         if SkinBase and SkinBase.CreateBackdrop then
-            SkinBase.CreateBackdrop(pickerFrame, sr, sg, sb, 1, bgr, bgg, bgb, 0.95)
+            SkinBase.CreateBackdrop(pickerFrame, sr, sg, sb, sa, bgr, bgg, bgb, 0.95)
         else
             pickerFrame:SetBackdropColor(bgr, bgg, bgb, 0.95)
-            pickerFrame:SetBackdropBorderColor(sr, sg, sb, 1)
+            pickerFrame:SetBackdropBorderColor(sr, sg, sb, sa)
         end
     end
 end

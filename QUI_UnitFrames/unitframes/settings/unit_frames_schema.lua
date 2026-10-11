@@ -568,6 +568,7 @@ local function ShowReloadConfirmation()
     end
 
     gui:ShowConfirmation({
+        reload = true,
         title = ns.L["Reload UI?"],
         message = ns.L["Enabling or disabling unit frames requires a UI reload to take effect."],
         acceptText = ns.L["Reload"],
@@ -1070,6 +1071,7 @@ local function RenderFrameStandaloneCastbarSection(sectionHost, ctx)
                     local confirm = GetGUI()
                     if confirm and type(confirm.ShowConfirmation) == "function" then
                         confirm:ShowConfirmation({
+                            reload = true,
                             title = ns.L["Reload UI?"],
                             message = ns.L["A reload is required to restore the default Blizzard player castbar."],
                             acceptText = ns.L["Reload"],
