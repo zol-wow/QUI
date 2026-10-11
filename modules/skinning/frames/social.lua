@@ -49,8 +49,15 @@ local function SkinSocialRow(row, depth)
             label:SetText("+")
             invite:SetFontString(label)
         end
-        SkinBase.SkinButton(invite)
+        SkinBase.SkinButton(invite, { radius = 3 })
         SkinBase.RefreshWidget(invite)
+        -- Keep the native tall hit area, but separate the visual controls from rows and scrollbar.
+        local backdrop = SkinBase.GetBackdrop(invite)
+        if backdrop then
+            backdrop:ClearAllPoints()
+            backdrop:SetSize(20, 20)
+            backdrop:SetPoint("CENTER", invite, "CENTER")
+        end
     end
     SkinBase.LockPooledRowText(row, depth or 3)
 end
