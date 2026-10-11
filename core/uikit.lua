@@ -1191,16 +1191,19 @@ function UIKit.CreateRoundedSurface(frame, opts)
             local px = GetPixelSize(owner)
             local radius = math.min(16, math.max(1, Round(self.radius)))
             local width, height = owner:GetWidth(), owner:GetHeight()
-            if width > 0 then radius = math.min(radius, math.max(1, floor(width / (2 * px)))) end
-            if height > 0 then radius = math.min(radius, math.max(1, floor(height / (2 * px)))) end
+            if Helpers.IsSecretValue(width) then width = nil end
+            if Helpers.IsSecretValue(height) then height = nil end
+            if width and width > 0 then radius = math.min(radius, math.max(1, floor(width / (2 * px)))) end
+            if height and height > 0 then radius = math.min(radius, math.max(1, floor(height / (2 * px)))) end
             local stroke = math.min(3, math.max(1, Round(self.borderPixels)))
             local edge = stroke * px
             local r = radius * px
             local left = owner.GetLeft and owner:GetLeft()
             local bottom = owner.GetBottom and owner:GetBottom()
+            if Helpers.IsSecretValue(left) or Helpers.IsSecretValue(bottom) then left, bottom = nil, nil end
             self.left, self.bottom = left, bottom
             local dl, dr, dt, db = 0, 0, 0, 0
-            if type(left) == "number" and type(bottom) == "number" then
+            if type(left) == "number" and type(bottom) == "number" and width and height then
                 dl = Round(left / px) * px - left
                 dr = Round((left + width) / px) * px - left - width
                 db = Round(bottom / px) * px - bottom
@@ -1236,7 +1239,10 @@ function UIKit.CreateRoundedSurface(frame, opts)
             frame:HookScript("OnSizeChanged", function() surface:Refresh() end)
             frame:HookScript("OnShow", function() surface:Refresh() end)
             frame:HookScript("OnUpdate", function()
-                if surface.shown and (frame:GetLeft() ~= surface.left or frame:GetBottom() ~= surface.bottom) then surface:Refresh() end
+                if not surface.shown then return end
+                local left, bottom = frame:GetLeft(), frame:GetBottom()
+                if Helpers.IsSecretValue(left) or Helpers.IsSecretValue(bottom) then left, bottom = nil, nil end
+                if left ~= surface.left or bottom ~= surface.bottom then surface:Refresh() end
             end)
         end
         UIKit.RegisterScaleRefresh(frame, "roundedSurface", function() surface:Refresh() end)
