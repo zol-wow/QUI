@@ -4,6 +4,19 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.0-beta3 - 2026-10-11
+
+### Fixed
+
+- World Map navigation and campaign headers preserve native layout state while
+  retaining QUI styling.
+- Scenario text stages retain native spacing and height while their headers,
+  countdowns, and status bars keep QUI styling.
+- Loot History's countdown fits its track and follows remaining time, with
+  matching timer borders, scrollbar styling, and a visible resize grip.
+- Loot History setting changes take effect on reload. Deferring the reload keeps
+  the installed timer layout and artwork consistent.
+
 ## v5.5.0-beta2 - 2026-10-11
 
 ### Added and Changed
