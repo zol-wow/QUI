@@ -754,6 +754,18 @@ local function SkinLootHistoryElement(button)
     hookedLootFrames[button] = true
 end
 
+-- <<< QUI_TEST_EXTRACT loot_history_timer_fill
+local function FitLootHistoryTimerFill(history)
+    local timer = history.Timer
+    if not timer or not timer.Fill or not timer.Fill:IsShown() then return end
+    -- UpdateTimer writes a native 234-unit fill. Keep its remaining-time ratio
+    -- while fitting that fill to the dropdown-aligned track.
+    local remaining = math.max(0, math.min(1, timer.Fill:GetWidth() / 234))
+    timer.Fill:SetWidth(math.max(0, timer:GetWidth() - 2 * SkinBase.GetPixelSize(timer, 1)) * remaining)
+    timer.Fill:SetHeight(math.max(0, timer:GetHeight() - 2 * SkinBase.GetPixelSize(timer, 1)))
+end
+-- <<< QUI_TEST_EXTRACT loot_history_timer_fill
+
 local function SkinGroupLootHistoryFrame()
     if lootHistorySkinned then return end
 
@@ -777,10 +789,19 @@ local function SkinGroupLootHistoryFrame()
 
     local Timer = HistoryFrame.Timer
     if Timer then
+        local dropdown = HistoryFrame.EncounterDropdown
+        if dropdown then
+            Timer:ClearAllPoints()
+            Timer:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -4)
+            Timer:SetPoint("TOPRIGHT", dropdown, "BOTTOMRIGHT", 0, -4)
+            Timer:SetHeight(10)
+        end
         if Timer.Background then Timer.Background:SetAlpha(0) end
         if Timer.Border then Timer.Border:SetAlpha(0) end
 
         if Timer.Fill then
+            Timer.Fill:ClearAllPoints()
+            SkinBase.SetPixelPoint(Timer.Fill, "TOPLEFT", Timer, "TOPLEFT", 1, -1)
             Helpers.ApplyTextureStyle(Timer, Timer.Fill, LSM:Fetch("statusbar", "Quazii") or "Interface\\TargetingFrame\\UI-StatusBar")
             Timer.Fill:SetVertexColor(accentColor[1], accentColor[2], accentColor[3], 1)
         end
@@ -793,7 +814,19 @@ local function SkinGroupLootHistoryFrame()
             if not timerParts then timerParts = {}; frameParts[Timer] = timerParts end
             timerParts.bg = bg
         end
+        if not timerParts.border then
+            local border = CreateFrame("Frame", nil, Timer, "BackdropTemplate")
+            border:SetAllPoints()
+            border:SetFrameLevel(Timer:GetFrameLevel() + 1)
+            SkinBase.ApplyChromeBackdrop(border, { radius = 3, background = false })
+            Helpers.SetFrameBackdropBorderColor(border, unpack(borderColor))
+            timerParts.border = border
+        end
+        FitLootHistoryTimerFill(HistoryFrame)
+        hooksecurefunc(HistoryFrame, "UpdateTimer", FitLootHistoryTimerFill)
     end
+
+    SkinBase.SkinTrimScrollBar(HistoryFrame.ScrollBar)
 
     local Dropdown = HistoryFrame.EncounterDropdown
     if Dropdown then
@@ -824,10 +857,11 @@ local function SkinGroupLootHistoryFrame()
 
             local rbParts = frameParts[ResizeButton]
             if not rbParts then rbParts = {}; frameParts[ResizeButton] = rbParts end
-            rbParts.text = ResizeButton:CreateFontString(nil, "OVERLAY")
+            -- Draw the grip on the chrome child so its background cannot cover it.
+            rbParts.text = rbBd:CreateFontString(nil, "OVERLAY")
             CJKFont(rbParts.text, LSM:Fetch("font", GetGeneralFont()), 12, "OUTLINE")
             rbParts.text:SetPoint("CENTER")
-            rbParts.text:SetText("v v v")
+            rbParts.text:SetText("• • •")
             rbParts.text:SetTextColor(unpack(textColor))
         end
     end
@@ -849,43 +883,11 @@ local function SkinGroupLootHistoryFrame()
 end
 
 function Loot:ApplyLootHistoryTheme()
+    if not lootHistorySkinned then return end
     local HistoryFrame = _G.GroupLootHistoryFrame
     if not HistoryFrame then return end
 
-    local db = GetDB()
-    local enabled = db.lootResults and db.lootResults.enabled ~= false
-
     local themeBd = SkinBase.GetFrameData(HistoryFrame, "backdrop")
-    if not enabled then
-        if themeBd then
-            themeBd:Hide()
-        end
-        if HistoryFrame.NineSlice then
-            HistoryFrame.NineSlice:SetAlpha(1)
-        end
-        if HistoryFrame.Bg then
-            HistoryFrame.Bg:SetAlpha(1)
-        end
-        if HistoryFrame.Timer then
-            if HistoryFrame.Timer.Background then HistoryFrame.Timer.Background:SetAlpha(1) end
-            if HistoryFrame.Timer.Border then HistoryFrame.Timer.Border:SetAlpha(1) end
-            local timerParts = frameParts[HistoryFrame.Timer]
-            if timerParts and timerParts.bg then timerParts.bg:Hide() end
-        end
-        local disRbBd = HistoryFrame.ResizeButton and SkinBase.GetFrameData(HistoryFrame.ResizeButton, "backdrop")
-        if disRbBd then
-            disRbBd:Hide()
-            if HistoryFrame.ResizeButton.NineSlice then
-                HistoryFrame.ResizeButton.NineSlice:SetAlpha(1)
-            end
-            local rbParts = frameParts[HistoryFrame.ResizeButton]
-            if rbParts and rbParts.text then
-                rbParts.text:Hide()
-            end
-        end
-        return
-    end
-
     if not themeBd then return end
 
     local bgColor, borderColor, textColor, accentColor = GetThemeColors()
@@ -907,6 +909,10 @@ function Loot:ApplyLootHistoryTheme()
         if HistoryFrame.Timer.Border then HistoryFrame.Timer.Border:SetAlpha(0) end
         local timerParts = frameParts[HistoryFrame.Timer]
         if timerParts and timerParts.bg then timerParts.bg:Show() end
+        if timerParts and timerParts.border then
+            timerParts.border:Show()
+            Helpers.SetFrameBackdropBorderColor(timerParts.border, unpack(borderColor))
+        end
         if HistoryFrame.Timer.Fill then
             HistoryFrame.Timer.Fill:SetVertexColor(accentColor[1], accentColor[2], accentColor[3], 1)
         end
