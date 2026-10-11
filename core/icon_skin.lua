@@ -29,11 +29,18 @@ end
 function IconSkin.ApplySkin(button, regions, skinName)
     local s = IconSkin.Resolve(skinName)
     if not regions then return end
+    local satinDefault = (skinName == nil or skinName == "Default")
+        and Helpers and Helpers.IsSatinStyle and Helpers.IsSatinStyle()
+    if Helpers and Helpers.ApplyIconStyle then
+        Helpers.ApplyIconStyle(button, regions.Icon or button.Icon, skinName)
+    end
 
     if regions.Border then
         if s.border then
             local r, g, b, a = 0, 0, 0, 1
-            if Helpers and Helpers.GetSkinBorderColor then
+            if Helpers and Helpers.GetWindowColors then
+                r, g, b, a = Helpers.GetWindowColors(nil, nil)
+            elseif Helpers and Helpers.GetSkinBorderColor then
                 r, g, b, a = Helpers.GetSkinBorderColor(nil, nil)
             end
             regions.Border:SetVertexColor(r, g, b, a)
@@ -44,7 +51,7 @@ function IconSkin.ApplySkin(button, regions, skinName)
     end
 
     if regions.Gloss then
-        if s.gloss then
+        if s.gloss and not satinDefault then
             regions.Gloss:SetAlpha(s.glossAlpha or 1)
             regions.Gloss:Show()
         else

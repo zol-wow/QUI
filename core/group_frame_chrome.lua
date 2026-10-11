@@ -95,7 +95,7 @@ end
 local function ApplyStatusBarTexture(statusBar, textureName, general)
     if not statusBar then return end
 
-    statusBar:SetStatusBarTexture(TexturePath(textureName, general))
+    ns.Helpers.ApplyBarStyle(statusBar, TexturePath(textureName, general))
 
     local tex = statusBar:GetStatusBarTexture()
     if tex then

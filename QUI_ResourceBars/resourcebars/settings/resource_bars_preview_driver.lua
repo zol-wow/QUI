@@ -517,35 +517,42 @@ function Module.Build(host, options)
     local fpath  = UIKit and UIKit.ResolveFontPath
                    and UIKit.ResolveFontPath(GUI and GUI:GetFontPath())
 
-    local fill = host:CreateTexture(nil, "BACKGROUND")
-    fill:SetAllPoints(host)
-    fill:SetColorTexture(0, 0, 0, 0.2)
-
-    if UIKit and UIKit.CreateBorderLines then
-        UIKit.CreateBorderLines(host)
-        UIKit.UpdateBorderLines(host, 1, border[1] or 1, border[2] or 1, border[3] or 1, 0.15, false)
+    if not host._quiPreviewSurface then
+        local fill = host:CreateTexture(nil, "BACKGROUND")
+        fill:SetAllPoints(host)
+        fill:SetColorTexture(0, 0, 0, 0.2)
+        if UIKit and UIKit.CreateBorderLines then
+            UIKit.CreateBorderLines(host)
+            UIKit.UpdateBorderLines(host, 1, border[1] or 1, border[2] or 1, border[3] or 1, 0.15, false)
+        end
     end
 
     local lbl = host:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     local SkinBase = ns.SkinBase
     if SkinBase and SkinBase.SkinFontString then
-        SkinBase.SkinFontString(lbl, { fontOnly = true })
+        SkinBase.SkinFontString(lbl, { fontOnly = true, font = GUI and GUI:GetFontPath(), outline = "" })
     end
     lbl:SetPoint("TOPLEFT", host, "TOPLEFT", 8, -6)
     lbl:SetText(ns.L["Live Preview"])
     lbl:SetTextColor(0.6, 0.6, 0.6, 1)
 
-    local primary = MakeMockBar(host, fpath)
-    primary:SetPoint("TOPLEFT",  host, "TOPLEFT",  BAR_PAD_X,  -20)
-    primary:SetPoint("TOPRIGHT", host, "TOPRIGHT", -BAR_PAD_X, -20)
+    local previewHost = CreateFrame("Frame", nil, host)
+    previewHost:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -PREVIEW_CONTENT_TOP)
+    previewHost:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
+    host._quiPreviewHost = previewHost
+    host._quiPreviewChromeHeight = PREVIEW_CONTENT_TOP
+    host._quiPreviewCollapsedHeight = 30
+    local primary = MakeMockBar(previewHost, fpath)
+    primary:SetPoint("TOPLEFT", previewHost, "TOPLEFT", BAR_PAD_X, 0)
+    primary:SetPoint("TOPRIGHT", previewHost, "TOPRIGHT", -BAR_PAD_X, 0)
     primary:SetSize(100, 24)
 
-    local secondary = MakeMockBar(host, fpath)
+    local secondary = MakeMockBar(previewHost, fpath)
     secondary:Hide()
 
-    state.previewRef = { pv = host, primary = primary, secondary = secondary, fpath = fpath }
+    state.previewRef = { pv = previewHost, primary = primary, secondary = secondary, fpath = fpath }
 
-    state.ticker = CreateFrame("Frame", nil, host)
+    state.ticker = CreateFrame("Frame", nil, previewHost)
     state.ticker:SetScript("OnUpdate", function(_, elapsed)
         AdvanceCycle(elapsed)
         ApplyDynamics(ComputePcts(state.cycle.t))
@@ -622,7 +629,7 @@ function Module.Refresh()
         if secondaryInfo then orderedSections[#orderedSections + 1] = secondaryInfo end
     end
 
-    local nextY = -PREVIEW_CONTENT_TOP
+    local nextY = 0
     for _, info in ipairs(orderedSections) do
         local section = info.section
         local cfg = info.cfg
@@ -643,7 +650,7 @@ function Module.Refresh()
         section.bg:SetColorTexture(bgr, bgg, bgb, bga)
 
         local tex = LSM and LSM.Fetch and LSM:Fetch("statusbar", GetBarTexture(cfg))
-        if tex then section.bar:SetStatusBarTexture(tex) end
+        if tex then ns.Helpers.ApplyBarStyle(section.bar, tex) end
         section.bar:SetStatusBarColor(r, g, b)
 
         ApplyPreviewTicks(section, cfg, resource)

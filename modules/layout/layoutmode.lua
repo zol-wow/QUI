@@ -922,6 +922,13 @@ function QUI_LayoutMode:DetachElementAnchor(key)
     entry.point = "CENTER"
     entry.relative = "CENTER"
 
+    local pending = self._pendingPositions[key]
+    if pending then
+        pending.anchorTarget = nil
+        pending.anchorPointSelf = nil
+        pending.anchorPointTarget = nil
+    end
+
     if _G.QUI_ApplyFrameAnchor then
         ns.SafeCall("bulkhead", _G.QUI_ApplyFrameAnchor, key)
     end
@@ -961,7 +968,7 @@ local function GetAnchorRectInUIParent(anchorKey, seen)
     end
     local h = QUI_LayoutMode._handles and QUI_LayoutMode._handles[anchorKey]
     if h then
-        local l, r, t, b = h:GetLeft(), h:GetRight(), h:GetTop(), h:GetBottom()
+        local l, r, t, b = QUI_LayoutMode:GetHandleEdges(h)
         if l and r and t and b then return l, r, t, b end
     end
     local pf = _G.QUI_ResolveAnchorTargetFrame and _G.QUI_ResolveAnchorTargetFrame(anchorKey)
@@ -1086,7 +1093,7 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
             local pL, pR, pT, pB = GetAnchorRectInUIParent(anchorTarget)
 
             if childHandle and pL and pR and pT and pB then
-                local cL, cR, cT, cB = childHandle:GetLeft(), childHandle:GetRight(), childHandle:GetTop(), childHandle:GetBottom()
+                local cL, cR, cT, cB = QUI_LayoutMode:GetHandleEdges(childHandle)
 
                 if cL and cR and cT and cB then
                     local function anchorPos(l, r, t, b, pt)
@@ -1125,7 +1132,7 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
                 local pL, pR, pT, pB = GetAnchorRectInUIParent(existingParent)
 
                 if childHandle and pL and pR and pT and pB then
-                    local cL, cR, cT, cB = childHandle:GetLeft(), childHandle:GetRight(), childHandle:GetTop(), childHandle:GetBottom()
+                    local cL, cR, cT, cB = QUI_LayoutMode:GetHandleEdges(childHandle)
                     if cL and cR and cT and cB then
                         local function anchorPos(l, r, t, b, pt)
                             local x, y = (l + r) / 2, (t + b) / 2
@@ -1219,7 +1226,7 @@ function QUI_LayoutMode:RecordFreeElementPosition(key, frame)
         math.floor(cx - pw / 2 + 0.5), math.floor(cy - ph / 2 + 0.5))
 end
 
-HandleToOffsets = function(handle)
+HandleToOffsets = function(handle, preservePrecision)
     local cx, cy
     if handle._isChildOverlay and handle._parentFrame then
         cx, cy = handle._parentFrame:GetCenter()
@@ -1236,6 +1243,7 @@ HandleToOffsets = function(handle)
     if not cx or not cy then return 0, 0 end
 
     local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
+    if preservePrecision then return cx - pw / 2, cy - ph / 2 end
     return math.floor(cx - pw / 2 + 0.5), math.floor(cy - ph / 2 + 0.5)
 end
 
@@ -1261,7 +1269,16 @@ end
 function QUI_LayoutMode:GetHandleEdges(handle)
     if handle._isChildOverlay and handle._parentFrame then
         local p = handle._parentFrame
-        return p:GetLeft(), p:GetRight(), p:GetTop(), p:GetBottom()
+        local l, r, t, b = p:GetLeft(), p:GetRight(), p:GetTop(), p:GetBottom()
+        if l and r and t and b then
+            local frameScale = (p.GetEffectiveScale and p:GetEffectiveScale()) or 1
+            local uiScale = UIParent:GetEffectiveScale() or 1
+            if frameScale ~= uiScale and uiScale > 0 then
+                local ratio = frameScale / uiScale
+                l, r, t, b = l * ratio, r * ratio, t * ratio, b * ratio
+            end
+        end
+        return l, r, t, b
     end
     return handle:GetLeft(), handle:GetRight(), handle:GetTop(), handle:GetBottom()
 end
@@ -1584,6 +1601,9 @@ AddHandleScripts = function(handle, def)
 
         self._dragging = true
         self._snapState = nil
+        self._snapAnchorKey = nil
+        self._snapAnchorPointSelf = nil
+        self._snapAnchorPointTarget = nil
 
         local cx, cy = GetCursorPosition()
         local scale = UIParent:GetEffectiveScale()
@@ -1680,10 +1700,10 @@ AddHandleScripts = function(handle, def)
             group[myKey] = nil
 
             if next(group) then
-                local startOx, startOy = HandleToOffsets(self)
+                local startOx, startOy = HandleToOffsets(self, true)
                 local groupData = {}
                 for k, h in pairs(group) do
-                    local gox, goy = HandleToOffsets(h)
+                    local gox, goy = HandleToOffsets(h, true)
                     groupData[k] = {
                         handle = h,
                         startOffX = gox,
@@ -1727,7 +1747,7 @@ AddHandleScripts = function(handle, def)
                 ui:ApplySnap(frame)
             end
 
-            local postSnapOx, postSnapOy = HandleToOffsets(frame)
+            local postSnapOx, postSnapOy = HandleToOffsets(frame, frame._snapAnchorKey ~= nil)
 
             if not frame._isChildOverlay then
                 local key = frame._barKey
@@ -1803,7 +1823,7 @@ AddHandleScripts = function(handle, def)
 
         local def = QUI_LayoutMode._elements[self._barKey]
 
-        local ox, oy = HandleToOffsets(self)
+        local ox, oy = HandleToOffsets(self, self._snapAnchorKey ~= nil)
         local anchorKey = self._snapAnchorKey
         local anchorPtSelf = self._snapAnchorPointSelf
         local anchorPtTarget = self._snapAnchorPointTarget
@@ -1848,7 +1868,7 @@ AddHandleScripts = function(handle, def)
 
         if self._anchorGroupHandles then
             for k, data in pairs(self._anchorGroupHandles) do
-                local gox, goy = HandleToOffsets(data.handle)
+                local gox, goy = HandleToOffsets(data.handle, anchorKey ~= nil)
                 local gAnchorKey, gAnchorPtSelf, gAnchorPtTarget
                 local gPending = QUI_LayoutMode._pendingPositions[k]
                 if gPending and gPending.anchorTarget then
@@ -2178,7 +2198,7 @@ SyncHandle = function(key)
                 local dbOx = entry.offsetX or 0
                 local dbOy = entry.offsetY or 0
 
-                local pL, pR, pT, pB = parentHandle:GetLeft(), parentHandle:GetRight(), parentHandle:GetTop(), parentHandle:GetBottom()
+                local pL, pR, pT, pB = QUI_LayoutMode:GetHandleEdges(parentHandle)
                 if pL and pR and pT and pB then
                     local function anchorPos(l, r, t, b, pt)
                         local x, y = (l + r) / 2, (t + b) / 2
@@ -2198,8 +2218,8 @@ SyncHandle = function(key)
                     elseif ptSelf:find("BOTTOM") then selfOffY = cH / 2 end
 
                     local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
-                    local centerX = math.floor(px + dbOx + selfOffX - pw / 2 + 0.5)
-                    local centerY = math.floor(py + dbOy + selfOffY - ph / 2 + 0.5)
+                    local centerX = px + dbOx + selfOffX - pw / 2
+                    local centerY = py + dbOy + selfOffY - ph / 2
 
                     handle:ClearAllPoints()
                     handle:SetPoint("CENTER", UIParent, "CENTER", centerX, centerY)
@@ -2220,8 +2240,8 @@ SyncHandle = function(key)
                         local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
                         handle:ClearAllPoints()
                         handle:SetPoint("CENTER", UIParent, "CENTER",
-                            math.floor(px + dbOx + selfOffX - pw / 2 + 0.5),
-                            math.floor(py + dbOy + selfOffY - ph / 2 + 0.5))
+                            px + dbOx + selfOffX - pw / 2,
+                            py + dbOy + selfOffY - ph / 2)
                     else
                         local pt, relPt, ox, oy = LoadPosition(key)
                         if pt then
@@ -2255,8 +2275,8 @@ SyncHandle = function(key)
                         local pw, ph = UIParent:GetWidth(), UIParent:GetHeight()
                         handle:ClearAllPoints()
                         handle:SetPoint("CENTER", UIParent, "CENTER",
-                            math.floor(px + ox + selfOffX - pw / 2 + 0.5),
-                            math.floor(py + oy + selfOffY - ph / 2 + 0.5))
+                            px + ox + selfOffX - pw / 2,
+                            py + oy + selfOffY - ph / 2)
                     else
                         local frame = def.getFrame and def.getFrame()
                         if frame and frame.GetCenter then
@@ -2386,7 +2406,25 @@ function QUI_LayoutMode:NudgeMover(key, dx, dy, deferPersist)
     if not handle then return false end
     local def = self._elements[key]
 
-    local ox, oy = HandleToOffsets(handle)
+    local anchorKey, anchorPtSelf, anchorPtTarget
+    if not (def and def.usesCustomPositionPersistence) then
+        local pending = self._pendingPositions[key]
+        if pending and pending.anchorTarget then
+            anchorKey = pending.anchorTarget
+            anchorPtSelf = pending.anchorPointSelf
+            anchorPtTarget = pending.anchorPointTarget
+        else
+            local fa = GetFrameAnchoring()
+            local entry = fa and fa[key]
+            if type(entry) == "table" and entry.parent and entry.parent ~= "disabled" then
+                anchorKey = entry.parent
+                anchorPtSelf = entry.point or "CENTER"
+                anchorPtTarget = entry.relative or "CENTER"
+            end
+        end
+    end
+
+    local ox, oy = HandleToOffsets(handle, anchorKey ~= nil)
     ox = ox + dx
     oy = oy + dy
 
@@ -2417,24 +2455,6 @@ function QUI_LayoutMode:NudgeMover(key, dx, dy, deferPersist)
     if deferPersist then
         handle._coords:SetText(string.format(ns.L["X: %d  Y: %d"], ox, oy))
         return true
-    end
-
-    local anchorKey, anchorPtSelf, anchorPtTarget
-    if not (def and def.usesCustomPositionPersistence) then
-        local pending = self._pendingPositions[key]
-        if pending and pending.anchorTarget then
-            anchorKey = pending.anchorTarget
-            anchorPtSelf = pending.anchorPointSelf
-            anchorPtTarget = pending.anchorPointTarget
-        else
-            local fa = GetFrameAnchoring()
-            local entry = fa and fa[key]
-            if type(entry) == "table" and entry.parent and entry.parent ~= "disabled" then
-                anchorKey = entry.parent
-                anchorPtSelf = entry.point or "CENTER"
-                anchorPtTarget = entry.relative or "CENTER"
-            end
-        end
     end
 
     SavePendingPosition(key, "CENTER", "CENTER", ox, oy, anchorKey, anchorPtSelf, anchorPtTarget)
@@ -2575,6 +2595,27 @@ do
                     return (info.holder and _G[info.holder]) or _G[info.frame]
                 end,
             }
+            if info.key == "objectiveTracker" then
+                -- Move the same holder used by gameplay anchoring. Moving the
+                -- native tracker directly fights its SetPoint/SetParent repair.
+                regDef.isOwned = true
+                regDef.getFrame = function()
+                    return _G.QUI_ObjectiveTrackerHolder or _G.ObjectiveTrackerFrame
+                end
+                regDef.setupOverlay = function(overlay, frame)
+                    local tracker = _G.ObjectiveTrackerFrame
+                    local skin = ns.SkinBase
+                    local backdrop = tracker and skin and skin.GetFrameData(tracker, "backdrop")
+                    overlay:ClearAllPoints()
+                    -- The native frame reserves the maximum tracking height;
+                    -- the skin follows the currently visible objective content.
+                    if backdrop and backdrop:IsShown() then
+                        overlay:SetAllPoints(backdrop)
+                    else
+                        overlay:SetAllPoints(tracker or frame)
+                    end
+                end
+            end
             if info.minWidth then
                 regDef.getSize = function()
                     local minW = info.minWidth
@@ -3368,6 +3409,7 @@ do
                         local GUI = QUI and QUI.GUI
                         if GUI then
                             GUI:ShowConfirmation({
+                                reload = true,
                                 title = ns.L["Reload UI?"],
                                 message = ns.L["This change requires a reload to take effect."],
                                 acceptText = ns.L["Reload"],

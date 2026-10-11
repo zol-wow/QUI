@@ -355,7 +355,7 @@ end
 
 local WHAT_TO_SHOW_KEYS = {
     HELPFUL = { "all", "mine", "defensives", "important", "purgeable", "whitelist" },
-    HARMFUL = { "all", "dispellable", "crowdControl", "important", "boss", "roleBoss", "whitelist" },
+    HARMFUL = { "all", "dispellable", "crowdControl", "important", "boss", "roleBoss", "encounter", "whitelist" },
 }
 
 function E.WhatToShowKeys(auraType)
@@ -374,6 +374,7 @@ local function clearShowFields(e)
     e.gatePriorityAura = nil
     e.gateRoleAura = nil
     e.gateBossOrRoleAura = nil
+    e.gateEncounterDebuffs = nil
 end
 
 function E.ApplyWhatToShow(element, key)
@@ -398,6 +399,11 @@ function E.ApplyWhatToShow(element, key)
         element.gateBossAura = true
     elseif key == "roleBoss" then
         element.gateBossOrRoleAura = true
+    elseif key == "encounter" and element.auraType == "HARMFUL" then
+        element.gateEncounterDebuffs = true
+        element.nameplateOnly = false
+        element.hidePermanent = false
+        element.maxDurationSec = 0
     elseif key == "whitelist" then
         element.filterMode = "whitelist"
     end
@@ -415,6 +421,9 @@ end
 
 function E.DeriveWhatToShow(element)
     local mode = element.filterMode or "off"
+    if element.gateEncounterDebuffs == true and element.auraType == "HARMFUL" and mode ~= "off" then
+        return "custom"
+    end
     if mode == "whitelist" then return "whitelist" end
     if mode == "flags" then return "custom" end
     if mode == "classify" then
@@ -433,6 +442,7 @@ function E.DeriveWhatToShow(element)
     if element.gateStealable == true then mods[#mods + 1] = "purgeable" end
     if element.gateBossAura == true then mods[#mods + 1] = "boss" end
     if element.gateBossOrRoleAura == true then mods[#mods + 1] = "roleBoss" end
+    if element.gateEncounterDebuffs == true and element.auraType == "HARMFUL" then mods[#mods + 1] = "encounter" end
     if element.dispelFilterMode == "include" then mods[#mods + 1] = "dispellable" end
     if #mods == 0 then return "all" end
     if #mods == 1 then return mods[1] end
@@ -626,6 +636,21 @@ function E.CompileCandidateFilters(element)
     if element.onlyMine == true then
         ensure().isFromPlayerOrPlayerPet = true
     end
+    if element.gateEncounterDebuffs == true and element.auraType == "HARMFUL" then
+        ensure().isFromPlayerOrPlayerPet = false
+        cf.excludeSpellIDs = {
+            [57723] = true,
+            [80354] = true,
+            [57724] = true,
+            [390435] = true,
+            [264689] = true,
+            [160455] = true,
+            [95809] = true,
+            [124255] = true,
+            [71041] = true,
+            [206151] = true,
+        }
+    end
     local maxDur = tonumber(element.maxDurationSec) or 0
     if maxDur > 0 then
         ensure().maxDuration = maxDur
@@ -640,7 +665,7 @@ function E.CompileCandidateFilters(element)
         if next(inc) then ensure().includeSpellIDs = inc end
     end
     if type(element.blacklist) == "table" and next(element.blacklist) then
-        local exc = {}
+        local exc = cf and cf.excludeSpellIDs or {}
         for sid, on in pairs(element.blacklist) do
             if on then exc[sid] = true end
         end

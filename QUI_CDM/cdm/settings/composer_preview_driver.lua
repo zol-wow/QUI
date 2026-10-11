@@ -528,6 +528,14 @@ end
 
 function CDMComposerPreview.Build(gridArea)
     if state.ticker then
+        if state.gridArea ~= gridArea then
+            for _, icon in ipairs(state.previewIcons) do
+                icon:SetParent(gridArea)
+            end
+            for _, bar in ipairs(state.previewBars) do
+                bar:SetParent(gridArea)
+            end
+        end
         state.gridArea = gridArea
         state.ticker:SetParent(gridArea)
         return

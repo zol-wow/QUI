@@ -123,7 +123,8 @@ local function CaptureOriginalChatFont(chatFrame, currentFont, flags)
     snap = {
         font = currentFont,
         flags = flags,
-        object = chatFrame.GetFontObject and chatFrame:GetFontObject(),
+        object = not (chatFrame.IsObjectType and chatFrame:IsObjectType("EditBox"))
+            and chatFrame.GetFontObject and chatFrame:GetFontObject(),
         justifyH = chatFrame.GetJustifyH and chatFrame:GetJustifyH(),
         justifyV = chatFrame.GetJustifyV and chatFrame:GetJustifyV(),
     }
@@ -132,18 +133,27 @@ local function CaptureOriginalChatFont(chatFrame, currentFont, flags)
 end
 
 function QUICore:ApplyGlobalFontToChatFrames(fontPath, shouldApply)
+    local chatFrames = {}
     for i = 1, (NUM_CHAT_WINDOWS or 0) do
-        local chatFrame = _G["ChatFrame" .. i]
+        local frame = _G["ChatFrame" .. i]
+        if frame then chatFrames[#chatFrames + 1] = frame end
+    end
+    local communities = _G.CommunitiesFrame
+    if communities then
+        if communities.Chat and communities.Chat.MessageFrame then
+            chatFrames[#chatFrames + 1] = communities.Chat.MessageFrame
+        end
+        if communities.ChatEditBox then chatFrames[#chatFrames + 1] = communities.ChatEditBox end
+    end
+    for _, chatFrame in ipairs(chatFrames) do
         if chatFrame and chatFrame.GetFont and chatFrame.SetFont then
             local currentFont, size, flags = chatFrame:GetFont()
             if size then
                 if shouldApply then
                     local snap = CaptureOriginalChatFont(chatFrame, currentFont, flags)
-                    if currentFont ~= fontPath then
-                        local family = Helpers and Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(fontPath, size, flags or "")
-                        if not SetChatFontObject(chatFrame, family, snap.justifyH, snap.justifyV) then
-                            chatFrame:SetFont(fontPath, size, flags or "")
-                        end
+                    local family = Helpers and Helpers.GetFontFamilyObject and Helpers.GetFontFamilyObject(fontPath, size, flags or "")
+                    if not SetChatFontObject(chatFrame, family, snap.justifyH, snap.justifyV) then
+                        chatFrame:SetFont(fontPath, size, flags or "")
                     end
                 else
                     local original = originalChatFonts[chatFrame]
@@ -210,12 +220,14 @@ function QUICore:ApplyGlobalFont()
         local chatFontEventFrame = CreateFrame("Frame")
         chatFontEventFrame:RegisterEvent("UPDATE_CHAT_WINDOWS")
         chatFontEventFrame:RegisterEvent("UPDATE_FLOATING_CHAT_WINDOWS")
-        chatFontEventFrame:SetScript("OnEvent", function()
+        chatFontEventFrame:RegisterEvent("ADDON_LOADED")
+        chatFontEventFrame:SetScript("OnEvent", function(_, event, addon)
+            if event == "ADDON_LOADED" and addon ~= "Blizzard_Communities" then return end
             if not QUICore.db or not QUICore.db.profile then return end
             if not IsGlobalFontEnabled() then return end
             C_Timer.After(0.05, function()
                 local fp = GetGlobalFontPath()
-                QUICore:ApplyGlobalFontToChatFrames(fp, true)
+                QUICore:ApplyGlobalFontToChatFrames(fp, IsGlobalFontEnabled())
             end)
         end)
     end

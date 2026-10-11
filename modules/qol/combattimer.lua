@@ -48,7 +48,8 @@ local function CreateTimerFrame()
     frame:SetBackdrop(UIKit.GetBackdropInfo(nil, nil, frame))
     local _cbgr, _cbgg, _cbgb = 0, 0, 0
     if Helpers and Helpers.GetSkinBgColor then
-        _cbgr, _cbgg, _cbgb = Helpers.GetSkinBgColor()
+        local _, _, _, _, r, g, b = Helpers.GetWindowColors(GetSettings(), "")
+        _cbgr, _cbgg, _cbgb = r, g, b
     end
     frame:SetBackdropColor(_cbgr, _cbgg, _cbgb, 0.6)
 
@@ -159,7 +160,7 @@ local function UpdateTimerAppearance()
     local borderTexture = settings.borderTexture or "None"
     local useLSMBorder = borderTexture ~= "None" and borderSize > 0
 
-    local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
+    local bR, bG, bB, bA = Helpers.GetWindowColors(settings, "")
 
     local hideBorder = settings.hideBorder
     local effectiveUseLSMBorder = useLSMBorder and not hideBorder

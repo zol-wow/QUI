@@ -50,6 +50,7 @@ do
             local sSk = L.sectionAt()
             local skinW = GUI:CreateFormCheckbox(sSk.frame, nil, "skinReadyCheck", general, function()
                 GUI:ShowConfirmation({
+                    reload = true,
                     title = ns.L["Reload UI?"],
                     message = ns.L["Skinning changes require a reload to take effect."],
                     acceptText = ns.L["Reload"],

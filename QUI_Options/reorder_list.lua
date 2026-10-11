@@ -61,17 +61,43 @@ function ReorderList.Build(parent, y, spec)
         return extents[gap].top
     end
 
-    local ry = LIST_TOP
+    local rowHeight = spec.rowHeight or ROW_HEIGHT
+    local listTop = spec.hideHint and 4 or LIST_TOP
+    if spec.hideHint then hintFs:Hide() end
+    listFrame._quiDropGap = DropGapFromCursor
+    listFrame._quiDropLine = dropLine
+    listFrame._quiGapOffset = GapOffset
+    if spec.dragGroup then spec.dragGroup[#spec.dragGroup + 1] = listFrame end
+    listFrame._quiDropSpec = spec
+    local function DropTarget()
+        for _, target in ipairs(spec.dragGroup or {}) do
+            if (target._quiDropSpec.dropOwner or target):IsMouseOver() then return target end
+        end
+        return listFrame
+    end
+    local ry = listTop
     for idx = 1, #items do
         local item = items[idx]
         local capturedKey = spec.identify(item)
         local rowTop = ry
 
         local r = CreateFrame("Frame", nil, listFrame)
-        r:SetHeight(ROW_HEIGHT - ROW_INSET)
+        r:SetHeight(rowHeight - ROW_INSET)
         r:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, -ry)
-        r:SetPoint("RIGHT", listFrame, "RIGHT", 0, 0)
+        if spec.rowWidth then
+            local function ResizeRow()
+                r:SetWidth(math.min(spec.rowWidth, math.max(1, listFrame:GetWidth())))
+            end
+            listFrame:HookScript("OnSizeChanged", ResizeRow)
+            ResizeRow()
+        else
+            r:SetPoint("RIGHT", listFrame, "RIGHT", 0, 0)
+        end
 
+        if spec.cards and ns.UIKit then
+            ns.UIKit.CreateRoundedSurface(r, {radius = 5,
+                bgColor = {1, 1, 1, 0.035}, borderColor = {1, 1, 1, 0.08}})
+        end
         local hoverBg = r:CreateTexture(nil, "BACKGROUND")
         hoverBg:SetAllPoints()
         hoverBg:SetColorTexture(accR, accG, accB, 0.08)
@@ -116,6 +142,13 @@ function ReorderList.Build(parent, y, spec)
         end
 
         local labelLeft = 4
+        if spec.cards then
+            local handle = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            handle:SetPoint("LEFT", r, "LEFT", 7, 0)
+            handle:SetText("::")
+            handle:SetTextColor(1, 1, 1, 0.45)
+            labelLeft = 24
+        end
         if spec.buildDetail ~= nil then
             labelLeft = 20
             if canExpand then
@@ -167,7 +200,9 @@ function ReorderList.Build(parent, y, spec)
 
         nameFs = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         nameFs:SetPoint("LEFT", r, "LEFT", labelLeft, 0)
-        nameFs:SetPoint("RIGHT", r, "RIGHT", -70, 0)
+        nameFs:SetPoint("RIGHT", r, "RIGHT", spec.actionsInToolbar and -8 or -70, 0)
+        nameFs:SetWordWrap(false)
+        if spec.selected == capturedKey then hoverBg:Show() end
         nameFs:SetJustifyH("LEFT")
         RefreshLabel()
 
@@ -183,6 +218,7 @@ function ReorderList.Build(parent, y, spec)
                 dragged = false
                 return
             end
+            if spec.onSelect then spec.onSelect(item, findCurrentIndex()) end
             ToggleExpanded()
         end)
         r:SetScript("OnEnter", function(self)
@@ -198,7 +234,7 @@ function ReorderList.Build(parent, y, spec)
         end)
         r:SetScript("OnLeave", function(self)
             QUI.GUI.Tooltip:Hide(false, self)
-            if not self:IsMouseOver() then hoverBg:Hide() end
+            if not self:IsMouseOver() and spec.selected ~= capturedKey then hoverBg:Hide() end
         end)
         r:SetScript("OnDragStart", function(self)
             QUI.GUI.Tooltip:Hide(true)
@@ -206,15 +242,25 @@ function ReorderList.Build(parent, y, spec)
             self:SetAlpha(0.4)
             dropLine:Show()
             self:SetScript("OnUpdate", function()
-                dropLine:ClearAllPoints()
-                dropLine:SetPoint("TOPLEFT", listFrame, "TOPLEFT", 0, -GapOffset(DropGapFromCursor()) + 1)
-                dropLine:SetPoint("RIGHT", listFrame, "RIGHT", -4, 0)
+                local target = DropTarget()
+                for _, other in ipairs(spec.dragGroup or {listFrame}) do other._quiDropLine:Hide() end
+                local line = target._quiDropLine
+                line:Show()
+                line:ClearAllPoints()
+                line:SetPoint("TOPLEFT", target, "TOPLEFT", 0, -target._quiGapOffset(target._quiDropGap()) + 1)
+                line:SetPoint("RIGHT", target, "RIGHT", -4, 0)
             end)
         end)
         r:SetScript("OnDragStop", function(self)
             self:SetScript("OnUpdate", nil)
             self:SetAlpha(1)
             dropLine:Hide()
+            for _, other in ipairs(spec.dragGroup or {}) do other._quiDropLine:Hide() end
+            local destination = DropTarget()
+            if spec.onDrop then
+                spec.onDrop(item, destination._quiDropSpec, destination._quiDropGap())
+                return
+            end
             local gap = DropGapFromCursor()
             local curIdx = findCurrentIndex()
             if not curIdx then return end
@@ -226,6 +272,7 @@ function ReorderList.Build(parent, y, spec)
             end
         end)
 
+        if not spec.actionsInToolbar then
         local removable = spec.onRemove ~= nil
             and (spec.canRemove == nil or spec.canRemove(item))
         local removeOffset = -4
@@ -261,7 +308,8 @@ function ReorderList.Build(parent, y, spec)
         end)
         downBtn:SetAlpha(idx < #items and 1 or 0.3)
 
-        ry = ry + ROW_HEIGHT
+        end
+        ry = ry + rowHeight
 
         if isExpanded then
             local detail = CreateFrame("Frame", nil, listFrame)
@@ -275,7 +323,7 @@ function ReorderList.Build(parent, y, spec)
         extents[idx] = { top = rowTop, bottom = ry }
     end
 
-    local height = math.max(ry, LIST_TOP)
+    local height = math.max(ry, spec.hideHint and 44 or LIST_TOP)
     listFrame:SetHeight(height)
     return listFrame, height
 end

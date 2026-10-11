@@ -1,3 +1,5 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
 
 ns.Helpers = ns.Helpers or {}
@@ -177,6 +179,11 @@ function Helpers.CanMutateCooldown(frame)
     local ok, protected = pcall(frame.IsProtected, frame)
     if not ok or Helpers.IsSecretValue(protected) then return false end
     return protected ~= true
+end
+
+function Helpers.ClearCooldown(frame)
+    if not Helpers.CanMutateCooldown(frame) or not frame.Clear then return false end
+    return ns.SafeCallMethod("best-effort-style", frame, "Clear")
 end
 
 local function ProbeIsShown(frame)
@@ -1357,6 +1364,15 @@ function Helpers.FoldUTF8(text)
     return text
 end
 
+function Helpers.FoldSearchUTF8(text)
+    if Helpers.IsSecretValue(text) then return text end
+    if C_Intl and C_Intl.FoldCase and type(text) == "string" then
+        local folded = C_Intl.FoldCase(text)
+        if folded ~= nil then return folded end
+    end
+    return Helpers.FoldUTF8(text)
+end
+
 function Helpers.UpperUTF8(text)
     if Helpers.IsSecretValue(text) then return text end
     if text == nil then return "" end
@@ -1497,7 +1513,7 @@ function Helpers.IsCooldownActive(start, duration, isActive)
 end
 
 function Helpers.ApplyCooldownFromStart(cooldownFrame, durationObj, startTime, duration, modRate, reverse)
-    if not cooldownFrame then
+    if not Helpers.CanMutateCooldown(cooldownFrame) then
         return false
     end
 
@@ -1592,7 +1608,7 @@ local function ApplyCooldownFromExpiration(cooldownFrame, expirationTime, durati
 end
 
 function Helpers.ApplyCooldownFromAura(cooldownFrame, unit, auraInstanceID, expirationTime, duration, reverse, modRate)
-    if not cooldownFrame then
+    if not Helpers.CanMutateCooldown(cooldownFrame) then
         return false
     end
 
@@ -1612,9 +1628,7 @@ function Helpers.ApplyCooldownFromAura(cooldownFrame, unit, auraInstanceID, expi
         return true
     end
 
-    if cooldownFrame.Clear then
-        cooldownFrame:Clear()
-    end
+    Helpers.ClearCooldown(cooldownFrame)
     return false
 end
 

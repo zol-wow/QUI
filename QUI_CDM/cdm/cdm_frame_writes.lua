@@ -5,11 +5,17 @@ local _, ns = ...
 local CDMRenderers = {}
 ns.CDMRenderers = CDMRenderers
 local issecretvalue = issecretvalue
+local Helpers = ns.Helpers
+
+local function CanMutateCooldown(cd)
+    return not Helpers or not Helpers.CanMutateCooldown or Helpers.CanMutateCooldown(cd)
+end
 
 function CDMRenderers.ApplyDurationObjectCooldown(cd, durObj, clearWhenZero, reverse)
     if not cd or type(durObj) == "nil" or not cd.SetCooldownFromDurationObject then
         return false
     end
+    if not CanMutateCooldown(cd) then return false end
 
     if clearWhenZero == nil then
         clearWhenZero = true
@@ -45,6 +51,7 @@ function CDMRenderers.ApplyNumericCooldown(cd, startTime, duration, reverse)
     if not cd or not cd.SetCooldown or not startTime or not duration then
         return false
     end
+    if not CanMutateCooldown(cd) then return false end
 
     if cd.SetReverse then
         cd.SetReverse(cd, reverse and true or false)
@@ -55,12 +62,14 @@ end
 
 function CDMRenderers.ClearCooldown(cd, reverse)
     if not cd then return end
+    if not CanMutateCooldown(cd) then return false end
     if reverse ~= nil and cd.SetReverse then
         cd.SetReverse(cd, reverse and true or false)
     end
     if cd.Clear then
         cd.Clear(cd)
     end
+    return true
 end
 
 function CDMRenderers.SetStatusBarValue(statusBar, value, minValue, maxValue)

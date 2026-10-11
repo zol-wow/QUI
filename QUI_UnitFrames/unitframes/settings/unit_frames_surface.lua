@@ -297,6 +297,30 @@ ns.QUI_UnitFramesPreviewShared.GetPlayerClassColorOr = GetPlayerClassColorOr
 ns.QUI_UnitFramesPreviewShared.ApplyHairlineBorder = ApplyHairlineBorder
 ns.QUI_UnitFramesPreviewShared.CreateHairlineBorder = CreateHairlineBorder
 
+local function BuildPreviewTextTarget(mock, text, sectionName)
+    local button = CreateFrame("Button", nil, mock)
+    button:SetAllPoints(text)
+    button:SetHitRectInsets(-3, -3, -3, -3)
+    button:SetFrameLevel(mock:GetFrameLevel() + 15)
+    button:SetScript("OnClick", function()
+        if not text:IsShown() or type(GUI.NavigateSearchResult) ~= "function" then return end
+        if GUI.Tooltip then GUI.Tooltip:Hide(true) end
+        GUI:NavigateSearchResult({
+            featureId = "unitFramesPage", tileId = "unit_frames",
+            tabIndex = 5, subTabIndex = 0, subPageIndex = 1,
+            surfaceTabKey = "text", surfaceUnitKey = State.selectedUnit,
+            sectionName = sectionName,
+        }, { scrollToLabel = sectionName, pulse = true })
+    end)
+    button:SetScript("OnEnter", function(self)
+        if GUI.Tooltip then GUI.Tooltip:Show(self, ns.L["Click to edit text settings."], { title = sectionName }) end
+    end)
+    button:SetScript("OnLeave", function()
+        if GUI.Tooltip then GUI.Tooltip:Hide() end
+    end)
+    return button
+end
+
 local function BuildMockFrame(host)
     local mock = CreateFrame("Frame", nil, host)
     mock:SetPoint("CENTER", host, "CENTER", 0, 0)
@@ -327,6 +351,9 @@ local function BuildMockFrame(host)
 
     mock._healthText = mock:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     mock._healthText:SetJustifyH("RIGHT")
+
+    mock._nameTextButton = BuildPreviewTextTarget(mock, mock._nameText, ns.L["Name Text"])
+    mock._healthTextButton = BuildPreviewTextTarget(mock, mock._healthText, ns.L["Health Text"])
 
     mock._powerText = mock:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     mock._powerText:SetJustifyH("RIGHT")
@@ -574,14 +601,14 @@ local function RefreshMock()
     mock._healthBar:SetPoint("TOPLEFT", mock, "TOPLEFT", inner, healthTop)
     mock._healthBar:SetHeight(healthH)
     local texPath = ResolveStatusBarTexture(unitDB.texture)
-    mock._healthBar:SetTexture(texPath)
+    ns.Helpers.ApplyTextureStyle(mock, mock._healthBar, texPath)
     local hR, hG, hB, hA = ResolveHealthColor(State.selectedUnit, unitDB, general)
     mock._healthBar:SetVertexColor(hR, hG, hB, 1)
     mock._healthBar:SetAlpha(hA or 1)
 
     if unitDB.healPrediction and unitDB.healPrediction.enabled then
         local c = unitDB.healPrediction.color or { 0.2, 1, 0.2 }
-        mock._healPred:SetTexture(texPath)
+        ns.Helpers.ApplyTextureStyle(mock, mock._healPred, texPath)
         mock._healPred:SetVertexColor(c[1], c[2], c[3], 1)
         mock._healPred:SetAlpha(unitDB.healPrediction.opacity or 0.5)
         mock._healPred:ClearAllPoints()
@@ -594,7 +621,7 @@ local function RefreshMock()
     if unitDB.absorbs and unitDB.absorbs.enabled then
         local absTex = ResolveStatusBarTexture(unitDB.absorbs.texture or unitDB.texture)
         local c = unitDB.absorbs.color or { 0.2, 0.8, 0.8 }
-        mock._absorb:SetTexture(absTex)
+        ns.Helpers.ApplyTextureStyle(mock, mock._absorb, absTex)
         mock._absorb:SetVertexColor(c[1], c[2], c[3], 1)
         mock._absorb:SetAlpha(unitDB.absorbs.opacity or 0.7)
         mock._absorb:ClearAllPoints()
@@ -630,7 +657,7 @@ local function RefreshMock()
         mock._powerBar:ClearAllPoints()
         mock._powerBar:SetPoint("BOTTOMLEFT", mock, "BOTTOMLEFT", inner, inner)
         mock._powerBar:SetHeight(powerH)
-        mock._powerBar:SetTexture(ptex)
+        ns.Helpers.ApplyTextureStyle(mock, mock._powerBar, ptex)
         mock._powerBar:SetVertexColor(pColor[1], pColor[2], pColor[3], 1)
     else
         mock._powerBg:Hide()
@@ -974,6 +1001,8 @@ local function RefreshMock()
     if ns.QUI_UnitFramesBodyPreview and ns.QUI_UnitFramesBodyPreview.Refresh then
         ns.QUI_UnitFramesBodyPreview.Refresh(unitDB, general)
     end
+    mock._nameTextButton:SetShown(mock._nameText:IsShown())
+    mock._healthTextButton:SetShown(mock._healthText:IsShown())
     RequestPreviewAutoHeight(mock)
 end
 
@@ -996,6 +1025,9 @@ local function BuildPreviewBlock(pv, opts)
         selectedValue = State.selectedUnit,
         dropdownStateKey = "_selectedUnit",
         dropdownLabel = ns.L["Unit"],
+        dropdownConfig = { searchable = false, collapsible = false, compact = true },
+        headerHeight = 26,
+        alignHeaderControls = true,
         dropdownOptions = type(getUnitOptions) == "function" and getUnitOptions() or {},
         dropdownMeta = {
             description = ns.L["Select which unit frame to configure. Settings in the tabs below apply to the chosen unit."],
@@ -1014,7 +1046,7 @@ local function BuildPreviewBlock(pv, opts)
             State.previewMock._previewAutoHeight = not opts or opts.autoHeight ~= false
             State.previewMock._previewScaleBudgetHeight =
                 (opts and opts.scaleBudgetHeight) or (bodyOnly and 140 or 180)
-            State.previewMock._previewChromeHeight = showDropdown and 56 or 20
+            State.previewMock._previewChromeHeight = pv._quiPreviewChromeHeight
             State.previewMock._previewMinHeight =
                 (opts and opts.minHeight) or (bodyOnly and 60 or 96)
             State.previewMock._previewMaxHeight = opts and opts.maxHeight

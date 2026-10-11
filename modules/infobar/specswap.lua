@@ -1,3 +1,5 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local _, ns = ...
 local QUICore = ns.Addon
 local Datatexts = QUICore and QUICore.Datatexts
@@ -5,6 +7,24 @@ if not Datatexts then return end
 
 local format = string.format
 local floor = math.floor
+local isForever = ns.Client and ns.Client.isForever or false
+
+local function GetSwitchIndex()
+    if isForever then return C_SpecializationInfo.GetActiveSpecGroup() end
+    return GetSpecialization()
+end
+
+local function GetSwitchCount()
+    if isForever then return _G.GetNumSpecGroups() or 0 end
+    return GetNumSpecializations() or 0
+end
+
+local function GetSwitchInfo(index)
+    if isForever then
+        return index, index == 1 and _G.DUAL_SPEC_PRIMARY or _G.DUAL_SPEC_SECONDARY
+    end
+    return GetSpecializationInfo(index)
+end
 
 local ICON_STRING = "|T%s:14:14:0:0:64:64:4:60:4:60|t"
 
@@ -50,21 +70,21 @@ Datatexts:Register("specswap", {
         local text = EnsureText(slotFrame)
 
         local function Update()
-            local specIndex = GetSpecialization()
+            local specIndex = GetSwitchIndex()
             if not specIndex then
                 text:SetText(ns.L["No Spec"])
                 MarkWidthDirty(slotFrame)
                 return
             end
 
-            local specID, specName, _, icon = GetSpecializationInfo(specIndex)
-            if not specID or specID == 0 or not specName or not icon then
+            local specID, specName, _, icon = GetSwitchInfo(specIndex)
+            if not specID or specID == 0 or not specName then
                 text:SetText("?")
                 MarkWidthDirty(slotFrame)
                 return
             end
 
-            local iconText = (not slotFrame.hideIcon) and format(ICON_STRING, icon) or nil
+            local iconText = (not slotFrame.hideIcon) and icon and format(ICON_STRING, icon) or nil
             if slotFrame.noLabel and iconText then
                 text:SetText(iconText)
             else
@@ -85,6 +105,10 @@ Datatexts:Register("specswap", {
         frame:RegisterEvent("PLAYER_ENTERING_WORLD")
         frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
         frame:RegisterEvent("PLAYER_LOOT_SPEC_UPDATED")
+        if isForever then
+            frame:RegisterEvent("PLAYER_TALENT_UPDATE")
+            frame:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
+        end
         frame:SetScript("OnEvent", function(_, event)
             if event == "PLAYER_SPECIALIZATION_CHANGED" then
                 C_Timer.After(0.1, Update)
@@ -103,10 +127,10 @@ Datatexts:Register("specswap", {
             local ar, ag, ab = GetValueColor()
             ar, ag, ab = ar / 255, ag / 255, ab / 255
 
-            local currentSpec = GetSpecialization()
+            local currentSpec = GetSwitchIndex()
             local numSpecs = GetNumSpecializations() or 0
-            for i = 1, numSpecs do
-                local _, specName = GetSpecializationInfo(i)
+            for i = 1, GetSwitchCount() do
+                local _, specName = GetSwitchInfo(i)
                 if specName then
                     if i == currentSpec then
                         GameTooltip:AddDoubleLine(specName, ns.L["Active"],
@@ -141,7 +165,7 @@ Datatexts:Register("specswap", {
 
         slotFrame:RegisterForClicks("AnyUp")
         slotFrame:SetScript("OnClick", function(self, button)
-            local specIndex = GetSpecialization()
+            local specIndex = GetSwitchIndex()
             if not specIndex then return end
             local numSpecs = GetNumSpecializations() or 0
 
@@ -149,14 +173,18 @@ Datatexts:Register("specswap", {
                 MenuUtil.CreateContextMenu(self, function(_, root)
                     root:CreateTitle(ns.L["Switch Specialization"])
                     local function IsSelected(i)
-                        return i == GetSpecialization()
+                        return i == GetSwitchIndex()
                     end
                     local function SetSelected(i)
                         if InCombatLockdown() then return end
-                        C_SpecializationInfo.SetSpecialization(i)
+                        if isForever then
+                            C_SpecializationInfo.SetActiveSpecGroup(i)
+                        else
+                            C_SpecializationInfo.SetSpecialization(i)
+                        end
                     end
-                    for i = 1, numSpecs do
-                        local _, specName, _, icon = GetSpecializationInfo(i)
+                    for i = 1, GetSwitchCount() do
+                        local _, specName, _, icon = GetSwitchInfo(i)
                         if specName then
                             local prefix = icon and (format(ICON_STRING, icon) .. " ") or ""
                             root:CreateRadio(prefix .. specName,

@@ -279,7 +279,12 @@ end
 function QUI:SlashCommandOpen(input)
     local isUISmokeCommand = input and input:match("^uitest")
 
-    if isUISmokeCommand and (input == "uitest" or input:match("^uitest%s")) then
+    if input == "client" and ns.Client then
+        print(("QUI: %s %s (build %s, interface %s)"):format(
+            ns.Client.flavor, tostring(ns.Client.version), tostring(ns.Client.build),
+            tostring(ns.Client.interfaceVersion)))
+        return
+    elseif isUISmokeCommand and (input == "uitest" or input:match("^uitest%s")) then
         local subcmd = input:match("^uitest%s*(.*)$") or ""
         local ok, reason = self:EnsureDebugToolsLoaded()
         if not ok then

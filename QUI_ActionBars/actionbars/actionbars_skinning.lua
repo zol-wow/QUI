@@ -154,6 +154,7 @@ function SuppressProcVisualFrame(frame)
 end
 
 local function ShouldSuppressNativeProc()
+    if ActionBarsOwned.useNativeButtons then return false end
     local db = GetDB()
     local source = db and db.global and db.global.glowSource or "QUI"
     return source ~= "Skin" and source ~= "Off"
@@ -242,6 +243,10 @@ end
 ActionBarsOwned.GetButtonRegions = GetButtonRegions
 
 SkinButton = function(button, settings)
+    if ActionBarsOwned.useNativeButtons and InCombatLockdown() then
+        ActionBarsOwned.pendingRefresh = true
+        return
+    end
     if not button or not settings then
         return
     end
@@ -267,6 +272,28 @@ SkinButton = function(button, settings)
     end
 
     local state = GetFrameState(button)
+
+    local appearanceDB = GetDB()
+    local appearanceGlobal = appearanceDB and appearanceDB.global
+    local appearanceSkin = appearanceGlobal and appearanceGlobal.iconSkin
+    if appearanceGlobal and appearanceGlobal.externalSkinning
+        and ns.ExternalSkinBridge and ns.ExternalSkinBridge.IsAvailable() then
+        appearanceSkin = "External"
+    end
+    local icon = GetButtonIconTexture(button)
+    local buttonName = button.GetName and button:GetName()
+    local isSpellFlyoutButton = buttonName and (
+        buttonName:match("^SpellFlyoutPopupButton%d+$")
+        or buttonName:match("^SpellFlyoutButton%d+$")
+    )
+    local barKey = GetBarKeyFromButton(button)
+    local action = GetSafeActionSlot(button)
+    if icon and action and barKey ~= "stance" and barKey ~= "pet" and not isSpellFlyoutButton
+        and not HasButtonContent(button, action) then
+        icon:SetTexture(nil)
+        appearanceSkin = "Empty"
+    end
+    Helpers.ApplyIconStyle(button, icon, appearanceSkin)
 
     local _sz = settings.iconSize or 36
     local _zm = settings.iconZoom or 0.07
@@ -301,22 +328,10 @@ SkinButton = function(button, settings)
     local iconSize = settings.iconSize or 36
     local zoom = settings.iconZoom or 0.07
 
-    local icon = GetButtonIconTexture(button)
     if icon then
         icon:SetTexCoord(zoom, 1 - zoom, zoom, 1 - zoom)
         icon:ClearAllPoints()
         icon:SetAllPoints(button)
-        local buttonName = button.GetName and button:GetName()
-        local isSpellFlyoutButton = buttonName and (
-            buttonName:match("^SpellFlyoutPopupButton%d+$")
-            or buttonName:match("^SpellFlyoutButton%d+$")
-        )
-        local barKey = GetBarKeyFromButton(button)
-        local action = GetSafeActionSlot(button)
-        if action and barKey ~= "stance" and barKey ~= "pet" and not isSpellFlyoutButton
-            and not HasButtonContent(button, action) then
-            icon:SetTexture(nil)
-        end
         icon:SetAlpha(1)
         if icon.Show then icon:Show() end
     end

@@ -391,7 +391,7 @@ local function EnsureWindow()
             return
         end
         if not Bags.SortExecutor.IsRunning() then
-            Bags.SortExecutor.Start("bags")
+            Bags.SortExecutor.Start("bags", BagWindow.Refresh)
         end
     end)
     sort:SetScript("OnEnter", function(self)
@@ -538,11 +538,13 @@ local function UpdateFreeText(slots)
     win._free:SetText(free .. " " .. ns.L["free"])
 end
 
-local function SignatureOpts(appearance)
+local function SignatureOpts(appearance, behavior)
     return {
         layoutMode = appearance.layoutMode,
         reagentDisplay = appearance.reagentDisplay,
         groupEmptySlots = appearance.groupEmptySlots and true or false,
+        sortKey = behavior and behavior.sortKey,
+        sortReverse = behavior and behavior.sortReverse,
         getRecent = function(cell) return cell._newGuid ~= nil end,
     }
 end
@@ -588,7 +590,11 @@ function BagWindow.Refresh()
         for _, cell in ipairs(slots) do
             cell.recent = cell._newGuid ~= nil
         end
-        local groups = Bags.CategoryLayout.Group(slots, Bags.Details.Build)
+        local behavior = s and s.behavior
+        local groups = Bags.CategoryLayout.Group(slots, Bags.Details.Build, {
+            key = behavior and behavior.sortKey,
+            reverse = behavior and behavior.sortReverse,
+        })
         local cl = Bags.CategoryLayout.Compute(groups, gridOpts)
         placed, catHeaders = cl.buttons, cl.headers
         contentW, contentH = cl.width, cl.height
@@ -653,8 +659,8 @@ function BagWindow.Refresh()
     if win._stripToggle then
         if live then
             win._stripToggle._label:SetText(showStrip and "-" or "+")
-            local tr, tg, tb = Helpers.GetSkinColors()
-            UIKit.UpdateBorderLines(win._stripToggle, 1, tr, tg, tb, 0.35)
+            local tr, tg, tb, ta = Helpers.GetWindowColors()
+            UIKit.UpdateBorderLines(win._stripToggle, 1, tr, tg, tb, 0.35 * ta)
             win._stripToggle:ClearAllPoints()
             win._stripToggle:SetPoint("TOPLEFT", win._body, "TOPLEFT",
                 0, showStrip and -((BAG_SLOT_SIZE - 14) / 2) or -1)
@@ -671,6 +677,7 @@ function BagWindow.Refresh()
                 local tex = inv and GetInventoryItemTexture("player", inv) or nil
                 if tex then
                     b._icon:SetTexture(tex)
+                    Helpers.ApplyIconStyle(b, b._icon)
                     b._icon:Show()
                     local q = GetInventoryItemQuality("player", inv)
                     local qr, qg, qb = Bags.ItemButtons.GetQualityColor(q or 1)
@@ -679,8 +686,8 @@ function BagWindow.Refresh()
                 else
                     b._icon:Hide()
                     b._count:SetText("")
-                    local er, eg, eb = Helpers.GetSkinColors()
-                    UIKit.UpdateBorderLines(b, 1, er, eg, eb, 0.35)
+                    local er, eg, eb, ea = Helpers.GetWindowColors()
+                    UIKit.UpdateBorderLines(b, 1, er, eg, eb, 0.35 * ea)
                 end
                 b:SetAlpha(IsBagHidden(i) and 0.35 or 1)
                 b:ClearAllPoints()
@@ -711,8 +718,8 @@ function BagWindow.Refresh()
     win._ownerSelect:Update()
 
     if live then
-        local sr, sg, sb = Helpers.GetSkinColors()
-        UIKit.UpdateBorderLines(win._sortBtn, 1, sr, sg, sb, 0.35)
+        local sr, sg, sb, sa = Helpers.GetWindowColors()
+        UIKit.UpdateBorderLines(win._sortBtn, 1, sr, sg, sb, 0.35 * sa)
         win._sortBtn:Show()
     else
         win._sortBtn:Hide()
@@ -720,8 +727,9 @@ function BagWindow.Refresh()
 
     if not live and selectMode then ClearSelection() end
     if live then
-        local sr, sg, sb = Helpers.GetSkinColors()
-        UIKit.UpdateBorderLines(win._selectBtn, 1, sr, sg, sb, selectMode and 1 or 0.35)
+        local sr, sg, sb, sa = Helpers.GetWindowColors()
+        local ar, ag, ab = Helpers.GetSkinColors()
+        UIKit.UpdateBorderLines(win._selectBtn, 1, selectMode and ar or sr, selectMode and ag or sg, selectMode and ab or sb, selectMode and 1 or (0.35 * sa))
         win._selectBtn:Show()
     else
         win._selectBtn:Hide()
@@ -870,7 +878,7 @@ function BagWindow.Refresh()
     repaint.placed = placed
     repaint.live = live
     repaint.sig = Bags.RefreshScope.LayoutSignature(slots,
-        SignatureOpts(appearance), Bags.Details.Build)
+        SignatureOpts(appearance, s and s.behavior), Bags.Details.Build)
     repaint.contentW, repaint.contentH = contentW, contentH
     local index = {}
     for _, p in ipairs(placed) do
@@ -945,11 +953,11 @@ RunScheduledRepaint = function()
     if bagSet and not live then
         dressAll, bagSet = true, nil
     end
-    if bagSet then
+    if bagSet or dressAll then
         local s = GetSettings()
         local appearance = Bags.Chassis.ClampAppearance((s and s.appearance) or nil)
         local slots = CollectSlots()
-        if Bags.NewItems then
+        if live and Bags.NewItems then
             for _, cell in ipairs(slots) do
                 if cell.entry then
                     cell._newGuid = Bags.NewItems.CheckSlot(cell.bagID, cell.slot, cell.entry)
@@ -957,16 +965,14 @@ RunScheduledRepaint = function()
             end
         end
         local sig = Bags.RefreshScope.LayoutSignature(slots,
-            SignatureOpts(appearance), Bags.Details.Build)
+            SignatureOpts(appearance, s and s.behavior), Bags.Details.Build)
         if sig ~= repaint.sig then
             BagWindow.Refresh()
             return
         end
-        RedressCells(dressAll and nil or bagSet)
+        RedressCells(not dressAll and bagSet or nil)
         UpdateFreeText(slots)
         UpdateBagSlotStripCounts()
-    elseif dressAll then
-        RedressCells(nil)
     end
     if search then SearchPass() end
     if currency then UpdateCurrencyBar() end

@@ -21,7 +21,8 @@ local DESCS = {
     QUI_UnitFrames   = ns.L["Player, target, focus, and boss frames."],
     QUI_DamageMeter  = ns.L["Built-in damage meter."],
     QUI_Bags         = ns.L["Bag, bank, guild bank, and storage windows with a cross-character cache."],
-    QUI_Reminders    = ns.L["Defensive callouts driven by BigWigs, DBM, or the encounter timeline."],
+    QUI_Reminders    = ns.L["Defensive callouts, spell cooldown reminders, and Power Infusion coordination."],
+    QUI_UnderlightAnglerHelper = ns.L["Underlight Angler acquisition checklist and artifact trait tree."],
     minimap          = ns.L["Minimap reskin and button drawer."],
     infobar          = ns.L["Full-width top/bottom info bar with datatext widgets."],
     alts             = ns.L["Alt roster window over the account-wide character cache."],
@@ -34,6 +35,7 @@ local function ShowReloadPrompt()
     local GUI = QUI and QUI.GUI
     if GUI and type(GUI.ShowConfirmation) == "function" then
         GUI:ShowConfirmation({
+            reload = true,
             title      = ns.L["Reload UI?"],
             message    = ns.L["This change takes full effect after a reload."],
             acceptText = ns.L["Reload"],
@@ -87,6 +89,7 @@ local LABELS = {
     QUI_DamageMeter  = ns.L["Damage Meter"],
     QUI_Bags         = ns.L["Bags"],
     QUI_Reminders    = ns.L["Reminders"],
+    QUI_UnderlightAnglerHelper = ns.L["Underlight Angler Helper"],
     minimap          = ns.L["Minimap"],
     infobar          = ns.L["Info Bar"],
     alts             = ns.L["Alts"],

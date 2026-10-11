@@ -418,7 +418,7 @@ local function CreateWindow(id)
 
     local cd = GetCustomDisplaySettings()
     local linkHandler = CreateFrame(
-        "ScrollingMessageFrame", smfName .. "LinkHandler", container, "ChatFrameTemplate,InlineHyperlinkFrameTemplate")
+        "ScrollingMessageFrame", smfName .. "LinkHandler", container, "InlineHyperlinkFrameTemplate")
     win.linkHandler = linkHandler
     linkHandler:SetAllPoints(container)
     linkHandler:UnregisterAllEvents()

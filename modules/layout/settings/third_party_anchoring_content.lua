@@ -292,7 +292,7 @@ if Registry and Schema and RenderAdapters
         moverKey = "thirdPartyAnchoring",
         lookupKeys = { "dandersParty", "dandersRaid", "dandersPinned1", "dandersPinned2" },
         category = "global",
-        nav = { tileId = "global", subPageIndex = 4 },
+        nav = { tileId = "global", subPageIndex = 5 },
         sections = {
             Schema.Section({
                 id = "settings",

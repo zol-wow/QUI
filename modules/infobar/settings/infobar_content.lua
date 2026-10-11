@@ -32,6 +32,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
     local InfoBarPageState = {
         selectedWidget = nil,
+        arrangementSelection = nil,
+        removedWidget = nil,
+        arrangementScroll = {},
     }
 
     local function EnsureInfoBarConfig(profile)
@@ -99,14 +102,6 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
     local function RefreshInfoBar()
         if _G.QUI_RefreshInfoBar then _G.QUI_RefreshInfoBar() end
-    end
-
-    local function GetAccent()
-        local QGUI = _G.QUI and _G.QUI.GUI
-        if QGUI and QGUI.Colors and QGUI.Colors.accent then
-            return QGUI.Colors.accent[1], QGUI.Colors.accent[2], QGUI.Colors.accent[3]
-        end
-        return 0.376, 0.647, 0.980
     end
 
     local function NotifyStructuralRefresh()
@@ -185,197 +180,218 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         vis.AddRow(row(vis.frame, ns.L["Hide in Combat"], combatW))
         L.closeSection(vis)
 
-        local ZONE_ROW_HEIGHT = 26
-        for _, zdef in ipairs(ZONE_DEFS) do
-            local zoneList = db.zones[zdef.key]
-
-            L.headerAt(zdef.label)
-            local zoneFrame = CreateFrame("Frame", nil, content)
-
-            local hintFs = zoneFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-            hintFs:SetPoint("TOPLEFT", zoneFrame, "TOPLEFT", 4, -4)
-            hintFs:SetPoint("RIGHT", zoneFrame, "RIGHT", -4, 0)
-            hintFs:SetJustifyH("LEFT")
-            hintFs:SetTextColor(0.6, 0.6, 0.6, 0.8)
-            hintFs:SetText(#zoneList > 0
-                and ns.L["Drag a row (or use the arrows) to reorder; x removes the widget from the bar."]
-                or ns.L["No widgets in this zone. Add one below."])
-
-            local accR, accG, accB = GetAccent()
-            local ZONE_LIST_TOP = 24
-
-            local dropLine = zoneFrame:CreateTexture(nil, "OVERLAY")
-            dropLine:SetHeight(2)
-            dropLine:SetColorTexture(accR, accG, accB, 0.9)
-            if ns.UIKit and ns.UIKit.DisablePixelSnap then
-                ns.UIKit.DisablePixelSnap(dropLine)
-            end
-            dropLine:Hide()
-
-            local function DropGapFromCursor()
-                local top = zoneFrame:GetTop()
-                if not top then return 1 end
-                local _, cursorY = GetCursorPosition()
-                cursorY = cursorY / zoneFrame:GetEffectiveScale()
-                local offset = (top - cursorY) - ZONE_LIST_TOP
-                local gap = math.floor(offset / ZONE_ROW_HEIGHT + 0.5) + 1
-                if gap < 1 then gap = 1 end
-                if gap > #zoneList + 1 then gap = #zoneList + 1 end
-                return gap
-            end
-
-            local ry = -ZONE_LIST_TOP
-            for idx, widgetId in ipairs(zoneList) do
-                local r = CreateFrame("Frame", nil, zoneFrame)
-                r:SetHeight(ZONE_ROW_HEIGHT - 4)
-                r:SetPoint("TOPLEFT", zoneFrame, "TOPLEFT", 0, ry)
-                r:SetPoint("RIGHT", zoneFrame, "RIGHT", 0, 0)
-
-                local nameFs = r:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-                nameFs:SetPoint("LEFT", r, "LEFT", 4, 0)
-                nameFs:SetPoint("RIGHT", r, "RIGHT", -70, 0)
-                nameFs:SetJustifyH("LEFT")
-                if GetWidgetDef(QUICore, widgetId) then
-                    nameFs:SetText(GetWidgetDisplayName(QUICore, widgetId))
-                    nameFs:SetTextColor(0.9, 0.9, 0.9, 1)
-                else
-                    nameFs:SetText(tostring(widgetId) .. " " .. ns.L["(not loaded)"])
-                    nameFs:SetTextColor(0.6, 0.6, 0.6, 1)
+        L.headerAt(ns.L["Arrangement"])
+        local editor = CreateFrame("Frame", nil, content)
+        local dragGroup = {}
+        local columns = {}
+        local selected = InfoBarPageState.arrangementSelection
+        local function Find(id)
+            for _, z in ipairs(ZONE_DEFS) do
+                for index, value in ipairs(db.zones[z.key]) do
+                    if value == id then return z.key, index end
                 end
-
-                local hoverBg = r:CreateTexture(nil, "BACKGROUND")
-                hoverBg:SetAllPoints()
-                hoverBg:SetColorTexture(accR, accG, accB, 0.08)
-                hoverBg:Hide()
-
-                local function makeRowButton(text, xOff, tip)
-                    local btn = CreateFrame("Button", nil, r)
-                    btn:SetSize(16, 16)
-                    btn:SetPoint("RIGHT", r, "RIGHT", xOff, 0)
-                    btn:SetNormalFontObject("GameFontNormalSmall")
-                    btn:SetText(text)
-                    btn:GetFontString():SetTextColor(accR, accG, accB, 1)
-                    btn:SetScript("OnEnter", function(self)
-                        hoverBg:Show()
-                        QUI.GUI.Tooltip:Show(self, tip, { anchor = "TOP" })
-                    end)
-                    btn:SetScript("OnLeave", function(self)
-                        QUI.GUI.Tooltip:Hide(false, self)
-                        if not r:IsMouseOver() then hoverBg:Hide() end
-                    end)
-                    return btn
-                end
-
-                local capturedId = widgetId
-                local function findCurrentIndex()
-                    for i, id in ipairs(zoneList) do
-                        if id == capturedId then return i end
-                    end
-                    return nil
-                end
-
-                r:EnableMouse(true)
-                r:RegisterForDrag("LeftButton")
-                r:SetScript("OnEnter", function(self)
-                    hoverBg:Show()
-                    QUI.GUI.Tooltip:Show(self, ns.L["Drag to reorder within this zone, or use the arrows."], {
-                        title = GetWidgetDisplayName(QUICore, capturedId),
-                        anchor = "TOP",
-                    })
-                end)
-                r:SetScript("OnLeave", function(self)
-                    QUI.GUI.Tooltip:Hide(false, self)
-                    if not self:IsMouseOver() then hoverBg:Hide() end
-                end)
-                r:SetScript("OnDragStart", function(self)
-                    QUI.GUI.Tooltip:Hide(true)
-                    self:SetAlpha(0.4)
-                    dropLine:Show()
-                    self:SetScript("OnUpdate", function()
-                        local gap = DropGapFromCursor()
-                        dropLine:ClearAllPoints()
-                        dropLine:SetPoint("TOPLEFT", zoneFrame, "TOPLEFT", 0,
-                            -(ZONE_LIST_TOP + (gap - 1) * ZONE_ROW_HEIGHT) + 1)
-                        dropLine:SetPoint("RIGHT", zoneFrame, "RIGHT", -4, 0)
-                    end)
-                end)
-                r:SetScript("OnDragStop", function(self)
-                    self:SetScript("OnUpdate", nil)
-                    self:SetAlpha(1)
-                    dropLine:Hide()
-                    local gap = DropGapFromCursor()
-                    local curIdx = findCurrentIndex()
-                    if not curIdx then return end
-                    local target = (gap > curIdx) and (gap - 1) or gap
-                    if target ~= curIdx then
-                        table.remove(zoneList, curIdx)
-                        table.insert(zoneList, target, capturedId)
-                        RefreshInfoBar()
-                        NotifyStructuralRefresh()
-                    end
-                end)
-
-                local upBtn = makeRowButton("^", -44, ns.L["Move up"])
-                upBtn:SetScript("OnClick", function()
-                    local curIdx = findCurrentIndex()
-                    if curIdx and curIdx > 1 then
-                        zoneList[curIdx], zoneList[curIdx - 1] =
-                            zoneList[curIdx - 1], zoneList[curIdx]
-                        RefreshInfoBar()
-                        NotifyStructuralRefresh()
-                    end
-                end)
-                upBtn:SetAlpha(idx > 1 and 1 or 0.3)
-
-                local downBtn = makeRowButton("v", -24, ns.L["Move down"])
-                downBtn:SetScript("OnClick", function()
-                    local curIdx = findCurrentIndex()
-                    if curIdx and curIdx < #zoneList then
-                        zoneList[curIdx], zoneList[curIdx + 1] =
-                            zoneList[curIdx + 1], zoneList[curIdx]
-                        RefreshInfoBar()
-                        NotifyStructuralRefresh()
-                    end
-                end)
-                downBtn:SetAlpha(idx < #zoneList and 1 or 0.3)
-
-                local removeBtn = makeRowButton("x", -4, ns.L["Remove from bar"])
-                removeBtn:SetScript("OnClick", function()
-                    local curIdx = findCurrentIndex()
-                    if curIdx then
-                        table.remove(zoneList, curIdx)
-                        RefreshInfoBar()
-                        NotifyStructuralRefresh()
-                    end
-                end)
-
-                ry = ry - ZONE_ROW_HEIGHT
             end
-
-            local addOpts = { { value = "", text = ns.L["Add widget..."] } }
-            for _, opt in ipairs(GetAvailableWidgetOptions(QUICore, placedSet)) do
-                addOpts[#addOpts + 1] = opt
-            end
-            local addDD = GUI:CreateFormDropdown(zoneFrame, nil, addOpts, nil, nil, function(val)
-                if not val or val == "" then return end
-                for _, widgetId in ipairs(zoneList) do
-                    if widgetId == val then return end
-                end
-                zoneList[#zoneList + 1] = val
-                RefreshInfoBar()
-                NotifyStructuralRefresh()
-            end, { description = ns.L["Add a widget to the end of this zone. Widgets already placed in any zone are not listed."] },
-                { searchable = true })
-            AttachDropdownTooltip(addDD,
-                ns.L["Add a widget to the end of this zone. Widgets already placed in any zone are not listed."],
-                ns.L["Add Widget"])
-            addDD:SetPoint("TOPLEFT", zoneFrame, "TOPLEFT", 0, ry - 4)
-            addDD:SetPoint("RIGHT", zoneFrame, "RIGHT", -4, 0)
-            if addDD.SetValue then addDD:SetValue("", true) end
-
-            local zoneHeight = 24 + (#zoneList * ZONE_ROW_HEIGHT) + 38
-            L.placeCustom(zoneFrame, zoneHeight)
         end
+        local function RefreshZone()
+            RefreshInfoBar()
+            NotifyStructuralRefresh()
+        end
+        local function Move(id, zone, gap)
+            local driver = QUICore and QUICore.InfoBar and QUICore.InfoBar.DragReorder
+            if driver and driver.MoveWidget(db, id, zone, gap) then
+                InfoBarPageState.arrangementSelection = id
+                RefreshZone()
+            end
+        end
+        local preview = CreateFrame("Frame", nil, editor)
+        preview:SetPoint("TOPLEFT", 0, 0)
+        preview:SetPoint("TOPRIGHT", 0, 0)
+        preview:SetHeight(70)
+        ns.UIKit.CreateRoundedSurface(preview, {radius = 8,
+            bgColor = GUI.Colors.bgContent, borderColor = GUI.Colors.border})
+        local previewTitle = GUI:CreateLabel(preview, ns.L["Bar arrangement preview"], 11, GUI.Colors.textMuted)
+        previewTitle:SetPoint("TOPLEFT", 10, -8)
+        local previewParts = {}
+        for _, z in ipairs(ZONE_DEFS) do
+            local part = CreateFrame("Frame", nil, preview)
+            local label = GUI:CreateLabel(part, "", 11)
+            label:SetAllPoints(part)
+            label:SetJustifyH(z.key == "center" and "CENTER" or z.key == "right" and "RIGHT" or "LEFT")
+            label:SetWordWrap(false)
+            local names = {}
+            for i, id in ipairs(db.zones[z.key]) do
+                if i <= 3 then names[#names + 1] = GetWidgetDisplayName(QUICore, id) end
+            end
+            if #db.zones[z.key] > 3 then names[#names + 1] = "+" .. (#db.zones[z.key] - 3) end
+            label:SetText(#names > 0 and table.concat(names, "  |  ") or ns.L["Empty"])
+            previewParts[#previewParts + 1] = part
+        end
+        local selectionText = GUI:CreateLabel(editor,
+            selected and GetWidgetDisplayName(QUICore, selected) or ns.L["Select a widget to move or remove it."], 12)
+        selectionText:SetPoint("TOPLEFT", 0, -82)
+        selectionText:SetPoint("TOPRIGHT", 0, -82)
+        selectionText:SetJustifyH("LEFT")
+        selectionText:SetWordWrap(false)
+        local selectedZone, selectedIndex = Find(selected)
+        local up = GUI:CreateButton(editor, ns.L["Move up"], 76, 24, function()
+            local zone, index = Find(InfoBarPageState.arrangementSelection)
+            if zone and index > 1 then Move(InfoBarPageState.arrangementSelection, zone, index - 1) end
+        end)
+        up:SetPoint("TOPLEFT", 0, -106)
+        up:SetEnabled(selectedIndex ~= nil and selectedIndex > 1)
+        local down = GUI:CreateButton(editor, ns.L["Move down"], 86, 24, function()
+            local zone, index = Find(InfoBarPageState.arrangementSelection)
+            if zone and index < #db.zones[zone] then Move(InfoBarPageState.arrangementSelection, zone, index + 2) end
+        end)
+        down:SetPoint("LEFT", up, "RIGHT", 6, 0)
+        down:SetEnabled(selectedZone ~= nil and selectedIndex < #db.zones[selectedZone])
+        local moveOptions = {}
+        for _, z in ipairs(ZONE_DEFS) do moveOptions[#moveOptions + 1] = {value = z.key, text = z.label} end
+        local moveDD = GUI:CreateFormDropdown(editor, nil, moveOptions, nil, nil, function(zone)
+            local id = InfoBarPageState.arrangementSelection
+            if id and Find(id) then Move(id, zone, #db.zones[zone] + 1) end
+        end, nil, {placeholder = ns.L["Move to zone"]})
+        moveDD:SetWidth(140)
+        moveDD:SetPoint("LEFT", down, "RIGHT", 8, 0)
+        moveDD:SetEnabled(selectedZone ~= nil)
+        local remove = GUI:CreateButton(editor, ns.L["Remove"], 72, 24, function()
+            local id = InfoBarPageState.arrangementSelection
+            local zone, index = Find(id)
+            if not zone then return end
+            InfoBarPageState.removedWidget = {id = id, zone = zone, index = index}
+            table.remove(db.zones[zone], index)
+            InfoBarPageState.arrangementSelection = nil
+            RefreshZone()
+        end)
+        remove:SetPoint("LEFT", moveDD, "RIGHT", 8, 0)
+        remove:SetEnabled(selectedZone ~= nil)
+        local undo = GUI:CreateButton(editor, ns.L["Undo removal"], 100, 24, function()
+            local removed = InfoBarPageState.removedWidget
+            if not removed then return end
+            if not Find(removed.id) then
+                local list = db.zones[removed.zone]
+                table.insert(list, math.min(removed.index, #list + 1), removed.id)
+            end
+            InfoBarPageState.arrangementSelection = removed.id
+            InfoBarPageState.removedWidget = nil
+            RefreshZone()
+        end)
+        undo:SetPoint("LEFT", remove, "RIGHT", 6, 0)
+        undo:SetEnabled(InfoBarPageState.removedWidget ~= nil)
+        local hint = GUI:CreateLabel(editor, ns.L["Drag by the handle to reorder or move between zones."], 11, GUI.Colors.textMuted)
+        hint:SetPoint("TOPLEFT", 0, -142)
+        local maxHeight = 0
+        for _, zdef in ipairs(ZONE_DEFS) do
+            local zoneKey = zdef.key
+            local zoneList = db.zones[zoneKey]
+            local zoneFrame = CreateFrame("Frame", nil, editor)
+            ns.UIKit.CreateRoundedSurface(zoneFrame, {radius = 8,
+                bgColor = GUI.Colors.bgContent, borderColor = GUI.Colors.border})
+            columns[#columns + 1] = zoneFrame
+            local title = GUI:CreateLabel(zoneFrame, zdef.label .. " (" .. #zoneList .. ")", 12)
+            title:SetPoint("TOPLEFT", 10, -10)
+            local addOpts = {{value = "", text = ns.L["Add widget..."]}}
+            for _, opt in ipairs(GetAvailableWidgetOptions(QUICore, placedSet)) do addOpts[#addOpts + 1] = opt end
+            local addDD = GUI:CreateFormDropdown(zoneFrame, nil, addOpts, nil, nil, function(id)
+                if not id or id == "" or Find(id) then return end
+                zoneList[#zoneList + 1] = id
+                InfoBarPageState.arrangementSelection = id
+                RefreshZone()
+            end, nil, {searchable = true})
+            addDD:SetPoint("TOPLEFT", 10, -34)
+            addDD:SetPoint("TOPRIGHT", -10, -34)
+            addDD:SetValue("", true)
+            local viewport = CreateFrame("ScrollFrame", nil, zoneFrame)
+            viewport:SetPoint("TOPLEFT", 8, -70)
+            viewport:SetPoint("BOTTOMRIGHT", -16, 8)
+            viewport:EnableMouseWheel(true)
+            local listHost = CreateFrame("Frame", nil, viewport)
+            listHost:SetPoint("TOPLEFT", 0, 0)
+            viewport:SetScrollChild(listHost)
+            viewport:HookScript("OnSizeChanged", function(self, width)
+                if width and width > 0 then listHost:SetWidth(width) end
+            end)
+            local _, listHeight = ns.QUI_ReorderList.Build(listHost, 0, {
+                items = zoneList, zone = zoneKey, dragGroup = dragGroup, dropOwner = viewport,
+                cards = true, actionsInToolbar = true, rowHeight = 32, hideHint = true,
+                selected = selected,
+                identify = function(id) return id end,
+                getLabel = function(id)
+                    return GetWidgetDisplayName(QUICore, id), not GetWidgetDef(QUICore, id)
+                end,
+                getTooltip = function(id)
+                    return GetWidgetDisplayName(QUICore, id),
+                        GetWidgetDef(QUICore, id) and ns.L["Drag to reorder or select for more actions."] or ns.L["This widget's addon is not loaded."]
+                end,
+                onSelect = function(id)
+                    InfoBarPageState.arrangementSelection = id
+                    NotifyStructuralRefresh()
+                end,
+                onDrop = function(id, target, gap) Move(id, target.zone, gap) end,
+                onChange = RefreshZone,
+            })
+            listHost:SetHeight(math.max(44, listHeight))
+            if ns.UIKit.CreateScrollBar then
+                ns.UIKit.CreateScrollBar(viewport, {width = 4, hitWidth = 12, offsetX = 8})
+            end
+            if #zoneList == 0 then
+                local empty = GUI:CreateLabel(listHost, ns.L["Drop a widget here"], 11, GUI.Colors.textMuted)
+                empty:SetPoint("TOPLEFT", 4, -8)
+            end
+            viewport:SetScript("OnMouseWheel", function(self, delta)
+                local offset = math.max(0, math.min(math.max(0, listHeight - self:GetHeight()),
+                    self:GetVerticalScroll() - delta * 32))
+                self:SetVerticalScroll(offset)
+                InfoBarPageState.arrangementScroll[zoneKey] = offset
+            end)
+            viewport:SetVerticalScroll(InfoBarPageState.arrangementScroll[zoneKey] or 0)
+            maxHeight = 410
+        end
+        local UpdateContentHeight
+        local toolbarWidth = up:GetWidth() + down:GetWidth() + moveDD:GetWidth() + remove:GetWidth() + undo:GetWidth() + 28
+        local function LayoutArrangement()
+            local width = editor:GetWidth()
+            if not width or width <= 0 then return end
+            local extraHeight = width < toolbarWidth and 32 or 0
+            remove:ClearAllPoints()
+            if extraHeight > 0 then
+                remove:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, -138)
+            else
+                remove:SetPoint("LEFT", moveDD, "RIGHT", 8, 0)
+            end
+            hint:ClearAllPoints()
+            hint:SetPoint("TOPLEFT", 0, -142 - extraHeight)
+            local height = maxHeight + 172 + extraHeight
+            if editor:GetHeight() ~= height then
+                editor:SetHeight(height)
+                if UpdateContentHeight then UpdateContentHeight() end
+            end
+            local columnWidth = (width - 20) / 3
+            for index, column in ipairs(columns) do
+                column:ClearAllPoints()
+                column:SetPoint("TOPLEFT", editor, "TOPLEFT", (index - 1) * (columnWidth + 10), -164 - extraHeight)
+                column:SetSize(columnWidth, maxHeight)
+                local part = previewParts[index]
+                part:ClearAllPoints()
+                part:SetPoint("TOPLEFT", preview, "TOPLEFT", 10 + (index - 1) * (columnWidth + 10), -32)
+                part:SetSize(columnWidth - 20, 26)
+            end
+        end
+        editor:SetScript("OnSizeChanged", LayoutArrangement)
+        local editorWidth = content:GetWidth() - 2 * (ns.QUI_Options.PADDING or 15)
+        L.placeCustom(editor, maxHeight + 172 + (editorWidth < toolbarWidth and 32 or 0))
+        LayoutArrangement()
+
+        if U and U._layoutModePositionOnly then
+            L.relayoutSections()
+            return content:GetHeight()
+        end
+        local precedingHeight = -L.getY() - editor:GetHeight()
+        local remaining = CreateFrame("Frame", nil, content)
+        local padding = ns.QUI_Options.PADDING or 15
+        remaining:SetPoint("TOPLEFT", editor, "BOTTOMLEFT", -padding, -14)
+        remaining:SetPoint("TOPRIGHT", editor, "BOTTOMRIGHT", padding, -14)
+        L = ns.QUI_SettingsLayoutShared.MakeLayout(remaining, U, 0)
 
         L.headerAt(ns.L["Widget Overrides"])
         if #placedList > 0 then
@@ -434,7 +450,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             ov.AddRow(row(ov.frame, ns.L["Click-Through (no clicks or tooltip)"], clickThroughW))
             L.closeSection(ov)
         else
-            local noteRow = CreateFrame("Frame", nil, content)
+            local noteRow = CreateFrame("Frame", nil, remaining)
             local note = noteRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             note:SetPoint("LEFT", noteRow, "LEFT", 0, 0)
             note:SetTextColor(0.6, 0.6, 0.6, 0.8)
@@ -444,7 +460,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
         if placedSet["currencies"] and ns.QUI_BuildCurrencyOrderSection then
             if not profile.datatext then profile.datatext = {} end
-            ns.QUI_BuildCurrencyOrderSection(L, content, {
+            ns.QUI_BuildCurrencyOrderSection(L, remaining, {
                 dtGlobal = profile.datatext,
                 refresh = function()
                     RefreshInfoBar()
@@ -483,8 +499,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
         mm.AddRow(row(mm.frame, ns.L["Character"], mmCheckbox("character", ns.L["Character"])),
             row(mm.frame, ns.L["Spellbook"], mmCheckbox("spellbook", ns.L["Spellbook"])))
+        local progressKey = ns.Client and ns.Client.isForever and "legacy" or "achievements"
+        local progressLabel = progressKey == "legacy" and ns.L["Legacy"] or ns.L["Achievements"]
         mm.AddRow(row(mm.frame, ns.L["Talents"], mmCheckbox("talents", ns.L["Talents"])),
-            row(mm.frame, ns.L["Achievements"], mmCheckbox("achievements", ns.L["Achievements"])))
+            row(mm.frame, progressLabel, mmCheckbox(progressKey, progressLabel)))
         mm.AddRow(row(mm.frame, ns.L["Professions"], mmCheckbox("professions", ns.L["Professions"])),
             row(mm.frame, ns.L["Quest Log"], mmCheckbox("questlog", ns.L["Quest Log"])))
         mm.AddRow(row(mm.frame, ns.L["Collections"], mmCheckbox("collections", ns.L["Collections"])),
@@ -503,6 +521,12 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         L.closeSection(tv)
 
         L.relayoutSections()
+        UpdateContentHeight = function()
+            local height = precedingHeight + editor:GetHeight() + remaining:GetHeight()
+            if content:GetHeight() ~= height then content:SetHeight(height) end
+        end
+        remaining:SetScript("OnSizeChanged", UpdateContentHeight)
+        UpdateContentHeight()
         return content:GetHeight()
     end })
 end)

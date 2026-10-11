@@ -64,6 +64,7 @@ function Storage.RequestDrain()
         if Storage.ScanAuctions then Storage.ScanAuctions.Drain() end
         if Storage.ScanCharacter then Storage.ScanCharacter.Drain() end
         if Storage.ScanProfessions then Storage.ScanProfessions.Drain() end
+        if Storage.RecipeLearning then Storage.RecipeLearning.Drain() end
         if Storage.ScanReputations then Storage.ScanReputations.Drain() end
         if Storage.ScanWeeklies then Storage.ScanWeeklies.Drain() end
         if Storage.ScanLockouts then Storage.ScanLockouts.Drain() end
@@ -110,6 +111,7 @@ local SCAN_EVENTS = {
     "TIME_PLAYED_MSG",
     "SKILL_LINES_CHANGED",
     "TRADE_SKILL_LIST_UPDATE",
+    "NEW_RECIPE_LEARNED",
     "FACTION_STANDING_CHANGED",
     "MAJOR_FACTION_RENOWN_LEVEL_CHANGED",
     "WEEKLY_REWARDS_UPDATE",
@@ -204,12 +206,18 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
             Storage.ScanCharacter.MarkAllDirty()
             Storage.RequestDrain()
         end
+        if event == "PLAYER_LEVEL_UP" and Storage.RecipeLearning then
+            Storage.RecipeLearning.MarkAllDirty()
+            Storage.RequestDrain()
+        end
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         if (arg1 == "player" or arg1 == nil) and Storage.ScanCharacter then
             Storage.ScanCharacter.MarkAllDirty()
             Storage.RequestDrain()
         end
-    elseif event == "SKILL_LINES_CHANGED" or event == "TRADE_SKILL_LIST_UPDATE" then
+    elseif event == "SKILL_LINES_CHANGED" or event == "TRADE_SKILL_LIST_UPDATE"
+        or event == "NEW_RECIPE_LEARNED" then
+        if Storage.RecipeLearning then Storage.RecipeLearning.MarkAllDirty() end
         if Storage.ScanProfessions then
             Storage.ScanProfessions.MarkAllDirty()
             Storage.RequestDrain()
@@ -223,6 +231,10 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         end
     elseif event == "FACTION_STANDING_CHANGED"
         or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED" then
+        if Storage.RecipeLearning then
+            Storage.RecipeLearning.MarkAllDirty()
+            Storage.RequestDrain()
+        end
         if Storage.ScanReputations and ScannerEnabled("reputations") then
             Storage.ScanReputations.OnFactionStandingChanged(arg1)
             Storage.RequestDrain()
@@ -256,6 +268,7 @@ ns.WhenLoggedIn(function()
         Storage.ScanCurrencies.MarkAllDirty()
         if Storage.ScanCharacter then Storage.ScanCharacter.MarkAllDirty() end
         if Storage.ScanProfessions then Storage.ScanProfessions.MarkAllDirty() end
+        if Storage.RecipeLearning then Storage.RecipeLearning.MarkAllDirty() end
         if Storage.ScanWeeklies and ScannerEnabled("weeklies") then Storage.ScanWeeklies.MarkAllDirty() end
         if Storage.ScanLockouts and ScannerEnabled("lockouts") and RequestRaidInfo then RequestRaidInfo() end
         if Storage.ScanReputations and ScannerEnabled("reputations") then Storage.ScanReputations.ScheduleFullScan() end

@@ -8,7 +8,7 @@ local Helpers = ns.Helpers
 local BUTTON_SIZE = 40
 local BUTTON_SPACING = 3
 local LEAVE_BUTTON_SIZE = 28
-local RESOURCE_BAR_WIDTH = 12
+local RESOURCE_BAR_WIDTH = 32
 local RESOURCE_BAR_HEIGHT = 40
 local pendingOverrideSkin = false
 local pendingOverridePostUpdate = false
@@ -38,7 +38,7 @@ local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb)
         SkinBase.SetFrameData(button, "backdrop", btnBd)
     end
 
-    SkinBase.ApplyPixelBackdrop(btnBd, 1, true, true)
+    SkinBase.ApplyChromeBackdrop(btnBd, { radius = 4, borderPixels = 1, withBackground = true })
     Helpers.SetFrameBackdropColor(btnBd, bgr, bgg, bgb, 0.8)
     Helpers.SetFrameBackdropBorderColor(btnBd, sr, sg, sb, sa)
 
@@ -60,10 +60,77 @@ local function StyleActionButton(button, index, sr, sg, sb, sa, bgr, bgg, bgb)
     local icon = button.icon or button.Icon
     if icon then
         icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        SkinBase.RoundIconTexture(button, icon)
     end
 
     SkinBase.SetFrameData(button, "skinColor", { sr, sg, sb, sa })
     SkinBase.MarkStyled(button)
+end
+
+local function StylePitchControls(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+    local pitch = bar.pitchFrame
+    if not pitch then return end
+    pitch:SetSize(62, 94)
+    pitch:ClearAllPoints()
+    pitch:SetPoint("BOTTOMRIGHT", bar, "BOTTOMLEFT", -BUTTON_SPACING, 0)
+
+    for _, key in ipairs({ "Divider1", "PitchOverlay", "PitchBG", "PitchButtonBG" }) do
+        local texture = pitch[key]
+        if texture then texture:SetAlpha(0) end
+    end
+    if pitch.PitchOverlay then
+        pitch.PitchOverlay:ClearAllPoints()
+        pitch.PitchOverlay:SetPoint("BOTTOMRIGHT", pitch, "BOTTOMRIGHT", -4, 0)
+    end
+
+    local backdrop = SkinBase.GetFrameData(pitch, "quiPitchBackdrop")
+    if not backdrop then
+        backdrop = CreateFrame("Frame", nil, pitch, "BackdropTemplate")
+        backdrop:SetAllPoints()
+        backdrop:SetFrameLevel(math.max(pitch:GetFrameLevel() - 1, 0))
+        backdrop:EnableMouse(false)
+        SkinBase.SetFrameData(pitch, "quiPitchBackdrop", backdrop)
+    end
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 5, borderPixels = 1, withBackground = true })
+    Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
+    Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
+
+    local track = SkinBase.GetFrameData(pitch, "quiPitchTrack")
+    if not track then
+        track = CreateFrame("Frame", nil, pitch, "BackdropTemplate")
+        track:SetSize(12, 80)
+        track:SetPoint("BOTTOMRIGHT", pitch, "BOTTOMRIGHT", -11, 6)
+        track:SetFrameLevel(math.max(pitch:GetFrameLevel() - 1, 0))
+        track:EnableMouse(false)
+        SkinBase.SetFrameData(pitch, "quiPitchTrack", track)
+    end
+    SkinBase.ApplyChromeBackdrop(track, { radius = 3, borderPixels = 1, withBackground = true })
+    Helpers.SetFrameBackdropColor(track, bgr, bgg, bgb, 0.8)
+    Helpers.SetFrameBackdropBorderColor(track, sr, sg, sb, sa)
+
+    for index, key in ipairs({ "PitchUpButton", "PitchDownButton" }) do
+        local button = pitch[key]
+        if button then
+            button:SetSize(28, 28)
+            button:ClearAllPoints()
+            local anchor = index == 1 and "TOPLEFT" or "BOTTOMLEFT"
+            button:SetPoint(anchor, pitch, anchor, 4, index == 1 and -8 or 8)
+            SkinBase.SkinButton(button, { strip = true, radius = 4 })
+            for _, getter in ipairs({ "GetNormalTexture", "GetPushedTexture", "GetHighlightTexture" }) do
+                local texture = button[getter] and button[getter](button)
+                if texture then texture:SetAlpha(0) end
+            end
+            local glyph = SkinBase.GetFrameData(button, "quiPitchGlyph")
+            if not glyph and button.CreateFontString then
+                glyph = button:CreateFontString(nil, "OVERLAY")
+                glyph:SetFont(Helpers.GetGeneralFont and Helpers.GetGeneralFont() or STANDARD_TEXT_FONT, 14, "OUTLINE")
+                glyph:SetText(index == 1 and "▲" or "▼")
+                glyph:SetPoint("CENTER")
+                glyph:SetTextColor(1, 1, 1, 1)
+                SkinBase.SetFrameData(button, "quiPitchGlyph", glyph)
+            end
+        end
+    end
 end
 
 local function HideBlizzardElements(bar)
@@ -72,7 +139,6 @@ local function HideBlizzardElements(bar)
         "Divider1", "Divider2", "Divider3",
         "ExitBG", "MicroBGL", "MicroBGR", "_MicroBGMid",
         "ButtonBGL", "ButtonBGR", "_ButtonBGMid",
-        "PitchOverlay", "PitchButtonBG", "PitchBG", "PitchMarker",
         "HealthBarBG", "HealthBarOverlay",
         "PowerBarBG", "PowerBarOverlay",
     }
@@ -82,10 +148,6 @@ local function HideBlizzardElements(bar)
         if tex and tex.SetAlpha then
             tex:SetAlpha(0)
         end
-    end
-
-    if bar.pitchFrame then
-        bar.pitchFrame:SetAlpha(0)
     end
 
     if bar.xpBar then
@@ -105,7 +167,7 @@ local function SkinOverrideActionBar()
         return
     end
 
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "overrideActionBar")
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "overrideActionBar")
 
     HideBlizzardElements(bar)
 
@@ -113,6 +175,7 @@ local function SkinOverrideActionBar()
     local totalHeight = BUTTON_SIZE + 8
 
     bar:SetSize(totalWidth, totalHeight)
+    StylePitchControls(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
 
     local barBd = SkinBase.GetFrameData(bar, "backdrop")
     if not barBd then
@@ -123,7 +186,7 @@ local function SkinOverrideActionBar()
         SkinBase.SetFrameData(bar, "backdrop", barBd)
     end
 
-    SkinBase.ApplyPixelBackdrop(barBd, 1, true, true)
+    SkinBase.ApplyChromeBackdrop(barBd, { radius = 8, borderPixels = 1, withBackground = true })
     Helpers.SetFrameBackdropColor(barBd, bgr, bgg, bgb, bga)
     Helpers.SetFrameBackdropBorderColor(barBd, sr, sg, sb, sa)
 
@@ -149,21 +212,21 @@ local function SkinOverrideActionBar()
             SkinBase.SetFrameData(leaveBtn, "backdrop", leaveBd)
         end
 
-        SkinBase.ApplyPixelBackdrop(leaveBd, 1, true, true)
+        SkinBase.ApplyChromeBackdrop(leaveBd, { radius = 4, borderPixels = 1, withBackground = true })
         Helpers.SetFrameBackdropColor(leaveBd, 0.6, 0.1, 0.1, 0.9)
         Helpers.SetFrameBackdropBorderColor(leaveBd, sr, sg, sb, sa)
     end
 
     if bar.healthBar then
         local healthBar = bar.healthBar
-        healthBar:Show()
         healthBar:SetAlpha(1)
         healthBar:SetOrientation("VERTICAL")
         healthBar:SetRotatesTexture(true)
         healthBar:SetSize(RESOURCE_BAR_WIDTH, RESOURCE_BAR_HEIGHT)
         healthBar:ClearAllPoints()
         healthBar:SetPoint("LEFT", bar, "LEFT", 4, 0)
-        healthBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        ns.Helpers.ApplyBarStyle(healthBar, "Interface\\Buttons\\WHITE8x8")
+        SkinBase.RoundBarTexture(healthBar, healthBar:GetStatusBarTexture())
 
         local hbBd = SkinBase.GetFrameData(healthBar, "backdrop")
         if not hbBd then
@@ -174,21 +237,21 @@ local function SkinOverrideActionBar()
             SkinBase.SetFrameData(healthBar, "backdrop", hbBd)
         end
 
-        SkinBase.ApplyPixelBackdrop(hbBd, 1, true, true)
+        SkinBase.ApplyChromeBackdrop(hbBd, { radius = 3, borderPixels = 1, withBackground = true })
         Helpers.SetFrameBackdropColor(hbBd, bgr, bgg, bgb, 0.8)
         Helpers.SetFrameBackdropBorderColor(hbBd, sr, sg, sb, sa)
     end
 
     if bar.powerBar then
         local powerBar = bar.powerBar
-        powerBar:Show()
         powerBar:SetAlpha(1)
         powerBar:SetOrientation("VERTICAL")
         powerBar:SetRotatesTexture(true)
         powerBar:SetSize(RESOURCE_BAR_WIDTH, RESOURCE_BAR_HEIGHT)
         powerBar:ClearAllPoints()
         powerBar:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
-        powerBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+        ns.Helpers.ApplyBarStyle(powerBar, "Interface\\Buttons\\WHITE8x8")
+        SkinBase.RoundBarTexture(powerBar, powerBar:GetStatusBarTexture())
 
         local pbBd = SkinBase.GetFrameData(powerBar, "backdrop")
         if not pbBd then
@@ -199,7 +262,7 @@ local function SkinOverrideActionBar()
             SkinBase.SetFrameData(powerBar, "backdrop", pbBd)
         end
 
-        SkinBase.ApplyPixelBackdrop(pbBd, 1, true, true)
+        SkinBase.ApplyChromeBackdrop(pbBd, { radius = 3, borderPixels = 1, withBackground = true })
         Helpers.SetFrameBackdropColor(pbBd, bgr, bgg, bgb, 0.8)
         Helpers.SetFrameBackdropBorderColor(pbBd, sr, sg, sb, sa)
     end
@@ -232,12 +295,24 @@ local function RefreshOverrideActionBarColors()
     if not bar or not SkinBase.IsSkinned(bar) then return end
 
     local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetSkinColors(settings, "overrideActionBar")
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(settings, "overrideActionBar")
 
     local mainBd = SkinBase.GetFrameData(bar, "backdrop")
     if mainBd then
         Helpers.SetFrameBackdropColor(mainBd, bgr, bgg, bgb, bga)
         Helpers.SetFrameBackdropBorderColor(mainBd, sr, sg, sb, sa)
+    end
+
+    local pitchBd = bar.pitchFrame and SkinBase.GetFrameData(bar.pitchFrame, "quiPitchBackdrop")
+    if pitchBd then
+        Helpers.SetFrameBackdropColor(pitchBd, bgr, bgg, bgb, bga)
+        Helpers.SetFrameBackdropBorderColor(pitchBd, sr, sg, sb, sa)
+    end
+
+    local pitchTrack = bar.pitchFrame and SkinBase.GetFrameData(bar.pitchFrame, "quiPitchTrack")
+    if pitchTrack then
+        Helpers.SetFrameBackdropColor(pitchTrack, bgr, bgg, bgb, 0.8)
+        Helpers.SetFrameBackdropBorderColor(pitchTrack, sr, sg, sb, sa)
     end
 
     for i = 1, 6 do

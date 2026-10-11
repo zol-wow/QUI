@@ -98,7 +98,7 @@ local BUILTIN_ORDER = {
 }
 
 local function applySkin(button)
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = Helpers.GetSkinColors()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = Helpers.GetWindowColors()
     ns.SkinBase.ApplyFullBackdrop(button, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     button._quiBaseBgR, button._quiBaseBgG, button._quiBaseBgB, button._quiBaseBgA = bgr, bgg, bgb, bga
     button._quiBaseBorderR, button._quiBaseBorderG, button._quiBaseBorderB, button._quiBaseBorderA = sr, sg, sb, sa
@@ -252,6 +252,9 @@ local function createButton(parent, def, customAction)
         btn:SetAttribute("macrotext", macroText)
     else
         btn:SetScript("OnClick", customAction or def.action or function() end)
+        if def == BUILTINS.reload and _G.QUI and _G.QUI.BindReloadButton then
+            _G.QUI:BindReloadButton(btn)
+        end
     end
 
     if hasIcon then

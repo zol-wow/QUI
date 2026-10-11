@@ -102,6 +102,7 @@ local function CreateBrezFrame()
     icon:SetTexture(REBIRTH_ICON_ID)
     icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     frame.icon = icon
+    Helpers.ApplyIconStyle(frame, icon)
 
     local chargeText = frame:CreateFontString(nil, "OVERLAY")
     chargeText:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
@@ -334,7 +335,7 @@ local function UpdateAppearance()
     local borderTexture = settings.borderTexture or "None"
     local useLSMBorder = borderTexture ~= "None" and borderSize > 0
 
-    local bR, bG, bB, bA = Helpers.GetSkinBorderColor(settings, "")
+    local bR, bG, bB, bA = Helpers.GetWindowColors(settings, "")
 
     local hideBorder = settings.hideBorder
     local effectiveUseLSMBorder = useLSMBorder and not hideBorder

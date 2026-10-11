@@ -4,6 +4,57 @@ local DeepCopy = ns.Helpers.DeepCopy
 local GLOBAL_SHIPPED_DEFAULTS_KEY = "_shippedProfileDefaults"
 ns.Compatibility = ns.Compatibility or {}
 
+function ns.Compatibility.CreateDatabase(defaults)
+    local isForever = ns.Client and ns.Client.isForever
+    local previousProfiles = isForever and QUIDB and DeepCopy(QUIDB.profileKeys or {})
+    local db = LibStub("AceDB-3.0"):New("QUIDB", defaults, true)
+    if not isForever then return db end
+
+    local characterKey = db.keys.char
+    local legacyName = UnitName("player")
+    local unmodifiedName = _G.UnitNameUnmodified("player")
+    if issecretvalue(legacyName) then legacyName = characterKey end
+    if issecretvalue(unmodifiedName) then unmodifiedName = characterKey end
+    local legacyKeys = {
+        characterKey .. " - " .. db.keys.realm,
+        legacyName .. " - " .. db.keys.realm,
+        unmodifiedName .. " - " .. db.keys.realm,
+        characterKey .. " - " .. GetRealmName(),
+        legacyName .. " - " .. GetRealmName(),
+        unmodifiedName .. " - " .. GetRealmName(),
+    }
+
+    local function CopyCharacter(store)
+        local characters = store.char
+        if characters and characters[characterKey] == nil then
+            for _, legacyKey in ipairs(legacyKeys) do
+                if type(characters[legacyKey]) == "table" then
+                    characters[characterKey] = DeepCopy(characters[legacyKey])
+                    break
+                end
+            end
+        end
+    end
+    CopyCharacter(db.sv)
+    for _, namespace in pairs(db.sv.namespaces or {}) do
+        CopyCharacter(namespace)
+    end
+
+    local profile
+    for _, legacyKey in ipairs(legacyKeys) do
+        if previousProfiles and previousProfiles[legacyKey] ~= nil then
+            profile = previousProfiles[legacyKey]
+            break
+        end
+    end
+    if previousProfiles and previousProfiles[characterKey] == nil and type(profile) == "string"
+        and _G.strlenutf8(profile) > 0 and not profile:find("^ +$")
+        and (_G.strlenutf8(profile) <= 50 or (db.sv.profiles and type(db.sv.profiles[profile]) == "table")) then
+        db:SetProfile(profile)
+    end
+    return db
+end
+
 local StampOldDefaults
 
 local function DeepEqual(a, b)

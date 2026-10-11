@@ -1,3 +1,5 @@
+local GetSpecialization = (C_SpecializationInfo and C_SpecializationInfo.GetSpecialization) or GetSpecialization
+local GetSpecializationInfo = (C_SpecializationInfo and C_SpecializationInfo.GetSpecializationInfo) or GetSpecializationInfo
 local ADDON_NAME, ns = ...
 local function CJKFont(fs, p, s, f)
     if ns.Helpers and ns.Helpers.ApplyFontWithFallback then
@@ -318,7 +320,7 @@ local function RenderAuraElementsPreview(frame, auras, auraLevel, powerHeight, p
             bar:ClearAllPoints()
             bar:SetPoint(anchor, frame, anchor, offX, offY)
             bar:SetOrientation(orientation)
-            bar:SetStatusBarTexture(texturePath)
+            ns.Helpers.ApplyBarStyle(bar, texturePath)
             bar:SetMinMaxValues(0, 1)
             bar:SetValue(0.66)
             bar:SetStatusBarColor(color[1] or 0.2, color[2] or 0.8, color[3] or 0.2, color[4] or 1)
@@ -415,7 +417,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
     local healthBar = RecycledBar(frame)
     healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", borderSize, -borderSize)
     healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize + powerHeight + separatorHeight)
-    healthBar:SetStatusBarTexture(texturePath)
+    ns.Helpers.ApplyBarStyle(healthBar, texturePath)
     healthBar:SetMinMaxValues(0, 100)
     healthBar:SetValue(healthPct)
     healthBar:SetAlpha(healthOpacity)
@@ -439,7 +441,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         powerBar:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", borderSize, borderSize)
         powerBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -borderSize, borderSize)
         powerBar:SetHeight(powerHeight)
-        powerBar:SetStatusBarTexture(texturePath)
+        ns.Helpers.ApplyBarStyle(powerBar, texturePath)
         powerBar:SetMinMaxValues(0, 100)
         powerBar:SetValue(100)
         if powerSettings.powerBarUsePowerColor then
@@ -766,7 +768,7 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         end
         local ha = healPredSettings.opacity or 0.5
         local healOverlay = RecycledTexture(healthBar, "OVERLAY", 1)
-        healOverlay:SetTexture(texturePath)
+        ns.Helpers.ApplyTextureStyle(healthBar, healOverlay, texturePath)
         healOverlay:SetVertexColor(hc[1], hc[2], hc[3], ha)
         local healStart = fillRight + (absorbSettings and absorbSettings.enabled ~= false and absorbW or 0)
         healOverlay:SetPoint("TOPLEFT", healthBar, "TOPLEFT", healStart, 0)
@@ -1707,7 +1709,7 @@ function QUI_GFEM:CreateSpotlightHeader()
         spotlightHeader:SetAttribute("qui-unit-width", w)
         spotlightHeader:SetAttribute("qui-unit-height", h)
         spotlightHeader:SetAttribute("template", "SecureUnitButtonTemplate, BackdropTemplate")
-        spotlightHeader:SetAttribute("initialConfigFunction", initConfigFunc)
+        ns.QUI_GroupFrameIconLayout.ConfigureHeaderInitialization(spotlightHeader, initConfigFunc)
         spotlightHeader:SetAttribute("showRaid", true)
         spotlightHeader:SetAttribute("showParty", true)
         spotlightHeader:SetPoint("TOPLEFT")
@@ -1719,6 +1721,7 @@ function QUI_GFEM:CreateSpotlightHeader()
     end
 
     spotlightContainer:Show()
+    ns.QUI_GroupFrameIconLayout.PreallocateHeaderChildren(spotlightHeader, 40)
 
     local filterMode = spot.filterMode or "ROLE"
     local spacing = spot.spacing or 2
