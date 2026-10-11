@@ -6555,6 +6555,32 @@ function GUI:AddFeatureTile(frame, config)
     return tile
 end
 
+function GUI:SetSettingsPerformanceProfiling(enabled)
+    self._settingsPerformanceEnabled = enabled == true
+    self._settingsPerformance = { builds = {}, navigation = {} }
+end
+
+function GUI:GetSettingsPerformanceReport()
+    return self._settingsPerformance or { builds = {}, navigation = {} }
+end
+
+function GUI:RecordSettingsPerformance(kind, key, started)
+    if not started then return end
+    local elapsed = debugprofilestop() - started
+    local group = self._settingsPerformance[kind]
+    local record = group[key]
+    if not record then record = { count = 0, totalMs = 0, maxMs = 0 }; group[key] = record end
+    record.count = record.count + 1
+    record.firstMs = record.firstMs or elapsed
+    record.lastMs = elapsed
+    record.totalMs = record.totalMs + elapsed
+    record.maxMs = math.max(record.maxMs, elapsed)
+end
+
+local function StartSettingsPerformance()
+    if GUI._settingsPerformanceEnabled and type(debugprofilestop) == "function" then return debugprofilestop() end
+end
+
 local function installRegisterSection(targetBody)
     targetBody._sections = {}
     function targetBody:RegisterSection(id, label, frame)
@@ -6634,7 +6660,7 @@ local function BuildInlinePreview(owner, parent, anchor, anchorPoint, inset, gap
     return pv
 end
 
-function GUI:BuildTilePage(frame, tile)
+function GUI:BuildTilePage(frame, tile, initialSubPageIndex)
     if not tile or tile._built then return end
 
     if not frame._tileContent then
@@ -6702,7 +6728,7 @@ function GUI:BuildTilePage(frame, tile)
     if tile.config.subPages and #tile.config.subPages > 0 then
         GUI:RenderSubPageTabs(tile, tile._pageFrame, tile.config.subPages, function(sp, body)
             if type(sp.buildFunc) == "function" then sp.buildFunc(body) end
-        end, anchorFrame)
+        end, anchorFrame, initialSubPageIndex)
     elseif type(tile.config.buildFunc) == "function" then
         local container = CreateFrame("Frame", nil, tile._pageFrame)
         local footerReserve = tile.config.relatedSettings and 32 or 0
@@ -6721,8 +6747,12 @@ function GUI:BuildTilePage(frame, tile)
         end
 
         installRegisterSection(body)
+        tile._subPageBodies = { [1] = container }
+        container._contentBody, container._scrollFrame = body, scrollFrame
 
+        local started = StartSettingsPerformance()
         tile.config.buildFunc(body)
+        GUI:RecordSettingsPerformance("builds", tile.id .. "/1", started)
 
         if tile.config.sectionNav and not GUI.GetTileNavigationPages and scrollFrame and #body._sections >= 2 then
             local function tryBuildSectionNav()
@@ -6995,7 +7025,7 @@ function GUI:SelectFeatureTile(frame, index, opts)
 
     EnsureSidebarTileVisible(frame, tile)
 
-    GUI:BuildTilePage(frame, tile)
+    GUI:BuildTilePage(frame, tile, opts and opts.subPageIndex)
 
     local content = frame._tileContent
     if content then content:Show() end
@@ -7024,8 +7054,20 @@ function GUI:SelectFeatureTile(frame, index, opts)
 
     if self.UpdateTileNavigationTitle then self:UpdateTileNavigationTitle(tile) end
 
+    tile._settingsNavigationToken = (tile._settingsNavigationToken or 0) + 1
+    local navigationToken = tile._settingsNavigationToken
+    local destinationPage = tile._activeSubPageIndex or 1
+    local function AfterLayout(callback)
+        local owner = tile._subPageBodies and tile._subPageBodies[destinationPage]
+        if not owner or not self.RunWhenSettingsLayoutReady then return end
+        self:RunWhenSettingsLayoutReady(owner, owner._contentBody, callback, function()
+            return tile._settingsNavigationToken == navigationToken and tile._isActive
+                and (tile._activeSubPageIndex or 1) == destinationPage
+        end)
+    end
+
     if opts and (opts.scrollToPath or opts.scrollToLabel or opts.scrollToFeatureId) then
-        C_Timer.After(0, function()
+        AfterLayout(function()
             local root = opts.searchRoot or tile._pageFrame
             local scrolledToSection = false
 
@@ -7070,7 +7112,7 @@ function GUI:SelectFeatureTile(frame, index, opts)
             end
         end)
     elseif opts and opts.sectionName and opts.searchTabIndex then
-        C_Timer.After(0, function()
+        AfterLayout(function()
             GUI:ScrollToRegisteredSection(
                 opts.searchTabIndex,
                 opts.searchSubTabIndex,
@@ -7079,6 +7121,21 @@ function GUI:SelectFeatureTile(frame, index, opts)
         end)
     end
 
+end
+
+local SelectFeatureTileWithContent = GUI.SelectFeatureTile
+function GUI:SelectFeatureTile(frame, index, opts)
+    local started = StartSettingsPerformance()
+    frame._selectingFeatureTile = true
+    local result = SelectFeatureTileWithContent(self, frame, index, opts)
+    frame._selectingFeatureTile = nil
+    if self.RefreshNavigationDock then self:RefreshNavigationDock(frame) end
+    local tile = frame._tiles and frame._tiles[index]
+    if tile then
+        local page = tile.config.subPages and tile.config.subPages[tile._activeSubPageIndex or 1]
+        self:RecordSettingsPerformance("navigation", tile.id .. "/" .. (page and (page.id or page.name) or "1"), started)
+    end
+    return result
 end
 
 function GUI:AddSidebarSearchBar(frame)
@@ -7147,7 +7204,7 @@ function GUI:_CreateV2SearchResultsArea(frame)
     return wrapper
 end
 
-function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFrame)
+function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFrame, initialSubPageIndex)
     if not subPages or #subPages == 0 then return end
 
     local single = #subPages == 1 or GUI.GetTileNavigationPages ~= nil
@@ -7190,7 +7247,10 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
     tile._subPageBodies = tile._subPageBodies or {}
 
     local function RunOnSelect(sp, contentBody)
-        return onSelect(sp, contentBody)
+        local started = StartSettingsPerformance()
+        local result = onSelect(sp, contentBody)
+        GUI:RecordSettingsPerformance("builds", tile.id .. "/" .. (sp.id or sp.name), started)
+        return result
     end
 
     local select
@@ -7293,8 +7353,8 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
             tile._crumb:SetText(crumbText)
         end
 
-        for _, sub in pairs(tile._subPageBodies) do
-            sub:Hide()
+        for index, sub in pairs(tile._subPageBodies) do
+            if index ~= i then sub:Hide() end
         end
 
         BuildSubPageBody(i)
@@ -7357,12 +7417,8 @@ function GUI:RenderSubPageTabs(tile, contentArea, subPages, onSelect, headerFram
     end
 
     tile._subPageSelect = select
-    if GUI.GetTileNavigationPages then
-        for i, sp in ipairs(subPages) do
-            if sp.sectionNav then BuildSubPageBody(i) end
-        end
-    end
-    select(1)
+    -- Navigation uses generated metadata; only the requested body is constructed.
+    select(subPages[initialSubPageIndex or 1] and (initialSubPageIndex or 1) or 1)
 
     return body, select
 end

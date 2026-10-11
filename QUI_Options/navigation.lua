@@ -126,17 +126,87 @@ function GUI:RegisterTileSurfacePages(body, descriptor)
     return true
 end
 
+-- This catalog is generated offline alongside search data. Reading menu labels
+-- must never instantiate an unselected settings page.
+local function PageCatalog(tile, index)
+    tile._navigationCatalog = tile._navigationCatalog or {}
+    local cached = tile._navigationCatalog[index]
+    if cached then return cached.sections, cached.tabs end
+    local config = tile.config.subPages and tile.config.subPages[index] or tile.config
+    local catalog = ns.QUI_OptionsNavigationCatalog or {}
+    local sections, tabs, seen = {}, {}, {}
+    if config.featureIds then
+        for _, item in ipairs(config.featureIds) do
+            local id = type(item) == "table" and item.key or item
+            if ns.Settings.Registry:GetFeature(id) then
+                local explicitLabel = type(item) == "table" and item.label or nil
+                sections[#sections + 1] = { id = id, label = ns.QUI_Options.ResolveFeatureStackLabel(id, explicitLabel) }
+            end
+        end
+        tile._navigationCatalog[index] = { sections = sections, tabs = tabs }
+        return sections, tabs
+    end
+    local ids = { config.featureId }
+    for _, id in ipairs(ids) do
+        local entry = catalog[id]
+        if entry then
+            for _, section in ipairs(entry.sections or {}) do
+                local label = ns.L[section.label] or section.label
+                if not seen[label] then
+                    seen[label] = true
+                    sections[#sections + 1] = { id = ns.L[section.id] or section.id, label = label }
+                end
+            end
+            if #tabs == 0 then tabs = entry.tabs or {} end
+        end
+    end
+    tile._navigationCatalog[index] = { sections = sections, tabs = tabs }
+    return sections, tabs
+end
+
+-- Wait for real, stable bounds after a page is shown. The driver exists only
+-- during a pending jump and stops on completion, cancellation, or timeout.
+function GUI:RunWhenSettingsLayoutReady(owner, target, callback, isCurrent)
+    if not owner or not target then return end
+    local driver = owner._quiLayoutReadyDriver
+    if not driver then
+        driver = CreateFrame("Frame", nil, owner)
+        owner._quiLayoutReadyDriver = driver
+        driver:SetScript("OnHide", function(self) self:SetScript("OnUpdate", nil) end)
+    end
+    local previous, stable, elapsed = nil, 0, 0
+    driver:SetScript("OnUpdate", function(self, delta)
+        elapsed = elapsed + delta
+        if elapsed > 2 or (isCurrent and not isCurrent()) or not target:IsShown() then
+            self:SetScript("OnUpdate", nil); self:Hide(); return
+        end
+        local scroll = owner._scrollFrame
+        local body = owner._contentBody
+        local top, targetTop = body and body:GetTop(), target:GetTop()
+        local width, height = owner:GetWidth(), owner:GetHeight()
+        local range = scroll and scroll:GetVerticalScrollRange()
+        local bounds = top and targetTop and width > 0 and height > 0
+            and table.concat({ top, targetTop, width, height, body:GetHeight(), range or 0 }, ":")
+        if bounds and bounds == previous then stable = stable + 1 else stable = 0 end
+        previous = bounds
+        if stable >= 2 then
+            self:SetScript("OnUpdate", nil); self:Hide(); callback()
+        end
+    end)
+    driver:Show()
+end
+
 function GUI:GetTileNavigationPages(tile)
     local result = {}
     local activePage = tile._activeSubPageIndex or 1
     local function SurfacePages(index, prefix)
         local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[index]
-        if not descriptor or type(descriptor.getTabs) ~= "function" then return false end
-        local activeKey = descriptor.getActiveTab and descriptor.getActiveTab()
-        local tabs = descriptor.getTabs() or {}
+        local _, catalogTabs = PageCatalog(tile, index)
+        local activeKey = descriptor and descriptor.getActiveTab and descriptor.getActiveTab()
+        local tabs = descriptor and descriptor.getTabs and descriptor.getTabs() or catalogTabs
         for _, tab in ipairs(tabs) do
             result[#result + 1] = {
-                label = tab.label or tab.key, group = prefix or nil, key = tab.key, pageIndex = index,
+                label = ns.L[tab.label or tab.key] or tab.label or tab.key, group = prefix or nil, key = tab.key, pageIndex = index,
                 descriptor = descriptor,
                 active = tile._isActive and index == activePage and tab.key == activeKey,
                 disabled = tab.disabled == true or tab.enabled == false,
@@ -168,6 +238,12 @@ function GUI:GetTileNavigationPages(tile)
                 if not selected or (position and top and top >= position - 8) then selected = #result end
             end
         end
+        if not body then
+            local catalogSections = PageCatalog(tile, index)
+            for _, section in ipairs(catalogSections) do
+                result[#result + 1] = { label = section.label, group = group, pageIndex = index, sectionId = section.id }
+            end
+        end
         if selected then result[selected].active = tile._isActive and index == activePage end
         return #result > first
     end
@@ -187,7 +263,7 @@ function GUI:GetTileNavigationPages(tile)
             end
         end
     else
-        SurfacePages(1, false)
+        if not SurfacePages(1, false) and tile.config.sectionNav then Sections(1) end
     end
     return result
 end
@@ -265,11 +341,26 @@ end
 
 local function SelectPage(frame, tile, page)
     if page.disabled then return end
+    tile._sectionNavigationToken = (tile._sectionNavigationToken or 0) + 1
+    local requestToken = tile._sectionNavigationToken
     GUI:CloseNavigationFlyout(frame)
     GUI:SelectFeatureTile(frame, tile.index, { subPageIndex = page.pageIndex })
-    if page.descriptor and page.descriptor.selectTab then page.descriptor.selectTab(page.key) end
-    if page.section then
-        C_Timer.After(0, function()
+    local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[page.pageIndex]
+    if page.key and descriptor and descriptor.selectTab then descriptor.selectTab(page.key) end
+    if page.section or page.sectionId then
+        local owner = tile._subPageBodies and tile._subPageBodies[page.pageIndex]
+        local body = owner and owner._contentBody
+        local target = page.section
+        for _, section in ipairs(body and body._sections or {}) do
+            if section.id == page.sectionId then target = section.frame; break end
+        end
+        local function IsCurrent()
+            return tile._sectionNavigationToken == requestToken and tile._isActive
+                and tile._activeSubPageIndex == page.pageIndex
+        end
+        local function Jump()
+            if tile._sectionNavigationToken ~= requestToken or not tile._isActive
+                or tile._activeSubPageIndex ~= page.pageIndex then return end
             local owner = tile._subPageBodies and tile._subPageBodies[page.pageIndex]
             local scroll = owner and owner._scrollFrame
             local sections = owner and owner._contentBody and owner._contentBody._sections or {}
@@ -300,7 +391,8 @@ local function SelectPage(frame, tile, page)
                 if controller then controller:ScrollTo(offset, true) else scroll:SetVerticalScroll(offset) end
                 GUI:RefreshNavigationSectionHighlight(tile)
             end
-        end)
+        end
+        GUI:RunWhenSettingsLayoutReady(owner, target, Jump, IsCurrent)
     end
     GUI:UpdateTileNavigationTitle(tile)
     GUI:AnimateOptionsPage(tile._pageFrame)
@@ -459,7 +551,6 @@ function GUI:OpenNavigationFlyout(frame, tile, pinned, keyboard)
         local focused = GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
         if focused and focused.ClearFocus then focused:ClearFocus() end
     end
-    self:BuildTilePage(frame, tile)
     local pages = self:GetTileNavigationPages(tile)
     if #pages <= 1 then self:CloseNavigationFlyout(frame); return false end
     frame._navHoverToken = (frame._navHoverToken or 0) + 1
@@ -504,6 +595,7 @@ function GUI:SetNavigationDocked(frame, enabled)
 end
 
 function GUI:RefreshNavigationDock(frame)
+    if frame and frame._selectingFeatureTile then return end
     if not frame or not frame.contentArea or not frame.sidebar or frame._refreshingNavigationDock then return end
     frame._refreshingNavigationDock = true
     local general = NavigationProfile()
