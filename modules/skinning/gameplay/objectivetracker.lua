@@ -675,6 +675,70 @@ local function HidePOIButtonGlows()
     end
 end
 
+-- <<< QUI_TEST_EXTRACT scenario_header_widget
+local SCENARIO_WIDGET_ART_KEYS = { "Frame", "ThemeOverlay", "DecorationBottomLeft" }
+
+local function StyleScenarioHeaderWidget(widget)
+    local settings = GetSettings()
+    local scenario = _G.ScenarioObjectiveTracker
+    local container = scenario and scenario.StageBlock and scenario.StageBlock.WidgetContainer
+    if not settings or not settings.skinObjectiveTracker or not container then return end
+    if not widget or not widget.HeaderText or not widget.Frame then return end
+    local parent = widget:GetParent()
+    if parent ~= container and (not parent or parent.parentWidgetContainer ~= container) then return end
+    local shown = widget:IsShown()
+    if Helpers.IsSecretValue(shown) or not shown then return end
+    local active = false
+    for _, candidate in pairs(container.widgetFrames or {}) do
+        if candidate == widget then active = true; break end
+    end
+    if not active then return end
+    for _, key in ipairs(SCENARIO_WIDGET_ART_KEYS) do
+        local texture = widget[key]
+        if texture then texture:SetAlpha(0) end
+    end
+    CJKFont(widget.HeaderText, GetFontPath(), settings.objectiveTrackerModuleFontSize or 12, GetFontFlags())
+    SafeSetTextColor(widget.HeaderText, settings.objectiveTrackerTitleColor)
+    if widget.Timer and widget.Timer.Text then
+        CJKFont(widget.Timer.Text, GetFontPath(), settings.objectiveTrackerModuleFontSize or 12, GetFontFlags())
+        SafeSetTextColor(widget.Timer.Text, settings.objectiveTrackerTextColor)
+    end
+    if widget.TimerBar and settings.objectiveTrackerCustomBars then
+        Helpers.ApplyBarStyle(widget.TimerBar, CUSTOM_BAR_FILL_TEXTURE)
+        local progressBar = SkinBase.GetFrameData(widget, "qScenarioHeaderProgressBar")
+        if not progressBar then
+            progressBar = { Bar = widget.TimerBar }
+            SkinBase.SetFrameData(widget, "qScenarioHeaderProgressBar", progressBar)
+        end
+        StyleTrackerProgressBar(progressBar)
+    end
+end
+
+local function RestyleScenarioHeaderWidgetImmediately(widget)
+    -- Setup replaces the header font and fill atlas on every timer tick.
+    -- Restore appearance before rendering; error isolation keeps a failed
+    -- skin from aborting the native widget update. No native layout changes.
+    ns.SafeCall("best-effort-style", StyleScenarioHeaderWidget, widget)
+end
+
+local function StyleScenarioHeaderWidgets()
+    local scenario = _G.ScenarioObjectiveTracker
+    local container = scenario and scenario.StageBlock and scenario.StageBlock.WidgetContainer
+    if not container then return end
+    for _, widget in pairs(container.widgetFrames or {}) do
+        if widget.HeaderText and widget.Frame then
+            StyleScenarioHeaderWidget(widget)
+            -- Native timer ticks and delayed stage transitions call Setup
+            -- without UPDATE_UI_WIDGET. Restore appearance in the same frame.
+            if widget.Setup and not SkinBase.GetFrameData(widget, "qScenarioHeaderSetupHook") then
+                hooksecurefunc(widget, "Setup", RestyleScenarioHeaderWidgetImmediately)
+                SkinBase.SetFrameData(widget, "qScenarioHeaderSetupHook", true)
+            end
+        end
+    end
+end
+-- <<< QUI_TEST_EXTRACT scenario_header_widget
+
 local SCENARIO_STAGE_TEXTURE_KEYS = { "NormalBG", "FinalBG", "ThemeOverlay", "GlowTexture" }
 local SCENARIO_STAGE_TEXT_KEYS = { "Stage", "Name", "CompleteLabel" }
 
@@ -749,6 +813,7 @@ local function RunObjectiveTrackerPostLayoutUpdate()
         RefreshTrackerContent()
     end
     StyleScenarioTrackerDetails()
+    StyleScenarioHeaderWidgets()
     UpdateBackdropAnchors()
     HidePOIButtonGlows()
     StyleExistingProgressBars()
@@ -885,6 +950,7 @@ RefreshTrackerContent = function()
         settings.objectiveTrackerTextColor
     )
     StyleScenarioTrackerDetails()
+    StyleScenarioHeaderWidgets()
     local trackerFrame = _G.ObjectiveTrackerFrame
     if trackerFrame then SkinTrackerHeader(trackerFrame.Header) end
     for _, trackerName in ipairs(trackerModules) do
