@@ -98,7 +98,7 @@ local function IsUncollectedTransmog(itemLink)
     if not C_TransmogCollection or not C_TransmogCollection.PlayerHasTransmogItemModifiedAppearance then
         return false
     end
-    local itemID, _, _, _, _, classID = GetItemInfoInstant(itemLink)
+    local itemID, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemLink)
     if not itemID then return false end
 
     if classID ~= 2 and classID ~= 4 then return false end
