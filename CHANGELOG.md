@@ -4,6 +4,13 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.1-beta1 - 2026-10-13
+
+### Fixed
+
+- Fixed a Lua error that could interrupt the loot window when transmog markers
+  were enabled, including for items such as Stinging Nettle.
+
 ## v5.5.0-beta3 - 2026-10-11
 
 ### Fixed
