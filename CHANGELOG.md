@@ -4,12 +4,132 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.1 - 2026-10-13
+
+### Fixed
+
+- Fixed a Lua error that could interrupt the loot window when transmog markers
+  were enabled, including for items such as Stinging Nettle.
+
 ## v5.5.1-beta1 - 2026-10-13
 
 ### Fixed
 
 - Fixed a Lua error that could interrupt the loot window when transmog markers
   were enabled, including for items such as Stinging Nettle.
+
+## v5.5.0 - 2026-10-11
+
+> **Stable release.** One download supports WoW 12.1.0 live Retail,
+> WoW 12.1.5 PTR, and WoW Forever 1.60.1 (interfaces 120100, 120105, and 16001).
+> Forever support remains experimental.
+
+QUI 5.5.0 brings the improvements since stable 5.3.1 to the stable channel,
+including Spell Reminders, the Underlight Angler Helper, Satin appearance,
+expanded native-window styling, and Forever compatibility.
+
+### Added
+
+- **Spell Reminders** provide cooldown prompts, sounds, spoken alerts, and load
+  conditions for Power Infusion, Innervate, and custom spells. Enable them under
+  **Reminders → Spell Reminders**; they default to Off. **Power Infusion
+  coordination** adds offensive-buff tracking, group-frame highlights, focus
+  alerts, and optional whisper-triggered priority or rotation lists. Configured
+  lists choose the recipient. Estimated early alerts are optional and never
+  mark a spell ready.
+- **Underlight Angler Helper** provides an unlock checklist, a restored artifact
+  trait tree with purchase confirmations, and fishing tips for alts. The module
+  ships enabled and can be toggled under **Module Addons**. `/angler` or
+  `/quiangler` opens the standalone Checklist; opening the Underlight Angler
+  artifact shows the helper on its tree tab, without the Checklist tab.
+- **Quality of Life → Automation** adds optional automatic resurrection
+  acceptance and appearance-buff removal, both Off by default. Resurrection
+  modes are separate for dungeons, raids, PvP, and the open world; hold Shift to
+  keep an offer manual. Appearance removal lets you select supported
+  transformations and profession outfits, waits for combat and aura
+  restrictions to end, and preserves fishing outfits while casting. **Keystone
+  Reroll Reminder** shows “Re-roll key?” after eligible dungeon completions;
+  it defaults to enabled for 15 seconds, with Off and 15/30/60-second controls.
+- **Damage Meter result sharing** sends the selected metric and segment to
+  Party, Raid, or Whisper from **Share Results**. Choose Top 3, Top 5, Top 10,
+  or All; the default is five data rows, All is capped at 40, and reports use
+  the shared chat-throttling queue.
+- **Encounter Debuffs** is a new Aura Display selection that hides player- and
+  pet-applied debuffs and common noise. Existing displays retain their selected
+  filter until changed.
+
+### Improved
+
+- **Satin appearance and rounded native controls** give QUI surfaces, bars,
+  icons, and Blizzard windows a consistent finish while retaining configured
+  colors and native interactions. Satin is the default; the profile-selectable
+  Legacy finish remains available. **Objective Tracker appearance** now offers
+  theme, custom-color, transparent, or Blizzard-opacity backgrounds,
+  independent opacity, and shared or custom border colors. These controls are
+  included in profile exports.
+- **Settings navigation and previews** have streamlined layouts, responsive
+  sizing, section navigation, updated search routes, and translations. Pages
+  build when selected and search jumps wait for layout to settle. Nameplate
+  previews fit their viewport, with preview controls accessible by scrolling.
+- **Layout Mode and Aura Displays** preserve precision when moving or nudging
+  anchored groups. Shift-drag aligns frame edges, detaching clears pending
+  anchors, and right-click settings for aura displays and groups expose
+  **Anchor To**, attachment points, and offsets. Vertical growth, wrapping,
+  outlines, and row spacing match live layouts; action-bar size and spacing
+  previews update their buttons while dragging.
+- **Recipe tooltips and bag tinting** show which characters can learn a recipe
+  or already know it, using each character's last checked result. Known or
+  unavailable recipes receive red tint when **Mark Unusable Items** is enabled;
+  it defaults on for new profiles and the Starter Profile, while existing
+  saved choices remain intact. **Damage Meter text without outlines** gains a
+  black shadow and readable fills on bright bars, preserving hue and opacity.
+- **Forever compatibility** includes native swing timer appearance and Layout
+  Mode controls, native combo points and druid mana, character stats and sidebar
+  navigation, bank and group frames, mouse-button clickcasting, Quick Salvage,
+  and optional Legacy System and Pet Stable skins, both Off by default.
+  Blizzard handles swing timing. Profile exports identify their client and
+  reject imports tagged for a different client; existing untagged exports remain
+  compatible. GSE integration remains unavailable on Forever.
+
+### Fixed
+
+- **Combat and cooldown updates** respect native receiver restrictions and
+  repaint deferred Action Bar, Group Frame, bag, and world-map teleport
+  cooldowns when allowed. Consumable-check layout waits until combat ends,
+  Spell Reminders retry initialization when restrictions lift, and Cooldown
+  Manager reuses released icons. Hidden player castbars retain Edit Mode
+  geometry, and action-bar range indicators avoid duplicate scans while keeping
+  range tint active independently of usability coloring.
+- **Profiles survive character-identity changes**, including existing regional
+  character-name changes and Forever talent-group specialization switching.
+  Existing long profile names remain selected after login and work with profile
+  and specialization selection; new names retain the supported length limit.
+  Forever reload buttons and confirmation dialogs use the supported reload path.
+- **Native windows retain their layout and controls**, including World Map
+  navigation and campaign headers, character tabs and model controls, and
+  protected Spellbook sizing after combat. Rounded surfaces avoid errors from
+  restricted coordinates. Journals, achievements, professions, auctions,
+  social panels, mail, and interaction dialogs style recycled rows correctly;
+  hidden bank, guild-bank, and macro icon selectors no longer fail before first
+  opening. Standalone item and pet tooltips keep native content layout, status
+  bars retain hover tooltips, and Suggested Content paging arrows remain readable.
+- **Objective Tracker and loot layouts stay consistent.** The tracker retains
+  its configured anchor during native panel updates, and scenario text stages
+  keep native spacing and height with QUI-styled headers, countdowns, and bars.
+  Loot notifications refresh changed or empty slots; loot windows preserve
+  scrolling and click controls, and timers follow remaining time. Loot History
+  has matching timer borders, scrollbar styling, and a visible resize grip;
+  setting changes take effect on reload, with consistent installed artwork if
+  reload is deferred. Encounter power bars retain native timers.
+- **Bags, group frames, chat, and movable panels refresh reliably.** Category
+  bags honor sort key and reverse settings after sorting, stack changes, and
+  item-detail updates. Group frames initialize on a fresh login without a
+  reload. Guild and Communities messages and input follow the global font;
+  unroutable channel notices are skipped and guild communication respects
+  speaking permissions. Gold tooltips deduplicate legacy realm-name aliases.
+  Selected movable panels stay in front, Talents opens safely when mover setup
+  is disabled or deferred, and loot windows and previews use the supported
+  item-quality color API.
 
 ## v5.5.0-beta3 - 2026-10-11
 
