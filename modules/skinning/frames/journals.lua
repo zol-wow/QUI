@@ -431,6 +431,10 @@ local function GetEncounterJournalBottomTabs(frame)
         "JourneysTab",
         "MonthlyActivitiesTab",
         "suggestTab",
+        -- Not Blizzard's: Delve Companion adds this after Suggested Content
+        -- and re-anchors Dungeons onto it; docking without it stacks Dungeons
+        -- on top of the Delves tab.
+        "DelvesTab",
         "dungeonsTab",
         "raidsTab",
         "LootJournalTab",
