@@ -4,6 +4,14 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta2 - 2026-10-15
+
+### Fixed
+
+- The Adventure Guide's Delves tab from Delve Companion no longer merges into
+  the Dungeons tab. It sits between Suggested Content and Dungeons with QUI
+  styling.
+
 ## v5.5.2-beta1 - 2026-10-15
 
 ### Beta Line
