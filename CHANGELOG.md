@@ -4,6 +4,13 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta1 - 2026-10-15
+
+### Beta Line
+
+- Starts the 5.5.2 beta line from stable 5.5.1.
+- Updates release versions only; runtime behavior is unchanged from 5.5.1.
+
 ## v5.5.1 - 2026-10-13
 
 ### Fixed
