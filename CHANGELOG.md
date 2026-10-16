@@ -4,6 +4,14 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta3 - 2026-10-16
+
+### Fixed
+
+- Fixed Lua errors when rounded surfaces update on Blizzard frames with
+  restricted positioning. Rounded borders retain their native anchors and resume
+  pixel alignment when measurements become available.
+
 ## v5.5.2-beta2 - 2026-10-15
 
 ### Fixed
