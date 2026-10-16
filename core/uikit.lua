@@ -1186,6 +1186,16 @@ function UIKit.CreateRoundedSurface(frame, opts)
             texture:SetPoint(first, frame, first, Aligned(first, x1, y1))
             texture:SetPoint(second, frame, second, Aligned(second, x2, y2))
         end
+        local function GetPosition()
+            if frame.IsAnchoringRestricted then
+                local restricted = frame:IsAnchoringRestricted()
+                if Helpers.IsSecretValue(restricted) or restricted then return end
+            end
+            local left = frame.GetLeft and frame:GetLeft()
+            local bottom = frame.GetBottom and frame:GetBottom()
+            if Helpers.IsSecretValue(left) or Helpers.IsSecretValue(bottom) then return end
+            return left, bottom
+        end
         function surface:Refresh()
             local owner = self.frame
             local px = GetPixelSize(owner)
@@ -1198,9 +1208,7 @@ function UIKit.CreateRoundedSurface(frame, opts)
             local stroke = math.min(3, math.max(1, Round(self.borderPixels)))
             local edge = stroke * px
             local r = radius * px
-            local left = owner.GetLeft and owner:GetLeft()
-            local bottom = owner.GetBottom and owner:GetBottom()
-            if Helpers.IsSecretValue(left) or Helpers.IsSecretValue(bottom) then left, bottom = nil, nil end
+            local left, bottom = GetPosition()
             self.left, self.bottom = left, bottom
             local dl, dr, dt, db = 0, 0, 0, 0
             if type(left) == "number" and type(bottom) == "number" and width and height then
@@ -1240,8 +1248,7 @@ function UIKit.CreateRoundedSurface(frame, opts)
             frame:HookScript("OnShow", function() surface:Refresh() end)
             frame:HookScript("OnUpdate", function()
                 if not surface.shown then return end
-                local left, bottom = frame:GetLeft(), frame:GetBottom()
-                if Helpers.IsSecretValue(left) or Helpers.IsSecretValue(bottom) then left, bottom = nil, nil end
+                local left, bottom = GetPosition()
                 if left ~= surface.left or bottom ~= surface.bottom then surface:Refresh() end
             end)
         end
