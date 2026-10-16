@@ -1354,6 +1354,25 @@ local function StyleStableFooter()
     end
 end
 
+local function StyleStableArtwork()
+    local frame = _G.PetStableFrame
+    if not IsSettingEnabled("skinStable") or not frame
+        or (frame.IsForbidden and frame:IsForbidden()) then return end
+    if frame.GetRegions then
+        for _, region in ipairs({ frame:GetRegions() }) do
+            local atlas = region.GetAtlas and region:GetAtlas()
+            if atlas == "ui-stables-footer-bg" or atlas == "ui-stables-subheader-bg" then
+                SkinBase.ClampTextureHidden(region, true)
+            end
+        end
+    end
+    if frame.insideFrameBottom then SkinBase.ClampTextureHidden(frame.insideFrameBottom, true) end
+    for _, key in ipairs({ "TopDividerFrame", "BottomDividerFrame" }) do
+        local divider = frame[key]
+        if divider then SkinBase.ClampTextureHidden(divider.horzDivider, true) end
+    end
+end
+
 local function SkinStable()
     if not (ns.Client and ns.Client.isForever) then return end
     local frame = _G.PetStableFrame
@@ -1366,6 +1385,7 @@ local function SkinStable()
     StyleStableSlots()
     StyleStableModelControls()
     StyleStableFooter()
+    StyleStableArtwork()
     if frame.modelScene and frame.modelScene.Inset then
         SkinBase.KillNineSlice(frame.modelScene.Inset.NineSlice, true)
     end
@@ -1383,6 +1403,7 @@ if ns.Registry then
             StyleStableSlots()
             StyleStableModelControls()
             StyleStableFooter()
+            StyleStableArtwork()
         end,
         priority = 80,
         group = "skinning",

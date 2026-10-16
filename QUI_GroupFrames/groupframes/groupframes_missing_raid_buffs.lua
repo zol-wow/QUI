@@ -175,13 +175,17 @@ local function BuildCDMGroupBuffEntries(out)
             and item.isKnown ~= false
             and not flaggedHidden
             and not hidden[sid] and not builtinIDs[sid] and not seen[sid] then
+            local displaySpellID = item.displaySpellID
+            if type(displaySpellID) ~= "number" or IsSecretValue(displaySpellID) then
+                displaySpellID = sid
+            end
             seen[sid] = true
             out[#out + 1] = {
                 key = "cdm:" .. sid,
                 ids = { sid },
                 label = (type(item.name) == "string" and item.name) or ("Spell " .. sid),
                 providerClass = nil,
-                iconSpellID = sid,
+                iconSpellID = displaySpellID,
                 source = "cdm",
             }
         end
@@ -191,6 +195,8 @@ end
 function MRB:RebuildRaidBuffs()
     for i = #RAID_BUFFS, 1, -1 do
         if RAID_BUFFS[i].source == "cdm" then
+            nameCache[RAID_BUFFS[i].key] = nil
+            syntheticAuraCache[RAID_BUFFS[i].key] = nil
             table.remove(RAID_BUFFS, i)
         end
     end
@@ -843,6 +849,7 @@ local function EnsureEventFrame()
         elseif event == "GROUP_ROSTER_UPDATE" then
             RefreshAll()
         elseif event == "COOLDOWN_VIEWER_DATA_LOADED"
+            or event == "SPELLS_CHANGED"
             or event == "HIDDEN_GROUP_BUFFS_CHANGED"
             or event == "COOLDOWN_VIEWER_TABLE_HOTFIXED" then
             MRB:RebuildRaidBuffs()
