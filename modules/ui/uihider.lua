@@ -182,6 +182,37 @@ local function ShouldHideObjectiveTracker(s)
     return wouldHide
 end
 
+local function SetMinimapBorderHidden(hidden)
+    if MinimapCluster.BorderTop then
+        if hidden then MinimapCluster.BorderTop:Hide() else MinimapCluster.BorderTop:Show() end
+        return
+    end
+    local button = MinimapCluster.ZoneTextButton
+    if not button then return end
+    for _, texture in ipairs({ button.StateTexture, button.AddTexture }) do
+        local state = hookedSecureFrames[texture]
+        if not state and hidden then
+            state = { alpha = texture:GetAlpha() }
+            hookedSecureFrames[texture] = state
+            hooksecurefunc(texture, "SetAlpha", function(self, alpha)
+                if state.applying then return end
+                state.alpha = alpha
+                if state.hidden then
+                    state.applying = true
+                    self:SetAlpha(0)
+                    state.applying = false
+                end
+            end)
+        end
+        if state then
+            state.hidden = hidden
+            state.applying = true
+            texture:SetAlpha(hidden and 0 or state.alpha)
+            state.applying = false
+        end
+    end
+end
+
 local function ApplyHideSettings()
     local settings = GetSettings()
     if not settings then
@@ -256,12 +287,8 @@ local function ApplyHideSettings()
         end
     end
 
-    if MinimapCluster and MinimapCluster.BorderTop then
-        if settings.hideMinimapBorder then
-        MinimapCluster.BorderTop:Hide()
-        else
-            MinimapCluster.BorderTop:Show()
-        end
+    if MinimapCluster then
+        SetMinimapBorderHidden(settings.hideMinimapBorder)
     end
 
     if TimeManagerClockButton then
@@ -708,8 +735,8 @@ local function ShowAllHiddenForEditMode()
         end
     end
 
-    if MinimapCluster and MinimapCluster.BorderTop and settings.hideMinimapBorder then
-        MinimapCluster.BorderTop:Show()
+    if MinimapCluster and settings.hideMinimapBorder then
+        SetMinimapBorderHidden(false)
     end
 
     if TimeManagerClockButton and settings.hideTimeManager then
