@@ -4,6 +4,26 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta4 - 2026-10-16
+
+### Fixed
+
+- Missing raid-buff icons now show the current spell rank after spell changes,
+  while retaining saved spell selections and hidden-buff settings.
+- The native external-event minimap shortcut remains visible and clickable when
+  QUI hides the minimap backdrop.
+- Character experience and reputation track backgrounds align with their native
+  fill areas on WoW Forever.
+- Stable windows no longer retain decorative footer, divider, and panel artwork
+  over QUI styling. Native slot states, models, and controls remain intact.
+- **Hide Border (Top)** supports the new WoW Forever minimap header textures and
+  restores native hover and pressed effects when disabled or in Edit Mode.
+
+### Compatibility
+
+- Refreshed Retail and WoW Forever API and interface references. WoW Forever
+  support remains experimental.
+
 ## v5.5.2-beta3 - 2026-10-16
 
 ### Fixed
