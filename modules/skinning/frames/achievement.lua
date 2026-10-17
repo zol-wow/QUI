@@ -59,6 +59,71 @@ local function StyleAchievementSurface(frame, depth)
     SkinBase.CreateBackdrop(frame, sr, sg, sb, sa * 0.5, r, g, b, a, 5)
 end
 
+local function StyleAchievementSearchSurface(frame)
+    if not frame then return end
+    StyleAchievementSurface(frame, "SUBPANEL")
+    local sr, sg, sb, sa = SkinBase.GetWindowColors()
+    local r, g, b = SkinBase.GetDepthColor("SUBPANEL")
+    SkinBase.SetBackdropColors(SkinBase.GetBackdrop(frame), { sr, sg, sb, sa }, { r, g, b, 1 })
+end
+
+local function StyleAchievementSearchRow(row)
+    if not row then return end
+    SkinBase.ClampTextureHidden(row.IconFrame)
+    SkinBase.SkinButton(row, { font = false, hover = not row.SelectedTexture, radius = 3 })
+    SkinBase.RefreshWidget(row)
+    SkinBase.RoundIconTexture(row, row.Icon)
+    SkinBase.SkinFontString(row.Name, { color = { 0.95, 0.95, 0.95, 1 } })
+    SkinBase.SkinFontString(row.Text, { color = { 0.95, 0.95, 0.95, 1 } })
+    SkinBase.SkinFontString(row.Path, { color = { 0.75, 0.75, 0.75, 1 } })
+    SkinBase.SkinFontString(row.ResultType, { fontOnly = true })
+    local selected = row.SelectedTexture
+    if selected then
+        local r, g, b = SkinBase.GetSkinColors()
+        selected:SetColorTexture(r, g, b, 0.18)
+        SkinBase.RoundBarTexture(row, selected)
+    end
+end
+
+local function StyleAchievementSearch()
+    local frame = _G.AchievementFrame
+    if not frame or not IsSettingEnabled("skinAchievement") then return end
+    local filters = frame.HeaderDetails and frame.HeaderDetails.Filters
+    local search = filters and filters.SearchBox
+    local preview = search and search.SearchPreviewContainer
+    if preview then
+        StyleAchievementSearchSurface(preview)
+        local last
+        for _, row in ipairs(preview.searchPreviews or {}) do
+            StyleAchievementSearchRow(row)
+            if row:IsShown() then last = row end
+        end
+        StyleAchievementSearchRow(preview.ShowAllSearchResults)
+        if preview.ShowAllSearchResults and preview.ShowAllSearchResults:IsShown() then last = preview.ShowAllSearchResults end
+        local bd = SkinBase.GetBackdrop(preview)
+        if bd and last then
+            bd:ClearAllPoints()
+            bd:SetPoint("TOPLEFT", preview, "TOPLEFT", -2, 2)
+            bd:SetPoint("BOTTOMRIGHT", last, "BOTTOMRIGHT", 2, -2)
+        end
+    end
+    local results = frame.SearchResults
+    if results then
+        StyleAchievementSearchSurface(results)
+        SkinBase.SkinFontString(results.TitleText, { color = { 0.95, 0.95, 0.95, 1 } })
+        SkinBase.SkinCloseButton(results.CloseButton)
+        SkinBase.SkinTrimScrollBar(results.ScrollBar)
+        local scrollBox = results.ScrollBox
+        if scrollBox then
+            if not SkinBase.GetFrameData(scrollBox, "achievementSearchRowsHooked") then
+                SkinBase.HookScrollBoxAcquired(scrollBox, StyleAchievementSearchRow)
+                SkinBase.SetFrameData(scrollBox, "achievementSearchRowsHooked", true)
+            end
+            SkinBase.ForEachScrollBoxFrame(scrollBox, StyleAchievementSearchRow)
+        end
+    end
+end
+
 local function StyleAchievementExpansion(row)
     local texture = row and row.PlusMinus
     if not texture then return end
@@ -77,7 +142,8 @@ local function StyleAchievementRow(row)
     if row.Highlight then SkinBase.StripTextures(row.Highlight) end
     local sr, sg, sb, sa = SkinBase.GetWindowColors()
     local r, g, b, a = SkinBase.GetDepthColor("ROW")
-    local selected = type(row.IsSelected) == "function" and row:IsSelected()
+    local data = type(row.GetElementData) == "function" and row:GetElementData()
+    local selected = data and type(row.IsSelected) == "function" and row:IsSelected()
     SkinBase.CreateBackdrop(row, sr, sg, sb, selected and sa or sa * 0.5, r, g, b, a, 5)
     SkinBase.SkinFontString(row.Label, { size = 12, color = { 1, 1, 1, 1 } })
     SkinBase.SkinFontString(row.Description, { size = 11, color = { 0.9, 0.9, 0.9, 1 } })
@@ -98,7 +164,7 @@ end
 
 local function StyleAchievementStatistic(row)
     if not row then return end
-    for _, key in ipairs({ "Background", "Left", "Middle", "Right" }) do
+    for _, key in ipairs({ "Background", "Left", "Middle", "Right", "Left2", "Middle2", "Right2" }) do
         SkinBase.ClampTextureHidden(row[key], true)
     end
     local sr, sg, sb, sa = SkinBase.GetWindowColors()
@@ -107,6 +173,7 @@ local function StyleAchievementStatistic(row)
     SkinBase.SkinFontString(row.Title, { size = 12, color = { 1, 1, 1, 1 } })
     SkinBase.SkinFontString(row.Text or (row.GetFontString and row:GetFontString()), { size = 11, color = { 0.9, 0.9, 0.9, 1 } })
     SkinBase.SkinFontString(row.Value, { size = 11, color = { 1, 1, 1, 1 } })
+    SkinBase.SkinFontString(row.FriendValue, { size = 11, color = { 1, 1, 1, 1 } })
 end
 
 local function StyleAchievementCategory(row)
@@ -135,11 +202,15 @@ local function StyleAchievementProgress(bar)
             SkinBase.ClampTextureHidden(_G[name .. suffix])
         end
     end
+    for _, key in ipairs({ "Left", "Right", "Middle" }) do
+        SkinBase.ClampTextureHidden(bar[key], true)
+    end
     SkinBase.SkinStatusBar(bar)
     SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(bar), { radius = 4, withBackground = true })
     local fill = bar:GetStatusBarTexture()
     if fill then SkinBase.RoundBarTexture(bar, fill) end
     SkinBase.SkinFontString(name and _G[name .. "Title"], { size = 11, color = { 0.9, 0.9, 0.9, 1 } })
+    SkinBase.SkinFontString(bar.Title, { size = 11, color = { 0.9, 0.9, 0.9, 1 } })
     SkinBase.SkinFontString(bar.Label, { size = 11, color = { 0.9, 0.9, 0.9, 1 } })
     SkinBase.SkinFontString(bar.Text, { size = 11, color = { 1, 1, 1, 1 } })
 end
@@ -189,6 +260,7 @@ local function StyleAchievementContents()
             end
         end
     end
+    StyleAchievementSearch()
     StyleSummaryEmptyText()
     local summary = _G.AchievementFrameSummaryAchievements
     for _, row in ipairs(summary and summary.buttons or {}) do StyleAchievementRow(row) end
@@ -317,14 +389,55 @@ local function LockAchievementSummaryText()
     end
 end
 
-local function LockAchievementComparisonText()
-    local statScrollBox = _G.AchievementFrameComparison and _G.AchievementFrameComparison.StatContainer and _G.AchievementFrameComparison.StatContainer.ScrollBox
-    if statScrollBox then
-        SkinBase.HookScrollBoxRowFonts(statScrollBox, 3)
+local function StyleAchievementComparisonRow(row)
+    if not row then return end
+    for _, side in ipairs({ row.Player, row.Friend }) do
+        StyleAchievementRow(side)
+        SkinBase.SkinFontString(side.DateCompleted, { size = 10, fontOnly = true })
+        SkinBase.SkinFontString(side.Status, { size = 10, fontOnly = true })
     end
-    local achScrollBox = _G.AchievementFrameComparison and _G.AchievementFrameComparison.AchievementContainer and _G.AchievementFrameComparison.AchievementContainer.ScrollBox
-    if achScrollBox then
-        SkinBase.HookScrollBoxRowFonts(achScrollBox, 3)
+end
+
+local function LockAchievementComparisonText()
+    local comparison = _G.AchievementFrameComparison
+    if not comparison then return end
+    StyleAchievementSurface(comparison, "SUBPANEL")
+    SkinBase.ClampTextureHidden(comparison.Watermark, true)
+    SkinBase.ClampTextureHidden(comparison.Dark, true)
+    local statScrollBox = _G.AchievementFrameComparison.StatContainer and _G.AchievementFrameComparison.StatContainer.ScrollBox
+    if statScrollBox then SkinBase.HookScrollBoxRowFonts(statScrollBox, 3) end
+    local achScrollBox = comparison.AchievementContainer and comparison.AchievementContainer.ScrollBox
+    if achScrollBox then SkinBase.HookScrollBoxRowFonts(achScrollBox, 3) end
+    for _, key in ipairs({ "AchievementContainer", "StatContainer" }) do
+        local panel = comparison[key]
+        if panel then
+            SkinBase.SkinTrimScrollBar(panel.ScrollBar)
+            local scrollBox = panel.ScrollBox
+            local styler = key == "AchievementContainer" and StyleAchievementComparisonRow or StyleAchievementStatistic
+            if scrollBox then
+                if not SkinBase.GetFrameData(scrollBox, "qAchievementComparisonRowsHooked") then
+                    SkinBase.HookScrollBoxAcquired(scrollBox, styler)
+                    SkinBase.SetFrameData(scrollBox, "qAchievementComparisonRowsHooked", true)
+                end
+                SkinBase.ForEachScrollBoxFrame(scrollBox, styler)
+            end
+        end
+    end
+    local summary = comparison.Summary
+    if summary then
+        for _, side in ipairs({ summary.Player, summary.Friend }) do
+            StyleAchievementSurface(side, "SUBPANEL")
+            StyleAchievementProgress(side.StatusBar)
+        end
+    end
+    local header = _G.AchievementFrameComparisonHeader
+    if header then
+        SkinBase.ClampTextureHidden(_G.AchievementFrameComparisonHeaderBG, true)
+        local sr, sg, sb, sa = SkinBase.GetWindowColors()
+        local r, g, b, a = SkinBase.GetDepthColor("SUBPANEL")
+        SkinBase.CreateBackdrop(header, sr, sg, sb, sa * 0.5, r, g, b, a, 4)
+        SkinBase.SkinFontString(_G.AchievementFrameComparisonHeaderName, { color = { 1, 1, 1, 1 } })
+        SkinBase.SkinFontString(header.Points, { fontOnly = true })
     end
 end
 
@@ -356,15 +469,38 @@ local function HookAchievementSummaryText()
     LockAchievementSummaryText()
 end
 
-local achievementComparisonTextHooked
+local achievementComparisonTextHooked = {}
 local function HookAchievementComparisonText()
     LockAchievementComparisonText()
-    if not achievementComparisonTextHooked and type(_G.AchievementFrameComparison_UpdateStatsDataProvider) == "function" then
-        hooksecurefunc("AchievementFrameComparison_UpdateStatsDataProvider", function()
-            if not IsSettingEnabled("skinAchievement") then return end
-            LockAchievementComparisonText()
-        end)
-        achievementComparisonTextHooked = true
+    for _, name in ipairs({ "AchievementFrameComparison_UpdateStatsDataProvider",
+        "AchievementFrameComparison_UpdateDataProvider", "AchievementFrameComparison_UpdateStatusBars", "AchievementFrame_DisplayComparison" }) do
+        if not achievementComparisonTextHooked[name] and type(_G[name]) == "function" then
+            hooksecurefunc(name, function()
+                if IsSettingEnabled("skinAchievement") then LockAchievementComparisonText() end
+            end)
+            achievementComparisonTextHooked[name] = true
+        end
+    end
+    for _, entry in ipairs({
+        { "AchievementComparisonTemplateMixin", StyleAchievementComparisonRow },
+        { "AchivementComparisonStatMixin", StyleAchievementStatistic },
+    }) do
+        local mixin = _G[entry[1]]
+        if not achievementComparisonTextHooked[entry[1]] and mixin and type(mixin.Init) == "function" then
+            hooksecurefunc(mixin, "Init", function(row)
+                if IsSettingEnabled("skinAchievement") then entry[2](row) end
+            end)
+            achievementComparisonTextHooked[entry[1]] = true
+        end
+    end
+    for _, name in ipairs({ "AchievementComparisonPlayerButton_Saturate", "AchievementComparisonPlayerButton_Desaturate",
+        "AchievementComparisonFriendButton_Saturate", "AchievementComparisonFriendButton_Desaturate" }) do
+        if not achievementComparisonTextHooked[name] and type(_G[name]) == "function" then
+            hooksecurefunc(name, function(side)
+                if IsSettingEnabled("skinAchievement") then StyleAchievementRow(side) end
+            end)
+            achievementComparisonTextHooked[name] = true
+        end
     end
 end
 
@@ -424,6 +560,9 @@ local function SkinAchievement()
     end
     for _, name in ipairs({ "AchievementFrameSummary_Update", "AchievementFrameSummary_UpdateSummaryProgressBars" }) do
         if type(_G[name]) == "function" then hooksecurefunc(name, StyleAchievementContents) end
+    end
+    for _, name in ipairs({ "AchievementFrame_ShowSearchPreviewResults", "AchievementFrame_UpdateFullSearchResults" }) do
+        if type(_G[name]) == "function" then hooksecurefunc(name, StyleAchievementSearch) end
     end
     SkinBase.MarkSkinned(frame)
 end

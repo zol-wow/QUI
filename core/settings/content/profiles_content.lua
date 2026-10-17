@@ -278,9 +278,10 @@ function ProfileCopyOptions.CreateCard(parent, opts)
     }
 end
 
-local function ValidateProfileName(name)
+local function ValidateProfileName(name, db)
     local length = type(name) == "string" and _G.strlenutf8(name) or 0
-    if length > 0 and length <= 50 and not name:find("^ +$") then return true end
+    local existing = db and db.sv and db.sv.profiles and type(db.sv.profiles[name]) == "table"
+    if length > 0 and (length <= 50 or existing) and not name:find("^ +$") then return true end
     print("|cffff0000QUI:|r " .. ns.L["Profile names must be between 1 and 50 characters and cannot contain only spaces."])
     return false
 end
@@ -479,7 +480,7 @@ local function BuildSpecProfilesContent(content)
         if freshDB and value and value ~= "" then
             local current = freshDB:GetCurrentProfile()
             if value == current then return end
-            if not ValidateProfileName(value) then
+            if not ValidateProfileName(value, freshDB) then
                 RefreshProfileDisplay()
                 return
             end
@@ -610,7 +611,8 @@ local function BuildSpecProfilesContent(content)
 
     local specCore = GetCore()
     local specDB = specCore and specCore.db
-    local numSpecs = GetNumSpecializations()
+    local isForever = ns.Client and ns.Client.isForever
+    local numSpecs = isForever and 2 or GetNumSpecializations()
 
     if specDB and specDB.IsDualSpecEnabled and specDB.SetDualSpecEnabled and specDB.GetDualSpecProfile and specDB.SetDualSpecProfile then
         local specCard = Shared.CreateSettingsCardGroup(content, y)
@@ -626,9 +628,14 @@ local function BuildSpecProfilesContent(content)
         specCard.AddRow(Shared.BuildSettingRow(specCard.frame, ns.L["Enable Spec Profiles"], enableW))
 
         local specCells = {}
-        local currentSpec = GetSpecialization()
+        local currentSpec = isForever and C_SpecializationInfo.GetActiveSpecGroup() or GetSpecialization()
         for i = 1, numSpecs do
-            local _, specName = GetSpecializationInfo(i)
+            local specName
+            if isForever then
+                specName = i == 1 and _G.TALENT_SPEC_PRIMARY or _G.TALENT_SPEC_SECONDARY
+            else
+                specName = select(2, GetSpecializationInfo(i))
+            end
             if specName then
                 local displayName = specName .. (i == currentSpec and ns.L[" (Active)"] or "")
                 local currentSpecProfile = specDB:GetDualSpecProfile(i) or ""
@@ -637,7 +644,7 @@ local function BuildSpecProfilesContent(content)
                 specDropdown = GUI:CreateFormDropdown(specCard.frame, nil, GetProfileList(), "selected", specWrapper, function(value)
                     local core = GetCore(); local dbRef = core and core.db
                     if dbRef and dbRef.SetDualSpecProfile and value and value ~= "" then
-                        if not ValidateProfileName(value) then
+                        if not ValidateProfileName(value, dbRef) then
                             specDropdown:SetValue(dbRef:GetDualSpecProfile(i) or "", true)
                             return
                         end

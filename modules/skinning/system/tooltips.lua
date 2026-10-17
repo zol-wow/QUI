@@ -202,7 +202,8 @@ local function ApplyFontSizeViaFontObjects(size)
 end
 
 local function ApplyFontSize(tooltip)
-    if not tooltip then return end
+    -- The standalone widget/reward tooltip owns its native content layout.
+    if not tooltip or tooltip == EmbeddedItemTooltip then return end
     local base = GetEffectiveFontSize()
 
     if tooltip == GameTooltip then
@@ -392,9 +393,6 @@ local function IsInternalEmbeddedItemRoot(root, tooltip)
 end
 
 local function IsInternalEmbeddedItemTooltipFrame(tooltip)
-    if tooltip == EmbeddedItemTooltip then
-        return true
-    end
     if IsInternalEmbeddedItemRoot(GameTooltip and GameTooltip.ItemTooltip, tooltip) then
         return true
     end
@@ -578,6 +576,7 @@ HasActiveWidgetContainer = function(tooltip)
 end
 
 local function RefreshTooltipLayout(tooltip)
+    if tooltip == EmbeddedItemTooltip then return end
     if not tooltip or not (tooltip.IsShown and tooltip:IsShown()) then return end
     if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
     if tooltip.IsForbidden and tooltip:IsForbidden() then return end
@@ -614,7 +613,7 @@ local function OnTooltipShow(tooltip)
 end
 
 local gameTooltipFamily = {
-    "GameTooltip", "ItemRefTooltip",
+    "GameTooltip", "ItemRefTooltip", "EmbeddedItemTooltip",
     "ItemRefShoppingTooltip1", "ItemRefShoppingTooltip2",
     "ShoppingTooltip1", "ShoppingTooltip2",
     "SmallTextTooltip",
@@ -639,6 +638,7 @@ local dotPathTooltips = {
 }
 
 local addonTooltipFrames = {
+    "PetJournalPrimaryAbilityTooltip", "PetJournalSecondaryAbilityTooltip",
     "WQLTooltip", "WQLTooltipItemRef1", "WQLTooltipItemRef2",
     "WQLAreaPOITooltip", "WorldQuestTrackerGameTooltip",
     "WQT_ShoppingTooltip1", "WQT_ShoppingTooltip2",
@@ -722,6 +722,14 @@ end
 HookTooltipOnShow = function(tooltip)
     if not tooltip or hookedTooltips[tooltip] then return end
     if IsInternalEmbeddedItemTooltipFrame(tooltip) then return end
+
+    if tooltip == EmbeddedItemTooltip then
+        -- SetShown is also used by UI widgets; only change the outer chrome.
+        tooltip:HookScript("OnShow", OnTooltipShow)
+        hookedTooltips[tooltip] = true
+        HookNineSlice(tooltip)
+        return
+    end
 
     if tooltip == GameTooltip then
         hookedTooltips[tooltip] = true

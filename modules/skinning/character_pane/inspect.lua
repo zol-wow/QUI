@@ -526,6 +526,11 @@ local function RepositionInspectTabs()
         firstTab:SetPoint("BOTTOMLEFT", InspectFrame, "BOTTOMLEFT", 15, -81)
     end
 
+    local skinning = _G.QUI_InspectFrameSkinning
+    if skinning and skinning.IsEnabled() and skinning.RefreshTabs then
+        skinning.RefreshTabs()
+    end
+
     local paperDoll = _G.InspectPaperDollFrame
     local talentsBtn = (InspectPaperDollItemsFrame and InspectPaperDollItemsFrame.InspectTalents)
         or (paperDoll and paperDoll.InspectTalents)
@@ -788,6 +793,10 @@ local function PositionInspectModelScene()
 
     if InspectModelFrame.controlFrame then
         InspectModelFrame.controlFrame:Hide()
+    end
+
+    if InspectModelFrame.RefreshCamera then
+        InspectModelFrame:RefreshCamera()
     end
 
     if InspectModelFrame.ResetModel then

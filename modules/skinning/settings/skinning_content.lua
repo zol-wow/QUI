@@ -771,6 +771,9 @@ local function BuildSkinningTab(tabContent)
     if general.objectiveTrackerTitleFontSize == nil then general.objectiveTrackerTitleFontSize = 10 end
     if general.objectiveTrackerTextFontSize == nil then general.objectiveTrackerTextFontSize = 10 end
     if general.hideObjectiveTrackerBorder == nil then general.hideObjectiveTrackerBorder = false end
+    if general.objectiveTrackerBackgroundStyle == nil then general.objectiveTrackerBackgroundStyle = "theme" end
+    if general.objectiveTrackerBackgroundOpacity == nil then general.objectiveTrackerBackgroundOpacity = 0.75 end
+    if general.objectiveTrackerBackgroundColor == nil then general.objectiveTrackerBackgroundColor = { 0.035, 0.035, 0.035, 1 } end
     if general.objectiveTrackerModuleColor == nil then general.objectiveTrackerModuleColor = { 1.0, 0.82, 0.0, 1.0 } end
     if general.objectiveTrackerTitleColor == nil then general.objectiveTrackerTitleColor = { 1.0, 1.0, 1.0, 1.0 } end
     if general.objectiveTrackerTextColor == nil then general.objectiveTrackerTextColor = { 0.8, 0.8, 0.8, 1.0 } end
@@ -801,6 +804,32 @@ local function BuildSkinningTab(tabContent)
     sOT.AddRow(
         row(sOT.frame, ns.L["Max Height"], otHW),
         row(sOT.frame, ns.L["Max Width"], otWW)
+    )
+
+    local otBgStyleW = GUI:CreateFormDropdown(sOT.frame, nil, {
+        { text = ns.L["QUI Theme"], value = "theme" },
+        { text = ns.L["Custom Color"], value = "custom" },
+        { text = ns.L["Transparent"], value = "transparent" },
+        { text = ns.L["Blizzard Opacity"], value = "blizzard" },
+    }, "objectiveTrackerBackgroundStyle", general, RefreshOT,
+        { description = ns.L["Choose a QUI theme background, a custom color, no fill, or Blizzard's Edit Mode opacity."] })
+    local otBgOpacityW = GUI:CreateFormSlider(sOT.frame, nil, 0, 1, 0.05, "objectiveTrackerBackgroundOpacity", general, RefreshOT,
+        { description = ns.L["Opacity of the QUI theme or custom tracker background. Independent of Blizzard's Edit Mode setting."] })
+    sOT.AddRow(
+        row(sOT.frame, ns.L["Background Style"], otBgStyleW),
+        row(sOT.frame, ns.L["Background Opacity"], otBgOpacityW)
+    )
+    local otBgColorW = GUI:CreateFormColorPicker(sOT.frame, nil, "objectiveTrackerBackgroundColor", general, RefreshOT, nil,
+        { description = ns.L["Tracker fill color when Background Style is Custom Color. Use Background Opacity to control transparency."] })
+    sOT.AddRow(row(sOT.frame, ns.L["Custom Background Color"], otBgColorW))
+
+    local otBorderSourceW, otBorderColorW = ns.QUI_BorderControl.Attach(
+        GUI, sOT.frame, general, "objectiveTracker", RefreshOT,
+        { label = ns.L["Border Color Source"], colorLabel = ns.L["Border Color"] }
+    )
+    sOT.AddRow(
+        row(sOT.frame, ns.L["Border Color Source"], otBorderSourceW),
+        row(sOT.frame, ns.L["Border Color"], otBorderColorW)
     )
 
     local otModuleFW = GUI:CreateFormSlider(sOT.frame, nil, 6, 18, 1, "objectiveTrackerModuleFontSize", general, RefreshOT,

@@ -41,7 +41,7 @@
 -- @class file
 -- @name AceDB-3.0.lua
 -- @release $Id$
-local ACEDB_MAJOR, ACEDB_MINOR = "AceDB-3.0", 36
+local ACEDB_MAJOR, ACEDB_MINOR = "AceDB-3.0", 40
 local AceDB = LibStub:NewLibrary(ACEDB_MAJOR, ACEDB_MINOR)
 
 if not AceDB then return end -- No upgrade needed
@@ -252,17 +252,15 @@ local preserve_keys = {
 	["children"] = true,
 }
 
-local realmKey = GetRealmName()
 local factionKey = UnitFactionGroup("player")
 local localeKey = GetLocale():lower()
-local charKey, classKey, raceKey, factionrealmKey, factionrealmregionKey
+local charKey, realmKey, classKey, raceKey, factionrealmKey, factionrealmregionKey
 do
 	local _
 	_, classKey = UnitClass("player")
 	_, raceKey = UnitRace("player")
 
-	local _, _, _, version = GetBuildInfo()
-	if version > 16000 and version < 20000 then
+	if RegionalUniqueNamesEnabled and RegionalUniqueNamesEnabled() then
 		if C_GameRules.IsGameRuleActive(Enum.GameRule.HardcoreRuleset) then
 			realmKey = "Hardcore"
 		elseif C_GameRules.IsGameRuleActive(Enum.GameRule.RPRuleset) then
@@ -272,8 +270,16 @@ do
 		else
 			realmKey = "PvE"
 		end
+		local name, surname = UnitNameUnmodified("player")
+		if surname then
+			charKey = name .. " " .. tostring(surname)
+		else
+			charKey = name
+		end
+	else
+		realmKey = GetRealmName()
+		charKey = UnitNameUnmodified("player") .. " - " .. realmKey
 	end
-	charKey = UnitName("player") .. " - " .. realmKey
 
 	local regionTable = { "US", "KR", "EU", "TW", "CN" }
 	local regionName = GetCurrentRegionName()
@@ -302,7 +308,8 @@ local function initdb(sv, defaults, defaultProfile, olddb, parent)
 				sv.profileKeys[charKey] = defaultProfile or charKey
 			else
 				local profileNameLength = strlenutf8(sv.profileKeys[charKey])
-				if profileNameLength == 0 or profileNameLength > 50 or sv.profileKeys[charKey]:find("^ +$") then
+				if profileNameLength == 0 or sv.profileKeys[charKey]:find("^ +$")
+					or (profileNameLength > 50 and not (sv.profiles and type(sv.profiles[sv.profileKeys[charKey]]) == "table")) then
 					sv.profileKeys[charKey] = defaultProfile or charKey
 				end
 			end
@@ -481,7 +488,9 @@ function DBObjectLib:SetProfile(name)
 		error(("Usage: AceDBObject:SetProfile(name): 'name' - string expected, got %q."):format(type(name)), 2)
 	else
 		local profileNameLength = strlenutf8(name)
-		if profileNameLength == 0 or profileNameLength > 50 or name:find("^ +$") then
+		if profileNameLength == 0 or name:find("^ +$")
+			or (profileNameLength > 50 and not (self.sv.profiles and type(self.sv.profiles[name]) == "table")
+				and not (self.parent and self.parent.keys.profile == name)) then
 			error("Usage: AceDBObject:SetProfile(name): 'name' - string length must be between 1 and 50 characters.", 2)
 		end
 	end
@@ -818,7 +827,8 @@ function AceDB:New(tbl, defaults, defaultProfile)
 	if defaultProfile then
 		if type(defaultProfile) == "string" then
 			local profileNameLength = strlenutf8(defaultProfile)
-			if profileNameLength == 0 or profileNameLength > 50 or defaultProfile:find("^ +$") then
+			if profileNameLength == 0 or defaultProfile:find("^ +$")
+				or (profileNameLength > 50 and not (tbl.profiles and type(tbl.profiles[defaultProfile]) == "table")) then
 				error("Usage: AceDB:New(tbl, defaults, defaultProfile): 'defaultProfile' - string length must be between 1 and 50 characters.", 2)
 			end
 		elseif defaultProfile ~= true then

@@ -1337,7 +1337,8 @@ local function HideBlizzardDecorations()
 
     if CharacterFrame.CloseButton then
         CharacterFrame.CloseButton:ClearAllPoints()
-        CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 52, -5)
+        CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT",
+            ns.Client and ns.Client.isForever and -5 or 52, -5)
         StyleCloseButton(CharacterFrame.CloseButton)
     end
 
@@ -1646,8 +1647,14 @@ local function RepositionSlots()
 end
 
 local function PositionModelScene()
-    local settings = GetSettings()
+    -- Forever owns a fixed left pane while its details pane collapses. Keep
+    -- the native model anchors and camera bounds independent of total width.
     if not CharacterModelScene then return end
+    if ns.Client and ns.Client.isForever then
+        CharacterModelScene:SetFrameLevel(2)
+        return
+    end
+    local settings = GetSettings()
 
     CharacterModelScene:ClearAllPoints()
     CharacterModelScene:SetPoint("TOPLEFT", CharacterFrame, "TOPLEFT", 86, -85)
@@ -1737,7 +1744,8 @@ local function SetupTitleArea()
         nameText:SetPoint("TOPLEFT", displayFrame, "TOPLEFT", 0, 0)
         nameText:SetJustifyH("LEFT")
 
-        local specText = CharacterFrame:CreateFontString(nil, "OVERLAY")
+        local specOwner = ns.Client and ns.Client.isForever and displayFrame or CharacterFrame
+        local specText = specOwner:CreateFontString(nil, "OVERLAY")
         CJKFont(specText, font, 12, "")
         specText:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", -132, -10)
         specText:SetJustifyH("RIGHT")
@@ -3132,6 +3140,9 @@ local function UpdateILvlDisplay()
 
     if displayFrame.specText then
         local specLine = string.format("%d %s %s", level, specName, AbbreviateClassName(className))
+        if ns.Client and ns.Client.isForever and specName == className then
+            specLine = string.format("%d %s", level, className)
+        end
         displayFrame.specText:SetText(specLine)
         displayFrame.specText:SetTextColor(r, g, b, 1)
     end
@@ -3304,6 +3315,10 @@ local function SetSidebarTabSelected(tab, selected)
 end
 
 local function SelectCharacterStatsSidebarTab()
+    -- Camelot owns the selected pane even while details are collapsed. Calling
+    -- its sidebar setter from an addon OnShow hook taints currentSideBar, which
+    -- its next CharacterFrame OnShow reads before updating secret status bars.
+    if ns.Client and ns.Client.isForever then return end
     if not PaperDollSidebarTab1 then return end
 
     if type(_G.PaperDollFrame_SetSidebar) == "function" then
@@ -3490,7 +3505,11 @@ local function HookCharacterFrame()
         AnchorCharacterFrameBottomTabs(-50)
         if CharacterFrame.CloseButton then
             CharacterFrame.CloseButton:ClearAllPoints()
-            CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPLEFT", (_G.CHARACTERFRAME_EXPANDED_WIDTH or 540) + 52, -5)
+            if ns.Client and ns.Client.isForever then
+                CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", -5, -5)
+            else
+                CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPLEFT", (_G.CHARACTERFRAME_EXPANDED_WIDTH or 540) + 52, -5)
+            end
         end
     end
 
@@ -3498,11 +3517,16 @@ local function HookCharacterFrame()
         AnchorCharacterFrameBottomTabs(-50)
         if CharacterFrame.CloseButton then
             CharacterFrame.CloseButton:ClearAllPoints()
-            CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT", 52, -5)
+            CharacterFrame.CloseButton:SetPoint("TOPRIGHT", CharacterFrame, "TOPRIGHT",
+                ns.Client and ns.Client.isForever and -5 or 52, -5)
         end
     end
 
     local function HideCustomElements()
+        if ns.Client and ns.Client.isForever and CharacterFrame.GetTitleText then
+            local title = CharacterFrame:GetTitleText()
+            if title then title:Show() end
+        end
         if statsPanel then statsPanel:Hide() end
         for _, overlay in pairs(slotOverlays) do
             if overlay then overlay:Hide() end
@@ -3552,6 +3576,10 @@ local function HookCharacterFrame()
                 SelectCharacterStatsSidebarTab()
 
                 RestoreCharacterTabPositions()
+                if ns.Client and ns.Client.isForever and CharacterFrame.GetTitleText then
+                    local title = CharacterFrame:GetTitleText()
+                    if title then title:Hide() end
+                end
                 local BASE_SCALE = 1.30
                 local scaleMultiplier = settings.panelScale or 1.0
                 SetCharacterFrameScale(BASE_SCALE * scaleMultiplier)
@@ -3631,7 +3659,7 @@ local function HookCharacterFrame()
             width = 600,
             columns = 2,
             triggerName = "QUI_CharacterSettingsBtn",
-            triggerPoint = { "TOPRIGHT", CharacterFrame, "TOPRIGHT", 6, -6 },
+            triggerPoint = { "TOPRIGHT", CharacterFrame, "TOPRIGHT", ns.Client and ns.Client.isForever and -32 or 6, ns.Client and ns.Client.isForever and -2 or -6 },
             extension = chrome.CONFIG and chrome.CONFIG.PANEL_WIDTH_EXTENSION or 55,
             provider = function(ctx)
             local GUI = ctx.GUI

@@ -10,7 +10,7 @@ Dependencies: LibStub, CallbackHandler-1.0
 License: LGPL v2.1
 ]]
 
-local MAJOR, MINOR = "LibSharedMedia-3.0", 12000001 -- 12.0.0 v1 / increase manually on changes
+local MAJOR, MINOR = "LibSharedMedia-3.0", 12000002
 local lib = LibStub:NewLibrary(MAJOR, MINOR)
 
 if not lib then return end
@@ -236,6 +236,7 @@ local function updateMediaList(mediatype, value)
     table_insert(mlist, s, value)
 end
 
+local IsKnownFile = C_UIFileAsset.IsKnownFile
 function lib:Register(mediatype, key, data, langmask)
     if type(mediatype) ~= "string" then
         error(MAJOR..":Register(mediatype, key, data, langmask) - mediatype must be string, got "..type(mediatype))
@@ -244,11 +245,14 @@ function lib:Register(mediatype, key, data, langmask)
         error(MAJOR..":Register(mediatype, key, data, langmask) - key must be string, got "..type(key))
     end
     mediatype = mediatype:lower()
-    if mediatype == lib.MediaType.FONT and ((langmask and band(langmask, LOCALE_MASK) == 0) or not (langmask or locale_is_western)) then
+    if mediatype == lib.MediaType.FONT and (not IsKnownFile(data) or (langmask and band(langmask, LOCALE_MASK) == 0) or not (langmask or locale_is_western)) then
         -- ignore fonts that aren't flagged as supporting local glyphs on non-western clients
         return false
     end
     if type(data) == "string" and (mediatype == lib.MediaType.BACKGROUND or mediatype == lib.MediaType.BORDER or mediatype == lib.MediaType.STATUSBAR or mediatype == lib.MediaType.SOUND) then
+        if not IsKnownFile(data) then
+            return false
+        end
         local path = data:lower()
         if not path:find("^interface") then
             -- files accessed via path only allowed from interface folder

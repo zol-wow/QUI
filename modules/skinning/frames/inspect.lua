@@ -86,6 +86,15 @@ local function HideBlizzardDecorations()
     end
 end
 
+local function SkinInspectFrameTabs()
+    if InspectFrame and InspectFrame.ModeTabs and InspectFrame.ModeTabs.Tabs then
+        SkinBase.SkinTabGroup(InspectFrame.ModeTabs.Tabs, InspectFrame, { font = false })
+        return
+    end
+    SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("InspectFrame", 3), InspectFrame, { font = true, resizeToText = true, dockBottom = true, dockOwner = customBg })
+end
+
+
 local function SetInspectFrameBgExtended(extended)
     if not IsSkinningEnabled() then return end
     if not customBg then
@@ -105,15 +114,9 @@ local function SetInspectFrameBgExtended(extended)
 
     customBg:Show()
     HideBlizzardDecorations()
+    SkinInspectFrameTabs()
 end
 
-local function SkinInspectFrameTabs()
-    if InspectFrame and InspectFrame.ModeTabs and InspectFrame.ModeTabs.Tabs then
-        SkinBase.SkinTabGroup(InspectFrame.ModeTabs.Tabs, InspectFrame, { font = false })
-        return
-    end
-    SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("InspectFrame", 3), InspectFrame, { font = true, resizeToText = true, dockBottom = true })
-end
 
 local function StyleNativeInspectSlot(slot)
     if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
@@ -221,13 +224,15 @@ end
 
 local function StyleInspectText(text)
     if not text or (text.IsForbidden and text:IsForbidden()) then return end
-    SkinBase.SkinFontString(text, { fontOnly = true })
-    SkinBase.LockFontObject(text, { fontOnly = true })
     local r, g, b, a = text:GetTextColor()
     local normal = NORMAL_FONT_COLOR
-    if normal and r == normal.r and g == normal.g and b == normal.b then
-        text:SetTextColor(0.92, 0.92, 0.92, a)
+    local opts = { fontOnly = true }
+    if normal and math.abs(r - normal.r) < 0.004 and math.abs(g - normal.g) < 0.004
+        and math.abs(b - normal.b) < 0.004 then
+        opts = { color = { 0.92, 0.92, 0.92, a } }
     end
+    SkinBase.SkinFontString(text, opts)
+    SkinBase.LockFontObject(text, opts)
 end
 
 local function StyleInspectPvpTalentSlot(slot)
@@ -282,6 +287,14 @@ local function StyleInspectSupplementalFrames()
     if pvp and not (pvp.IsForbidden and pvp:IsForbidden()) then
         SkinBase.ClampTextureHidden(pvp.BG, true)
         StyleInspectText(pvp.HKs)
+        local kills = pvp.HKs
+        if kills and not (kills.IsForbidden and kills:IsForbidden()) then
+            local value = kills:GetText()
+            if type(value) == "string" then
+                local neutral = value:gsub("|c[fF][fF][fF][fF][dD]200", "|cffebebeb")
+                if neutral ~= value then kills:SetText(neutral) end
+            end
+        end
         StyleInspectText(pvp.HonorLevel)
         for _, slot in ipairs(pvp.Slots or {}) do
             StyleInspectPvpTalentSlot(slot)
@@ -306,6 +319,10 @@ local function SetupInspectFrameSkinning()
     SkinInspectFrameTabs()
     SkinInspectButtons()
     StyleInspectSupplementalFrames()
+    if _G.InspectPVPFrame_Update and not SkinBase.GetFrameData(InspectFrame, "qInspectHonorUpdateHooked") then
+        hooksecurefunc("InspectPVPFrame_Update", StyleInspectSupplementalFrames)
+        SkinBase.SetFrameData(InspectFrame, "qInspectHonorUpdateHooked", true)
+    end
 
     InspectFrame:HookScript("OnShow", function()
         SetInspectFrameBgExtended(IsInspectOverlaysEnabled())
@@ -356,6 +373,7 @@ api.IsEnabled = IsSkinningEnabled
 api.SetExtended = SetInspectFrameBgExtended
 api.Refresh = RefreshInspectFrameColors
 api.RefreshScale = RefreshInspectFrameScale
+api.RefreshTabs = SkinInspectFrameTabs
 _G.QUI_InspectFrameSkinning = api
 
 _G.QUI_RefreshInspectColors = RefreshInspectFrameColors

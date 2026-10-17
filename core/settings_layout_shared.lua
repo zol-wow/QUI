@@ -48,6 +48,22 @@ function Shared.MakeLayout(content, U, startY, options)
         h:ClearAllPoints()
         h:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
         h:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
+        if h._label and h.SetScript and h.GetTop then
+            Shared.VerifyInitialBounds(h, content, function(self)
+                local point, relative, relativePoint, x, offset = self:GetPoint(1)
+                self:ClearAllPoints()
+                self:SetPoint(point, relative, relativePoint, x, offset)
+                self:SetWidth(math.max(1, content:GetWidth() - 2 * PAD))
+                self._quiRecoveredWidth = true
+                self._label:ClearAllPoints()
+                self._label:SetPoint("LEFT", self._dot, "RIGHT", 7, 0)
+            end, h._label)
+            content:HookScript("OnSizeChanged", function()
+                if h._quiRecoveredWidth then
+                    h:SetWidth(math.max(1, content:GetWidth() - 2 * PAD))
+                end
+            end)
+        end
         y = y - HEADER_GAP
         trailingGap = 0
     end

@@ -1186,21 +1186,32 @@ function UIKit.CreateRoundedSurface(frame, opts)
             texture:SetPoint(first, frame, first, Aligned(first, x1, y1))
             texture:SetPoint(second, frame, second, Aligned(second, x2, y2))
         end
+        local function GetPosition()
+            if frame.IsAnchoringRestricted then
+                local restricted = frame:IsAnchoringRestricted()
+                if Helpers.IsSecretValue(restricted) or restricted then return end
+            end
+            local left = frame.GetLeft and frame:GetLeft()
+            local bottom = frame.GetBottom and frame:GetBottom()
+            if Helpers.IsSecretValue(left) or Helpers.IsSecretValue(bottom) then return end
+            return left, bottom
+        end
         function surface:Refresh()
             local owner = self.frame
             local px = GetPixelSize(owner)
             local radius = math.min(16, math.max(1, Round(self.radius)))
             local width, height = owner:GetWidth(), owner:GetHeight()
-            if width > 0 then radius = math.min(radius, math.max(1, floor(width / (2 * px)))) end
-            if height > 0 then radius = math.min(radius, math.max(1, floor(height / (2 * px)))) end
+            if Helpers.IsSecretValue(width) then width = nil end
+            if Helpers.IsSecretValue(height) then height = nil end
+            if width and width > 0 then radius = math.min(radius, math.max(1, floor(width / (2 * px)))) end
+            if height and height > 0 then radius = math.min(radius, math.max(1, floor(height / (2 * px)))) end
             local stroke = math.min(3, math.max(1, Round(self.borderPixels)))
             local edge = stroke * px
             local r = radius * px
-            local left = owner.GetLeft and owner:GetLeft()
-            local bottom = owner.GetBottom and owner:GetBottom()
+            local left, bottom = GetPosition()
             self.left, self.bottom = left, bottom
             local dl, dr, dt, db = 0, 0, 0, 0
-            if type(left) == "number" and type(bottom) == "number" then
+            if type(left) == "number" and type(bottom) == "number" and width and height then
                 dl = Round(left / px) * px - left
                 dr = Round((left + width) / px) * px - left - width
                 db = Round(bottom / px) * px - bottom
@@ -1236,7 +1247,9 @@ function UIKit.CreateRoundedSurface(frame, opts)
             frame:HookScript("OnSizeChanged", function() surface:Refresh() end)
             frame:HookScript("OnShow", function() surface:Refresh() end)
             frame:HookScript("OnUpdate", function()
-                if surface.shown and (frame:GetLeft() ~= surface.left or frame:GetBottom() ~= surface.bottom) then surface:Refresh() end
+                if not surface.shown then return end
+                local left, bottom = GetPosition()
+                if left ~= surface.left or bottom ~= surface.bottom then surface:Refresh() end
             end)
         end
         UIKit.RegisterScaleRefresh(frame, "roundedSurface", function() surface:Refresh() end)
@@ -3478,11 +3491,11 @@ function SkinBase.SkinTabGroup(tabs, owner, opts)
                 if previous then
                     t:SetPoint("TOPLEFT", previous, "TOPRIGHT", -px, 0)
                 else
-                    t:SetPoint("TOPLEFT", owner, "BOTTOMLEFT", opts.inset or 12, px)
+                    t:SetPoint("TOPLEFT", opts.dockOwner or owner, "BOTTOMLEFT", opts.inset or 12, px)
                 end
                 t:SetHeight(opts.height or 28)
                 local backdrop = SkinBase.GetBackdrop(t)
-                if backdrop then backdrop:ClearAllPoints(); backdrop:SetAllPoints(t) end
+                if backdrop then SkinBase.SetPixelInsetPoints(backdrop, t, 0, 0, 0, 0) end
                 local join = SkinBase.GetFrameData(t, "tabWindowJoin")
                 if not join then
                     join = backdrop:CreateTexture(nil, "OVERLAY")
@@ -4243,8 +4256,8 @@ function SkinBase.SkinTrimScrollBar(scrollBar, opts)
             local color = opts.color or role or { 1, 1, 1, 0.6 }
             SkinBase.CreateBackdrop(nativeThumb, nil, nil, nil, nil, nil, nil, nil, nil, 4)
             local bd = SkinBase.GetBackdrop(nativeThumb)
-            bd:SetBackdropColor(color[1], color[2], color[3], opts.alpha or color[4] or 0.6)
-            bd:SetBackdropBorderColor(color[1], color[2], color[3], opts.alpha or color[4] or 0.6)
+            local thumbColor = { color[1], color[2], color[3], opts.alpha or color[4] or 0.6 }
+            SkinBase.SetBackdropColors(bd, thumbColor, thumbColor)
         end
     end
     if scrollBar.Background then scrollBar.Background:SetAlpha(0) end

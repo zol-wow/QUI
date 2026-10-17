@@ -368,6 +368,24 @@ local function StyleProfessionNeutralText(label)
     end
 end
 
+local function StyleProfessionOrderHeaders(orders)
+    if not orders or not IsEnabled() then return end
+    local builder = orders.tableBuilder
+    if builder and type(builder.EnumerateHeaders) == "function" then
+        for header in builder:EnumerateHeaders() do
+            for _, key in ipairs({ "Left", "Middle", "Right" }) do
+                SkinBase.ClampTextureHidden(header[key], true)
+            end
+            SkinBase.ClampTextureHidden(header.GetHighlightTexture and header:GetHighlightTexture(), true)
+            SkinBase.ApplyButtonFontObjects(header)
+        end
+    end
+    if type(orders.SetupTable) == "function" and not SkinBase.GetFrameData(orders, "qProfessionOrderHeadersHooked") then
+        hooksecurefunc(orders, "SetupTable", StyleProfessionOrderHeaders)
+        SkinBase.SetFrameData(orders, "qProfessionOrderHeadersHooked", true)
+    end
+end
+
 local function StyleProfessionTitle(frame)
     if not frame or not IsEnabled() then return end
     local title = frame.GetTitleText and frame:GetTitleText()
@@ -435,6 +453,46 @@ local function StyleProfessionForm(form)
             SkinBase.SetFrameData(form, flag, true)
         end
     end
+end
+
+local function StyleProfessionFlyout(flyout)
+    if not flyout or not IsEnabled() then return end
+    SkinBase.StripTextures(flyout)
+    SkinBase.KillNineSlice(flyout.NineSlice, true)
+    if flyout.SetBackdrop then flyout:SetBackdrop(nil) end
+    local sr, sg, sb, sa = SkinBase.GetWindowColors()
+    local r, g, b = SkinBase.GetDepthColor("SUBPANEL")
+    SkinBase.CreateBackdrop(flyout, sr, sg, sb, sa * 0.5, r, g, b, 1, 5)
+    StyleProfessionNeutralText(flyout.Text)
+    StyleProfessionNeutralText(flyout.UndoItem and flyout.UndoItem.Text)
+    SkinBase.SkinCheckBox(flyout.HideUnownedCheckbox)
+    local checkbox = flyout.HideUnownedCheckbox
+    local backdrop = checkbox and SkinBase.GetBackdrop(checkbox)
+    if backdrop then
+        backdrop:ClearAllPoints()
+        backdrop:SetPoint("TOPLEFT", checkbox, "TOPLEFT", 5, -5)
+        backdrop:SetPoint("BOTTOMRIGHT", checkbox, "BOTTOMRIGHT", -5, 5)
+        SkinBase.ApplyChromeBackdrop(backdrop, { radius = 3, withBackground = true })
+    end
+    StyleProfessionNeutralText(flyout.HideUnownedCheckbox and flyout.HideUnownedCheckbox.text)
+    SkinBase.SkinTrimScrollBar(flyout.ScrollBar)
+end
+
+local professionFlyoutHooked = false
+local function HookProfessionFlyout()
+    if professionFlyoutHooked or not _G.OpenProfessionsItemFlyout then return end
+    hooksecurefunc("OpenProfessionsItemFlyout", function(_, _, behavior)
+        local flyout = behavior and behavior.flyout
+        if not flyout then return end
+        StyleProfessionFlyout(flyout)
+        if not SkinBase.GetFrameData(flyout, "qProfessionFlyoutHooked") then
+            for _, method in ipairs({ "Init", "InitializeContents" }) do
+                if flyout[method] then hooksecurefunc(flyout, method, StyleProfessionFlyout) end
+            end
+            SkinBase.SetFrameData(flyout, "qProfessionFlyoutHooked", true)
+        end
+    end)
+    professionFlyoutHooked = true
 end
 
 local function StyleProfessionRankBar(bar)
@@ -547,9 +605,17 @@ local function StyleProfessionTopControls(frame)
         end
     end
     local orders = frame.OrdersPage
+    StyleProfessionOrderHeaders(orders)
     StyleProfessionOrderView(orders and orders.OrderView)
     local browse = orders and orders.BrowseFrame
     if browse then
+        local remaining = browse.OrdersRemainingDisplay
+        if remaining then
+            SkinBase.ClampTextureHidden(remaining.Background, true)
+            local sr, sg, sb, sa = SkinBase.GetWindowColors()
+            SkinSubPanel(remaining, sr, sg, sb, sa)
+            SkinBase.SkinFontString(remaining.OrdersRemaining, { fontOnly = true })
+        end
         local list = browse.RecipeList
         local filter = list and list.FilterDropdown
         if filter then
@@ -598,6 +664,31 @@ local function StyleProfessionTopControls(frame)
     end
 end
 
+local function SkinForeverProfessionOverview(frame)
+    if not (ns.Client and ns.Client.isForever) or not IsEnabled() then return end
+    local book = frame and frame.BookPage
+    local content = book and book.ProfessionsContentFrame
+    if not content then return end
+    local sr, sg, sb, sa, r, g, b, a = SkinBase.GetWindowColors()
+    for _, key in ipairs({ "PrimaryProfession1", "PrimaryProfession2", "SecondaryProfession1",
+        "SecondaryProfession2", "SecondaryProfession3" }) do
+        local card = content[key]
+        if card then
+            -- These atlases combine the ornamental card frame and watermark.
+            -- Spell icons, rank fill/mask and native learn/unlearn controls stay intact.
+            SkinBase.ClampTextureHidden(card.Background, true, { preserveLayout = true })
+            SkinBase.CreateBackdrop(card, sr, sg, sb, sa * 0.5, r, g, b, a, 5)
+            local backdrop = SkinBase.GetBackdrop(card)
+            if backdrop then
+                -- Native cards overlap to join their artwork; inset our individual borders.
+                backdrop:ClearAllPoints()
+                backdrop:SetPoint("TOPLEFT", card, "TOPLEFT", 4, -4)
+                backdrop:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -4, 4)
+            end
+        end
+    end
+end
+
 local function SkinProfessions()
     if not IsEnabled() then return end
 
@@ -605,6 +696,7 @@ local function SkinProfessions()
     if not frame or SkinBase.IsSkinned(frame) then return end
 
     HookProfessionTableHeaderFonts()
+    HookProfessionFlyout()
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
@@ -620,6 +712,7 @@ local function SkinProfessions()
         SkinBase.LockFrameTextObjects(frame.BookPage, 4)
         SkinBase.ApplyButtonFontObjectsDeep(frame.BookPage, 4)
     end
+    SkinForeverProfessionOverview(frame)
     SkinCraftingPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinOrdersPage(frame, sr, sg, sb, sa, bgr, bgg, bgb, bga)
     SkinSpecPage(frame)
@@ -628,6 +721,7 @@ local function SkinProfessions()
         frame:HookScript("OnShow", function()
             StyleProfessionTopControls(frame)
             SkinTabs(frame)
+            SkinForeverProfessionOverview(frame)
         end)
     end
     SkinBase.MarkSkinned(frame)
@@ -668,6 +762,7 @@ local function RefreshProfessionsColors()
     end
     SkinBase.RefreshTabGroup(frame.rightProfessionTabs, frame)
     if frame.BookPage then SkinBase.SkinFrameText(frame.BookPage, { recurse = true }) end
+    SkinForeverProfessionOverview(frame)
 
     local craftingPage = frame.CraftingPage
     if craftingPage then

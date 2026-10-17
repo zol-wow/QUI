@@ -968,7 +968,7 @@ local function GetAnchorRectInUIParent(anchorKey, seen)
     end
     local h = QUI_LayoutMode._handles and QUI_LayoutMode._handles[anchorKey]
     if h then
-        local l, r, t, b = h:GetLeft(), h:GetRight(), h:GetTop(), h:GetBottom()
+        local l, r, t, b = QUI_LayoutMode:GetHandleEdges(h)
         if l and r and t and b then return l, r, t, b end
     end
     local pf = _G.QUI_ResolveAnchorTargetFrame and _G.QUI_ResolveAnchorTargetFrame(anchorKey)
@@ -1093,7 +1093,7 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
             local pL, pR, pT, pB = GetAnchorRectInUIParent(anchorTarget)
 
             if childHandle and pL and pR and pT and pB then
-                local cL, cR, cT, cB = childHandle:GetLeft(), childHandle:GetRight(), childHandle:GetTop(), childHandle:GetBottom()
+                local cL, cR, cT, cB = QUI_LayoutMode:GetHandleEdges(childHandle)
 
                 if cL and cR and cT and cB then
                     local function anchorPos(l, r, t, b, pt)
@@ -1132,7 +1132,7 @@ local function SavePendingPosition(key, point, relPoint, offsetX, offsetY, ancho
                 local pL, pR, pT, pB = GetAnchorRectInUIParent(existingParent)
 
                 if childHandle and pL and pR and pT and pB then
-                    local cL, cR, cT, cB = childHandle:GetLeft(), childHandle:GetRight(), childHandle:GetTop(), childHandle:GetBottom()
+                    local cL, cR, cT, cB = QUI_LayoutMode:GetHandleEdges(childHandle)
                     if cL and cR and cT and cB then
                         local function anchorPos(l, r, t, b, pt)
                             local x, y = (l + r) / 2, (t + b) / 2
@@ -1269,7 +1269,16 @@ end
 function QUI_LayoutMode:GetHandleEdges(handle)
     if handle._isChildOverlay and handle._parentFrame then
         local p = handle._parentFrame
-        return p:GetLeft(), p:GetRight(), p:GetTop(), p:GetBottom()
+        local l, r, t, b = p:GetLeft(), p:GetRight(), p:GetTop(), p:GetBottom()
+        if l and r and t and b then
+            local frameScale = (p.GetEffectiveScale and p:GetEffectiveScale()) or 1
+            local uiScale = UIParent:GetEffectiveScale() or 1
+            if frameScale ~= uiScale and uiScale > 0 then
+                local ratio = frameScale / uiScale
+                l, r, t, b = l * ratio, r * ratio, t * ratio, b * ratio
+            end
+        end
+        return l, r, t, b
     end
     return handle:GetLeft(), handle:GetRight(), handle:GetTop(), handle:GetBottom()
 end
@@ -2189,7 +2198,7 @@ SyncHandle = function(key)
                 local dbOx = entry.offsetX or 0
                 local dbOy = entry.offsetY or 0
 
-                local pL, pR, pT, pB = parentHandle:GetLeft(), parentHandle:GetRight(), parentHandle:GetTop(), parentHandle:GetBottom()
+                local pL, pR, pT, pB = QUI_LayoutMode:GetHandleEdges(parentHandle)
                 if pL and pR and pT and pB then
                     local function anchorPos(l, r, t, b, pt)
                         local x, y = (l + r) / 2, (t + b) / 2
@@ -2586,6 +2595,27 @@ do
                     return (info.holder and _G[info.holder]) or _G[info.frame]
                 end,
             }
+            if info.key == "objectiveTracker" then
+                -- Move the same holder used by gameplay anchoring. Moving the
+                -- native tracker directly fights its SetPoint/SetParent repair.
+                regDef.isOwned = true
+                regDef.getFrame = function()
+                    return _G.QUI_ObjectiveTrackerHolder or _G.ObjectiveTrackerFrame
+                end
+                regDef.setupOverlay = function(overlay, frame)
+                    local tracker = _G.ObjectiveTrackerFrame
+                    local skin = ns.SkinBase
+                    local backdrop = tracker and skin and skin.GetFrameData(tracker, "backdrop")
+                    overlay:ClearAllPoints()
+                    -- The native frame reserves the maximum tracking height;
+                    -- the skin follows the currently visible objective content.
+                    if backdrop and backdrop:IsShown() then
+                        overlay:SetAllPoints(backdrop)
+                    else
+                        overlay:SetAllPoints(tracker or frame)
+                    end
+                end
+            end
             if info.minWidth then
                 regDef.getSize = function()
                     local minW = info.minWidth
