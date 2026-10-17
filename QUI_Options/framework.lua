@@ -3036,14 +3036,14 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     end
 
     local text
-    local sliderLeftOffset = 180
+    local sliderLeftOffset = options.labelWidth or 180
     if label then
         container:SetHeight(FORM_ROW_HEIGHT)
         text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         SetFont(text, 12, "", C.text)
         text:SetText(label)
         text:SetPoint("LEFT", 0, 0)
-        text:SetWidth(170)
+        text:SetWidth(sliderLeftOffset - 10)
         text:SetWordWrap(true)
         text:SetNonSpaceWrap(true)
         text:SetJustifyH("LEFT")
@@ -3416,7 +3416,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
             local height = stacked and 52 or FORM_ROW_HEIGHT
             text:ClearAllPoints()
             text:SetPoint(stacked and "TOPLEFT" or "LEFT", self, stacked and "TOPLEFT" or "LEFT", 0, stacked and -2 or 0)
-            text:SetWidth(stacked and width or 170)
+            text:SetWidth(stacked and width or (sliderLeftOffset - 10))
             if stacked then text:SetPoint("TOPRIGHT", self, "TOPRIGHT", 0, -2) end
             text:SetHeight(stacked and 18 or FORM_ROW_HEIGHT)
             slider:ClearAllPoints()
@@ -3449,7 +3449,7 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     ApplyWidgetSyncContext(container, dbTable, dbKey)
 
     local text
-    local dropdownLeftOffset = 180
+    local dropdownLeftOffset = (opts and opts.labelWidth) or 180
     if label then
         container:SetHeight(FORM_ROW_HEIGHT)
         text = container:CreateFontString(nil, "OVERLAY", "GameFontNormal")

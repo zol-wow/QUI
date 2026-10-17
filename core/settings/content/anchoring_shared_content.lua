@@ -196,6 +196,35 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
         ns.QUI_Options.CreateAccentDotLabel(tabContent, headerName .. " " .. ns.L["Anchoring"], y); y = y - 30
     end
 
+    local rows = {}
+    local rowsTop = y
+    local layingOutRows = false
+    local function RelayoutRows()
+        if layingOutRows or tabContent._dualRowFrames then return end
+        layingOutRows = true
+        y = rowsTop
+        for _, row in ipairs(rows) do
+            if row:IsShown() then
+                row:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD + 10, y)
+                row:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, y)
+                if row._quiLayoutFormSlider then
+                    row:_quiLayoutFormSlider(row:GetWidth())
+                end
+                local gap = options.labelWidth and 2 or 4
+                y = y - math.max(options.labelWidth and 30 or FORM_ROW, row:GetHeight() + gap)
+            end
+        end
+        y = y - 2
+        if options.onHeightChanged then options.onHeightChanged(y) end
+        layingOutRows = false
+    end
+    local function PlaceRow(row)
+        rows[#rows + 1] = row
+        row:HookScript("OnSizeChanged", RelayoutRows)
+        row:HookScript("OnShow", RelayoutRows)
+        row:HookScript("OnHide", RelayoutRows)
+    end
+
     local function OnAnchorTargetChange(val)
         frameDB.offsetX = 0
         frameDB.offsetY = 0
@@ -210,93 +239,73 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
     local anchorDropdown = self:CreateAnchorDropdown(
         tabContent, ns.L["Anchor To"], frameDB, "parent",
         PAD + 10, y, nil, OnAnchorTargetChange,
-        nil, nil, frameKey
+        nil, nil, frameKey, options.labelWidth
     )
     if anchorDropdown then
-        anchorDropdown:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        PlaceRow(anchorDropdown)
         widgetRefs.anchorDropdown = anchorDropdown
-        y = y - FORM_ROW
     end
 
     local fromPoint = GUI:CreateFormDropdown(tabContent, ns.L["From Point"], ninePointOptions, "point", frameDB, OnChange,
-        { description = ns.L["Which corner or edge of this frame attaches to the anchor. Together with To Point, this defines how the two frames align."] })
-    fromPoint:SetPoint("TOPLEFT", PAD + 10, y)
-    fromPoint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        { description = ns.L["Which corner or edge of this frame attaches to the anchor. Together with To Point, this defines how the two frames align."] }, {labelWidth = options.labelWidth})
+    PlaceRow(fromPoint)
     widgetRefs.fromPoint = fromPoint
-    y = y - FORM_ROW
 
     local toPoint = GUI:CreateFormDropdown(tabContent, ns.L["To Point"], ninePointOptions, "relative", frameDB, OnChange,
-        { description = ns.L["Which corner or edge of the anchor target this frame attaches to. Together with From Point, this defines how the two frames align."] })
-    toPoint:SetPoint("TOPLEFT", PAD + 10, y)
-    toPoint:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        { description = ns.L["Which corner or edge of the anchor target this frame attaches to. Together with From Point, this defines how the two frames align."] }, {labelWidth = options.labelWidth})
+    PlaceRow(toPoint)
     widgetRefs.toPoint = toPoint
-    y = y - FORM_ROW
 
-    local sliderX = GUI:CreateFormSlider(tabContent, ns.L["Offset X"], sliderMin, sliderMax, 1, "offsetX", frameDB, OnChange, nil,
+    local sliderX = GUI:CreateFormSlider(tabContent, ns.L["Offset X"], sliderMin, sliderMax, 1, "offsetX", frameDB, OnChange, {labelWidth = options.labelWidth},
         { description = ns.L["Horizontal pixel offset from the anchor point. Positive values move the frame right, negative values move it left."] })
-    sliderX:SetPoint("TOPLEFT", PAD + 10, y)
-    sliderX:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    PlaceRow(sliderX)
     widgetRefs.sliderX = sliderX
-    y = y - FORM_ROW
 
-    local sliderY = GUI:CreateFormSlider(tabContent, ns.L["Offset Y"], sliderMin, sliderMax, 1, "offsetY", frameDB, OnChange, nil,
+    local sliderY = GUI:CreateFormSlider(tabContent, ns.L["Offset Y"], sliderMin, sliderMax, 1, "offsetY", frameDB, OnChange, {labelWidth = options.labelWidth},
         { description = ns.L["Vertical pixel offset from the anchor point. Positive values move the frame up, negative values move it down."] })
-    sliderY:SetPoint("TOPLEFT", PAD + 10, y)
-    sliderY:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    PlaceRow(sliderY)
     widgetRefs.sliderY = sliderY
-    y = y - FORM_ROW
 
     if options.autoWidth then
         local autoWidthToggle = GUI:CreateFormToggle(tabContent, ns.L["Auto-Width (Match Anchor Target)"], "autoWidth", frameDB, OnChange,
             { description = ns.L["Automatically resize this frame to match the width of its anchor target so the two stay visually aligned. Use Width Adjustment below for fine pixel tweaks."] })
-        autoWidthToggle:SetPoint("TOPLEFT", PAD + 10, y)
-        autoWidthToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        PlaceRow(autoWidthToggle)
         widgetRefs.autoWidth = autoWidthToggle
-        y = y - FORM_ROW
 
-        local widthAdjust = GUI:CreateFormSlider(tabContent, ns.L["Width Adjustment"], -20, 20, 1, "widthAdjust", frameDB, OnChange, nil,
+        local widthAdjust = GUI:CreateFormSlider(tabContent, ns.L["Width Adjustment"], -20, 20, 1, "widthAdjust", frameDB, OnChange, {labelWidth = options.labelWidth},
             { description = ns.L["Pixel tweak added to the auto-matched width. Useful for overshooting or undershooting the anchor target to account for borders or padding."] })
-        widthAdjust:SetPoint("TOPLEFT", PAD + 10, y)
-        widthAdjust:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        PlaceRow(widthAdjust)
         widgetRefs.widthAdjust = widthAdjust
-        y = y - FORM_ROW
     end
 
     if options.autoHeight then
         local autoHeightToggle = GUI:CreateFormToggle(tabContent, ns.L["Auto-Height (Match CDM Row 1 Icon)"], "autoHeight", frameDB, OnChange,
             { description = ns.L["Automatically resize this frame to match the height of the Cooldown Manager's first icon row, so the frame scales with CDM icon size changes."] })
-        autoHeightToggle:SetPoint("TOPLEFT", PAD + 10, y)
-        autoHeightToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        PlaceRow(autoHeightToggle)
         widgetRefs.autoHeight = autoHeightToggle
-        y = y - FORM_ROW
 
-        local heightAdjust = GUI:CreateFormSlider(tabContent, ns.L["Height Adjustment"], -20, 20, 1, "heightAdjust", frameDB, OnChange, nil,
+        local heightAdjust = GUI:CreateFormSlider(tabContent, ns.L["Height Adjustment"], -20, 20, 1, "heightAdjust", frameDB, OnChange, {labelWidth = options.labelWidth},
             { description = ns.L["Pixel tweak added to the auto-matched height. Useful for overshooting or undershooting the match to account for borders or visual padding."] })
-        heightAdjust:SetPoint("TOPLEFT", PAD + 10, y)
-        heightAdjust:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        PlaceRow(heightAdjust)
         widgetRefs.heightAdjust = heightAdjust
-        y = y - FORM_ROW
     end
 
     if options.hideWithParent ~= false then
         local hideToggle = GUI:CreateFormToggle(tabContent, ns.L["Hide With Anchor"], "hideWithParent", frameDB, OnChange,
             { description = ns.L["Hide this frame whenever its anchor target is hidden, so dependent frames disappear together with the thing they follow."] })
-        hideToggle:SetPoint("TOPLEFT", PAD + 10, y)
-        hideToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        PlaceRow(hideToggle)
         widgetRefs.hideWithParent = hideToggle
-        y = y - FORM_ROW
     end
 
     if options.hideWithParent ~= false then
         local keepToggle = GUI:CreateFormToggle(tabContent, ns.L["Keep In Place When Hidden"], "keepInPlace", frameDB, OnChange,
             { description = ns.L["When the anchor target is hidden but this frame stays visible, keep it at its last screen position instead of snapping toward the hidden anchor."] })
-        keepToggle:SetPoint("TOPLEFT", PAD + 10, y)
-        keepToggle:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+        PlaceRow(keepToggle)
         widgetRefs.keepInPlace = keepToggle
-        y = y - FORM_ROW
     end
 
-    y = y - 2
+    tabContent:HookScript("OnSizeChanged", RelayoutRows)
+    RelayoutRows()
 
     local function ApplyLiveValues()
         local db = self:GetFrameDB(frameKey)
@@ -340,7 +349,7 @@ function QUI_Anchoring_Options:BuildAnchoringSection(tabContent, frameKey, optio
     return y, widgetRefs
 end
 
-function QUI_Anchoring_Options:CreateAnchorDropdown(parent, label, settingsDB, anchorKey, x, y, width, onChange, includeList, excludeList, excludeSelf)
+function QUI_Anchoring_Options:CreateAnchorDropdown(parent, label, settingsDB, anchorKey, x, y, width, onChange, includeList, excludeList, excludeSelf, labelWidth)
     if not ns.QUI_Anchoring or not ns.QUI_Anchoring.GetAnchorTargetList then
         return nil
     end
@@ -357,7 +366,7 @@ function QUI_Anchoring_Options:CreateAnchorDropdown(parent, label, settingsDB, a
 
     local dropdown = GUI:CreateFormDropdown(parent, label, anchorOptions, anchorKey, settingsDB, onChange,
         { description = ns.L["Which frame this one anchors to. Pick a QUI frame, a Blizzard frame, or the screen; use From Point and To Point below to choose how the two frames align."] },
-        { searchable = true, collapsible = true })
+        { searchable = true, collapsible = true, labelWidth = labelWidth })
     dropdown.preserveUnknownValue = true
 
     if x and y then

@@ -112,14 +112,16 @@ function Utils.ApplyAlternatingRowBackgrounds(body)
 end
 
 function Utils.StandardRelayout(content, sections)
-    local cy = -8
+    if sections._quiLayoutGeneration ~= nil and sections._quiLayoutGeneration ~= content._quiLayoutGeneration then return end
+    local compact = content._quiCompactLayout
+    local cy = compact and -2 or -8
     for _, s in ipairs(sections) do
         s:ClearAllPoints()
         s:SetPoint("TOPLEFT", content, "TOPLEFT", Utils.PADDING, cy)
-        s:SetPoint("RIGHT", content, "RIGHT", -Utils.PADDING, 0)
+        s:SetPoint("TOPRIGHT", content, "TOPRIGHT", -Utils.PADDING, cy)
         cy = cy - s:GetHeight() - 4
     end
-    content:SetHeight(math.abs(cy) + 16)
+    content:SetHeight(math.abs(cy) + (compact and 0 or 16))
 end
 
 function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sections, relayout)
@@ -134,9 +136,11 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
     local borderless = Utils._nextBorderless == true or Utils._useMinimalDrawerChrome == true
     Utils._nextBorderless = false
     local HEADER_HEIGHT = headerless and 0 or baseHeaderHeight
-    local CARD_GAP = headerless and 0 or 6
-    local CARD_PAD = 8
+    local CARD_GAP = headerless and 0 or (borderless and 2 or 6)
+    local CARD_PAD = borderless and 2 or 8
 
+    local generation = parent._quiLayoutGeneration
+    sections._quiLayoutGeneration = generation
     local section = CreateFrame("Frame", nil, parent)
 
     if not headerless and type(title) == "string" and title ~= "" then
@@ -203,7 +207,7 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
 
     local body = CreateFrame("Frame", nil, section)
     body:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -(HEADER_HEIGHT + CARD_GAP + CARD_PAD))
-    body:SetPoint("RIGHT", section, "RIGHT", 0, 0)
+    body:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, -(HEADER_HEIGHT + CARD_GAP + CARD_PAD))
     body:SetHeight(contentHeight)
     body._logicalSection = section
 
@@ -233,6 +237,7 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
     end
 
     local function RefreshContentHeight()
+        if parent._quiLayoutGeneration ~= generation or section:GetParent() ~= parent then return end
         if type(body._contentHeight) == "number" and body._contentHeight > 0 then
             section._contentHeight = math.max(section._contentHeight or 0, body._contentHeight)
             body._contentHeight = nil
@@ -256,7 +261,7 @@ function Utils.CreateCollapsible(parent, title, contentHeight, buildFunc, sectio
     buildFunc(body)
     RefreshContentHeight()
     C_Timer.After(0, function()
-        if not section or not body then return end
+        if parent._quiLayoutGeneration ~= generation or section:GetParent() ~= parent then return end
         RefreshContentHeight()
         Utils.ApplyAlternatingRowBackgrounds(body)
         if relayout then relayout() end
@@ -298,13 +303,21 @@ function Utils.MakeSuppressedProviderLayout(content)
         for _, s in ipairs(sections) do
             s:ClearAllPoints()
             s:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, cy)
-            s:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+            s:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, cy)
             cy = cy - (s:GetHeight() or 0) - 4
         end
         content:SetHeight(math.abs(cy) + 16)
     end
 
     return L
+end
+
+local function SetBodyContentHeight(body, height, relayout)
+    local section = body._logicalSection
+    if section then section._contentHeight = height end
+    body:SetHeight(height)
+    if section and section.RefreshContentHeight then section:RefreshContentHeight() end
+    if relayout then relayout() end
 end
 
 function Utils.BuildPositionCollapsible(content, frameKey, anchorOpts, sections, relayout)
@@ -321,16 +334,11 @@ function Utils.BuildPositionCollapsible(content, frameKey, anchorOpts, sections,
                 for k, v in pairs(anchorOpts) do opts[k] = v end
             end
             opts.noHeader = true
-            local finalY = AnchorOpts:BuildAnchoringSection(body, frameKey, opts, -4)
-            local realHeight = math.abs(finalY) + 4
-            body:SetHeight(realHeight)
-            local sec = body._logicalSection
-            if sec then
-                sec._contentHeight = realHeight
-                if sec.RefreshContentHeight then
-                    sec:RefreshContentHeight()
-                end
+            opts.labelWidth = 132
+            opts.onHeightChanged = function(finalY)
+                SetBodyContentHeight(body, math.abs(finalY) + 2, relayout)
             end
+            AnchorOpts:BuildAnchoringSection(body, frameKey, opts, 0)
         end, sections, relayout)
     end, function(msg) return msg end)
     Utils._insidePositionCollapsible = prevInside
@@ -376,7 +384,7 @@ function Utils.BuildOpenFullSettingsLink(content, providerKey, sections, relayou
     local GUI = QUI and QUI.GUI
     if not GUI then return end
 
-    local ROW_HEIGHT = 26
+    local ROW_HEIGHT = content._quiCompactLayout and 22 or 26
     local row = CreateFrame("Button", nil, content)
     row:SetHeight(ROW_HEIGHT)
     row._contentHeight = ROW_HEIGHT
@@ -497,11 +505,28 @@ function Utils.BuildSizeCollapsible(content, opts, sections, relayout)
     local PLACEHOLDER = 2 * Utils.FORM_ROW + 8
     local widthSlider, heightSlider
     Utils.CreateCollapsible(content, ns.L["Frame Size"], PLACEHOLDER, function(body)
-        local sy = -4
         widthSlider  = GUI:CreateFormSlider(body, ns.L["Width"],  minW, maxW, 1, "width",  proxy, nil, nil, { description = widthDescription })
-        sy = Utils.PlaceRow(widthSlider, body, sy)
         heightSlider = GUI:CreateFormSlider(body, ns.L["Height"], minH, maxH, 1, "height", proxy, nil, nil, { description = heightDescription })
-        Utils.PlaceRow(heightSlider, body, sy)
+        local layingOutRows = false
+        local function RelayoutRows()
+            if layingOutRows or body._dualRowFrames then return end
+            layingOutRows = true
+            local sy = -4
+            for _, slider in ipairs({widthSlider, heightSlider}) do
+                slider:SetPoint("TOPLEFT", body, "TOPLEFT", 0, sy)
+                slider:SetPoint("RIGHT", body, "RIGHT", 0, 0)
+                if slider._quiLayoutFormSlider then
+                    slider:_quiLayoutFormSlider(slider:GetWidth())
+                end
+                sy = sy - math.max(Utils.FORM_ROW, slider:GetHeight() + 4)
+            end
+            SetBodyContentHeight(body, math.abs(sy) + 4, relayout)
+            layingOutRows = false
+        end
+        widthSlider:HookScript("OnSizeChanged", RelayoutRows)
+        heightSlider:HookScript("OnSizeChanged", RelayoutRows)
+        body:HookScript("OnSizeChanged", RelayoutRows)
+        RelayoutRows()
     end, sections, relayout)
 
     Utils._activeSizeSliderRefresh = function()
