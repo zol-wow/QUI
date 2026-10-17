@@ -396,6 +396,16 @@ local function SkinTrackerHeader(header)
     if button then
         SkinBase.SkinButton(button, { font = false, radius = 3 })
         SkinBase.RefreshWidget(button)
+        for _, getter in ipairs({ "GetNormalTexture", "GetPushedTexture", "GetHighlightTexture", "GetDisabledTexture" }) do
+            local texture = button[getter] and button[getter](button)
+            if texture then
+                SkinBase.ClampTextureHidden(texture, true)
+                if texture.SetAtlas and not SkinBase.GetFrameData(texture, "qTrackerAtlasHidden") then
+                    hooksecurefunc(texture, "SetAtlas", function(self) self:SetAlpha(0) end)
+                    SkinBase.SetFrameData(texture, "qTrackerAtlasHidden", true)
+                end
+            end
+        end
         local glyph = SkinBase.GetFrameData(button, "qTrackerCollapseGlyph")
         if not glyph then
             glyph = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -417,17 +427,11 @@ local function SkinTrackerHeader(header)
     end
 end
 
-local function UpdateMinimizeButtonAtlas(btn, collapsed)
+local function UpdateMinimizeButtonGlyph(btn, collapsed)
     if not btn then return end
-    local normalTex = btn:GetNormalTexture()
-    local pushedTex = btn:GetPushedTexture()
-    if collapsed then
-        if normalTex then normalTex:SetAtlas("ui-questtrackerbutton-secondary-expand") end
-        if pushedTex then pushedTex:SetAtlas("ui-questtrackerbutton-secondary-expand-pressed") end
-    else
-        if normalTex then normalTex:SetAtlas("ui-questtrackerbutton-secondary-collapse") end
-        if pushedTex then pushedTex:SetAtlas("ui-questtrackerbutton-secondary-collapse-pressed") end
-    end
+    -- QUI owns the visible glyph; native atlas updates stay hidden.
+    local glyph = SkinBase.GetFrameData(btn, "qTrackerCollapseGlyph")
+    if glyph and not Helpers.IsSecretValue(collapsed) then glyph:SetText(collapsed and "+" or "-") end
 end
 
 local function IsScenarioActive()
@@ -499,16 +503,13 @@ local function SkinMasterHeader(trackerFrame)
         minBtn:ClearAllPoints()
         minBtn:SetPoint("RIGHT", header, "RIGHT", 0, 0)
         minBtn:SetSize(16, 16)
-        if not SkinBase.GetFrameData(minBtn, "highlightSet") and minBtn:GetHighlightTexture() then
-            minBtn:GetHighlightTexture():SetAtlas("ui-questtrackerbutton-yellow-highlight")
-            SkinBase.SetFrameData(minBtn, "highlightSet", true)
-        end
+
     end
 
     if header.SetCollapsed and not SkinBase.GetFrameData(header, "setCollapsedHooked") then
         hooksecurefunc(header, "SetCollapsed", function(self, collapsed)
             C_Timer.After(0, function()
-                UpdateMinimizeButtonAtlas(self.MinimizeButton, collapsed)
+                UpdateMinimizeButtonGlyph(self.MinimizeButton, collapsed)
                 ScheduleBackdropUpdate()
             end)
         end)
@@ -518,7 +519,7 @@ local function SkinMasterHeader(trackerFrame)
         if type(trackerFrame.IsCollapsed) == "function" then
             isCollapsed = trackerFrame:IsCollapsed()
         end
-        UpdateMinimizeButtonAtlas(minBtn, isCollapsed)
+        UpdateMinimizeButtonGlyph(minBtn, isCollapsed)
     end
 end
 
