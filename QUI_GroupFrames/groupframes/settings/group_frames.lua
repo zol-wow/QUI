@@ -37,13 +37,18 @@ local function AppendLayoutRouteControls(host, topOffset, routeKey)
         return 0
     end
 
+    local generation = host._quiLayoutGeneration
     local routeHost = CreateFrame("Frame", nil, host)
+    routeHost._quiCompactLayout = host._quiCompactLayout
+    routeHost._quiLayoutGeneration = generation
     routeHost:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -topOffset)
     routeHost:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -topOffset)
 
     local sections = {}
     local function relayout()
+        if host._quiLayoutGeneration ~= generation then return end
         U.StandardRelayout(routeHost, sections)
+        host:SetHeight(topOffset + routeHost:GetHeight())
     end
 
     U.BuildPositionCollapsible(routeHost, routeKey, nil, sections, relayout)
