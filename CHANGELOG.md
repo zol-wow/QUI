@@ -4,6 +4,20 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta6 - 2026-10-17
+
+### Fixed
+
+- Character and Inspect windows now recognize permanent glove enchants and show
+  the missing-enchant marker when gloves have no enchant applied.
+- Options navigation keeps its full scrolling area when the window is resized,
+  including when layout updates briefly report a zero-height content area.
+- World Map quest and campaign headers retain readable title and progress text
+  after native updates, with campaign backgrounds below the text and spacing
+  beneath the next objective.
+- Objective Tracker collapse buttons keep their QUI plus/minus glyphs without
+  native artwork reappearing behind them.
+
 ## v5.5.2-beta5 - 2026-10-17
 
 ### Improved
