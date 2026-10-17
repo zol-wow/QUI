@@ -183,11 +183,14 @@ end
 local function SkinInboxArtwork()
     HideMailArtwork(_G.InboxFrameBg)
     SkinMailTitle(_G.MailFrame)
-    SkinMailLabels(_G.InboxPrevPageButton)
-    SkinMailLabels(_G.InboxNextPageButton)
+    local inbox = _G.InboxFrame
+    local previous = inbox and inbox.PrevPageButton or _G.InboxPrevPageButton
+    local nextPage = inbox and inbox.NextPageButton or _G.InboxNextPageButton
+    SkinMailLabels(previous)
+    SkinMailLabels(nextPage)
 
-    if _G.InboxPrevPageButton then SkinBase.SkinNextPrevButton(_G.InboxPrevPageButton, "prev") end
-    if _G.InboxNextPageButton then SkinBase.SkinNextPrevButton(_G.InboxNextPageButton, "next") end
+    if previous then SkinBase.SkinNextPrevButton(previous, "prev") end
+    if nextPage then SkinBase.SkinNextPrevButton(nextPage, "next") end
 end
 
 local function SkinMailItems()
@@ -380,8 +383,10 @@ end
 local function HookMailRefreshes()
     if mailRefreshHooksInstalled then return end
     if _G.InboxFrame_Update then hooksecurefunc("InboxFrame_Update", SkinMailItems) end
+    if _G.InboxFrame and _G.InboxFrame.Update then hooksecurefunc(_G.InboxFrame, "Update", SkinMailItems) end
     if _G.SendMailFrame_Update then hooksecurefunc("SendMailFrame_Update", SkinSendMailControls) end
     if _G.OpenMail_Update then hooksecurefunc("OpenMail_Update", SkinOpenMailFrame) end
+    if _G.OpenMailFrame and _G.OpenMailFrame.Update then hooksecurefunc(_G.OpenMailFrame, "Update", SkinOpenMailFrame) end
     mailRefreshHooksInstalled = true
 end
 

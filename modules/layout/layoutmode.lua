@@ -382,6 +382,7 @@ function QUI_LayoutMode:Open()
     if self._selectedKey and self._handles[self._selectedKey] then
         local prev = self._handles[self._selectedKey]
         prev._selected = false
+        if prev._settingsButton then prev._settingsButton:Hide() end
         local LCG = LibStub("LibCustomGlow-1.0", true)
         if LCG then LCG.PixelGlow_Stop(prev, "_QUILayoutSelect") end
     end
@@ -829,7 +830,7 @@ function QUI_LayoutMode:ActivateElement(key)
     end
 end
 
-function QUI_LayoutMode:SelectMover(key)
+function QUI_LayoutMode:SelectMover(key, openSettings)
     local LCG = LibStub("LibCustomGlow-1.0", true)
 
     if self._selectedKey and self._handles[self._selectedKey] then
@@ -839,6 +840,7 @@ function QUI_LayoutMode:SelectMover(key)
         end
         if LCG then LCG.PixelGlow_Stop(prev, "_QUILayoutSelect") end
         prev._selected = false
+        if prev._settingsButton then prev._settingsButton:Hide() end
     end
 
     self._selectedKey = key
@@ -846,6 +848,7 @@ function QUI_LayoutMode:SelectMover(key)
     if key and self._handles[key] then
         local handle = self._handles[key]
         handle._selected = true
+        if handle._settingsButton then handle._settingsButton:Show() end
         if LCG then
             LCG.PixelGlow_Start(handle, {1, 1, 1, 0.7}, 12, 0.4, nil, 2, 0, 0, false, "_QUILayoutSelect")
         end
@@ -859,8 +862,8 @@ function QUI_LayoutMode:SelectMover(key)
     local settings = ns.QUI_LayoutMode_Settings
     if settings then
         if key then
-            if key == self._prevSelectedKey and settings:IsShown() then
-                settings:Reset()
+            if openSettings == false then
+                settings:Hide(true)
             else
                 settings:Show(key)
             end
@@ -1527,8 +1530,70 @@ AddHandleVisuals = function(handle, def)
 
 end
 
+-- Hit-test in physical pixels so movers with different parent scales agree.
+function QUI_LayoutMode:GetMoversAtCursor()
+    local x, y = GetCursorPosition()
+    local keys = {}
+    for key, mover in pairs(self._handles) do
+        if mover:IsShown() then
+            local scale = mover:GetEffectiveScale()
+            local left, bottom = mover:GetLeft(), mover:GetBottom()
+            local right, top = mover:GetRight(), mover:GetTop()
+            if left and bottom and right and top and x >= left * scale and x <= right * scale
+                and y >= bottom * scale and y <= top * scale then
+                keys[#keys + 1] = key
+            end
+        end
+    end
+    table.sort(keys, function(a, b)
+        local first, second = self._elements[a], self._elements[b]
+        local firstLabel = ns.L[first and first.label or a]
+        local secondLabel = ns.L[second and second.label or b]
+        if firstLabel == secondLabel then return a < b end
+        return firstLabel < secondLabel
+    end)
+    return keys
+end
+
+function QUI_LayoutMode:OpenMoverSettings(handle, openSettings)
+    local keys = self:GetMoversAtCursor()
+    if #keys > 1 and MenuUtil and MenuUtil.CreateContextMenu then
+        MenuUtil.CreateContextMenu(handle, function(_, root)
+            root:CreateTitle(ns.L["Frames"])
+            for _, key in ipairs(keys) do
+                local def = self._elements[key]
+                root:CreateButton(ns.L[def and def.label or key], function()
+                    if self.isActive and not InCombatLockdown() then self:SelectMover(key) end
+                end)
+            end
+        end)
+    else
+        self:SelectMover(handle._barKey, openSettings)
+    end
+end
+
 AddHandleScripts = function(handle, def)
+    local gear = handle._settingsButton or UIKit.CreateIconButton(handle, {
+        size = 20,
+        icon = "Interface\\Buttons\\UI-OptionsButton",
+        tooltip = ns.L["Settings"],
+        onClick = function()
+            if InCombatLockdown() then return end
+            local settings = ns.QUI_LayoutMode_Settings
+            if settings and settings:IsShown() and settings._currentKey == handle._barKey then
+                settings:Hide(true)
+            else
+                QUI_LayoutMode:SelectMover(handle._barKey)
+            end
+        end,
+    })
+    gear:SetPoint("TOPRIGHT", handle, "TOPRIGHT", -2, -2)
+    gear:SetFrameLevel(handle:GetFrameLevel() + 5)
+    gear:Hide()
+    handle._settingsButton = gear
+
     handle:SetScript("OnEnter", function(self)
+        gear:Show()
         if not self._dragging then
             self._bg:SetAlpha(HANDLE_HOVER_ALPHA)
         end
@@ -1546,6 +1611,9 @@ AddHandleScripts = function(handle, def)
     end)
 
     handle:SetScript("OnLeave", function(self)
+        C_Timer.After(0, function()
+            if not self._selected and not self:IsMouseOver() and not gear:IsMouseOver() then gear:Hide() end
+        end)
         if not self._dragging then
             self._bg:SetAlpha(HANDLE_BG_ALPHA)
         end
@@ -1555,7 +1623,9 @@ AddHandleScripts = function(handle, def)
     handle:SetScript("OnClick", nil)
     handle:SetScript("OnMouseUp", function(self, button)
         if button == "RightButton" then
-            QUI_LayoutMode:SelectMover(self._barKey)
+            QUI_LayoutMode:OpenMoverSettings(self)
+        elseif button == "LeftButton" and not self._dragging and not self._justDragged then
+            QUI_LayoutMode:OpenMoverSettings(self, false)
         elseif button == "MiddleButton" then
             local def = QUI_LayoutMode._elements[self._barKey]
             if def and def.usesCustomPositionPersistence then
@@ -1817,6 +1887,8 @@ AddHandleScripts = function(handle, def)
     handle:SetScript("OnDragStop", function(self)
         if not self._dragging then return end
         self._dragging = false
+        self._justDragged = true
+        C_Timer.After(0, function() self._justDragged = nil end)
         self._bg:SetAlpha(self:IsMouseOver() and HANDLE_HOVER_ALPHA or HANDLE_BG_ALPHA)
 
         self:SetScript("OnUpdate", nil)
@@ -2373,7 +2445,7 @@ SyncHandle = function(key)
     end
 
     local w, h
-    if handle._isChildOverlay and handle._parentFrame then
+    if handle._isChildOverlay and handle._parentFrame and not def.setupOverlay then
         local ok, fw, fh = pcall(handle._parentFrame.GetSize, handle._parentFrame)
         if ok then w, h = fw, fh end
     else

@@ -9,6 +9,7 @@ game_versions = runpy.run_path(str(Path(__file__).with_name("toc_game_versions.p
 
 
 assert game_versions("## Interface: 120105\n") == ["12.1.5"]
+assert game_versions("## Interface: 120107, 16001\n") == ["12.1.7", "1.60.1"]
 assert game_versions("## Interface: 16001\n") == ["1.60.1"]
 assert game_versions("## Interface: 120105, 16001\r\n") == ["12.1.5", "1.60.1"]
 assert game_versions("## Interface: 120105,16001,120105\n") == ["12.1.5", "1.60.1"]
@@ -41,5 +42,5 @@ with tempfile.TemporaryDirectory() as directory:
 tocs = [root / "QUI.toc", *sorted(root.glob("QUI_*/*.toc"))]
 result = subprocess.run([sys.executable, str(script), *map(str, tocs)],
                         capture_output=True, text=True, check=True)
-assert json.loads(result.stdout) == ["12.1.5", "1.60.1"]
+assert json.loads(result.stdout) == ["12.1.7", "1.60.1"]
 print(f"TOC version parser: malformed input, suite mismatch, and {len(tocs)} manifests passed")

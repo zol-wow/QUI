@@ -44,12 +44,12 @@ function QUI_LayoutMode_Settings:RefreshAccentColor()
     end
 end
 
-local PANEL_WIDTH = 420
+local PANEL_WIDTH = 440
 local PANEL_HEIGHT = 650
 local PANEL_STRATA = "FULLSCREEN_DIALOG"
 local PANEL_LEVEL = 200
 local TITLE_HEIGHT = 32
-local CONTENT_PADDING = 12
+local CONTENT_PADDING = 8
 local BORDER_SIZE = 1
 
 local SCROLL_STEP = 60
@@ -80,56 +80,9 @@ function QUI_LayoutMode_Settings:RegisterSharedProvider(key, provider)
     end
 end
 
-local function CreateBorderLine(parent, p1, r1, p2, r2, isHoriz, r, g, b, a)
-    local line = parent:CreateTexture(nil, "BORDER")
-    line:SetColorTexture(r or ACCENT_R, g or ACCENT_G, b or ACCENT_B, a or 0.6)
-    line._layoutModeSettingsIsHoriz = isHoriz and true or false
-    line:ClearAllPoints()
-    line:SetPoint(p1, parent, r1, 0, 0)
-    line:SetPoint(p2, parent, r2, 0, 0)
-    if isHoriz then
-        line:SetHeight(GetPixelLineSize(parent, BORDER_SIZE))
-    else
-        line:SetWidth(GetPixelLineSize(parent, BORDER_SIZE))
-    end
-    return line
-end
-
 local function RefreshPanelPixelLayout(panel)
-    if not panel then return end
-    local borderSize = GetPixelLineSize(panel, BORDER_SIZE)
-    for _, line in ipairs(panel._pixelBorderLines or {}) do
-        if line._layoutModeSettingsIsHoriz then
-            line:SetHeight(borderSize)
-        else
-            line:SetWidth(borderSize)
-        end
-    end
-
-    local titleBg = panel._titleBg
-    if titleBg then
-        titleBg:ClearAllPoints()
-        titleBg:SetPoint("TOPLEFT", borderSize, -borderSize)
-        titleBg:SetPoint("TOPRIGHT", -borderSize, -borderSize)
-    end
-
-    local contentSurface = panel._contentSurface
-    if contentSurface and titleBg then
-        contentSurface:ClearAllPoints()
-        contentSurface:SetPoint("TOPLEFT", titleBg, "BOTTOMLEFT", 0, 0)
-        contentSurface:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -borderSize, borderSize)
-    end
-
-    local glow = panel._accentGlow
-    if glow and titleBg then
-        glow:ClearAllPoints()
-        glow:SetPoint("TOPLEFT", titleBg, "BOTTOMLEFT", 0, 0)
-        glow:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -borderSize, borderSize)
-    end
-
-    local titleLine = panel._titleLine
-    if titleLine then
-        titleLine:SetHeight(borderSize)
+    if panel and panel._titleLine then
+        panel._titleLine:SetHeight(GetPixelLineSize(panel, BORDER_SIZE))
     end
 end
 
@@ -158,6 +111,29 @@ local function CreateQUIStyleCloseButton(parent, relativeTo, relativePoint, xOff
     })
 end
 
+local function UpdatePanelScroll(panel)
+    local scroll = panel._scrollFrame
+    if not scroll then return end
+    local range = math.max(0, panel._content:GetHeight() - scroll:GetHeight())
+    if scroll.ScrollBar then scroll.ScrollBar:SetShown(range > 1) end
+    local current = SafeGetVerticalScroll(scroll)
+    if current > range or range <= 1 then
+        scroll:SetVerticalScroll(range <= 1 and 0 or range)
+    end
+end
+
+local function FitPanelToContent(panel)
+    local contentHeight = math.max(1, panel._content:GetHeight())
+    local chromeHeight = TITLE_HEIGHT + CONTENT_PADDING * 2
+    local screenHeight = UIParent:GetHeight() / (panel:GetScale() or 1)
+    local maxHeight = math.max(180, math.min(PANEL_HEIGHT, screenHeight - 16))
+    local height = math.min(maxHeight, math.max(180, contentHeight + chromeHeight))
+    if math.abs(panel:GetHeight() - height) > 0.5 then
+        panel:SetHeight(height)
+    end
+    UpdatePanelScroll(panel)
+end
+
 local function CreatePanel()
     local panel = CreateFrame("Frame", "QUI_LayoutMode_SettingsPanel", UIParent)
     panel:SetFrameStrata(PANEL_STRATA)
@@ -170,52 +146,38 @@ local function CreatePanel()
 
     local GUI = _G.QUI and _G.QUI.GUI
     local C = GUI and GUI.Colors or {}
-    local bgColor = C.bg or {0.051, 0.067, 0.09, 0.97}
-    local bgContent = C.bgContent or {1, 1, 1, 0.02}
-    local accentGlow = C.accentGlow or {ACCENT_R, ACCENT_G, ACCENT_B, 0.06}
-
-    local bg = panel:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.97)
-
-    panel._pixelBorderLines = {
-        CreateBorderLine(panel, "TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT", true),
-        CreateBorderLine(panel, "BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT", true),
-        CreateBorderLine(panel, "TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT", false),
-        CreateBorderLine(panel, "TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT", false),
-    }
+    local bgColor = C.optionsWindow or C.bg or {0.051, 0.067, 0.09, 0.97}
+    local core = Helpers.GetCore()
+    local alpha = core and core.db and core.db.profile.configPanelAlpha or 0.97
+    UIKit.CreateRoundedSurface(panel, {
+        radius = 12,
+        bgColor = {bgColor[1], bgColor[2], bgColor[3], alpha},
+        borderColor = {0.30, 0.36, 0.39, 0},
+    })
 
     local borderSize = GetPixelLineSize(panel, BORDER_SIZE)
-    local titleBg = panel:CreateTexture(nil, "ARTWORK")
-    titleBg:SetPoint("TOPLEFT", borderSize, -borderSize)
-    titleBg:SetPoint("TOPRIGHT", -borderSize, -borderSize)
+    local titleBg = CreateFrame("Frame", nil, panel)
+    titleBg:SetPoint("TOPLEFT", 8, -borderSize)
+    titleBg:SetPoint("TOPRIGHT", -8, -borderSize)
     titleBg:SetHeight(TITLE_HEIGHT)
-    titleBg:SetColorTexture(0.04, 0.06, 0.1, 1)
     panel._titleBg = titleBg
 
-    local contentSurface = panel:CreateTexture(nil, "BACKGROUND", nil, 1)
+    local contentSurface = CreateFrame("Frame", nil, panel)
+    contentSurface:SetFrameLevel(panel:GetFrameLevel())
     contentSurface:SetPoint("TOPLEFT", titleBg, "BOTTOMLEFT", 0, 0)
-    contentSurface:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -borderSize, borderSize)
-    contentSurface:SetColorTexture(bgContent[1], bgContent[2], bgContent[3], bgContent[4] or 0.02)
-    panel._contentSurface = contentSurface
-
-    local glow = panel:CreateTexture(nil, "BACKGROUND", nil, 2)
-    glow:SetPoint("TOPLEFT", titleBg, "BOTTOMLEFT", 0, 0)
-    glow:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -borderSize, borderSize)
-    glow:SetTexture("Interface\\BUTTONS\\WHITE8x8")
-    if glow.SetGradient then
-        local ok = pcall(function()
-            glow:SetGradient("HORIZONTAL",
-                CreateColor(accentGlow[1], accentGlow[2], accentGlow[3], accentGlow[4] or 0.06),
-                CreateColor(accentGlow[1], accentGlow[2], accentGlow[3], 0))
-        end)
-        if not ok then
-            glow:SetColorTexture(accentGlow[1], accentGlow[2], accentGlow[3], accentGlow[4] or 0.06)
-        end
-    else
-        glow:SetColorTexture(accentGlow[1], accentGlow[2], accentGlow[3], accentGlow[4] or 0.06)
-    end
-    panel._accentGlow = glow
+    contentSurface:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -8, 8)
+    contentSurface:EnableMouse(false)
+    local color = C.bgContent or {1, 1, 1, 0.02}
+    UIKit.CreateRoundedSurface(contentSurface, {radius = 8, bgColor = color,
+        borderColor = {0, 0, 0, 0}})
+    local glow = UIKit.CreateRoundedSurface(CreateFrame("Frame", nil, contentSurface), {
+        radius = 8, bgColor = {0, 0, 0, 0}, borderColor = {0, 0, 0, 0},
+    })
+    glow.frame:SetAllPoints(contentSurface)
+    glow.frame:SetFrameLevel(panel:GetFrameLevel())
+    glow.frame:EnableMouse(false)
+    panel._accentGlow = glow.background
+    QUI_LayoutMode_Settings:RefreshAccentColor()
 
     local titleLine = panel:CreateTexture(nil, "ARTWORK", nil, 1)
     titleLine:SetPoint("TOPLEFT", titleBg, "BOTTOMLEFT")
@@ -237,7 +199,7 @@ local function CreatePanel()
     panel._titleText = titleText
 
     local closeBtn = CreateQUIStyleCloseButton(panel, titleBg, "TOPRIGHT", -6, 0, function()
-        QUI_LayoutMode_Settings:Hide()
+        QUI_LayoutMode_Settings:Hide(true)
     end)
 
     local dragHandle = CreateFrame("Frame", nil, panel)
@@ -255,6 +217,7 @@ local function CreatePanel()
     end)
 
     local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetFrameLevel(panel:GetFrameLevel() + 4)
     scrollFrame:SetPoint("TOPLEFT", panel, "TOPLEFT", CONTENT_PADDING, -(TITLE_HEIGHT + CONTENT_PADDING))
     scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -(CONTENT_PADDING + 22), CONTENT_PADDING)
 
@@ -276,13 +239,8 @@ local function CreatePanel()
         if scrollUp then scrollUp:Hide(); scrollUp:SetAlpha(0) end
         if scrollDown then scrollDown:Hide(); scrollDown:SetAlpha(0) end
 
-        scrollBar:HookScript("OnShow", function(self)
-            C_Timer.After(0.066, function()
-                local maxScroll = SafeGetVerticalScrollRange(scrollFrame)
-                if maxScroll <= 1 then
-                    self:Hide()
-                end
-            end)
+        scrollBar:HookScript("OnShow", function()
+            if panel._scrollFrame then UpdatePanelScroll(panel) end
         end)
     end
 
@@ -296,6 +254,19 @@ local function CreatePanel()
 
     panel._scrollFrame = scrollFrame
     panel._content = content
+    scrollFrame:HookScript("OnScrollRangeChanged", function() UpdatePanelScroll(panel) end)
+    scrollFrame:HookScript("OnSizeChanged", function() UpdatePanelScroll(panel) end)
+    content._quiCompactLayout = true
+    content:HookScript("OnSizeChanged", function()
+        -- Resizing an ancestor during a child's layout callback invalidates
+        -- WoW's in-progress anchor solve. Fit once after that pass settles.
+        if panel._contentFitPending then return end
+        panel._contentFitPending = true
+        C_Timer.After(0, function()
+            panel._contentFitPending = nil
+            FitPanelToContent(panel)
+        end)
+    end)
 
     local placeholder = EnsureCJKFont(content:CreateFontString(nil, "OVERLAY", "GameFontNormal"))
     placeholder:SetPoint("TOP", content, "TOP", 0, -40)
@@ -318,7 +289,7 @@ local function PositionAdjacentToDrawer(panel)
     local screenW = UIParent:GetWidth()
     local screenH = UIParent:GetHeight()
     local panelW = PANEL_WIDTH * panelScale
-    local panelH = PANEL_HEIGHT * panelScale
+    local panelH = panel:GetHeight() * panelScale
     local gap = 4
 
     local x, y
@@ -357,6 +328,7 @@ end
 
 local function ClearContent(panel)
     local content = panel._content
+    content._quiLayoutGeneration = (content._quiLayoutGeneration or 0) + 1
     local GUI = _G.QUI and _G.QUI.GUI
 
     local expandedStates = {}
@@ -475,6 +447,7 @@ local function BuildContent(panel, key)
     ClearContent(panel)
 
     local content = panel._content
+    local generation = content._quiLayoutGeneration
     local contentWidth = content:GetWidth()
     local feature = ResolveSharedFeature(key)
     content._quiProviderSync = {
@@ -531,7 +504,7 @@ local function BuildContent(panel, key)
                 local maxBottom = 0
                 for _, child in pairs({content:GetChildren()}) do
                     if child:IsShown() then
-                        local bottom = -(child:GetBottom() and (content:GetTop() - child:GetBottom()) or 0)
+                        local bottom = child:GetBottom() and (content:GetTop() - child:GetBottom()) or 0
                         if bottom > maxBottom then maxBottom = bottom end
                     end
                 end
@@ -649,7 +622,7 @@ local function BuildContent(panel, key)
 
             local bodyClip = CreateFrame("ScrollFrame", nil, infoSection)
             bodyClip:SetPoint("TOPLEFT", 0, -HEADER_HEIGHT)
-            bodyClip:SetPoint("RIGHT", infoSection, "RIGHT", 0, 0)
+            bodyClip:SetPoint("TOPRIGHT", infoSection, "TOPRIGHT", 0, -HEADER_HEIGHT)
             bodyClip:SetHeight(0)
             bodyClip:Hide()
             infoSection._bodyClip = bodyClip
@@ -688,6 +661,7 @@ local function BuildContent(panel, key)
         local statusLabel = infoSection._statusLabel
         local chainLabel = infoSection._chainLabel
 
+        body:SetWidth(math.max(1, contentWidth))
         infoSection:Show()
         statusLabel:SetText(statusText)
         chainLabel:SetPoint("TOPLEFT", 8, -(6 + statusLabel:GetStringHeight() + 6))
@@ -713,8 +687,8 @@ local function BuildContent(panel, key)
         local origSetHeight = content._origSetHeight
         local function repositionInfo()
             infoSection:ClearAllPoints()
-            infoSection:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -(providerHeight + 4))
-            infoSection:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+            infoSection:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -providerHeight)
+            infoSection:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -providerHeight)
 
             local totalH = providerHeight + 8 + infoSection:GetHeight()
             origSetHeight(content, totalH)
@@ -744,7 +718,6 @@ local function BuildContent(panel, key)
         btn:SetScript("OnClick", function()
             infoSection._expanded = not infoSection._expanded
             local targetHeight = infoSection._expanded and bodyHeight or 0
-            local currentHeight = bodyClip:GetHeight() or 0
             if infoSection._expanded then
                 if UIKit and UIKit.SetChevronCaretExpanded then
                     UIKit.SetChevronCaretExpanded(chevron, true)
@@ -759,31 +732,13 @@ local function BuildContent(panel, key)
                     chevron:SetText(">")
                 end
             end
-            if UIKit and UIKit.AnimateValue and UIKit.CancelValueAnimation then
-                UIKit.CancelValueAnimation(infoSection, "anchoringInfo")
-                UIKit.AnimateValue(infoSection, "anchoringInfo", {
-                    fromValue = currentHeight,
-                    toValue = targetHeight,
-                    duration = ((_G.QUI and _G.QUI.GUI and _G.QUI.GUI._sidebarAnimDuration) or 0.16),
-                    onUpdate = function(_, progressHeight)
-                        local ratio = math.max(0, math.min(1, progressHeight / math.max(bodyHeight, 1)))
-                        ApplyInfoState(progressHeight)
-                        body:SetAlpha(ratio)
-                    end,
-                    onFinish = function(_, finalHeight)
-                        ApplyInfoState(finalHeight)
-                        body:SetAlpha(infoSection._expanded and 1 or 0)
-                        if not infoSection._expanded then
-                            bodyClip:Hide()
-                        end
-                    end,
-                })
-            else
-                ApplyInfoState(targetHeight)
-                body:SetAlpha(infoSection._expanded and 1 or 0)
-                if not infoSection._expanded then
-                    bodyClip:Hide()
-                end
+            -- The settings window follows content height. Apply folding as a
+            -- single layout change instead of resizing its scroll ancestry on
+            -- every animation tick.
+            ApplyInfoState(targetHeight)
+            body:SetAlpha(infoSection._expanded and 1 or 0)
+            if not infoSection._expanded then
+                bodyClip:Hide()
             end
         end)
 
@@ -805,6 +760,7 @@ local function BuildContent(panel, key)
         end)
 
         content.SetHeight = function(self, h)
+            if content._quiLayoutGeneration ~= generation then return end
             if h and h > 0 then
                 providerHeight = h
             end
@@ -812,6 +768,13 @@ local function BuildContent(panel, key)
         end
 
         repositionInfo()
+        C_Timer.After(0, function()
+            if content._quiLayoutGeneration ~= generation then return end
+            bodyHeight = 6 + statusLabel:GetStringHeight() + 6 + chainLabel:GetStringHeight() + 10
+            body:SetHeight(bodyHeight)
+            ApplyInfoState(infoSection._expanded and bodyHeight or 0)
+            FitPanelToContent(panel)
+        end)
     else
         content:SetHeight(math.max(providerHeight, 80))
     end
@@ -838,7 +801,7 @@ function QUI_LayoutMode_Settings:Show(key)
 
     panel._titleText:SetText("|cff60A5FA" .. label .. "|r " .. ns.L["Settings"])
 
-    if self._currentKey ~= key then
+    if self._currentKey ~= key or not panel:IsShown() then
         local wasShown = panel:IsShown()
         self._currentKey = key
         BuildContent(panel, key)
@@ -847,6 +810,8 @@ function QUI_LayoutMode_Settings:Show(key)
             PositionAdjacentToDrawer(panel)
         end
     end
+
+    FitPanelToContent(panel)
 
     local compat = ns.Settings and ns.Settings.RenderAdapters
     if compat and compat.RegisterProviderSurface then
@@ -860,8 +825,8 @@ function QUI_LayoutMode_Settings:Show(key)
     panel:Show()
 end
 
-function QUI_LayoutMode_Settings:Hide()
-    if not self._hiding then
+function QUI_LayoutMode_Settings:Hide(keepSelection)
+    if not keepSelection and not self._hiding then
         self._hiding = true
         local um = ns.QUI_LayoutMode
         if um and um.SelectMover then

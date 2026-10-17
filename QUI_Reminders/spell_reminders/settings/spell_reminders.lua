@@ -22,15 +22,15 @@ function O.Card(layout, title)
     function card.Slider(label, db, key, min, max, step, description)
         return card.Row(label, GUI:CreateFormSlider(card.frame, nil, min, max, step, key, db, O.Refresh, { description = description }))
     end
-    function card.Select(label, db, key, choices, description, change)
-        return card.Row(label, GUI:CreateFormDropdown(card.frame, nil, choices, key, db, change or O.Refresh, { description = description }))
+    function card.Select(label, db, key, choices, description, change, options)
+        return card.Row(label, GUI:CreateFormDropdown(card.frame, nil, choices, key, db, change or O.Refresh, { description = description }, options))
     end
     function card.Text(label, db, key, description, change)
         return card.Row(label, GUI:CreateFormEditBox(card.frame, nil, key, db, change or O.Refresh,
             { description = description, maxLetters = 1000 }))
     end
-    function card.Color(label, db, key)
-        return card.Row(label, GUI:CreateFormColorPicker(card.frame, nil, key, db, O.Refresh))
+    function card.Color(label, db, key, description)
+        return card.Row(label, GUI:CreateFormColorPicker(card.frame, nil, key, db, O.Refresh, { description = description }))
     end
     function card.Finish() layout.closeSection(card) end
     return card
@@ -68,17 +68,17 @@ end
 function O.builders.timing(host, config)
     local L = O.Layout(host)
     local c = O.Card(L, ns.L["Reminder Timing"])
-    c.Check(ns.L["Enable This Reminder"], config, "enabled")
-    c.Check(ns.L["Show When Ready"], config, "showWhenReady")
+    c.Check(ns.L["Enable This Reminder"], config, "enabled", ns.L["Show alerts for this spell when its timing and load conditions are met."])
+    c.Check(ns.L["Show When Ready"], config, "showWhenReady", ns.L["Show the reminder when the spell finishes its cooldown."])
     c.Slider(ns.L["Hide After Ready"], config, "readyDuration", 0, 60, 1, ns.L["Seconds to show the ready reminder. Zero keeps it visible until you cast."])
-    c.Check(ns.L["Show Before Ready"], config, "showBeforeReady")
-    c.Slider(ns.L["Seconds Before Ready"], config, "beforeReadyTime", 1, 30, 1)
+    c.Check(ns.L["Show Before Ready"], config, "showBeforeReady", ns.L["Show a countdown reminder shortly before the spell becomes ready."])
+    c.Slider(ns.L["Seconds Before Ready"], config, "beforeReadyTime", 1, 30, 1, ns.L["How many seconds before the cooldown ends to show the reminder and trigger early alerts."])
     c.Check(ns.L["Remind at Encounter Start"], config, "encounterStart", ns.L["Show the reminder when a boss encounter starts, even if the spell is on cooldown."])
     c.Finish()
     L.intro(ns.L["WoW can display an exact cooldown while hiding its timing from addons. Early sounds and spoken countdowns need readable timing or the optional estimate below."])
     c = O.Card(L, ns.L["Estimated Countdown"])
     c.Check(ns.L["Allow Estimated Early Alerts"], config, "useEstimate", ns.L["Estimate from your last cast when exact timing is hidden. Cooldown reductions can make the estimate wrong. This never marks a spell ready."])
-    c.Slider(ns.L["Estimated Cooldown in Seconds"], config, "estimatedCooldown", 0, 1200, 1)
+    c.Slider(ns.L["Estimated Cooldown in Seconds"], config, "estimatedCooldown", 0, 1200, 1, ns.L["Cooldown length used for estimated early alerts after your last cast. Zero disables the estimate."])
     c.Finish()
     return L.finish()
 end
@@ -86,26 +86,26 @@ end
 function O.builders.appearance(host, config)
     local L = O.Layout(host)
     local c = O.Card(L, ns.L["Icon and Text"])
-    c.Slider(ns.L["Icon Size"], config, "size", 24, 128, 1)
-    c.Check(ns.L["Show Border"], config, "showBorder")
-    c.Check(ns.L["Desaturate During Countdown"], config, "desaturate")
+    c.Slider(ns.L["Icon Size"], config, "size", 24, 128, 1, ns.L["Width and height of the reminder icon and recipient alerts, in UI units."])
+    c.Check(ns.L["Show Border"], config, "showBorder", ns.L["Draw a border around the reminder icon."])
+    c.Check(ns.L["Desaturate During Countdown"], config, "desaturate", ns.L["Show the spell icon in grayscale until the cooldown is ready."])
     c.Text(ns.L["Reminder Label"], config, "label", ns.L["Optional text on your cooldown reminder. PI requests show the recipient's name instead."])
-    c.Select(ns.L["Name Position"], config, "nameLayout", O.Choices({ "overlay", ns.L["On Icon"], "left", ns.L["Left"], "right", ns.L["Right"], "none", ns.L["Hidden"] }))
-    c.Select(ns.L["Font"], config, "font", Shared.GetFontList())
-    c.Select(ns.L["Font Outline"], config, "fontOutline", O.Choices({ "", ns.L["None"], "OUTLINE", ns.L["Outline"], "THICKOUTLINE", ns.L["Thick Outline"] }))
-    c.Slider(ns.L["Font Size"], config, "fontSize", 8, 32, 1)
-    c.Color(ns.L["Text Color"], config, "textColor")
+    c.Select(ns.L["Name Position"], config, "nameLayout", O.Choices({ "overlay", ns.L["On Icon"], "left", ns.L["Left"], "right", ns.L["Right"], "none", ns.L["Hidden"] }), ns.L["Place the reminder label on the icon, beside it, or hide it."])
+    c.Select(ns.L["Font"], config, "font", Shared.GetFontList(), ns.L["Font used for reminder labels and recipient names. An empty selection uses the global UI font."])
+    c.Select(ns.L["Font Outline"], config, "fontOutline", O.Choices({ "", ns.L["None"], "OUTLINE", ns.L["Outline"], "THICKOUTLINE", ns.L["Thick Outline"] }), ns.L["Outline style used to keep reminder text readable over the icon."])
+    c.Slider(ns.L["Font Size"], config, "fontSize", 8, 32, 1, ns.L["Text size for the reminder label and recipient names."])
+    c.Color(ns.L["Text Color"], config, "textColor", ns.L["Color of the reminder label and recipient names."])
     c.Finish()
     c = O.Card(L, ns.L["Glow and Animation"])
-    c.Select(ns.L["Icon Glow"], config, "glow", O.Choices({ "none", ns.L["None"], "proc", ns.L["Proc"], "pixel", ns.L["Pixel"], "autocast", ns.L["Autocast"], "button", ns.L["Button"] }))
-    c.Color(ns.L["Glow Color"], config, "glowColor")
-    c.Check(ns.L["Glow Only When Ready"], config, "glowReadyOnly")
-    c.Select(ns.L["Animation"], config, "animation", O.Choices({ "none", ns.L["None"], "bounce", ns.L["Bounce"], "pulse", ns.L["Pulse"], "spin", ns.L["Spin"], "flash", ns.L["Flash"] }))
-    c.Check(ns.L["Animate Only When Ready"], config, "animationReadyOnly")
+    c.Select(ns.L["Icon Glow"], config, "glow", O.Choices({ "none", ns.L["None"], "proc", ns.L["Proc"], "pixel", ns.L["Pixel"], "autocast", ns.L["Autocast"], "button", ns.L["Button"] }), ns.L["Glow effect displayed around the reminder icon."])
+    c.Color(ns.L["Glow Color"], config, "glowColor", ns.L["Color used by the reminder icon glow."])
+    c.Check(ns.L["Glow Only When Ready"], config, "glowReadyOnly", ns.L["Hide the icon glow during the cooldown countdown."])
+    c.Select(ns.L["Animation"], config, "animation", O.Choices({ "none", ns.L["None"], "bounce", ns.L["Bounce"], "pulse", ns.L["Pulse"], "spin", ns.L["Spin"], "flash", ns.L["Flash"] }), ns.L["Animate the reminder icon while it is visible."])
+    c.Check(ns.L["Animate Only When Ready"], config, "animationReadyOnly", ns.L["Pause the icon animation during the cooldown countdown."])
     c.Finish()
     c = O.Card(L, ns.L["Position"])
-    c.Slider(ns.L["Horizontal Offset"], config, "x", -2000, 2000, 1)
-    c.Slider(ns.L["Vertical Offset"], config, "y", -1200, 1200, 1)
+    c.Slider(ns.L["Horizontal Offset"], config, "x", -2000, 2000, 1, ns.L["Horizontal distance from the center of the screen. Positive values move the reminder right."])
+    c.Slider(ns.L["Vertical Offset"], config, "y", -1200, 1200, 1, ns.L["Vertical distance from the center of the screen. Positive values move the reminder up."])
     c.Finish()
     L.intro(ns.L["Use Preview to drag this reminder, or position it in Layout Mode. PI recipient alerts use the same anchor and icon settings."])
     return L.finish()
@@ -114,10 +114,10 @@ end
 function O.builders.sounds(host, config)
     local L = O.Layout(host)
     local c = O.Card(L, ns.L["Reminder Sounds"])
-    c.Select(ns.L["Sound"], config, "sound", O.SoundChoices())
-    c.Select(ns.L["Sound Channel"], config, "soundChannel", O.Choices({ "Master", ns.L["Master"], "SFX", ns.L["Sound Effects"], "Dialog", ns.L["Dialog"], "Music", ns.L["Music"], "Ambience", ns.L["Ambience"] }))
-    c.Check(ns.L["Play When Ready"], config, "readySound")
-    c.Check(ns.L["Play Before Ready"], config, "earlySound")
+    c.Select(ns.L["Sound"], config, "sound", O.SoundChoices(), ns.L["Sound used by this spell reminder. Select None to silence these alerts."])
+    c.Select(ns.L["Sound Channel"], config, "soundChannel", O.Choices({ "Master", ns.L["Master"], "SFX", ns.L["Sound Effects"], "Dialog", ns.L["Dialog"], "Music", ns.L["Music"], "Ambience", ns.L["Ambience"] }), ns.L["Audio channel used for ready and early reminder sounds."])
+    c.Check(ns.L["Play When Ready"], config, "readySound", ns.L["Play the selected sound when the spell becomes ready."])
+    c.Check(ns.L["Play Before Ready"], config, "earlySound", ns.L["Play the selected sound at the configured time before the spell becomes ready. Requires readable timing or an enabled estimate."])
     c.Finish()
     O.Buttons(L, { { ns.L["Test Sound"], function() ns.SpellReminderSounds.Play(config.sound, config.soundChannel) end } })
     c = O.Card(L, ns.L["Text to Speech"])
@@ -125,13 +125,13 @@ function O.builders.sounds(host, config)
     for _, voice in ipairs(C_VoiceChat and C_VoiceChat.GetTtsVoices and C_VoiceChat.GetTtsVoices() or {}) do
         voices[#voices + 1] = { value = voice.voiceID, text = voice.name }
     end
-    c.Select(ns.L["Voice"], config, "voice", voices)
-    c.Check(ns.L["Speak When Ready"], config, "ttsReady")
+    c.Select(ns.L["Voice"], config, "voice", voices, ns.L["Voice used for spoken ready alerts, early alerts, and countdowns."])
+    c.Check(ns.L["Speak When Ready"], config, "ttsReady", ns.L["Speak the ready announcement when the spell becomes ready."])
     c.Text(ns.L["Ready Announcement"], config, "ttsReadyText", ns.L["Leave empty to speak the spell name."])
-    c.Check(ns.L["Speak Before Ready"], config, "ttsEarly")
+    c.Check(ns.L["Speak Before Ready"], config, "ttsEarly", ns.L["Speak the early announcement at the configured time before the spell becomes ready."])
     c.Text(ns.L["Early Announcement"], config, "ttsEarlyText", ns.L["Leave empty to speak the spell name."])
-    c.Check(ns.L["Speak Countdown"], config, "ttsCountdown")
-    c.Slider(ns.L["Countdown Starts At"], config, "countdownStart", 1, 10, 1)
+    c.Check(ns.L["Speak Countdown"], config, "ttsCountdown", ns.L["Speak the remaining whole seconds before the spell becomes ready. Requires readable timing or an enabled estimate."])
+    c.Slider(ns.L["Countdown Starts At"], config, "countdownStart", 1, 10, 1, ns.L["Number of remaining seconds at which the spoken countdown begins."])
     c.Finish()
     O.Buttons(L, { { ns.L["Test Voice"], function()
         ns.SpellReminderSounds.Speak(config.ttsReadyText ~= "" and config.ttsReadyText or ns.SpellReminderPresentation.Name(config), config.voice)
@@ -143,14 +143,14 @@ end
 function O.builders.load(host, config, rebuild)
     local L = O.Layout(host)
     local c = O.Card(L, ns.L["Load Conditions"])
-    c.Check(ns.L["Only for Known Spells"], config, "onlyKnown")
-    c.Check(ns.L["Only in Combat"], config, "combatOnly")
+    c.Check(ns.L["Only for Known Spells"], config, "onlyKnown", ns.L["Load this reminder only when your character knows the spell or its current replacement."])
+    c.Check(ns.L["Only in Combat"], config, "combatOnly", ns.L["Show this spell reminder only while you are in combat."])
     local classes = { { value = 0, text = ns.L["Any Class"] } }
     for id = 1, 13 do
         local info = C_CreatureInfo and C_CreatureInfo.GetClassInfo(id)
         if info then classes[#classes + 1] = { value = id, text = info.className } end
     end
-    c.Select(ns.L["Class"], config, "classID", classes, nil, function()
+    c.Select(ns.L["Class"], config, "classID", classes, ns.L["Load this reminder only for the selected class. Changing class clears specialization selections."], function()
         config.specs = {}; O.Refresh(); if rebuild then rebuild() end
     end)
     c.Finish()
@@ -163,7 +163,7 @@ function O.builders.load(host, config, rebuild)
         for index = 1, 4 do
             local id, name = getSpec(classID, index)
             if id then
-                c.Check(name, config.specs, id, nil, function()
+                c.Check(name, config.specs, id, ns.L["Allow this specialization. Leave all specializations unchecked to allow every specialization."], function()
                     if not config.specs[id] then config.specs[id] = nil end
                     O.Refresh()
                 end)
@@ -173,7 +173,7 @@ function O.builders.load(host, config, rebuild)
     c.Finish()
     c = O.Card(L, ns.L["Content Types"])
     for _, item in ipairs(O.Choices({ "none", ns.L["Open World"], "party", ns.L["Dungeons"], "raid", ns.L["Raids"], "pvp", ns.L["Battlegrounds"], "arena", ns.L["Arenas"], "scenario", ns.L["Scenarios"] })) do
-        c.Check(item.text, config.instances, item.value, nil, function()
+        c.Check(item.text, config.instances, item.value, ns.L["Allow this content type. Leave all content types unchecked to allow every type."], function()
             if not config.instances[item.value] then config.instances[item.value] = nil end
             O.Refresh()
         end)
@@ -214,7 +214,7 @@ function O.Build(content)
     local db = R.Store()
     L.intro(ns.L["Create reminders for your spells. Power Infusion also highlights allies using offensive cooldowns and handles whisper requests."])
     local c = O.Card(L, ns.L["Spell Reminders"])
-    c.Check(ns.L["Enable Spell Reminders"], db, "enabled")
+    c.Check(ns.L["Enable Spell Reminders"], db, "enabled", ns.L["Enable the configured spell reminders. Individual reminders also have their own enable switch."])
     c.Finish()
     local ui = {}
     local selector = { value = selected }
@@ -231,7 +231,10 @@ function O.Build(content)
         if ui.rebuild then ui.rebuild() end
     end
     c = O.Card(L, ns.L["Choose a Spell"])
-    c.Select(ns.L["Reminder"], selector, "value", options, nil, function(value) ChangeSelection(value) end)
+    local reminder = c.Select(ns.L["Reminder"], selector, "value", options,
+        ns.L["Choose a reminder you have already added. Use a preset or enter a spell ID and click Add Spell to create one."],
+        function(value) ChangeSelection(value) end, { placeholder = ns.L["No reminders yet"] })
+    reminder:SetEnabled(#options > 0, ns.L["Add a preset or custom spell to create your first reminder."])
     local custom = { id = "" }
     c.Text(ns.L["New Spell ID"], custom, "id", ns.L["Enter a spell ID, then click Add Spell."])
     c.Finish()
@@ -250,16 +253,19 @@ function O.Build(content)
         { ns.L["Power Infusion Preset"], function() Add(10060) end, 170 },
         { ns.L["Innervate Preset"], function() Add(29166) end, 150 } })
     status = L.intro(ns.L["Changes to protected aura displays apply when combat restrictions allow."])
-    local editorTop = math.abs(L.getY())
     local editor = CreateFrame("Frame", nil, content)
     L.placeCustom(editor, 500)
     ui.rebuild = function()
+        selector.value = selected
+        reminder:Refresh()
         GUI:TeardownFrameTree(editor)
         local config = selected and db.reminders[selected]
         if not config then
             local empty = O.Layout(editor)
             empty.intro(ns.L["Add a preset or custom spell to create your first reminder."])
-            local h = empty.finish(); editor:SetHeight(h); content:SetHeight(editorTop + h + 30)
+            local h = empty.finish()
+            local _, _, _, _, y = editor:GetPoint(1)
+            editor:SetHeight(h); content:SetHeight(math.abs(y) + h + 30)
             return
         end
         if not config.pi and (activeTab == "tracking" or activeTab == "buffs" or activeTab == "requests") then activeTab = "timing" end
@@ -277,12 +283,22 @@ function O.Build(content)
         body:SetPoint("TOPLEFT", strip, "BOTTOMLEFT", -15, -10)
         body:SetPoint("TOPRIGHT", strip, "BOTTOMRIGHT", 15, -10)
         O.activeBody = body
-        local height = O.RenderTab(activeTab, body, config, ui.rebuild)
+        O.RenderTab(activeTab, body, config, ui.rebuild)
         local function Resize()
-            editor:SetHeight(height + strip:GetHeight() + 60)
-            content:SetHeight(editorTop + editor:GetHeight() + 30)
+            local _, _, _, _, y = editor:GetPoint(1)
+            if not y then return end
+            editor:SetHeight(body:GetHeight() + strip:GetHeight() + 60)
+            content:SetHeight(math.abs(y) + editor:GetHeight() + 30)
         end
-        strip:HookScript("OnSizeChanged", Resize)
+        local stripWidth = strip:GetWidth()
+        strip:HookScript("OnSizeChanged", function(self, width)
+            if width ~= stripWidth then
+                stripWidth = width
+                paint(Tabs(config), activeTab, function(key) activeTab = key; ui.rebuild() end)
+            end
+            Resize()
+        end)
+        body:HookScript("OnSizeChanged", Resize)
         Resize()
     end
     content:SetScript("OnHide", function()
@@ -307,6 +323,19 @@ end
 ns.Settings.Registry:RegisterFeature(ns.Settings.Schema.Feature({
     id = "spellRemindersPage", category = "gameplay", nav = { tileId = "reminders", subPageIndex = 2 },
     keywords = { "Power Infusion", "PIHelper", "Innervate", "BeKindRemind", "whisper", "reminder", "TTS" },
+    render = {
+        layout = function(host, options)
+            return ns.Settings.RenderAdapters.RenderLayoutRoute(host, options and options.providerKey)
+        end,
+    },
+    onNavigate = function(key)
+        local id = type(key) == "string" and tonumber(key:match("^spellReminder:(%d+)$"))
+        local R = ns.SpellReminders
+        if not id or not R or not R.Get(id) or selected == id then return end
+        if selected then R.Preview(selected, false) end
+        selected = id
+        if O.rebuild then O.rebuild() end
+    end,
     searchNavigate = function(entry, context)
         if not ns.SpellReminders then return false end
         if not O.builders[entry.surfaceTabKey] then return false end
@@ -333,3 +362,6 @@ ns.Settings.Registry:RegisterFeature(ns.Settings.Schema.Feature({
     },
     sections = { ns.Settings.Schema.Section({ id = "settings", kind = "page", minHeight = 80, build = O.Build }) },
 }))
+
+local R = ns.SpellReminders
+if R and R.SyncLayoutSettings then R.SyncLayoutSettings() end

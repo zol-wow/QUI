@@ -1,4 +1,4 @@
-## Interface: 120105, 16001
+## Interface: 120107, 16001
 ## Title: |cFF30D1FFQUI|r Underlight Angler Helper
 ## Notes: QUI module. Requires the QUI core addon. Based on Underlight Angler UI by CoreMeeko2.
 ## Author: Zol and Drew
