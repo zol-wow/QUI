@@ -42,14 +42,14 @@ end
 function GUI:AnimateOptionsPage(page)
     if not page then return end
     self:StopOptionsPageAnimation(page)
-    if not self:IsOptionsMotionEnabled() or not UIKit.AnimateValue then return end
     local anchor = page._optionsEntranceAnchor
+    if not anchor or not self:IsOptionsMotionEnabled() or not UIKit.AnimateValue then return end
     UIKit.AnimateValue(page, "options-page", {
-        fromValue = 0, toValue = 1, duration = anchor and 0.13 or 0.15,
+        fromValue = 0, toValue = 1, duration = 0.13,
         onUpdate = function(owner, _, progress)
             local eased = 1 - (1 - progress) ^ 3
             owner:SetAlpha(0.25 + 0.75 * eased)
-            if anchor then owner:SetPoint("TOPLEFT", anchor.relativeTo, "TOPRIGHT", anchor.x, anchor.y - 3 * (1 - eased)) end
+            owner:SetPoint("TOPLEFT", anchor.relativeTo, "TOPRIGHT", anchor.x, anchor.y - 3 * (1 - eased))
         end,
     })
 end
