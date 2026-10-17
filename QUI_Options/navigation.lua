@@ -432,9 +432,10 @@ local function CreateFlyout(frame, docked)
         end,
     })
     local scroll = CreateFrame("ScrollFrame", nil, flyout)
+    -- Follow the resolved panel bounds. Sampling contentArea height while
+    -- resize callbacks rebuild its anchors can freeze this viewport at 1.
     scroll:SetPoint("TOPLEFT", 6, -56)
-    scroll:SetPoint("TOPRIGHT", -12, -56)
-    scroll:SetHeight(1)
+    scroll:SetPoint("BOTTOMRIGHT", -12, 7)
     local inner = CreateFrame("Frame", nil, scroll)
     inner:SetWidth(250)
     inner:SetHeight(1)
@@ -568,7 +569,6 @@ function GUI:OpenNavigationFlyout(frame, tile, pinned, keyboard)
     flyout._inner:SetHeight(math.max(1, flyout._contentHeight))
     local height = math.min(63 + flyout._contentHeight, math.max(100, frame:GetHeight() - 65))
     flyout:SetHeight(height)
-    flyout._scroll:SetHeight(math.max(1, height - 63))
     local top = math.max(42, math.min((frame:GetTop() or 0) - (tile:GetTop() or 0), frame:GetHeight() - height - 10))
     flyout:ClearAllPoints()
     local y = (frame:GetTop() or 0) - (frame.sidebar:GetTop() or 0) - top
@@ -633,7 +633,6 @@ function GUI:RefreshNavigationDock(frame)
         dock:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 5, -44)
         dock:SetPoint("BOTTOMLEFT", frame.contentArea, "BOTTOMLEFT", -196, 0)
         dock:SetWidth(184)
-        dock._scroll:SetHeight(math.max(1, frame.contentArea:GetHeight() - 63))
         RenderPages(frame, dock, tile, pages)
         dock:Show()
         if dock._scrollbar and dock._scrollbar.Update then dock._scrollbar:Update() end
