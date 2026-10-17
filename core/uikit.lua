@@ -4167,7 +4167,8 @@ function SkinBase.SkinNextPrevButton(button, direction, opts)
         local font = (Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
         glyph:SetFont(font, opts.size or 14, "OUTLINE")
         local isPrev = direction == "left" or direction == "prev"
-        glyph:SetText(isPrev and "\226\151\132" or "\226\150\186")
+        glyph:SetText(("|A:%s:%d:%d|a"):format(
+            isPrev and "common-icon-backarrow" or "common-icon-forwardarrow", opts.size or 14, opts.size or 14))
         glyph:SetPoint("CENTER")
         glyph:SetTextColor(1, 1, 1, 1)
         SkinBase.SetFrameData(button, "nextPrevGlyph", glyph)
