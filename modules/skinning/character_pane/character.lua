@@ -549,6 +549,7 @@ local PERMANENT_ENCHANT_EQUIP_LOCS = {
     INVTYPE_SHOULDER = true,
     INVTYPE_CHEST = true,
     INVTYPE_ROBE = true,
+    INVTYPE_HAND = true,
     INVTYPE_FEET = true,
     INVTYPE_FINGER = true,
     INVTYPE_LEGS = true,
