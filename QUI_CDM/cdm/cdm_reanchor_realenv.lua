@@ -740,9 +740,11 @@ function CDMReanchorRealEnv.BuildEnv(ctx)
         slot:SetPoint("CENTER", container, "CENTER", x, y)
         if slot.SetSize then slot:SetSize(w, h) end
         if slot.SetFrameStrata then
-            local strata = (live.GetFrameStrata and live:GetFrameStrata())
-                or (container.GetFrameStrata and container:GetFrameStrata())
-            if strata then slot:SetFrameStrata(strata) end
+            local strata = live.GetFrameStrata and live:GetFrameStrata()
+            if _issecretvalue(strata) or type(strata) == "nil" then
+                strata = container.GetFrameStrata and container:GetFrameStrata()
+            end
+            if type(strata) ~= "nil" then slot:SetFrameStrata(strata) end
         end
         if slot.SetFrameLevel then
             local liveLevel = live.GetFrameLevel and live:GetFrameLevel()

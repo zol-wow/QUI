@@ -26,6 +26,17 @@ local function NewCharacterRecord()
     }
 end
 
+local function GetBankTopology(prefix)
+    local bagIndex = Enum and Enum.BagIndex
+    if not (bagIndex and bagIndex[prefix .. "1"]) then return nil end
+    local ids = {}
+    for name, id in pairs(bagIndex) do
+        if name:match("^" .. prefix .. "%d+$") then ids[#ids + 1] = name .. "=" .. id end
+    end
+    table.sort(ids)
+    return table.concat(ids, ",")
+end
+
 function Store.Initialize()
     Store.readOnly = nil
     if type(QUI_StorageDB) ~= "table" then
@@ -53,6 +64,21 @@ function Store.Initialize()
     db.warband = db.warband or { tabs = {}, money = 0 }
     db.factionNames = db.factionNames or {}
     db.factionGroups = db.factionGroups or {}
+    local character = GetBankTopology("CharacterBankTab_")
+    local account = GetBankTopology("AccountBankTab_")
+    if character or account then
+        db.bankTopology = db.bankTopology or {}
+        if character and db.bankTopology.character ~= character then
+            for _, rec in pairs(db.characters) do
+                if type(rec) == "table" then rec.bankTabs = {} end
+            end
+            db.bankTopology.character = character
+        end
+        if account and db.bankTopology.account ~= account then
+            db.warband.tabs = {}
+            db.bankTopology.account = account
+        end
+    end
     return db
 end
 
