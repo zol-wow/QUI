@@ -1234,10 +1234,6 @@ local function ApplyKeybindToIcon(icon, viewerName)
         if iks.textLayer:GetFrameLevel() ~= desiredLevel then
             iks.textLayer:SetFrameLevel(desiredLevel)
         end
-        local strataSource = (textLayerParent.GetFrameStrata and textLayerParent) or icon
-        if strataSource.GetFrameStrata and iks.textLayer.GetFrameStrata and iks.textLayer:GetFrameStrata() ~= strataSource:GetFrameStrata() then
-            iks.textLayer:SetFrameStrata(strataSource:GetFrameStrata())
-        end
     end
 
     if not iks.text then
