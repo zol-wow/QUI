@@ -561,8 +561,7 @@ local function ApplyTrackerMaxHeight(settings)
     end
     if not blizzardTrackerHeight then return false end
 
-    local maxHeight = settings and settings.objectiveTrackerHeight or 600
-    local targetHeight = math.min(maxHeight, blizzardTrackerHeight)
+    local targetHeight = settings and settings.objectiveTrackerHeight or 600
     local currentHeight = Helpers.SafeNumberOrNil(TrackerFrame:GetHeight())
     if currentHeight ~= targetHeight then
         TrackerFrame:SetHeight(targetHeight)
@@ -576,9 +575,7 @@ end
 ns.GetObjectiveTrackerAnchorSize = function()
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker or IsScenarioActive() then return end
-    local maxHeight = settings.objectiveTrackerHeight or 600
-    return settings.objectiveTrackerWidth or 260,
-        math.min(maxHeight, blizzardTrackerHeight or maxHeight)
+    return settings.objectiveTrackerWidth or 260, settings.objectiveTrackerHeight or 600
 end
 
 local function UpdateBackdropAnchors()
