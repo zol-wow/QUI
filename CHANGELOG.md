@@ -4,6 +4,15 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta7 - 2026-10-17
+
+### Fixed
+
+- Settings pages no longer flash or fade when switching modules or subpages.
+  Navigation flyouts retain their entrance animation.
+- Paging arrows use native images so fonts without triangle symbols no longer
+  display missing-character boxes, including on vendor page buttons.
+
 ## v5.5.2-beta6 - 2026-10-17
 
 ### Fixed
