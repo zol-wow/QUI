@@ -159,7 +159,59 @@ local function SkinToggleCollapseButton(button)
     UpdateToggleButton(button)
 end
 
+-- Camelot's progress bars and category rows use different templates from
+-- Retail. Only their decorative atlases belong to the skin; Blizzard keeps
+-- fill textures, masks, progress values, semantic colors and click handlers.
+local FOREVER_CHARACTER_CHROME = {
+    ["common-stat-bar-BG"] = true,
+    ["common-insideframe"] = true,
+    ["common-button-list-collapseExpand"] = true,
+    ["UI-Character-Info-ScrollLine"] = true,
+    ["UI-Character-Info-ScrollLine-Long"] = true,
+    ["UI-Character-Info-Title"] = true,
+}
+
+local function SkinForeverCharacterDecorations(frame, depth)
+    if not frame or not (ns.Client and ns.Client.isForever) then return end
+    if frame.GetRegions then
+        for _, region in ipairs({ frame:GetRegions() }) do
+            local atlas = region.GetAtlas and region:GetAtlas()
+            if atlas and FOREVER_CHARACTER_CHROME[atlas] then
+                SkinBase.ClampTextureHidden(region)
+            end
+        end
+    end
+    if frame.Fill and frame.Mask and frame.SetFillPercent then
+        local r, g, b, a, br, bg, bb = GetWindowColors()
+        SkinBase.CreateBackdrop(frame, r, g, b, a, br, bg, bb, 1, 3)
+        local backdrop = SkinBase.GetBackdrop(frame)
+        -- The native frame is 29 high, but its masked fill is only 15 high.
+        if backdrop then
+            local fillArea = frame.FillArea or frame
+            backdrop:ClearAllPoints()
+            backdrop:SetPoint("LEFT", fillArea, "LEFT", 0, 0)
+            backdrop:SetPoint("RIGHT", fillArea, "RIGHT", 0, 0)
+            backdrop:SetHeight(frame.Fill:GetHeight() + 2 * SkinBase.GetPixelSize(backdrop, 1))
+        end
+        SkinBase.SkinFontString(frame.Text, { size = 10 })
+    elseif frame.StateIcon and frame.Name then
+        local r, g, b, a, br, bg, bb = GetWindowColors()
+        SkinBase.CreateBackdrop(frame, r, g, b, a, br, bg, bb, 0.9, 4)
+        SkinBase.SkinFontString(frame.Name, { size = 12, color = { GetTextAccent() } })
+    end
+    if frame.ToggleCollapseButton then SkinToggleCollapseButton(frame.ToggleCollapseButton) end
+    if depth > 0 and frame.GetChildren then
+        for _, child in ipairs({ frame:GetChildren() }) do
+            SkinForeverCharacterDecorations(child, depth - 1)
+        end
+    end
+end
+
 local function SkinReputationEntry(child)
+    if ns.Client and ns.Client.isForever then
+        SkinForeverCharacterDecorations(child, 2)
+        return
+    end
     if skinnedEntries[child] then return end
 
     local sr, sg, sb, sa = GetWindowColors()
@@ -405,6 +457,7 @@ local function SkinCurrencyTransferLog()
 end
 
 local function SkinNativeSidePaneText(pane)
+    SkinForeverCharacterDecorations(pane, 3)
     for _, key in ipairs({ "Title", "Subtitle", "EmptyText" }) do
         SkinBase.SkinFontString(pane[key], { fontOnly = true })
     end
@@ -426,11 +479,20 @@ end
 
 local function SkinNativeCharacterPanes()
     if not IsSkinningEnabled() or not (ns.Client and ns.Client.isForever) then return end
-    for _, frame in pairs({ _G.SkillsFrame, _G.StatisticsFrame, _G.PVPRankFrame }) do
+    for _, frame in pairs({ _G.SkillsFrame, _G.StatisticsFrame, _G.PVPRankFrame, _G.ReputationFrame, _G.TokenFrame,
+        PaperDollFrame and PaperDollFrame.EquipmentManagerPane, PaperDollFrame and PaperDollFrame.TitleManagerPane }) do
         SkinBase.SkinFrameText(frame, { recurse = true })
+        SkinForeverCharacterDecorations(frame, 3)
+        if frame.NewSet then
+            SkinBase.ClampTextureHidden(frame.NewSet.StateTexture)
+            SkinBase.SkinButton(frame.NewSet, { font = false })
+        end
         if frame.ScrollBox and not SkinBase.GetFrameData(frame, "qCharacterNativeRowsHooked") then
             SkinBase.HookScrollBoxAcquired(frame.ScrollBox, function(row)
-                if IsSkinningEnabled() then SkinBase.LockPooledRowText(row, 4) end
+                if IsSkinningEnabled() then
+                    SkinForeverCharacterDecorations(row, 2)
+                    SkinBase.LockPooledRowText(row, 4)
+                end
             end)
             SkinBase.SetFrameData(frame, "qCharacterNativeRowsHooked", true)
         end

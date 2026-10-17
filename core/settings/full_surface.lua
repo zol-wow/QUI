@@ -402,7 +402,7 @@ function FullSurface.ConfigureInlinePreview(parent, getMaxHeight)
     if not host then return end
     local viewport
     local chromeHeight = 0
-    if host then
+    if host and not parent._quiPreviewFixedViewport then
         chromeHeight = parent._quiPreviewChromeHeight or math.max(0, naturalHeight - host:GetHeight())
         viewport = CreateFrame("ScrollFrame", nil, parent)
         for index = 1, host:GetNumPoints() do
@@ -438,7 +438,7 @@ function FullSurface.ConfigureInlinePreview(parent, getMaxHeight)
         local height = parent._quiPreviewCollapsed and collapsedHeight or math.min(natural, getMaxHeight())
         parent._quiPreviewCollapseApplying = true
         parent._quiPreviewAppliedHeight = height
-        if host then
+        if host and viewport then
             local width = viewport:GetWidth()
             if width > 0 and host:GetWidth() ~= width then host:SetWidth(width) end
             local currentChrome = parent._quiPreviewChromeHeight or chromeHeight

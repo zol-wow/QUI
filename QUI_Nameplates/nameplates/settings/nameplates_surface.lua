@@ -259,10 +259,10 @@ local function InstallPreviewObserver()
         return
     end
     previewObserverInstalled = true
-    ns.QUI_SetNameplatePreviewObserver(function(w, h)
+    ns.QUI_SetNameplatePreviewObserver(function(w, h, naturalHeight)
         local p = State.previewPanel
         if not p or not w or not h or w <= 0 or h <= 0 then return end
-        if p.frame:IsVisible() and p.contentHost:IsVisible() then p.Resize(w, h) end
+        if p.frame:IsVisible() and p.contentHost:IsVisible() then p.Resize(w, naturalHeight or h) end
     end)
 end
 
@@ -303,7 +303,7 @@ local function BuildControlStrip(panel)
     reactionRow:SetPoint("TOPRIGHT", card.frame, "BOTTOMRIGHT", -12, -8)
     strip:SetHeight(card.frame:GetHeight() + 8 + reactionRow:GetHeight() + 8)
     strip:HookScript("OnSizeChanged", function()
-        panel.Resize(nil, panel.contentHost:GetHeight())
+        panel.Resize()
     end)
 
     panel.RefreshControlStrip = function()
@@ -350,13 +350,26 @@ local function BuildPreviewBlock(pv, opts)
     zoom:SetPoint("LEFT", built.headerRow, "LEFT", showDropdown and 0 or 100, 0)
     pv._quiPreviewZoom = zoom
     local host = built.previewHost
+    pv._quiPreviewFixedViewport = true
     local contentHost = CreateFrame("Frame", nil, host)
-    contentHost:SetPoint("TOP", host, "TOP", 0, 0)
-    contentHost:SetSize(210, 80)
-    local strip = CreateFrame("Frame", nil, host)
-    strip:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -88)
-    strip:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -88)
+    contentHost._npPreviewFit = true
+    contentHost:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+    contentHost:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 30)
+    local controlsViewport = CreateFrame("ScrollFrame", nil, host)
+    pv._quiPreviewControlsViewport = controlsViewport
+    local strip = CreateFrame("Frame", nil, controlsViewport)
+    strip:SetPoint("TOPLEFT", controlsViewport, "TOPLEFT", 0, 0)
+    strip:SetWidth(host:GetWidth())
     strip:SetHeight(STRIP_HEIGHT)
+    controlsViewport:SetScrollChild(strip)
+    controlsViewport:HookScript("OnSizeChanged", function(_, width)
+        if width > 0 then strip:SetWidth(width) end
+    end)
+    local function ControlsRange()
+        return math.max(0, strip:GetHeight() - controlsViewport:GetHeight())
+    end
+    ns.UIKit.CreateScrollBar(controlsViewport, { width = 4, offsetX = -1, getRange = ControlsRange })
+    local controlsScroll = ns.UIKit.AttachSmoothScroll(controlsViewport, { step = 35, getRange = ControlsRange })
     local panel = { frame = pv, contentHost = contentHost, controlStrip = strip }
     local refreshControls
     local controlsToggle = GUI:CreateButton(host, ns.L["Preview controls"], 0, 22, function()
@@ -374,28 +387,39 @@ local function BuildPreviewBlock(pv, opts)
         r = color[1], g = color[2], b = color[3],
     })
     pv._quiPreviewControlsToggle = controlsToggle
-    panel.Resize = function(width, height)
-        if not height or height <= 0 then return end
-        if width and width > 0 then contentHost:SetWidth(width) end
-        contentHost:SetHeight(height)
-        controlsToggle:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -(height + 8))
-        controlsToggle:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, -(height + 8))
-        strip:SetPoint("TOPLEFT", controlsToggle, "BOTTOMLEFT", 0, -4)
-        strip:SetPoint("TOPRIGHT", controlsToggle, "BOTTOMRIGHT", 0, -4)
-        local controlsHeight = State.previewControlsExpanded and (4 + strip:GetHeight()) or 0
-        local natural = pv._quiPreviewChromeHeight + height + 8 + controlsToggle:GetHeight() + controlsHeight
-        if natural ~= (pv._quiPreviewNaturalHeight or pv:GetHeight()) then pv:SetHeight(natural) end
+    panel.Resize = function(_, height)
+        if height then panel.specimenHeight = height end
+        local expanded = State.previewControlsExpanded == true
+        local natural = pv._quiPreviewChromeHeight + math.max(24, panel.specimenHeight or 240) + 16 + 30
+            + (expanded and (4 + strip:GetHeight()) or 0)
+        if math.abs(natural - (pv._quiPreviewNaturalHeight or pv:GetHeight())) > 0.5 then
+            pv:SetHeight(natural)
+        end
+        local viewportHeight = math.min(strip:GetHeight(), math.max(1, (pv:GetHeight() - pv._quiPreviewChromeHeight - 34) / 2))
+        local controlsHeight = expanded and (4 + viewportHeight) or 0
+        contentHost:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 30 + controlsHeight)
+        controlsToggle:SetPoint("TOPLEFT", contentHost, "BOTTOMLEFT", 0, -8)
+        controlsToggle:SetPoint("TOPRIGHT", contentHost, "BOTTOMRIGHT", 0, -8)
+        controlsViewport:SetPoint("TOPLEFT", controlsToggle, "BOTTOMLEFT", 0, -4)
+        controlsViewport:SetPoint("TOPRIGHT", controlsToggle, "BOTTOMRIGHT", 0, -4)
+        controlsViewport:SetHeight(viewportHeight)
+        controlsScroll:Refresh()
     end
     refreshControls = function(resetScroll)
+        controlsViewport:SetShown(State.previewControlsExpanded == true)
         strip:SetShown(State.previewControlsExpanded == true)
         ns.UIKit.SetChevronCaretExpanded(controlsToggle.chevron, State.previewControlsExpanded == true)
-        panel.Resize(nil, contentHost:GetHeight())
-        local viewport = pv._quiPreviewViewport
-        if resetScroll and viewport then
-            local scroll = ns.UIKit.GetSmoothScroll(viewport)
-            if scroll then scroll:ScrollTo(0, true) else viewport:SetVerticalScroll(0) end
-        end
+        panel.Resize()
+        if resetScroll then controlsScroll:ScrollTo(0, true) end
     end
+    pv:HookScript("OnSizeChanged", function()
+        panel.Resize()
+    end)
+    contentHost:HookScript("OnSizeChanged", function()
+        if State.previewPanel == panel and ns.QUI_RefreshNameplatePreview then
+            ns.QUI_RefreshNameplatePreview()
+        end
+    end)
     EnsurePreviewState()
     BuildControlStrip(panel)
     InstallPreviewObserver()

@@ -51,7 +51,25 @@ local function RoundSurface(owner, radius, inset, depth)
         backdrop = SkinBase.GetBackdrop(owner)
     end
     if not backdrop then return end
-    backdrop.ignoreInLayout = true
+    if owner.IsLayoutFrame and owner:IsLayoutFrame() then
+        local host = SkinBase.GetFrameData(owner, "mapLayoutBackdropHost")
+        if not host then
+            local parent = owner:GetParent()
+            while parent and parent.IsLayoutFrame and parent:IsLayoutFrame() and parent:IgnoreLayoutIndex() do
+                parent = parent:GetParent()
+            end
+            host = CreateFrame("Frame", nil, parent or _G.UIParent)
+            host:SetAllPoints(owner)
+            host:SetFrameLevel(owner:GetFrameLevel())
+            host:EnableMouse(false)
+            backdrop:SetParent(host)
+            backdrop:SetAllPoints(owner)
+            owner:HookScript("OnShow", function() host:Show() end)
+            owner:HookScript("OnHide", function() host:Hide() end)
+            SkinBase.SetFrameData(owner, "mapLayoutBackdropHost", host)
+        end
+        host:SetShown(owner:IsShown())
+    end
     if inset then
         backdrop:ClearAllPoints()
         backdrop:SetPoint("TOPLEFT", owner, "TOPLEFT", inset, -inset)
@@ -110,9 +128,7 @@ local function StyleNavigation(frame)
         SkinBase.SetFrameData(nav, "mapNavigationStyled", true)
     end
     local previous = nav.overflowButton and nav.overflowButton:IsShown() and nav.overflowButton or nil
-    if nav.overflowButton then nav.overflowButton.xoffset = 0 end
     for _, button in ipairs(nav.navList or {}) do
-        button.xoffset = 0
         if button:IsShown() then
             if previous then
                 button:ClearAllPoints()
@@ -152,17 +168,6 @@ local function StyleQuestHeader(frame)
             hooksecurefunc(frame, "UpdateNextObjective", StyleQuestHeader)
         end
         SkinBase.SkinFontString(objective.Text, { size = 11, fontOnly = true })
-        local padding = SkinBase.GetFrameData(frame, "mapCampaignHeightPadding")
-        if padding == nil then
-            padding = frame.heightPadding or 0
-            SkinBase.SetFrameData(frame, "mapCampaignHeightPadding", padding)
-        end
-        frame.heightPadding = padding
-        if objective:IsShown() and objective.Text and objective.Text:GetText() ~= "" then
-            frame.heightPadding = padding + 12
-            if type(objective.Layout) == "function" then objective:Layout() end
-            if type(frame.Layout) == "function" then frame:Layout() end
-        end
     end
 end
 

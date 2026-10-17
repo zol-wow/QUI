@@ -1714,6 +1714,8 @@ local function ResolveFeatureStackLabel(featureId, explicitLabel)
     return providerKey
 end
 
+ns.QUI_Options.ResolveFeatureStackLabel = ResolveFeatureStackLabel
+
 BuildFeatureStackPage = function(tabContent, featureIds, searchContext, options)
     local GUI = QUI and QUI.GUI
     if not GUI then return end

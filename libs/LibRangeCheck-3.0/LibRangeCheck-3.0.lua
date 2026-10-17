@@ -40,7 +40,7 @@ License: MIT
 -- @class file
 -- @name LibRangeCheck-3.0
 local MAJOR_VERSION = "LibRangeCheck-3.0"
-local MINOR_VERSION = 36
+local MINOR_VERSION = 39
 
 ---@class lib
 local lib, oldminor = LibStub:NewLibrary(MAJOR_VERSION, MINOR_VERSION)
@@ -48,6 +48,7 @@ if not lib then
   return
 end
 
+local interfaceVersion = select(4, GetBuildInfo())
 
 local isRetail = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE
 local isEra = WOW_PROJECT_ID == WOW_PROJECT_CLASSIC
@@ -56,6 +57,7 @@ local isWrath = WOW_PROJECT_ID == WOW_PROJECT_WRATH_CLASSIC
 local isCata = WOW_PROJECT_ID == WOW_PROJECT_CATACLYSM_CLASSIC
 local isMists = WOW_PROJECT_ID == WOW_PROJECT_MISTS_CLASSIC
 local isMidnight = type(issecretvalue) == "function"
+local isForever = interfaceVersion >= 16000 and interfaceVersion < 20000
 
 local InCombatLockdownRestriction = function(unit) return InCombatLockdown() and not UnitCanAttack("player", unit) end
 
@@ -260,11 +262,11 @@ tinsert(FriendSpells.PALADIN, 85673) -- Word of Glory (40 yards, level 7)
 tinsert(FriendSpells.PALADIN, 4987) -- Cleanse (Holy) (40 yards, level 12)
 tinsert(FriendSpells.PALADIN, 213644) -- Cleanse Toxins (Protection, Retribution) (40 yards, level 12)
 
-if isRetail or isMists then 
+if isRetail or isMists then
   tinsert(FriendSpells.PALADIN, 53563) -- Beacon of Light (60 yards)
 end
 
-if isTBC or isMists then 
+if isTBC or isMists then
     tinsert(FriendSpells.PALADIN, 6940) -- Blessing/Hand of Sacrifice (30 yards)
 end
 
@@ -293,7 +295,7 @@ tinsert(FriendSpells.PRIEST, 527) -- Purify / Dispel Magic (40 yards retail, 30 
 tinsert(FriendSpells.PRIEST, 2061) -- Flash Heal (40 yards, level 3 retail, level 20 tbc)
 
 tinsert(HarmSpells.PRIEST, 589) -- Shadow Word: Pain (40 yards)
-if isEra then
+if isEra or isForever then
   tinsert(HarmSpells.PRIEST, 18807) -- Mind Flay (20-24 yards)
 end
 tinsert(HarmSpells.PRIEST, 8092) -- Mind Blast (40 yards)
@@ -354,7 +356,7 @@ if not isRetail then
 end
 
 -- Warlocks
-if isEra then
+if isEra or isForever then
   tinsert(FriendSpells.WARLOCK, 132) -- Detect Invisibility (30 yards, level 26)
 else
   tinsert(FriendSpells.WARLOCK, 20707) -- Soulstone (40 yards) ~ this can be precasted so leave it in friendly as well as res
@@ -372,7 +374,7 @@ else
   tinsert(HarmSpells.WARLOCK, 18223) -- Curse of Exhaustion (Affliction) (30/33/36/35/38/42 yards)
   tinsert(HarmSpells.WARLOCK, 689) -- Drain Life (Affliction) (20/22/24 yards, level 14, rank 1)
 end
-if isEra then
+if isEra or isForever then
   tinsert(HarmSpells.WARLOCK, 403677) -- Master Channeler (Affliction) (20/22/24 yards, level 14, rank 1)
   tinsert(HarmSpells.WARLOCK, 426320) -- Shadowflame (30/33/36/39/42 yards, level 14, rank 1)
 end
@@ -381,7 +383,7 @@ tinsert(HarmSpells.WARLOCK, 5019) -- Shoot (30 yards)
 tinsert(HarmSpells.WARLOCK, 686) -- Shadow Bolt (Demonology, Affliction) (40 yards)
 tinsert(HarmSpells.WARLOCK, 5782) -- Fear (30 yards)
 
-if not isEra then
+if not isEra and not isForever then
   tinsert(ResSpells.WARLOCK, 20707) -- Soulstone (40 yards)
 end
 
@@ -390,7 +392,7 @@ tinsert(PetSpells.WARLOCK, 755) -- Health Funnel (45 yards)
 -- Items
 
 local FriendItems
-if isEra then
+if isEra or isForever then
   FriendItems = {
     [5] = {
       1970,   -- Restoring Balm
@@ -2116,7 +2118,7 @@ else
 end
 
 local HarmItems
-if isEra then
+if isEra or isForever then
   HarmItems = {
     [5] = {
       8149,   -- Voodoo Charm
@@ -3943,7 +3945,7 @@ local function createCheckerList(spellList, itemList, interactList)
     for range, items in pairs(itemList) do
       for i = 1, #items do
         local item = items[i]
-        if Item:CreateFromItemID(item):IsItemDataCached() and C_Item.GetItemInfo(item) then
+        if C_Item.IsItemDataCachedByID(item) and C_Item.GetItemInfo(item) then
           addChecker(res, range, nil, checkers_Item[item], "item:" .. item)
           break
         end
@@ -4540,7 +4542,7 @@ function lib:processItemRequests(itemRequests)
       if not i then
         itemRequests[range] = nil
         break
-      elseif Item:CreateFromItemID(item):IsItemEmpty() or self.failedItemRequests[item] then
+      elseif not C_Item.DoesItemExistByID(item) or self.failedItemRequests[item] then
         -- print("### processItemRequests: failed: " .. tostring(item))
         tremove(items, i)
       elseif pendingItemRequest[item] and GetTime() < itemRequestTimeoutAt[item] then
@@ -4983,7 +4985,7 @@ function lib:activate()
       frame:RegisterEvent("PLAYER_TALENT_UPDATE")
     end
 
-    if (isEra or isTBC or isWrath or isCata) then
+    if (isEra or isTBC or isWrath or isCata or isForever) then
       frame:RegisterEvent("CVAR_UPDATE")
     end
 

@@ -647,9 +647,20 @@ local managedReparentState = {}
 local function MirrorHolderSize(key)
     local state = managedReparentState[key]
     if not state or not state.holder or not state.frame then return end
+    if InCombatLockdown() and nsHelpers.FrameMutationRestricted(state.holder) then
+        state.reanchorAfterCombat = true
+        return
+    end
     local frame = state.frame
     local w = (frame.GetWidth  and frame:GetWidth())  or 0
     local h = (frame.GetHeight and frame:GetHeight()) or 0
+    if key == "objectiveTracker" and ns.GetObjectiveTrackerAnchorSize then
+        -- Native UIPanel updates may temporarily change the root height in
+        -- combat. A centered holder must retain the configured layout extent.
+        local layoutWidth, layoutHeight = ns.GetObjectiveTrackerAnchorSize()
+        w = layoutWidth or w
+        h = layoutHeight or h
+    end
     if type(w) ~= "number" or w < 1 then w = 1 end
     if type(h) ~= "number" or h < 1 then h = 1 end
     state.holder:SetSize(w, h)
@@ -660,8 +671,14 @@ ns.SyncManagedHolderSize = MirrorHolderSize
 local function ReanchorFrameToHolder(key)
     local state = managedReparentState[key]
     if not state or not state.holder or not state.frame then return end
-    if InCombatLockdown() then return end
     local frame = state.frame
+    -- UIPanel layout can reset an unprotected tracker when opening Spellbook
+    -- in combat. Repair that point before the native SetPoint call returns.
+    if InCombatLockdown() and nsHelpers.FrameMutationRestricted(frame) then
+        state.reanchorAfterCombat = true
+        return
+    end
+    state.reanchorAfterCombat = nil
     state.hookingSetPoint = true
     ns.SafeCallMethod("best-effort-style", frame, "ClearAllPoints")
     ns.SafeCallMethod("best-effort-style", frame, "SetPoint", "TOPLEFT", state.holder, "TOPLEFT", 0, 0)
@@ -675,7 +692,6 @@ local function QueueManagedReanchor(key)
     state.pendingReanchor = true
     C_Timer.After(0, function()
         state.pendingReanchor = false
-        if InCombatLockdown() then return end
         ReanchorFrameToHolder(key)
     end)
 end
@@ -729,7 +745,13 @@ local function InstallManagedReparent(def)
         state.setPointHooked = true
         hooksecurefunc(frame, "SetPoint", function()
             if state.hookingSetPoint then return end
-            QueueManagedReanchor(def.key)
+            if def.key == "objectiveTracker" then
+                -- Restore before the native call returns so panel layout never
+                -- renders a tracker at the temporary Blizzard anchor.
+                ReanchorFrameToHolder(def.key)
+            else
+                QueueManagedReanchor(def.key)
+            end
         end)
     end
 
@@ -776,6 +798,9 @@ managedReparentInitFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 managedReparentInitFrame:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_REGEN_ENABLED" then
         EnsureAllManagedReparents()
+        for key, state in pairs(managedReparentState) do
+            if state.reanchorAfterCombat then ReanchorFrameToHolder(key) end
+        end
         return
     end
     C_Timer.After(0.5, EnsureAllManagedReparents)

@@ -29,6 +29,36 @@ local function SkinSocialRow(row, depth)
     end
     local normal = row.GetNormalTexture and row:GetNormalTexture()
     if normal then SkinBase.ClampTextureHidden(normal) end
+    local highlight = row.highlight or row.Highlight or (row.GetHighlightTexture and row:GetHighlightTexture())
+    for index = 1, 2 do
+        local texture = index == 1 and highlight or row.Selected
+        if texture and texture.SetTexture then
+            local r, g, b = SkinBase.GetSkinColors()
+            texture:SetTexture("Interface\\Buttons\\WHITE8x8")
+            texture:SetTexCoord(0, 1, 0, 1)
+            texture:SetVertexColor(r, g, b, 0.15)
+            if texture.SetBlendMode then texture:SetBlendMode("BLEND") end
+            SkinBase.RoundBarTexture(row, texture)
+        end
+    end
+    local invite = row.travelPassButton
+    if invite then
+        if not invite:GetFontString() then
+            local label = invite:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            label:SetPoint("CENTER")
+            label:SetText("+")
+            invite:SetFontString(label)
+        end
+        SkinBase.SkinButton(invite, { radius = 3 })
+        SkinBase.RefreshWidget(invite)
+        -- Keep the native tall hit area, but separate the visual controls from rows and scrollbar.
+        local backdrop = SkinBase.GetBackdrop(invite)
+        if backdrop then
+            backdrop:ClearAllPoints()
+            backdrop:SetSize(20, 20)
+            backdrop:SetPoint("CENTER", invite, "CENTER")
+        end
+    end
     SkinBase.LockPooledRowText(row, depth or 3)
 end
 
@@ -133,7 +163,11 @@ local function StyleSocialTitle(frame)
     if not frame or not IsSettingEnabled("skinFriends") then return end
     local title = frame.GetTitleText and frame:GetTitleText()
     if not title then title = frame.TitleText or (frame.TitleContainer and frame.TitleContainer.TitleText) end
-    if title then SkinBase.SkinFontString(title, { color = WHITE_TEXT_COLOR }) end
+    if not title then title = frame.Header and frame.Header.Text end
+    if title then
+        SkinBase.SkinFontString(title, { color = WHITE_TEXT_COLOR })
+        SkinBase.LockFontObject(title, { color = WHITE_TEXT_COLOR })
+    end
 end
 
 local function HookSocialTitle(frame)
@@ -141,6 +175,83 @@ local function HookSocialTitle(frame)
     if frame.SetTitle and not SkinBase.GetFrameData(frame, "qSocialTitleHooked") then
         hooksecurefunc(frame, "SetTitle", StyleSocialTitle)
         SkinBase.SetFrameData(frame, "qSocialTitleHooked", true)
+    end
+end
+
+local function SkinRecruitSurface(frame)
+    if not frame then return end
+    for _, key in ipairs({ "Background", "Watermark", "Bracket_TopLeft", "Bracket_TopRight", "Bracket_BottomLeft", "Bracket_BottomRight" }) do
+        SkinBase.ClampTextureHidden(frame[key], true, { preserveLayout = true })
+    end
+    SkinBase.ClampTextureHidden(frame.Bg, true, { preserveLayout = true })
+    SkinBase.KillNineSlice(frame.NineSlice, true)
+    if frame.Inset then
+        SkinBase.StripTextures(frame.Inset)
+        SkinBase.ClampTextureHidden(frame.Inset.Bg, true, { preserveLayout = true })
+        SkinBase.KillNineSlice(frame.Inset.NineSlice, true)
+    end
+    local sr, sg, sb, sa, r, g, b, a = SkinBase.GetWindowColors()
+    SkinBase.CreateBackdrop(frame, sr, sg, sb, sa * 0.5, r, g, b, a, 5)
+end
+
+local function SkinRecruitAFriend(frame)
+    if not frame or not IsSettingEnabled("skinFriends") then return end
+    local reward = frame.RewardClaiming
+    SkinRecruitSurface(reward)
+    if reward then
+        local label = reward.MonthCount and reward.MonthCount.Text
+        SkinBase.SkinFontString(label, { color = WHITE_TEXT_COLOR })
+        SkinBase.LockFontObject(label, { color = WHITE_TEXT_COLOR })
+        SkinButtons(reward.ClaimOrViewRewardButton)
+    end
+    SkinButtons(frame.RecruitmentButton)
+    local list = frame.RecruitList or frame
+    SkinRecruitSurface(list.ScrollFrameInset)
+    if list.Header and list.Header.RecruitedFriends then
+        SkinBase.ClampTextureHidden(list.Header.Background, true, { preserveLayout = true })
+        local label = list.Header.RecruitedFriends
+        SkinBase.SkinFontString(label, { color = WHITE_TEXT_COLOR })
+        SkinBase.LockFontObject(label, { color = WHITE_TEXT_COLOR })
+    end
+    SkinBase.SkinTrimScrollBar(list.ScrollBar)
+    SkinBase.SkinTrimScrollBar(frame.NoRecruitsScrollBar)
+    if list.ScrollBox and not SkinBase.GetFrameData(list.ScrollBox, "qRecruitRowsHooked") then
+        SkinBase.HookScrollBoxAcquired(list.ScrollBox, function(row)
+            SkinBase.ClampTextureHidden(row.Background, true, { preserveLayout = true })
+            for _, key in ipairs({ "Name", "InfoText" }) do
+                SkinBase.SkinFontString(row[key], { fontOnly = true })
+                SkinBase.LockFontObject(row[key], { fontOnly = true })
+            end
+        end, { sync = true })
+        SkinBase.SetFrameData(list.ScrollBox, "qRecruitRowsHooked", true)
+    end
+    if not SkinBase.GetFrameData(frame, "qRecruitShowHooked") then
+        frame:HookScript("OnShow", SkinRecruitAFriend)
+        SkinBase.SetFrameData(frame, "qRecruitShowHooked", true)
+    end
+end
+
+local function SkinRecruitDialog(frame)
+    if not frame or not IsSettingEnabled("skinFriends") then return end
+    SkinRecruitSurface(frame)
+    SkinSideWindow(frame)
+    local title = frame.Title and (frame.Title.Text or frame.Title)
+    SkinBase.SkinFontString(title, { color = WHITE_TEXT_COLOR })
+    SkinBase.LockFontObject(title, { color = WHITE_TEXT_COLOR })
+    local description = frame.Description and (frame.Description.Text or frame.Description)
+    SkinBase.SkinFontString(description, { color = WHITE_TEXT_COLOR })
+    SkinBase.LockFontObject(description, { color = WHITE_TEXT_COLOR })
+    SkinButtons(frame.ClaimLegacyRewardsButton, frame.GenerateOrCopyLinkButton)
+    SkinBase.SkinEditBox(frame.EditBox)
+    if frame.rewardPool then
+        for reward in frame.rewardPool:EnumerateActive() do
+            SkinBase.SkinFontString(reward.Months and reward.Months.Text, { fontOnly = true })
+        end
+    end
+    if not SkinBase.GetFrameData(frame, "qRecruitDialogHooked") then
+        frame:HookScript("OnShow", SkinRecruitDialog)
+        if frame.UpdateRewards then hooksecurefunc(frame, "UpdateRewards", SkinRecruitDialog) end
+        SkinBase.SetFrameData(frame, "qRecruitDialogHooked", true)
     end
 end
 
@@ -176,6 +287,7 @@ local function SkinLegacyFriendsContents(frame)
             SkinButtons(broadcast.UpdateButton, broadcast.CancelButton)
         end
     end
+    SkinRecruitAFriend(_G.RecruitAFriendFrame)
     SkinSocialList(_G.FriendsListFrame, 4)
     SkinButtons(_G.FriendsFrameAddFriendButton, _G.FriendsFrameSendMessageButton)
 
@@ -253,6 +365,7 @@ local function SkinLegacyFriendsContents(frame)
     local raidInfo = _G.RaidInfoFrame
     if raidInfo then
         SkinSideWindow(raidInfo)
+        HookSocialTitle(raidInfo)
         SkinBase.SkinCloseButton(_G.RaidInfoCloseButton or raidInfo.CloseButton)
         SkinButtons(_G.RaidInfoExtendButton or raidInfo.ExtendButton,
             _G.RaidInfoCancelButton or raidInfo.CancelButton)
@@ -306,6 +419,30 @@ local function SkinModernRaid(frame)
     SkinModernRaidRows(frame)
 end
 
+local function SkinForeverSocialTabs(frame)
+    if not (ns.Client and ns.Client.isForever) or not IsSettingEnabled("skinFriends")
+        or not frame or not frame.EnumerateTabs then return end
+    for tab in frame:EnumerateTabs() do
+        SkinBase.SkinTab(tab, frame, { hover = true })
+        SkinBase.RefreshTabGroup({ tab }, frame)
+    end
+end
+
+local function SkinForeverAddFriend()
+    if not (ns.Client and ns.Client.isForever) or not IsSettingEnabled("skinFriends") then return end
+    local frame = _G.AddFriendFrame
+    if not frame then return end
+    SkinSideWindow(frame)
+    if frame.Border then SkinBase.StripTextures(frame.Border) end
+    local info = frame.InfoFrame
+    local entry = frame.EntryFrame
+    local controls = entry and entry.EditBoxContainer
+    SkinBase.SkinButton(info and info.OkayButton)
+    SkinBase.SkinButton(controls and controls.AcceptButton)
+    SkinBase.SkinButton(controls and controls.CancelButton)
+    SkinBase.SkinEditBox(controls and controls.NameEditBox)
+end
+
 local function SkinSocialUI()
     if not IsSettingEnabled("skinFriends") then return end
     local frame = _G.SocialUIFrame
@@ -317,6 +454,12 @@ local function SkinSocialUI()
     end
 
     HookSocialTitle(frame)
+    SkinForeverSocialTabs(frame)
+    if ns.Client and ns.Client.isForever and frame.RefreshTabs
+        and not SkinBase.GetFrameData(frame, "qForeverSocialTabsHooked") then
+        hooksecurefunc(frame, "RefreshTabs", SkinForeverSocialTabs)
+        SkinBase.SetFrameData(frame, "qForeverSocialTabsHooked", true)
+    end
     local battleNetBar = frame.BattleNetBar
     local controls = battleNetBar and battleNetBar.ControlsContainer
     if battleNetBar then SkinBase.StripTextures(battleNetBar) end
@@ -328,6 +471,7 @@ local function SkinSocialUI()
         end
     end
 
+    SkinRecruitAFriend(frame.RecruitAFriendFrame)
     SkinContactView(frame.FriendsList)
     SkinContactView(frame.RecentAlliesList)
     SkinContactView(frame.QuickJoinFrame, true)
@@ -337,6 +481,7 @@ local function SkinSocialUI()
     local raidInfo = frame.RaidInfoFrame
     if raidInfo then
         SkinSideWindow(raidInfo)
+        HookSocialTitle(raidInfo)
         SkinButtons(raidInfo.ExtendButton)
     end
 
@@ -354,8 +499,13 @@ local function SkinSocialUI()
 end
 
 local function SkinSocial()
+    if IsSettingEnabled("skinFriends") then
+        SkinRecruitDialog(_G.RecruitAFriendRewardsFrame)
+        SkinRecruitDialog(_G.RecruitAFriendRecruitmentFrame)
+    end
     SkinFriends()
     SkinSocialUI()
+    SkinForeverAddFriend()
 end
 
 local function RefreshFriends()
@@ -379,6 +529,111 @@ local function SkinCommunitySurface(frame)
     local sr, sg, sb, sa = SkinBase.GetWindowColors()
     local r, g, b, a = SkinBase.GetDepthColor("SUBPANEL")
     SkinBase.CreateBackdrop(frame, sr, sg, sb, sa * 0.5, r, g, b, a, 5)
+end
+
+local function SkinGuildBenefitRow(row, perk)
+    if not row then return end
+    SkinBase.SkinButton(row, { strip = perk, font = false })
+    if perk then
+        SkinBase.ClampTextureHidden(row.NormalBorder, true)
+        SkinBase.ClampTextureHidden(row.DisabledBorder, true)
+    end
+    if row.Icon then
+        row.Icon:SetAlpha(1)
+        SkinBase.RoundIconTexture(row, row.Icon)
+    end
+    SkinBase.SkinFontString(row.Name, { fontOnly = true })
+    if not perk and not row.achievementID then
+        SkinBase.SkinFontString(row.Name, { color = WHITE_TEXT_COLOR })
+    end
+    SkinBase.LockFontObject(row.Name, { fontOnly = true })
+    SkinBase.SkinFontString(row.SubText, { fontOnly = true })
+end
+
+local function SkinGuildBenefits(frame)
+    if not frame then return end
+    for _, key in ipairs({ "Perks", "Rewards" }) do
+        local pane = frame[key]
+        if pane then
+            SkinCommunitySurface(pane)
+            SkinBase.SkinFontString(pane.TitleText, { color = WHITE_TEXT_COLOR })
+            SkinBase.SkinTrimScrollBar(pane.ScrollBar)
+            local scrollBox = pane.ScrollBox
+            if scrollBox and not SkinBase.GetFrameData(scrollBox, "qGuildBenefitRowsHooked") then
+                local perk = key == "Perks"
+                SkinBase.HookScrollBoxAcquired(scrollBox, function(row) SkinGuildBenefitRow(row, perk) end)
+                SkinBase.SetFrameData(scrollBox, "qGuildBenefitRowsHooked", true)
+            end
+        end
+    end
+    local faction = frame.FactionFrame
+    SkinBase.SkinFontString(faction and faction.Label, { color = WHITE_TEXT_COLOR })
+end
+
+local function SkinGuildNewsRow(row)
+    if not row then return end
+    if row.header and row.header:IsShown() then
+        SkinBase.SkinFontString(row.text, { color = WHITE_TEXT_COLOR })
+    end
+    SkinBase.ClampTextureHidden(row.header, true)
+    SkinBase.LockPooledRowText(row, 2)
+end
+
+local function SkinGuildDetails(frame)
+    if not frame then return end
+    for _, key in ipairs({ "Info", "News" }) do
+        local pane = frame[key]
+        if pane then
+            SkinCommunitySurface(pane)
+            SkinBase.SkinFrameText(pane, { chrome = true, color = WHITE_TEXT_COLOR })
+            SkinBase.SkinTrimScrollBar(pane.ScrollBar)
+        end
+    end
+    local info = frame.Info
+    if info then
+        local details = info.DetailsFrame
+        SkinBase.SkinTrimScrollBar(details and details.ScrollBar)
+        SkinButtons(info.EditMOTDButton, info.EditDetailsButton)
+    end
+    local news = frame.News
+    if news then
+        SkinBase.SkinFontString(news.SetFiltersButton and news.SetFiltersButton:GetFontString(),
+            { color = WHITE_TEXT_COLOR })
+        local scrollBox = news.ScrollBox
+        if scrollBox and not SkinBase.GetFrameData(scrollBox, "qGuildNewsRowsHooked") then
+            SkinBase.HookScrollBoxAcquired(scrollBox, SkinGuildNewsRow)
+            SkinBase.SetFrameData(scrollBox, "qGuildNewsRowsHooked", true)
+        end
+    end
+end
+
+local function SkinCommunityDialog(frame)
+    if not frame then return end
+    SkinSideWindow(frame)
+    SkinBase.SkinFrameText(frame, { chrome = true, color = WHITE_TEXT_COLOR })
+    local container = frame.Container
+    if container then
+        SkinCommunitySurface(container)
+        local scroll = container.ScrollFrame
+        SkinBase.SkinTrimScrollBar(scroll and scroll.ScrollBar)
+        SkinBase.SkinEditBox(scroll and scroll.EditBox)
+    end
+    for _, button in ipairs({ frame:GetChildren() }) do
+        if button:GetObjectType() == "Button" then
+            local label = button:GetFontString()
+            if label and label:GetText() then
+                SkinButtons(button)
+            else
+                SkinBase.SkinCloseButton(button)
+            end
+        end
+    end
+    for _, check in ipairs(frame.GuildNewsFilterButtons or {}) do
+        SkinBase.SkinCheckBox(check)
+        local backdrop = SkinBase.GetBackdrop(check)
+        if backdrop then SkinBase.SetInsetPixelPoints(backdrop, check, 6) end
+        SkinBase.SkinFontString(check.Text, { color = WHITE_TEXT_COLOR })
+    end
 end
 
 local function SkinCommunityTab(tab)
@@ -425,8 +680,67 @@ local function SkinCommunityNavigationRow(row)
     SkinBase.RefreshCategorySelected(row)
 end
 
+local function SkinCommunityFinderCard(card)
+    if not card then return end
+    SkinBase.ClampTextureHidden(card.Background, true)
+    SkinBase.ClampTextureHidden(card.CardBackground, true)
+    SkinBase.SkinButton(card, { font = false })
+    SkinBase.LockPooledRowText(card, 3)
+    local join = card.RequestJoin
+    if join and join:GetObjectType() == "Button" then SkinButtons(join) end
+end
+
+local function SkinCommunityFinderCards(cards)
+    for _, card in ipairs(cards.Cards or {}) do SkinCommunityFinderCard(card) end
+end
+
+local function SkinCommunityJoinDialog(frame)
+    if not frame then return end
+    SkinBase.StripTextures(frame.BG)
+    SkinBase.KillNineSlice(frame.BG and frame.BG.NineSlice, true)
+    local sr, sg, sb, sa = SkinBase.GetWindowColors()
+    local r, g, b = SkinBase.GetDepthColor("POPUP")
+    SkinBase.CreateBackdrop(frame, sr, sg, sb, sa, r, g, b, 1, 8)
+    SkinButtons(frame.Apply, frame.Cancel)
+    for _, key in ipairs({ "DialogLabel", "ClubName", "ClubDescription", "ClubDescription2",
+        "ErrorDescription", "RecruitingSpecDescriptions" }) do
+        SkinBase.SkinFontString(frame[key], { fontOnly = true })
+    end
+    local message = frame.MessageFrame
+    if message then
+        SkinBase.SkinEditBox(message, { font = false })
+        for _, key in ipairs({ "TopLeft", "TopRight", "Top", "BottomLeft", "BottomRight", "Bottom", "Left", "Right", "Middle" }) do
+            SkinBase.ClampTextureHidden(message[key], true)
+        end
+        local scroll = message.MessageScroll
+        SkinBase.StripTextures(scroll)
+        SkinBase.KillNineSlice(scroll and scroll.NineSlice, true)
+        SkinBase.SkinTrimScrollBar(scroll and scroll.ScrollBar)
+        SkinBase.SkinFontString(scroll and scroll.EditBox, { fontOnly = true })
+    end
+    if frame.SpecsPool then
+        for row in frame.SpecsPool:EnumerateActive() do
+            SkinBase.SkinCheckBox(row.Checkbox)
+            SkinBase.ClampTextureHidden(row.Checkbox:GetNormalTexture(), true)
+            local backdrop = SkinBase.GetBackdrop(row.Checkbox)
+            if backdrop then
+                SkinBase.SetFrameData(backdrop, "chromeRadius", 3)
+                SkinBase.SetInsetPixelPoints(backdrop, row.Checkbox, 12)
+                SkinBase.ApplyPixelBackdrop(backdrop, 1, true, true)
+                backdrop:Show()
+            end
+            SkinBase.SkinFontString(row.SpecName, { fontOnly = true })
+        end
+    end
+    if type(frame.Initialize) == "function" and not SkinBase.GetFrameData(frame, "qFinderJoinHooked") then
+        hooksecurefunc(frame, "Initialize", SkinCommunityJoinDialog)
+        SkinBase.SetFrameData(frame, "qFinderJoinHooked", true)
+    end
+end
+
 local function SkinCommunityFinder(finder)
     if not finder then return end
+    SkinCommunityJoinDialog(finder.RequestToJoinFrame)
     SkinCommunitySurface(finder.InsetFrame)
     SkinCommunitySurface(finder.DisabledFrame)
     SkinBase.SkinFontString(finder.InsetFrame and finder.InsetFrame.GuildDescription,
@@ -444,9 +758,15 @@ local function SkinCommunityFinder(finder)
             SkinBase.RefreshWidget(options[key])
             SkinBase.SkinFontString(options[key] and options[key].Label, { color = { 0.9, 0.9, 0.9, 1 } })
         end
+        if options.SearchBox then options.SearchBox:SetHeight(24) end
         SkinBase.SkinEditBox(options.SearchBox)
         if options.SearchBox and options.SearchBox.searchIcon then options.SearchBox.searchIcon:SetAlpha(1) end
         SkinButtons(options.Search)
+        if options.Search and options.SearchBox then
+            options.Search:ClearAllPoints()
+            options.Search:SetPoint("TOPLEFT", options.SearchBox, "BOTTOMLEFT", 0, -4)
+            options.Search:SetPoint("TOPRIGHT", options.SearchBox, "BOTTOMRIGHT", 0, -4)
+        end
         for _, key in ipairs({ "TankRoleFrame", "HealerRoleFrame", "DpsRoleFrame" }) do
             local check = options[key] and options[key].Checkbox
             SkinBase.SkinCheckBox(check)
@@ -460,6 +780,15 @@ local function SkinCommunityFinder(finder)
             SkinBase.SkinTrimScrollBar(cards.ScrollBar)
             SkinBase.SkinNextPrevButton(cards.PreviousPage, "prev")
             SkinBase.SkinNextPrevButton(cards.NextPage, "next")
+            if cards.ScrollBox and not SkinBase.GetFrameData(cards.ScrollBox, "qFinderCardsHooked") then
+                SkinBase.HookScrollBoxAcquired(cards.ScrollBox, SkinCommunityFinderCard)
+                SkinBase.SetFrameData(cards.ScrollBox, "qFinderCardsHooked", true)
+            end
+            if type(cards.RefreshLayout) == "function" and not SkinBase.GetFrameData(cards, "qFinderLayoutHooked") then
+                hooksecurefunc(cards, "RefreshLayout", SkinCommunityFinderCards)
+                SkinBase.SetFrameData(cards, "qFinderLayoutHooked", true)
+            end
+            SkinCommunityFinderCards(cards)
         end
     end
 end
@@ -468,6 +797,32 @@ local function StyleCommunitiesTitle(frame)
     local title = frame.GetTitleText and frame:GetTitleText()
     if not title then title = frame.TitleText or (frame.TitleContainer and frame.TitleContainer.TitleText) end
     SkinBase.SkinFontString(title, { color = { 1, 1, 1, 1 } })
+end
+
+local function LayoutCommunityChat(frame)
+    local chat, editBox = frame.Chat, frame.ChatEditBox
+    if not chat or not editBox then return end
+    local sizing = frame.MaximizeMinimizeFrame
+    local minimized = sizing and sizing.IsMinimized and sizing:IsMinimized()
+    editBox:SetHeight(24)
+    editBox:SetTextInsets(8, 8, 0, 0)
+    editBox:ClearAllPoints()
+    if chat.InsetFrame then
+        -- The native inset extends behind its textured input; QUI uses two panels.
+        chat.InsetFrame:SetPoint("BOTTOMRIGHT", chat, "BOTTOMRIGHT", 10, -2)
+    end
+    if minimized then
+        chat:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -35, 40)
+        editBox:SetPoint("BOTTOMLEFT", chat, "BOTTOMLEFT", 0, -32)
+        editBox:SetPoint("BOTTOMRIGHT", chat, "BOTTOMRIGHT", 0, -32)
+    else
+        -- Reserve space for the full QUI input border above the footer actions.
+        if frame.MemberList then
+            chat:SetPoint("BOTTOMRIGHT", frame.MemberList, "BOTTOMLEFT", -32, 36)
+        end
+        editBox:SetPoint("TOPLEFT", chat, "BOTTOMLEFT", -10, -6)
+        editBox:SetPoint("TOPRIGHT", chat, "BOTTOMRIGHT", 10, -6)
+    end
 end
 
 local function SkinCommunitiesContents(frame)
@@ -514,6 +869,11 @@ local function SkinCommunitiesContents(frame)
             end
             SkinBase.SkinTrimScrollBar(pane.ScrollBar)
             SkinBase.SkinCheckBox(pane.ShowOfflineButton)
+            local check = pane.ShowOfflineButton
+            local backdrop = check and SkinBase.GetBackdrop(check)
+            if backdrop then SkinBase.SetInsetPixelPoints(backdrop, check, 6) end
+            SkinBase.SkinFontString(check and check.Text, { color = WHITE_TEXT_COLOR })
+            SkinBase.StripTextures(pane.ColumnDisplay)
         end
     end
     for _, key in ipairs({ "ChatTab", "RosterTab", "GuildBenefitsTab", "GuildInfoTab" }) do
@@ -524,8 +884,27 @@ local function SkinCommunitiesContents(frame)
         SkinBase.SkinDropdown(frame[key], { skinArrow = true })
         SkinBase.RefreshWidget(frame[key])
     end
+    SkinSocialList(frame.MemberList, 4)
+    SkinGuildBenefits(frame.GuildBenefitsFrame)
+    SkinGuildDetails(frame.GuildDetailsFrame)
+    SkinCommunityDialog(_G.CommunitiesGuildLogFrame)
+    SkinCommunityDialog(_G.CommunitiesGuildTextEditFrame)
+    SkinCommunityDialog(_G.CommunitiesGuildNewsFiltersFrame)
     SkinButtons(frame.InviteButton, frame.GuildLogButton)
     SkinBase.SkinEditBox(frame.ChatEditBox)
+    LayoutCommunityChat(frame)
+    if frame.ChatEditBox then
+        for _, key in ipairs({ "Left", "Right", "Mid" }) do
+            SkinBase.ClampTextureHidden(frame.ChatEditBox[key], true)
+        end
+    end
+    local chat = frame.Chat
+    if chat then
+        SkinCommunitySurface(chat.InsetFrame)
+        SkinBase.SkinTrimScrollBar(chat.ScrollBar)
+        local unread = chat.JumpToUnreadButton or _G.JumpToUnreadButton
+        if unread and unread:GetParent() == chat then SkinButtons(unread) end
+    end
     SkinCommunityFinder(frame.GuildFinderFrame)
     SkinCommunityFinder(frame.CommunityFinderFrame)
     local control = frame.CommunitiesControlFrame
@@ -559,6 +938,15 @@ local function SkinCommunities()
     LockGuildNameAlertText(frame)
     SkinCommunitiesContents(frame)
     if type(frame.SetTitle) == "function" then hooksecurefunc(frame, "SetTitle", StyleCommunitiesTitle) end
+    local sizing = frame.MaximizeMinimizeFrame
+    if sizing then
+        -- Native callbacks replace the anchors; restore spacing after they finish.
+        for _, method in ipairs({ "Maximize", "Minimize" }) do
+            if type(sizing[method]) == "function" then
+                hooksecurefunc(sizing, method, function() LayoutCommunityChat(frame) end)
+            end
+        end
+    end
     frame:HookScript("OnShow", SkinCommunitiesContents)
     SkinBase.MarkSkinned(frame)
 end
@@ -585,7 +973,11 @@ for _, addon in ipairs({
     "Blizzard_RaidFrame",
     "Blizzard_RaidUI",
     "Blizzard_RecentAllies",
+    "Blizzard_RecruitAFriend",
 }) do
     SkinBase.OnAddOnLoaded(addon, SkinSocial, 0)
 end
 SkinBase.OnAddOnLoaded("Blizzard_Communities",  SkinCommunities, 0)
+if ns.Client and ns.Client.isForever then
+    SkinBase.OnAddOnLoaded("Blizzard_AddFriend", SkinForeverAddFriend, 0)
+end
