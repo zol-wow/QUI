@@ -3,7 +3,7 @@
 
 # QUI
 
-QUI is a modular World of Warcraft UI suite for Midnight 12.1+. It combines combat HUD tools, layout editing, action bars, unit and group frames, chat, minimap controls, data panels, a native damage meter, profile tools, and quality-of-life helpers under one settings experience.
+QUI Alpha is a modular World of Warcraft UI suite for Midnight 12.1.7 PTR and experimental WoW Forever 1.60.1. It combines combat HUD tools, layout editing, action bars, unit and group frames, chat, minimap controls, data panels, a native damage meter, profile tools, and quality-of-life helpers under one settings experience.
 
 ## Highlights
 

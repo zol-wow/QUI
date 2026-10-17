@@ -254,7 +254,11 @@ function T.Update()
         Apply(T.focusAlert, focus and focus.outsideGroup and focus, pi and pi.focus.enabled and "focus", config, live)
     end
     if host and host.request then
-        if host.sample then host.sample:SetShown(R.previews[10060] == true) end
+        if host.sample then
+            local layout = ns.QUI_LayoutMode
+            host.sample:SetShown(not InCombatLockdown() and not (layout and layout._combatSuspended)
+                and (R.previews[10060] == true or host.layoutPreview == true))
+        end
         if T.request and pi.whisper.alert then
             host.icon:Hide()
             P.Draw(host.request, config, { show = true, ready = true }, nil, T.request.name)

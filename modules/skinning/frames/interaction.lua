@@ -1213,7 +1213,7 @@ local function SkinTrainerContents(frame)
         scrollBox:ForEachFrame(SkinTrainerRow)
     end
     SkinTrainerRow(frame.skillStepButton)
-    SkinBase.SkinFrameText(_G.ClassTrainerFrameMoneyFrame, { recurse = true })
+    SkinBase.SkinFrameText(frame.money or _G.ClassTrainerFrameMoneyFrame, { recurse = true })
     SkinBase.RefreshWidget(_G.ClassTrainerTrainButton)
     SkinBase.SkinDropdown(frame.FilterDropdown, { skinArrow = true })
     SkinBase.RefreshWidget(frame.FilterDropdown)

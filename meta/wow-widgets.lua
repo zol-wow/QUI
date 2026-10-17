@@ -518,6 +518,12 @@ function __WowWidget:FindStringMatches(text, pattern, strength, ...) end
 function __WowWidget:Finish(...) end
 ---@param ... any
 function __WowWidget:Flush(...) end
+---@param fromMouseMotion? boolean
+---@param ... any
+function __WowWidget:FocusEnter(fromMouseMotion, ...) end
+---@param fromMouseMotion? boolean
+---@param ... any
+function __WowWidget:FocusExit(fromMouseMotion, ...) end
 --- Case-folds the characters in a string; case-folding is locale-independent and not context-sensitive.
 ---@param text? string
 ---@param ... any
@@ -2401,6 +2407,12 @@ function __WowWidget:LockHighlight(...) end
 function __WowWidget:Lower(...) end
 ---@param ... any
 function __WowWidget:MakeCurrentCameraCustom(...) end
+---@param button? string
+---@param ... any
+function __WowWidget:MouseDown(button, ...) end
+---@param button? string
+---@param ... any
+function __WowWidget:MouseUp(button, ...) end
 ---@param ... any
 function __WowWidget:NavigateBack(...) end
 ---@param ... any
@@ -3452,6 +3464,10 @@ function __WowWidget:SetModelByPath(asset, useMips, ...) end
 ---@param ... any
 ---@return boolean success
 function __WowWidget:SetModelByUnit(unit, sheatheWeapons, autoDress, hideWeapons, usePlayerNativeForm, holdBowString, customRaceID, ...) end
+---@param unit? any
+---@param ... any
+---@return boolean success
+function __WowWidget:SetModelByUnitCreatureDisplayID(unit, ...) end
 ---@param layer? any
 ---@param ... any
 function __WowWidget:SetModelDrawLayer(layer, ...) end
@@ -4098,6 +4114,9 @@ function __WowWidget:SetUserPlaced(userPlaced, ...) end
 ---@param usingParentLevel? boolean
 ---@param ... any
 function __WowWidget:SetUsingParentLevel(usingParentLevel, ...) end
+---@param usingSoftCursor? boolean
+---@param ... any
+function __WowWidget:SetUsingSoftCursor(usingSoftCursor, ...) end
 ---@param value? number
 ---@param treatAsMouseEvent? boolean
 ---@param ... any
@@ -4309,6 +4328,10 @@ function __WowWidget:UpdateFontString(...) end
 ---@return number questID
 ---@return number numObjectives
 function __WowWidget:UpdateMouseOverTooltip(x, y, ...) end
+---@param pointX? number
+---@param pointY? number
+---@param ... any
+function __WowWidget:UpdateMouseoverAtPoint(pointX, pointY, ...) end
 ---@param ... any
 function __WowWidget:UpdateScrollChildRect(...) end
 ---@param useCenter? boolean

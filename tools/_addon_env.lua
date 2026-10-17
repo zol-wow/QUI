@@ -119,7 +119,7 @@ function UnitFactionGroup()  return "Alliance"            end
 function GetLocale()         return _G.QUI_TEST_LOCALE or "enUS" end
 function GetCurrentRegion()  return 1                      end
 _G.GetCurrentRegionName = function() return "US" end
-_G.GetBuildInfo = function() return "12.1.5", "69848", "", 120105 end
+_G.GetBuildInfo = function() return "12.1.7", "70424", "", 120107 end
 
 -- Combat-secret APIs (12.0+).
 -- Default behavior is unchanged: nothing is secret. Tests can create
