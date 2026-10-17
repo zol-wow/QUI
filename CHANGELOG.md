@@ -4,6 +4,29 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta5 - 2026-10-17
+
+### Improved
+
+- Spell Reminders settings explain each control, list saved reminders clearly,
+  and resize to fit the selected reminder's options.
+- Spell Reminder previews keep their positions during refresh and can be moved
+  from the full Power Infusion recipient sample. Layout Mode opens the matching
+  reminder settings and updates mover bounds when icon sizes change.
+- Layout Mode offers a picker for overlapping movers, a settings gear, and a
+  compact settings window that fits its content. Position and size controls
+  keep enough space as sections resize.
+
+### Fixed
+
+- Reminder enable toggles update existing movers. Closing Layout Mode with the
+  master switch off preserves each reminder's saved enabled choice.
+- Entering combat from Layout Mode restores normal reminder cooldown output and
+  hides preview samples, while respecting hidden gameplay frames and anchors.
+- Reopening mover settings refreshes saved offsets and anchor selections.
+- Character window tabs and the close button remain usable when Character pane
+  enhancements are disabled.
+
 ## v5.5.2-beta4 - 2026-10-16
 
 ### Fixed
