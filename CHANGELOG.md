@@ -4,6 +4,15 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta8 - 2026-10-17
+
+### Fixed
+
+- Expanding group-frame aura settings now keeps Targeted Spells, Dispel, and
+  following sections below the editor instead of overlapping it.
+- Objective Tracker Max Height now uses the full configured height, allowing
+  more tracked quests and recipes to fit beyond Blizzard's original height.
+
 ## v5.5.2-beta7 - 2026-10-17
 
 ### Fixed
