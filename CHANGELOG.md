@@ -4,6 +4,31 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta11 - 2026-10-18
+
+### Improved
+
+- Settings use consistent sidebar section links on pages with three or more
+  available sections. Links follow the selected settings and jump directly to
+  their headings, including when switching action bars or opening a page for
+  the first time.
+- Reduced repeated action bar and aura setup during startup. Hidden Blizzard
+  panels defer skinning until first shown.
+
+### Fixed
+
+- Raid frames can display players joining previously empty allowed subgroups
+  during combat, with group labels following the visible frames.
+- Saved chat history loads before new login messages and default-chat backfill,
+  preserving message order.
+- Info Bar icons use native secure clicks in combat. Spellbook and Talents also
+  use native clicks outside combat to avoid secret-value cooldown errors;
+  on Retail, both follow Blizzard's remembered Player Spells tab.
+- First-show skinning no longer waits for combat to end, and font styling avoids
+  recursive font-object updates.
+- Reputation scans restore collapsed headers correctly, including headers that
+  share faction IDs.
+
 ## v5.5.2-beta10 - 2026-10-18
 
 ### Fixed
