@@ -4,6 +4,16 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta9 - 2026-10-17
+
+### Fixed
+
+- Objective Tracker quest and profession recipe text now uses the correct layout
+  height, preventing wrapped text and font changes from overlapping nearby items.
+- Objective Tracker restores Max Height immediately during refreshes, including
+  unrestricted combat updates, preventing extra objectives from briefly flashing
+  before they are hidden.
+
 ## v5.5.2-beta8 - 2026-10-17
 
 ### Fixed
