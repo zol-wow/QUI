@@ -12,7 +12,7 @@ local ApplyEnabled
 
 History._repumping = false
 
-local storeSubscribed = false
+local initialized = false
 
 local WHISPER_KEYS = I.WHISPER_TYPE_KEYS
 
@@ -151,33 +151,23 @@ end
 function ApplyEnabled()
 end
 
+function History.Initialize()
+    if initialized then return end
+    initialized = true
+    local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
+    if Storage and Storage.Init then Storage.Init() end
+    repump()
+    local MsgStore = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.MessageStore
+    if MsgStore and MsgStore.OnAppend then MsgStore.OnAppend(captureFromStore) end
+end
+
 local addonFrame = CreateFrame("Frame")
 addonFrame:RegisterEvent("ADDON_LOADED")
-addonFrame:RegisterEvent("PLAYER_LOGIN")
 addonFrame:RegisterEvent("PLAYER_LOGOUT")
 addonFrame:SetScript("OnEvent", function(self, event, name)
     if event == "ADDON_LOADED" and name == ADDON_NAME then
-        local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
-        if Storage and Storage.Init then Storage.Init() end
-        if not storeSubscribed then
-            local MsgStore = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.MessageStore
-            if MsgStore and MsgStore.OnAppend then
-                storeSubscribed = true
-                MsgStore.OnAppend(captureFromStore)
-            end
-        end
+        History.Initialize()
         self:UnregisterEvent("ADDON_LOADED")
-    elseif event == "PLAYER_LOGIN" then
-        local Storage = ns.QUI and ns.QUI.Chat and ns.QUI.Chat.HistoryStorage
-        if Storage and Storage.MigrateFromAceDB then
-            Storage.MigrateFromAceDB()
-        end
-        if C_Timer and C_Timer.After then
-            C_Timer.After(0.1, repump)
-        else
-            repump()
-        end
-        self:UnregisterEvent("PLAYER_LOGIN")
     elseif event == "PLAYER_LOGOUT" then
         pruneAndPersist()
     end

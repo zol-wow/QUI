@@ -451,11 +451,25 @@ local function SkinStandardFrame(frame, settingKey)
     SkinBase.MarkSkinned(frame)
 end
 
+local function SkinStandardFrameWhenShown(frame, settingKey)
+    if not frame or not IsSettingEnabled(settingKey) or SkinBase.IsSkinned(frame) then return end
+    local callback = SkinBase.GetFrameData(frame, "qDeferredStandardSkin")
+    if not callback then
+        callback = function() SkinStandardFrame(frame, settingKey) end
+        SkinBase.SetFrameData(frame, "qDeferredStandardSkin", callback)
+    end
+    if not SkinBase.DeferUntilShown(frame, callback) then callback() end
+end
+
 local function register(key, getFrame)
     if ns.Registry then
         ns.Registry:Register(key, {
             refresh = function()
                 local frame = getFrame()
+                if not SkinBase.IsSkinned(frame) and key ~= "skinSocket" and key ~= "skinItemUpgrade" then
+                    SkinStandardFrameWhenShown(frame, key == "skinPetition" and "skinGuildRegistrar" or key)
+                    return
+                end
                 SkinBase.RefreshFrameBackdropColors(frame)
                 if SkinBase.IsSkinned(frame) then
                     if key == "skinSocket" then StyleSocketingFrame(frame)
@@ -1414,11 +1428,11 @@ end
 SkinBase.OnAddOnLoaded("Blizzard_StableUI", SkinStable, 0)
 
 SkinBase.OnAddOnLoaded("Blizzard_UIPanels_Game", function()
-    SkinStandardFrame(_G.DressUpFrame, "skinDressUp")
-    SkinStandardFrame(_G.TradeFrame, "skinTrade")
-    SkinStandardFrame(_G.TabardFrame, "skinTabard")
-    SkinStandardFrame(_G.GuildRegistrarFrame, "skinGuildRegistrar")
-    SkinStandardFrame(_G.PetitionFrame, "skinGuildRegistrar")
+    SkinStandardFrameWhenShown(_G.DressUpFrame, "skinDressUp")
+    SkinStandardFrameWhenShown(_G.TradeFrame, "skinTrade")
+    SkinStandardFrameWhenShown(_G.TabardFrame, "skinTabard")
+    SkinStandardFrameWhenShown(_G.GuildRegistrarFrame, "skinGuildRegistrar")
+    SkinStandardFrameWhenShown(_G.PetitionFrame, "skinGuildRegistrar")
 end, 0)
 
 SkinBase.OnAddOnLoaded("Blizzard_ItemUpgradeUI", function()

@@ -306,6 +306,13 @@ local feature = Schema.Feature({
         subPageIndex = 2,
     },
     lookupKeys = LOOKUP_KEYS,
+    getNavigationSections = function()
+        GetPerBarBuilder()
+        local builders = ns.QUI_ActionBarsPerBarBuilders
+        if builders and builders.GetNavigationSections then
+            return builders.GetNavigationSections(ResolveInitialSelection())
+        end
+    end,
     onNavigate = function(lookupKey)
         SelectBarForNavigation(lookupKey, "lookup-nav")
     end,

@@ -669,6 +669,7 @@ local function SkinWorldMap()
     if not IsSettingEnabled("skinWorldMap") then return end
     local frame = _G.WorldMapFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
+    if SkinBase.DeferUntilShown(frame, SkinWorldMap) then return end
 
     if frame.BorderFrame then
         SkinBase.SkinButtonFrameTemplate(frame.BorderFrame)
@@ -685,8 +686,13 @@ local function SkinWorldMap()
 end
 
 local function RefreshWorldMap()
+    if not IsSettingEnabled("skinWorldMap") then return end
     local frame = _G.WorldMapFrame
-    if not frame or not SkinBase.IsSkinned(frame) then return end
+    if not frame then return end
+    if not SkinBase.IsSkinned(frame) then
+        SkinWorldMap()
+        return
+    end
     if frame.BorderFrame then
         ApplyBorderBackdrop(SkinBase.GetBackdrop(frame.BorderFrame))
     end

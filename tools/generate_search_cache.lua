@@ -150,7 +150,15 @@ end
 local function should_load_script(path)
     path = normalize_path(path)
 
-    if path == "QUI_Reminders/spell_reminders/model.lua" or path == "QUI_Reminders/spell_reminders/catalog.lua" then
+    if path == "QUI_ActionBars/actionbars/actionbars_env.lua"
+        or path == "QUI_ActionBars/actionbars/actionbars.lua"
+        or path == "QUI_ActionBars/actionbars/actionbars_helpers.lua"
+        or path == "QUI_ActionBars/actionbars/actionbars_per_bar_builders.lua" then
+        return true
+    end
+
+    if path == "QUI_CDM/cdm/cdm_shared.lua"
+        or path == "QUI_Reminders/spell_reminders/model.lua" or path == "QUI_Reminders/spell_reminders/catalog.lua" then
         return true
     end
 
@@ -375,6 +383,7 @@ local function create_stub_node(kind, parent, is_region)
 
     return setmetatable(node, {
         __index = function(self, key)
+            if key == "RegisterSection" then return nil end
             if key == "GetChildren" then
                 return function(frame) return unpack(frame._children or {}) end
             end
@@ -1108,6 +1117,8 @@ local scripts = {}
 local script_xml_seen = {}
 collect_scripts_from_toc("QUI.toc", scripts, script_xml_seen)
 collect_scripts_from_toc("QUI_Reminders/QUI_Reminders.toc", scripts, script_xml_seen)
+collect_scripts_from_toc("QUI_ActionBars/QUI_ActionBars.toc", scripts, script_xml_seen)
+collect_scripts_from_toc("QUI_CDM/QUI_CDM.toc", scripts, script_xml_seen)
 collect_qui_options_scripts(scripts, script_xml_seen)
 
 local failures = {}
@@ -1409,6 +1420,7 @@ local function emit_tile_search_aliases(tile_config)
 end
 
 local seen_capture_setting_identities = {}
+local capturing_navigation_only
 
 local row_identity = assert(loadfile("tools/lib/search_row_identity.lua"),
     "tools/lib/search_row_identity.lua not found (run from the repository root)")()
@@ -1434,6 +1446,7 @@ local function claim_capture_setting_identity(label, widget_descriptor, context)
 end
 
 local function register_capture_setting_entry(entry)
+    if capturing_navigation_only then return nil end
     local context = GUI._searchContext or {}
     if type(entry) ~= "table" or type(entry.label) ~= "string" or entry.label == "" then
         return nil
@@ -1597,6 +1610,7 @@ end
 
 local function install_search_capture_overrides()
     GUI.RegisterSearchNavigation = function(self, navType, info)
+        if capturing_navigation_only then return nil end
         if type(info) ~= "table" then
             return nil
         end
@@ -1915,35 +1929,89 @@ end
 -- Runtime menus consume this catalog without constructing settings controls.
 local navigation_catalog = {}
 local capturing_navigation_feature
+local capturing_navigation_descriptor
 local function NavigationRecord()
-    if not capturing_navigation_feature then return end
-    local record = navigation_catalog[capturing_navigation_feature]
+    local featureId = capturing_navigation_feature or (GUI._searchContext and GUI._searchContext.featureId)
+    if not featureId then return end
+    local record = navigation_catalog[featureId]
     if not record then
         record = { sections = {}, tabs = {} }
-        navigation_catalog[capturing_navigation_feature] = record
+        navigation_catalog[featureId] = record
     end
     return record
 end
+local function CaptureNavigationSection(text)
+    local record = NavigationRecord()
+    if record and type(text) == "string" and text ~= "" then
+        local sections = record.sections
+        local tabKey = GUI._searchContext and GUI._searchContext.surfaceTabKey
+        if not tabKey and capturing_navigation_descriptor and capturing_navigation_descriptor.getActiveTab then
+            tabKey = capturing_navigation_descriptor.getActiveTab()
+        end
+        for _, tab in ipairs(record.tabs) do
+            if tab.key == tabKey then sections = tab.sections; break end
+        end
+        local section
+        for _, existing in ipairs(sections) do if existing.id == text then section = existing; break end end
+        if not section then
+            section = { id = text, label = text, contexts = {} }
+            sections[#sections + 1] = section
+        end
+        local context = GUI._searchContext or {}
+        local providerKey = context.providerKey
+        if context.featureId == "cooldownManagerContainersPage" then
+            providerKey = ns.QUI_CooldownManagerSettingsModel.GetNavigationContext(providerKey).providerKey
+        end
+        local found = false
+        for _, existing in ipairs(section.contexts) do
+            if existing.providerKey == providerKey and existing.surfaceUnitKey == context.surfaceUnitKey
+                and existing.surfaceTypeKey == context.surfaceTypeKey then
+                found = true
+                break
+            end
+        end
+        if not found then
+            local order
+            if context.featureId == "cooldownManagerContainersPage" then
+                order = 1
+                for _, other in ipairs(sections) do
+                    for _, variant in ipairs(other.contexts) do
+                        if variant.providerKey == providerKey and variant.surfaceUnitKey == context.surfaceUnitKey
+                            and variant.surfaceTypeKey == context.surfaceTypeKey then
+                            order = math.max(order, (variant.order or 0) + 1)
+                        end
+                    end
+                end
+            end
+            section.contexts[#section.contexts + 1] = {
+                providerKey = providerKey,
+                surfaceUnitKey = context.surfaceUnitKey,
+                surfaceTypeKey = context.surfaceTypeKey,
+                order = order,
+            }
+        end
+    end
+end
 local original_accent_label = ns.QUI_Options.CreateAccentDotLabel
 ns.QUI_Options.CreateAccentDotLabel = function(parent, text, offset, skip)
-    local record = not skip and NavigationRecord()
-    if record and type(text) == "string" and text ~= "" then
-        local found = false
-        for _, section in ipairs(record.sections) do if section.id == text then found = true; break end end
-        if not found then record.sections[#record.sections + 1] = { id = text, label = text } end
-    end
+    if not skip then CaptureNavigationSection(text) end
     return original_accent_label(parent, text, offset, skip)
 end
 local original_surface_pages = GUI.RegisterTileSurfacePages
 GUI.RegisterTileSurfacePages = function(self, body, descriptor)
     local record = NavigationRecord()
     if record and type(descriptor.getTabs) == "function" then
-        record.tabs = {}
+        capturing_navigation_descriptor = descriptor
         for _, tab in ipairs(descriptor.getTabs() or {}) do
             if type(tab.key) == "string" and type(tab.label) == "string" then
-                record.tabs[#record.tabs + 1] = { key = tab.key, label = tab.label }
+                local found = false
+                for _, existing in ipairs(record.tabs) do if existing.key == tab.key then found = true; break end end
+                if not found then
+                    record.tabs[#record.tabs + 1] = { key = tab.key, label = tab.label, sections = {} }
+                end
             end
         end
+        return true
     end
     return original_surface_pages(self, body, descriptor)
 end
@@ -1961,9 +2029,17 @@ local function capture_search_feature(feature)
 
     local original_after = C_Timer and C_Timer.After or nil
     local original_new_timer = C_Timer and C_Timer.NewTimer or nil
+    local layout = ns.QUI_LayoutMode_Utils
+    local original_collapsible = layout.CreateCollapsible
     local context = build_feature_search_context(feature)
     local host = create_stub_node("Frame", nil, false)
     host:SetSize(760, 1)
+    host.RegisterSection = function(_, _, label) CaptureNavigationSection(label) end
+    if feature.id:match("^actionBars") then
+        layout.CreateCollapsible = function(parent, title, height, _, sections, relayout)
+            return original_collapsible(parent, title, height, function() end, sections, relayout)
+        end
+    end
 
     if C_Timer then
         C_Timer.After = function()
@@ -1988,10 +2064,19 @@ local function capture_search_feature(feature)
             includePosition = true,
             providerKey = feature.providerKey,
         })
+        local descriptor = capturing_navigation_descriptor
+        if descriptor and type(descriptor.selectTab) == "function" then
+            for _, tab in ipairs(descriptor.getTabs() or {}) do
+                GUI:SetSearchContext(context)
+                descriptor.selectTab(tab.key)
+            end
+        end
         GUI:ClearSearchContext()
     end, debug.traceback)
     capturing_navigation_feature = nil
+    capturing_navigation_descriptor = nil
     GUI:ClearSearchContext()
+    layout.CreateCollapsible = original_collapsible
 
     if C_Timer then
         C_Timer.After = original_after
@@ -2088,6 +2173,48 @@ local function capture_cdm_settings_tabs()
     end
 
     return #capture_errors == 0
+end
+
+local function capture_custom_cdm_navigation()
+    local containers = profile_db.ncdm.containers
+    local key = "__navigation_sample"
+    local previous = rawget(containers, key)
+    local tabs = {
+        { key = "layout", method = "RenderLayoutTab" },
+        { key = "filters", method = "RenderFiltersTab" },
+        { key = "perspec", method = "RenderPerSpecTab" },
+        { key = "effects", method = "RenderEffectsTab" },
+        { key = "keybinds", method = "RenderKeybindsTab" },
+    }
+    capturing_navigation_only = true
+    for _, kind in ipairs({ "cooldown", "customBar", "aura", "auraBar" }) do
+        for _, shape in ipairs({ "icon", "bar" }) do
+            local base = kind == "aura" and "buff" or (kind == "auraBar" and "trackedBar" or "essential")
+            local db = ns.Helpers.DeepCopy(ns.defaults.profile.ncdm[base])
+            db.containerType, db.shape, db.builtIn = kind, shape, false
+            containers[key] = db
+            for _, tab in ipairs(tabs) do
+                local host = create_stub_node("Frame", nil, false)
+                host:SetSize(760, 1)
+                GUI:SetSearchContext({
+                    featureId = "cooldownManagerContainersPage", providerKey = key,
+                    surfaceTabKey = tab.key,
+                })
+                local ok, err = xpcall(function()
+                    ns.QUI_CooldownManagerSettingsSchema[tab.method](host, key)
+                end, debug.traceback)
+                if not ok then
+                    capture_errors[#capture_errors + 1] = {
+                        featureId = "cooldownManagerContainersPage", providerKey = kind .. ":" .. shape .. ":" .. tab.key,
+                        error = err,
+                    }
+                end
+                GUI:ClearSearchContext()
+            end
+        end
+    end
+    containers[key] = previous
+    capturing_navigation_only = nil
 end
 
 local GROUP_FRAMES_SEARCH_CAPTURE_CONTEXTS = {
@@ -3098,6 +3225,7 @@ do
     ns.Client = originalClient
 end
 capture_cdm_settings_tabs()
+capture_custom_cdm_navigation()
 capture_group_frames_settings_tabs()
 capture_group_frames_auras_elements()
 capture_unit_frames_settings_tabs()
@@ -3114,7 +3242,13 @@ if ns.SpellReminderOptions then
         subTabName = "Spell Reminders", featureId = "spellRemindersPage", category = "gameplay" })
     local host = create_stub_node("Frame", nil, false)
     host:SetSize(760, 1)
+    if ns.SpellReminderOptions.GetTabs then
+        GUI:RegisterTileSurfacePages(host, {
+            getTabs = function() return ns.SpellReminderOptions.GetTabs({ pi = true }) end,
+        })
+    end
     ns.SpellReminderOptions.CaptureSearch(host)
+    capturing_navigation_descriptor = nil
     GUI:ClearSearchContext()
 end
 

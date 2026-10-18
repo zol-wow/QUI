@@ -21,14 +21,16 @@ function Fallback.Apply()
     lastAppliedCustom = active
 
     if active then
+        local StoreMod = ns.QUI.Chat.MessageStore
+        local shouldBackfill = entering and StoreMod and StoreMod.Size and StoreMod.Size() == 0
+        local History = ns.QUI.Chat.History
+        if History and History.Initialize then History.Initialize() end
         Capture.Setup()
         Display.EnsureCreated()
         Display.Refresh()
         Display.Show()
         if entering then
-            local StoreMod = ns.QUI.Chat.MessageStore
-            if StoreMod and StoreMod.Size and StoreMod.Size() == 0
-                and Capture.BackfillFromDefaultFrame then
+            if shouldBackfill and Capture.BackfillFromDefaultFrame then
                 Capture.BackfillFromDefaultFrame()
             end
             if TabManager and TabManager.ReapplyAll then
