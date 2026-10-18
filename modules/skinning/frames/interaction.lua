@@ -270,6 +270,7 @@ local function SkinBank()
     if not IsSettingEnabled("skinBank") then return end
     local frame = _G.BankFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
+    if SkinBase.DeferUntilShown(frame, SkinBank) then return end
     SkinBase.SkinWindow(frame, { depth = 6 })
     SkinBankContents(frame)
     frame:HookScript("OnShow", SkinBankContents)
@@ -277,8 +278,11 @@ local function SkinBank()
 end
 
 local function RefreshBank()
-    RefreshBackdropColors(_G.BankFrame)
-    SkinBankContents(_G.BankFrame)
+    local frame = _G.BankFrame
+    if not frame or not IsSettingEnabled("skinBank") then return end
+    if not SkinBase.IsSkinned(frame) then SkinBank(); return end
+    RefreshBackdropColors(frame)
+    SkinBankContents(frame)
 end
 _G.QUI_RefreshBankColors = RefreshBank
 if ns.Registry then
@@ -411,6 +415,7 @@ local function SkinMerchant()
     if not IsSettingEnabled("skinMerchant") then return end
     local frame = _G.MerchantFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
+    if SkinBase.DeferUntilShown(frame, SkinMerchant) then return end
     SkinBase.SkinWindow(frame, { tabs = SkinBase.CollectNumberedTabs("MerchantFrame", 2) })
     SkinBase.SkinDropdown(frame.FilterDropdown, { skinArrow = true })
     if _G.MerchantPrevPageButton then SkinBase.SkinNextPrevButton(_G.MerchantPrevPageButton, "prev") end
@@ -425,8 +430,11 @@ local function SkinMerchant()
 end
 
 local function RefreshMerchant()
-    RefreshBackdropColors(_G.MerchantFrame)
-    SkinMerchantContents(_G.MerchantFrame)
+    local frame = _G.MerchantFrame
+    if not frame or not IsSettingEnabled("skinMerchant") then return end
+    if not SkinBase.IsSkinned(frame) then SkinMerchant(); return end
+    RefreshBackdropColors(frame)
+    SkinMerchantContents(frame)
 end
 _G.QUI_RefreshMerchantColors = RefreshMerchant
 if ns.Registry then
@@ -531,6 +539,7 @@ local function SkinGossip()
     if not IsSettingEnabled("skinGossip") then return end
     local frame = _G.GossipFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
+    if SkinBase.DeferUntilShown(frame, SkinGossip) then return end
     SkinBase.SkinWindow(frame)
     local greeting = frame.GreetingPanel
     if greeting then
@@ -558,8 +567,10 @@ end
 
 local function RefreshGossip()
     local frame = _G.GossipFrame
+    if not frame or not IsSettingEnabled("skinGossip") then return end
+    if not SkinBase.IsSkinned(frame) then SkinGossip(); return end
     RefreshBackdropColors(frame)
-    if SkinBase.IsSkinned(frame) then SkinGossipContents(frame) end
+    SkinGossipContents(frame)
 end
 if ns.Registry then
     ns.Registry:Register("skinGossip", {
@@ -915,6 +926,7 @@ local function SkinQuest()
     if not IsSettingEnabled("skinQuest") then return end
     local frame = _G.QuestFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
+    if SkinBase.DeferUntilShown(frame, SkinQuest) then return end
     SkinBase.SkinWindow(frame, { depth = 5, noButtonFonts = true })
     for _, name in ipairs({ "QuestFrameCompleteQuestButton", "QuestFrameGoodbyeButton", "QuestFrameCompleteButton",
         "QuestFrameDeclineButton", "QuestFrameAcceptButton", "QuestFrameGreetingGoodbyeButton" }) do
@@ -946,8 +958,11 @@ local function SkinQuest()
 end
 
 local function RefreshQuest()
-    RefreshBackdropColors(_G.QuestFrame)
-    if SkinBase.IsSkinned(_G.QuestFrame) then SkinQuestContents() end
+    local frame = _G.QuestFrame
+    if not frame or not IsSettingEnabled("skinQuest") then return end
+    if not SkinBase.IsSkinned(frame) then SkinQuest(); return end
+    RefreshBackdropColors(frame)
+    SkinQuestContents()
 end
 if ns.Registry then
     ns.Registry:Register("skinQuest", {
@@ -1327,13 +1342,21 @@ if ns.Registry then
     })
 end
 
+local function SkinEquipmentIconSelector()
+    if not IsSettingEnabled("skinCharacterFrame") then return end
+    local frame = _G.GearManagerPopupFrame
+    if not frame then return end
+    if SkinBase.DeferUntilShown(frame, SkinEquipmentIconSelector) then return end
+    SkinIconSelectorPopup(frame, "skinCharacterFrame")
+end
+
 SkinBase.OnAddOnLoaded("Blizzard_UIPanels_Game", function()
     if ns.Client and ns.Client.isForever then HookMerchantStackSplit() end
     SkinBank()
     SkinMerchant()
     SkinGossip()
     SkinQuest()
-    SkinIconSelectorPopup(_G.GearManagerPopupFrame, "skinCharacterFrame")
+    SkinEquipmentIconSelector()
 end, 0)
 
 SkinBase.OnAddOnLoaded("Blizzard_GuildBankUI", SkinGuildBank, 0)

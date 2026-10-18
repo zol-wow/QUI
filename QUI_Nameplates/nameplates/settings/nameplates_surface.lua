@@ -523,6 +523,9 @@ local function RepaintActiveTab()
 end
 
 ns.QUI_NameplatesSettingsSurface = {
+    GetNavigationContext = function()
+        return { surfaceTypeKey = NormalizeTypeKey(State.selectedType) }
+    end,
     SetActiveTab = SetActiveTab,
     SetSelectedType = SetSelectedType,
     GetSelectedType = GetSelectedType,

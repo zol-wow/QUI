@@ -2519,9 +2519,10 @@ local function GetMultiHeaderTotalSize()
 
     local totalW, totalH = 0, 0
     local visibleCount = 0
+    local populated = not _state.UseRaidNameListSections(GetSettings(), layout) and _state.GetPopulatedRaidGroups() or nil
 
-    for _, header in ipairs(QUI_GF.raidGroupHeaders) do
-        if header and header:IsShown() then
+    for g, header in ipairs(QUI_GF.raidGroupHeaders) do
+        if header and header:IsShown() and (not populated or populated[g]) then
             local hW = Helpers.SafeValue(header:GetWidth(), 1)
             local hH = Helpers.SafeValue(header:GetHeight(), 1)
             visibleCount = visibleCount + 1
@@ -2571,7 +2572,7 @@ local function UpdateAnchorFrames()
         local mW, mH = GetMultiHeaderTotalSize()
         local anyVisible = mW > 1 or mH > 1
 
-        if not anyVisible then
+        if not anyVisible and _state.UseRaidNameListSections(db, GetLayoutSettings(true)) then
             root:ClearAllPoints()
             root:Hide()
             local applyAnchor = _G.QUI_ApplyFrameAnchor
@@ -2997,6 +2998,7 @@ function _state.UpdateRaidGroupLabel(header, g, layout)
     local show = s and s.showGroupNumber == true and groupedByGroup and header:IsShown()
 
     local lbl = header._quiGroupLabel
+    if lbl then lbl._quiEnabled = show end
     if not show then
         if lbl then lbl:Hide() end
         return
@@ -3007,6 +3009,14 @@ function _state.UpdateRaidGroupLabel(header, g, layout)
         lbl:SetAllPoints(header)
         lbl.text = lbl:CreateFontString(nil, "OVERLAY")
         header._quiGroupLabel = lbl
+        lbl._quiEnabled = true
+        local child = header:GetAttribute("child1")
+        if child then
+            child:HookScript("OnShow", function()
+                if lbl._quiEnabled then lbl:Show() end
+            end)
+            child:HookScript("OnHide", function() lbl:Hide() end)
+        end
     end
     lbl:SetFrameLevel(header:GetFrameLevel() + 10)
 
@@ -3034,7 +3044,8 @@ function _state.UpdateRaidGroupLabel(header, g, layout)
     lbl.text:SetPoint(selfPoint, lbl, blockPoint,
         tonumber(s.groupNumberOffsetX) or 0, tonumber(s.groupNumberOffsetY) or 0)
 
-    lbl:Show()
+    local child = header:GetAttribute("child1")
+    lbl:SetShown(child and child:IsShown())
     lbl.text:Show()
 end
 
@@ -3059,8 +3070,19 @@ local function PositionRaidGroupHeaders()
     local raidRoot = QUI_GF.anchorFrames.raid
     local prevHeader = nil
 
-    for g, header in ipairs(QUI_GF.raidGroupHeaders) do
-        if header and header:IsShown() then
+    local populated = not _state.UseRaidNameListSections(GetSettings(), layout) and _state.GetPopulatedRaidGroups() or nil
+    local orderedHeaders = {}
+    for pass = 1, 2 do
+        for g, header in ipairs(QUI_GF.raidGroupHeaders) do
+            local hasMembers = not populated or populated[g] ~= nil
+            if (pass == 1) == hasMembers then
+                orderedHeaders[#orderedHeaders + 1] = header
+            end
+        end
+    end
+
+    for _, header in ipairs(orderedHeaders) do
+        if header:IsShown() then
             header:ClearAllPoints()
 
             if not prevHeader then
@@ -3127,7 +3149,7 @@ local function PositionRaidGroupHeaders()
 
             prevHeader = header
         end
-        _state.UpdateRaidGroupLabel(header, g, layout)
+        _state.UpdateRaidGroupLabel(header, header._raidGroupIndex, layout)
     end
 end
 
@@ -3506,7 +3528,7 @@ function QUI_GF:RecreateSpotlightHeader()
     CreateSpotlightHeader()
 end
 
-local function GetPopulatedRaidGroups()
+_state.GetPopulatedRaidGroups = function()
     local layout = GetLayoutSettings(true)
     local populated = {}
     for i = 1, GetNumGroupMembers() do
@@ -3806,7 +3828,7 @@ local function UpdateHeaderSizes()
         local raidVdb = db.raid or db
         local layout = raidVdb and raidVdb.layout
         local sections = _state.UseRaidNameListSections(db, layout) and GetRaidDisplaySections() or nil
-        local populated = sections and nil or GetPopulatedRaidGroups()
+        local populated = sections and nil or _state.GetPopulatedRaidGroups()
 
         for g, header in ipairs(QUI_GF.raidGroupHeaders) do
             if sections then
@@ -3817,8 +3839,8 @@ local function UpdateHeaderSizes()
                 else
                     header:SetSize(1, 1)
                 end
-            elseif g <= 8 and populated and populated[g] then
-                local hdrW, hdrH = CalculateRaidSectionHeaderSize(math_max(populated[g], 1), mode, layout)
+            elseif g <= 8 and _state.IsRaidSubgroupAllowed(g, layout) then
+                local hdrW, hdrH = CalculateRaidSectionHeaderSize(math_max(populated[g] or 0, 1), mode, layout)
                 header:SetSize(hdrW, hdrH)
             else
                 header:SetSize(1, 1)
@@ -3864,7 +3886,6 @@ local function ShowRaidGroupHeaders()
     local layout = GetLayoutSettings(true)
     local useNameListSections = _state.UseRaidNameListSections(db, layout)
     local sections = ConfigureRaidGroupHeaders()
-    local populated = useNameListSections and nil or GetPopulatedRaidGroups()
 
     for g, header in ipairs(QUI_GF.raidGroupHeaders) do
         if useNameListSections then
@@ -3873,7 +3894,7 @@ local function ShowRaidGroupHeaders()
             else
                 header:Hide()
             end
-        elseif g <= 8 and populated and populated[g] then
+        elseif g <= 8 and _state.IsRaidSubgroupAllowed(g, layout) then
             header:Show()
         else
             header:Hide()

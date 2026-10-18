@@ -1118,6 +1118,9 @@ local function BuildTileBody(body, _, _, feature)
 end
 
 ns.QUI_UnitFramesSettingsSurface = {
+    GetNavigationContext = function()
+        return { surfaceUnitKey = NormalizeUnitKey(State.selectedUnit) }
+    end,
     preview = {
         height = 180,
         build = BuildPreviewBlock,

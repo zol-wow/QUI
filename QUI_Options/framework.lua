@@ -6582,6 +6582,10 @@ local function StartSettingsPerformance()
 end
 
 local function installRegisterSection(targetBody)
+    if GUI.InitializeNavigationSections then
+        GUI:InitializeNavigationSections(targetBody)
+        return
+    end
     targetBody._sections = {}
     function targetBody:RegisterSection(id, label, frame)
         if type(id) ~= "string" or id == "" or not frame then return end

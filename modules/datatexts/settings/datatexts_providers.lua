@@ -253,6 +253,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
     ns.QUI_BuildCurrencyOrderSection = BuildCurrencyOrderSection
 
     local DATATEXT_MINIMAP_KEY = "__minimap"
+    local DEFAULT_MINIMAP_SLOTS = { "time", "friends", "guild" }
     local DatatextPanelState = {
         activePanel = DATATEXT_MINIMAP_KEY,
     }
@@ -261,7 +262,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         if not profile.datatext then profile.datatext = {} end
         local dt = profile.datatext
         if dt.enabled == nil then dt.enabled = true end
-        if not dt.slots then dt.slots = { "time", "friends", "guild" } end
+        if not dt.slots then dt.slots = { unpack(DEFAULT_MINIMAP_SLOTS) } end
         if not dt.slot1 then dt.slot1 = { shortLabel = false, noLabel = false, xOffset = 0, yOffset = 0 } end
         if not dt.slot2 then dt.slot2 = { shortLabel = false, noLabel = false, xOffset = 0, yOffset = 0 } end
         if not dt.slot3 then dt.slot3 = { shortLabel = false, noLabel = false, xOffset = 0, yOffset = 0 } end
@@ -696,6 +697,53 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         }
     end
 
+    local function NavigationContext(profile)
+        local store = profile.quiDatatexts
+        if DatatextPanelState.activePanel ~= DATATEXT_MINIMAP_KEY then
+            for _, panel in ipairs(store and store.panels or {}) do
+                if panel.id == DatatextPanelState.activePanel then
+                    return { numSlots = panel.numSlots or 3, slots = panel.slots }
+                end
+            end
+        end
+        local dt = profile.datatext
+        return { isMinimap = true, numSlots = 3, slots = dt and dt.slots or DEFAULT_MINIMAP_SLOTS }
+    end
+
+    local function NavigationSections(selected)
+        local sections, headings = {}, {}
+        local function Add(key, label)
+            headings[key] = label
+            sections[#sections + 1] = { id = label, label = label }
+        end
+        Add("selector", ns.L["Panel Selector"])
+        Add("panel", ns.L["Panel Settings"])
+        for index = 1, selected.numSlots do
+            local label = ns.L["Slot"] .. " " .. index
+            if selected.isMinimap then
+                label = label .. " (" .. (index == 1 and ns.L["Left"] or index == 2 and ns.L["Center"] or ns.L["Right"]) .. ")"
+            end
+            Add("slot" .. index, label)
+        end
+        Add("styling", ns.L["Text Styling"])
+        local enabled = {}
+        for index = 1, selected.numSlots do
+            local value = selected.slots and selected.slots[index]
+            if value then enabled[value] = true end
+        end
+        if enabled.playerspec then Add("spec", ns.L["Spec Display"]) end
+        if enabled.time then Add("time", ns.L["Time Options"]) end
+        if enabled.alts then Add("alts", ns.L["Alts Options"]) end
+        if enabled.currencies then Add("currencies", ns.L["Currencies"]) end
+        return sections, headings
+    end
+
+    local function GetNavigationSections()
+        local profile = U.GetProfileDB()
+        if not profile then return {} end
+        return NavigationSections(NavigationContext(profile))
+    end
+
     local function ApplyDatatextPreviewBackdrop(frame, bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
         if ns.SkinBase and ns.SkinBase.ApplyPixelBackdrop then
             ns.SkinBase.ApplyPixelBackdrop(frame, 1, true, false, { borderR, borderG, borderB, borderA }, { bgR, bgG, bgB, bgA })
@@ -889,24 +937,16 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         return preview
     end
 
-    RegisterSharedOnly("datatextPanel", { build = function(content, key, _width)
+    RegisterSharedOnly("datatextPanel", { getNavigationSections = GetNavigationSections, build = function(content, key, _width)
         local profile = U.GetProfileDB()
         if not profile or not ns.QUI_Options then return 80 end
 
         local QUICore = ns.Addon
         local dtGlobal = EnsureMinimapDatatextConfig(profile)
         local selected = GetSelectedDatatextContext(profile)
+        local _, headings = NavigationSections(selected)
         local dtOptions = GetDatatextOptions(QUICore)
         local preview
-
-        local function CountSlotsWithValue(slotList, numSlots, targetValue)
-            for i = 1, numSlots do
-                if slotList and slotList[i] == targetValue then
-                    return true
-                end
-            end
-            return false
-        end
 
         local function BuildSlotPreviewTexts()
             local texts = {}
@@ -958,7 +998,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         PlaceRegistryMissingNotice(L, content,
             ns.L["The Datatexts module addon is disabled — enable it under Modules to configure datatexts. The datatext dropdowns below are empty until it loads."])
 
-        L.headerAt(ns.L["Panel Selector"])
+        L.headerAt(headings.selector)
         local selectorRow = CreateFrame("Frame", nil, content)
         L.placeCustom(selectorRow, 30)
         local selectorState = { activePanel = selected.key }
@@ -1032,7 +1072,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         L.placeCustom(hintRow, 22)
 
         if selected.isMinimap then
-            L.headerAt(ns.L["Panel Settings"])
+            L.headerAt(headings.panel)
             local ps = L.sectionAt()
             local enW = GUI:CreateFormCheckbox(ps.frame, nil, "enabled", dtGlobal, RefreshAllDatatextSurfaces,
                 { description = ns.L["Show the datatext panel anchored below the minimap."] })
@@ -1062,10 +1102,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             for slotIdx = 1, 3 do
                 local slotKey = "slot" .. slotIdx
                 local slotData = dtGlobal[slotKey]
-                local slotLabel = ns.L["Slot"] .. " " .. slotIdx .. " ("
-                    .. (slotIdx == 1 and ns.L["Left"] or slotIdx == 2 and ns.L["Center"] or ns.L["Right"]) .. ")"
-
-                L.headerAt(slotLabel)
+                L.headerAt(headings[slotKey])
                 local sc = L.sectionAt()
 
                 local slotDD = GUI:CreateFormDropdown(sc.frame, nil, dtOptions, nil, nil, function(val)
@@ -1092,7 +1129,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         else
             RegisterCustomDatapanelRuntime(selected.panelDB, QUICore, profile)
 
-            L.headerAt(ns.L["Panel Settings"])
+            L.headerAt(headings.panel)
             local ps = L.sectionAt()
 
             local nameField = GUI:CreateFormEditBox(ps.frame, nil, "name", selected.panelDB, function()
@@ -1136,7 +1173,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
             for s = 1, selected.numSlots do
                 local slotSettings = selected.panelDB.slotSettings[s]
-                L.headerAt(ns.L["Slot"] .. " " .. s)
+                L.headerAt(headings["slot" .. s])
                 local sc = L.sectionAt()
 
                 local slotDD = GUI:CreateFormDropdown(sc.frame, nil, dtOptions, nil, nil, function(val)
@@ -1156,7 +1193,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             end
         end
 
-        L.headerAt(ns.L["Text Styling"])
+        L.headerAt(headings.styling)
         local ts = L.sectionAt()
         local useClassW = GUI:CreateFormCheckbox(ts.frame, nil, "useClassColor", dtGlobal, RefreshAllDatatextSurfaces,
             { description = ns.L["Color datatext values by your class instead of the custom swatch below."] })
@@ -1172,8 +1209,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         note:SetText(ns.L["Text Styling applies to every datatext panel."])
         L.placeCustom(noteRow, 18)
 
-        if CountSlotsWithValue(selected.slots, selected.numSlots, "playerspec") then
-            L.headerAt(ns.L["Spec Display"])
+        if headings.spec then
+            L.headerAt(headings.spec)
             local sp = L.sectionAt()
             local specOpts = {
                 { value = "icon", text = ns.L["Icon Only"] },
@@ -1186,8 +1223,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             L.closeSection(sp)
         end
 
-        if CountSlotsWithValue(selected.slots, selected.numSlots, "time") then
-            L.headerAt(ns.L["Time Options"])
+        if headings.time then
+            L.headerAt(headings.time)
             local tm = L.sectionAt()
             local fmtW = GUI:CreateFormDropdown(tm.frame, nil, {
                 { value = "local", text = ns.L["Local Time"] },
@@ -1207,8 +1244,8 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             L.closeSection(tm)
         end
 
-        if CountSlotsWithValue(selected.slots, selected.numSlots, "alts") then
-            L.headerAt(ns.L["Alts Options"])
+        if headings.alts then
+            L.headerAt(headings.alts)
             local al = L.sectionAt()
             local altOpts = {
                 { value = "gold", text = ns.L["Total Gold"] },
@@ -1220,9 +1257,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             L.closeSection(al)
         end
 
-        if CountSlotsWithValue(selected.slots, selected.numSlots, "currencies") then
+        if headings.currencies then
             BuildCurrencyOrderSection(L, content, {
                 dtGlobal = dtGlobal,
+                header = headings.currencies,
                 refresh = RefreshAllDatatextSurfaces,
                 notify = function(region) NotifyProviderFor(region, { structural = true }) end,
             })

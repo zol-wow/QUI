@@ -6,7 +6,6 @@ if not Datatexts then return end
 local max = math.max
 local ipairs = ipairs
 
-local PlayerSpellsUtil = _G.PlayerSpellsUtil
 local ToggleProfessionsBook = _G.ToggleProfessionsBook
 local ToggleQuestLog = _G.ToggleQuestLog
 local ToggleEncounterJournal = _G.ToggleEncounterJournal
@@ -37,47 +36,56 @@ end
 local BUTTONS = {
     {
         key = "character", label = ns.L["Character"], portrait = true,
+        combatClickButton = "CharacterMicroButton",
         onClick = function() ToggleCharacter("PaperDollFrame") end,
     },
     {
         key = "spellbook", label = ns.L["Spellbook"],
+        clickButton = isForever and "SpellbookMicroButton" or "PlayerSpellsMicroButton",
         icon = "Interface\\Spellbook\\Spellbook-Icon",
-        onClick = function() PlayerSpellsUtil.ToggleSpellBookFrame() end,
     },
     {
         key = "talents", label = ns.L["Talents"], atlas = "SpecTalents",
-        onClick = function() PlayerSpellsUtil.ToggleClassTalentOrSpecFrame() end,
+        clickButton = isForever and "TalentMicroButton" or "PlayerSpellsMicroButton",
     },
     {
         key = "professions", label = ns.L["Professions"], atlas = "Professions",
+        combatClickButton = "ProfessionMicroButton",
         onClick = function() ToggleProfessionsBook() end,
     },
     {
         key = "achievements", label = ns.L["Achievements"], atlas = "Achievements", forever = false,
+        combatClickButton = "AchievementMicroButton",
         onClick = function() ToggleAchievementFrame() end,
     },
     {
         key = "legacy", label = ns.L["Legacy"], atlas = "Legacy", forever = true,
+        combatClickButton = "LegacyMicroButton",
         onClick = function() _G.ToggleLegacySystemUI() end,
     },
     {
         key = "questlog", label = ns.L["Quest Log"], atlas = "Questlog",
+        combatClickButton = "QuestLogMicroButton",
         onClick = function() ToggleQuestLog() end,
     },
     {
         key = "collections", label = ns.L["Collections"], atlas = "Collections",
+        combatClickButton = "CollectionsMicroButton",
         onClick = function() ToggleCollectionsJournal() end,
     },
     {
         key = "lfg", label = ns.L["Group Finder"], atlas = "Groupfinder",
+        combatClickButton = "LFDMicroButton",
         onClick = function() (_G.ToggleGroupFinderFrame or _G.PVEFrame_ToggleFrame)() end,
     },
     {
         key = "adventureguide", label = ns.L["Adventure Guide"], atlas = "AdventureGuide",
+        combatClickButton = "EJMicroButton",
         onClick = function() ToggleEncounterJournal() end,
     },
     {
         key = "housing", label = ns.L["Housing"], atlas = "Housing",
+        combatClickButton = "HousingMicroButton",
         onClick = function()
             local u = _G.HousingFramesUtil
             if u and u.ToggleHousingDashboard then u.ToggleHousingDashboard() end
@@ -85,10 +93,12 @@ local BUTTONS = {
     },
     {
         key = "shop", label = ns.L["Shop"], atlas = "Shop",
+        combatClickButton = "StoreMicroButton",
         onClick = ToggleStore,
     },
     {
         key = "help", label = ns.L["Support"], atlas = "GameMenu",
+        combatClickButton = "HelpMicroButton",
         onClick = function() ToggleHelpFrame() end,
     },
 }
@@ -132,6 +142,8 @@ local function CreateIconButton(parent, def, size)
         tooltip = def.label,
         tooltipAnchor = "ANCHOR_BOTTOM",
         onClick = def.onClick,
+        clickButton = _G[def.clickButton],
+        combatClickButton = _G[def.combatClickButton],
         combatGuard = true,
         registerClicks = "AnyUp",
     }

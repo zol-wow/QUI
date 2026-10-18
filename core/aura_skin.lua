@@ -472,8 +472,15 @@ local function styleButton(button, profile)
     end
     styleText(button._quiDuration, profile.duration, profile.fontSize, "CENTER", 0, 0)
     if button.SetDurationText and button._quiDuration then
-        ns.SafeCall("sink-forward", button.SetDurationText, button, button._quiDuration,
-            AuraSkin.ResolveDurationTextOptions(button, profile))
+        local options = AuraSkin.ResolveDurationTextOptions(button, profile)
+        if button._quiDurationTextFontString ~= button._quiDuration
+            or button._quiDurationTextFormatter ~= options.textFormatter then
+            button._quiDurationTextFontString = nil
+            if ns.SafeCall("sink-forward", button.SetDurationText, button, button._quiDuration, options) then
+                button._quiDurationTextFontString = button._quiDuration
+                button._quiDurationTextFormatter = options.textFormatter
+            end
+        end
     end
     styleText(button._quiCount, profile.stack, profile.fontSize, "BOTTOMRIGHT", -1, 1)
     local caster = type(profile.casterName) == "table" and profile.casterName
@@ -735,6 +742,15 @@ function AuraSkin.SetGroupCandidateFilters(container, key, filters)
     CacheGroupCandidateFilters(container, key, filters)
 end
 
+local function GroupLayoutsMatch(a, b)
+    return a and a.elementSpacing == b.elementSpacing
+        and a.lineSpacing == b.lineSpacing
+        and a.elementWidth == b.elementWidth
+        and a.elementHeight == b.elementHeight
+        and a.layoutIndex == b.layoutIndex
+        and a.groupSpacing == b.groupSpacing
+end
+
 function AuraSkin.Configure(container, profile, groups)
     local L = ResolveLayout(profile)
     container._quiProfile = profile
@@ -754,6 +770,11 @@ function AuraSkin.Configure(container, profile, groups)
         groupProfiles = {}
         container._quiGroupProfiles = groupProfiles
     end
+    local groupConfigs = container._quiGroupConfigs
+    if not groupConfigs then
+        groupConfigs = {}
+        container._quiGroupConfigs = groupConfigs
+    end
     local wanted = {}
     local E = ResolveAuraElements()
     local canMutateFilter = container.SetAuraGroupFilterString ~= nil
@@ -770,14 +791,26 @@ function AuraSkin.Configure(container, profile, groups)
         local maxCount   = g.maxFrameCount or L.maxIcons
         local sortMethod = g.sortMethod or AuraContainerSortMethod.Default
         local sortDir    = g.sortDirection or AuraContainerSortDirection.Normal
+        local layout = GroupLayout(L, g)
+        local config = groupConfigs[key]
+        if not config then
+            config = {}
+            groupConfigs[key] = config
+        end
         if registered[key] or container:HasAuraGroup(key) then
             if canMutateFilter and registered[key] ~= filter then
                 container:SetAuraGroupFilterString(key, filter)
             end
             container:SetAuraGroupMaxFrameCount(key, maxCount)
-            container:SetAuraGroupSortMethod(key, sortMethod, sortDir)
+            if config.sortMethod ~= sortMethod or config.sortDirection ~= sortDir then
+                container:SetAuraGroupSortMethod(key, sortMethod, sortDir)
+                config.sortMethod, config.sortDirection = sortMethod, sortDir
+            end
             AuraSkin.SetGroupCandidateFilters(container, key, g.candidateFilters)
-            container:SetAuraGroupLayout(key, GroupLayout(L, g))
+            if not GroupLayoutsMatch(config.layout, layout) then
+                container:SetAuraGroupLayout(key, layout)
+                config.layout = layout
+            end
             registered[key] = filter
         else
             container:AddAuraGroup(key, filter, {
@@ -786,8 +819,9 @@ function AuraSkin.Configure(container, profile, groups)
                 sortDirection    = sortDir,
                 candidateFilters = g.candidateFilters,
                 initializeFrame  = MakeInitializer(container, g, key),
-                layout           = GroupLayout(L, g),
+                layout           = layout,
             })
+            config.sortMethod, config.sortDirection, config.layout = sortMethod, sortDir, layout
             CacheGroupCandidateFilters(container, key, g.candidateFilters)
             registered[key] = filter
         end

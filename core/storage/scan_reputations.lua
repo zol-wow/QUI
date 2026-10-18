@@ -57,21 +57,19 @@ end
 local function FullWalk(rec)
     local names = Storage.Store.GetFactionNames()
     local groups = Storage.Store.GetFactionGroups()
-    local collapsedIDs = {}
-    local i = 1
-    while i <= C_Reputation.GetNumFactions() do
-        local data = C_Reputation.GetFactionDataByIndex(i)
-        if data and data.isHeader and data.isCollapsed then
-            collapsedIDs[data.factionID] = true
-            C_Reputation.ExpandFactionHeader(i)
-        end
-        i = i + 1
-    end
+    local collapsedIndices = {}
     local fresh = {}
     local currentGroup = nil
-    for j = 1, C_Reputation.GetNumFactions() do
-        local data = C_Reputation.GetFactionDataByIndex(j)
+    local count = C_Reputation.GetNumFactions()
+    local i = 1
+    while i <= count do
+        local data = C_Reputation.GetFactionDataByIndex(i)
         if data then
+            if data.isHeader and data.isCollapsed then
+                collapsedIndices[#collapsedIndices + 1] = i
+                C_Reputation.ExpandFactionHeader(i)
+                count = C_Reputation.GetNumFactions()
+            end
             if data.isHeader and not data.isChild then
                 currentGroup = data.name
             end
@@ -82,12 +80,10 @@ local function FullWalk(rec)
                 if groups then groups[data.factionID] = currentGroup end
             end
         end
+        i = i + 1
     end
-    for j = C_Reputation.GetNumFactions(), 1, -1 do
-        local data = C_Reputation.GetFactionDataByIndex(j)
-        if data and data.isHeader and collapsedIDs[data.factionID] then
-            C_Reputation.CollapseFactionHeader(j)
-        end
+    for j = #collapsedIndices, 1, -1 do
+        C_Reputation.CollapseFactionHeader(collapsedIndices[j])
     end
     rec.reputations = fresh
 end
