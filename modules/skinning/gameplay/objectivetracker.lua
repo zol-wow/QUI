@@ -326,16 +326,11 @@ local function ApplyBlockSkinning(tracker, block)
     local settings = GetSettings()
     if not settings or not settings.skinObjectiveTracker then return end
 
-    local fontPath = GetFontPath()
-    local titleFontSize = settings.objectiveTrackerTitleFontSize or 10
-    local textFontSize = settings.objectiveTrackerTextFontSize or 10
-    local titleColor = settings.objectiveTrackerTitleColor
-    local textColor = settings.objectiveTrackerTextColor
-
     local itemButton = block.ItemButton or block.itemButton
     if itemButton then StyleQuestPOIIcon(itemButton) end
 
-    StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor)
+    EnsureBlockHighlightHook(block)
+    RestyleBlockAfterHighlight(block)
 end
 
 local trackerModules = {
@@ -1007,7 +1002,7 @@ local function ApplyQUIBackdrop(trackerFrame, sr, sg, sb, sa, bgr, bgg, bgb, bga
     UpdateBackdropAnchors()
 end
 
-local function ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, moduleColor, titleColor, textColor)
+local function ApplyFontStyles(moduleFontSize, moduleColor)
     local fontPath = GetFontPath()
 
     for _, trackerName in ipairs(trackerModules) do
@@ -1023,13 +1018,12 @@ local function ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, modu
             end
 
             if tracker.usedBlocks and not WIDGET_POOL_TRACKER_NAMES[trackerName] then
-                local fontChanged = false
                 for template, blocks in pairs(tracker.usedBlocks) do
                     for blockID, block in pairs(blocks) do
-                        fontChanged = StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor) or fontChanged
+                        EnsureBlockHighlightHook(block)
+                        RestyleBlockAfterHighlight(block)
                     end
                 end
-                if fontChanged and tracker.MarkDirty then tracker:MarkDirty() end
             end
         end
     end
@@ -1053,11 +1047,7 @@ RefreshTrackerContent = function()
 
     ApplyFontStyles(
         settings.objectiveTrackerModuleFontSize or 12,
-        settings.objectiveTrackerTitleFontSize or 10,
-        settings.objectiveTrackerTextFontSize or 10,
-        settings.objectiveTrackerModuleColor,
-        settings.objectiveTrackerTitleColor,
-        settings.objectiveTrackerTextColor
+        settings.objectiveTrackerModuleColor
     )
     StyleScenarioTrackerDetails()
     StyleScenarioHeaderWidgets()
