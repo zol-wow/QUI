@@ -4,6 +4,16 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta10 - 2026-10-18
+
+### Fixed
+
+- PlayerChoice windows, including the Codex, no longer grow taller on repeated
+  opens because of stale widget rows.
+- Objective Tracker appearance refreshes no longer request a shared Blizzard
+  tracker update. Font changes now wait for the next native layout, keeping
+  text sizes consistent with their measured spacing.
+
 ## v5.5.2-beta9 - 2026-10-17
 
 ### Fixed
