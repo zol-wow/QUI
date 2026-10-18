@@ -4,6 +4,48 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta9 - 2026-10-17
+
+### Fixed
+
+- Objective Tracker quest and profession recipe text now uses the correct layout
+  height, preventing wrapped text and font changes from overlapping nearby items.
+- Objective Tracker restores Max Height immediately during refreshes, including
+  unrestricted combat updates, preventing extra objectives from briefly flashing
+  before they are hidden.
+
+## v5.5.2-beta8 - 2026-10-17
+
+### Fixed
+
+- Expanding group-frame aura settings now keeps Targeted Spells, Dispel, and
+  following sections below the editor instead of overlapping it.
+- Objective Tracker Max Height now uses the full configured height, allowing
+  more tracked quests and recipes to fit beyond Blizzard's original height.
+
+## v5.5.2-beta7 - 2026-10-17
+
+### Fixed
+
+- Settings pages no longer flash or fade when switching modules or subpages.
+  Navigation flyouts retain their entrance animation.
+- Paging arrows use native images so fonts without triangle symbols no longer
+  display missing-character boxes, including on vendor page buttons.
+
+## v5.5.2-beta6 - 2026-10-17
+
+### Fixed
+
+- Character and Inspect windows now recognize permanent glove enchants and show
+  the missing-enchant marker when gloves have no enchant applied.
+- Options navigation keeps its full scrolling area when the window is resized,
+  including when layout updates briefly report a zero-height content area.
+- World Map quest and campaign headers retain readable title and progress text
+  after native updates, with campaign backgrounds below the text and spacing
+  beneath the next objective.
+- Objective Tracker collapse buttons keep their QUI plus/minus glyphs without
+  native artwork reappearing behind them.
+
 ## v5.5.2-beta5 - 2026-10-17
 
 ### Improved

@@ -42,14 +42,14 @@ end
 function GUI:AnimateOptionsPage(page)
     if not page then return end
     self:StopOptionsPageAnimation(page)
-    if not self:IsOptionsMotionEnabled() or not UIKit.AnimateValue then return end
     local anchor = page._optionsEntranceAnchor
+    if not anchor or not self:IsOptionsMotionEnabled() or not UIKit.AnimateValue then return end
     UIKit.AnimateValue(page, "options-page", {
-        fromValue = 0, toValue = 1, duration = anchor and 0.13 or 0.15,
+        fromValue = 0, toValue = 1, duration = 0.13,
         onUpdate = function(owner, _, progress)
             local eased = 1 - (1 - progress) ^ 3
             owner:SetAlpha(0.25 + 0.75 * eased)
-            if anchor then owner:SetPoint("TOPLEFT", anchor.relativeTo, "TOPRIGHT", anchor.x, anchor.y - 3 * (1 - eased)) end
+            owner:SetPoint("TOPLEFT", anchor.relativeTo, "TOPRIGHT", anchor.x, anchor.y - 3 * (1 - eased))
         end,
     })
 end
@@ -432,9 +432,10 @@ local function CreateFlyout(frame, docked)
         end,
     })
     local scroll = CreateFrame("ScrollFrame", nil, flyout)
+    -- Follow the resolved panel bounds. Sampling contentArea height while
+    -- resize callbacks rebuild its anchors can freeze this viewport at 1.
     scroll:SetPoint("TOPLEFT", 6, -56)
-    scroll:SetPoint("TOPRIGHT", -12, -56)
-    scroll:SetHeight(1)
+    scroll:SetPoint("BOTTOMRIGHT", -12, 7)
     local inner = CreateFrame("Frame", nil, scroll)
     inner:SetWidth(250)
     inner:SetHeight(1)
@@ -568,7 +569,6 @@ function GUI:OpenNavigationFlyout(frame, tile, pinned, keyboard)
     flyout._inner:SetHeight(math.max(1, flyout._contentHeight))
     local height = math.min(63 + flyout._contentHeight, math.max(100, frame:GetHeight() - 65))
     flyout:SetHeight(height)
-    flyout._scroll:SetHeight(math.max(1, height - 63))
     local top = math.max(42, math.min((frame:GetTop() or 0) - (tile:GetTop() or 0), frame:GetHeight() - height - 10))
     flyout:ClearAllPoints()
     local y = (frame:GetTop() or 0) - (frame.sidebar:GetTop() or 0) - top
@@ -633,7 +633,6 @@ function GUI:RefreshNavigationDock(frame)
         dock:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 5, -44)
         dock:SetPoint("BOTTOMLEFT", frame.contentArea, "BOTTOMLEFT", -196, 0)
         dock:SetWidth(184)
-        dock._scroll:SetHeight(math.max(1, frame.contentArea:GetHeight() - 63))
         RenderPages(frame, dock, tile, pages)
         dock:Show()
         if dock._scrollbar and dock._scrollbar.Update then dock._scrollbar:Update() end

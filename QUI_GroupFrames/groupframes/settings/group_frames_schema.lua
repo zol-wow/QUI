@@ -225,7 +225,7 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
 
     local y = 0
     local builder = {}
-    local cards = {}
+    local measuredFrames = {}
     sectionHost._quiMeasureSettingsHeight = nil
 
     function builder.Header(text)
@@ -273,11 +273,14 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
 
     function builder.CloseCard(card)
         local height = card.Finalize() or card.frame:GetHeight()
-        cards[#cards + 1] = {frame = card.frame, height = height}
+        measuredFrames[#measuredFrames + 1] = {frame = card.frame, height = height}
         y = y - height
     end
 
-    function builder.Spacer(amount)
+    function builder.Spacer(amount, frame)
+        if frame then
+            measuredFrames[#measuredFrames + 1] = {frame = frame, height = amount}
+        end
         y = y - (amount or 10)
     end
 
@@ -285,8 +288,8 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
         local height = math.abs(y) + (extra or SECTION_BOTTOM_PAD)
         sectionHost._quiMeasureSettingsHeight = function()
             local settledHeight = height
-            for _, card in ipairs(cards) do
-                settledHeight = settledHeight + (card.frame._quiMeasuredHeight or card.frame:GetHeight()) - card.height
+            for _, measured in ipairs(measuredFrames) do
+                settledHeight = settledHeight + (measured.frame._quiMeasuredHeight or measured.frame:GetHeight()) - measured.height
             end
             return settledHeight
         end
@@ -345,13 +348,13 @@ local function RenderEmbeddedEditorSection(sectionHost, builder, render, options
 
     local topOffset = GetBuilderCursorY(builder)
     if FullSurface and type(FullSurface.RenderEmbeddedEditor) == "function" then
-        local height = FullSurface.RenderEmbeddedEditor(sectionHost, {
+        local height, editorHost = FullSurface.RenderEmbeddedEditor(sectionHost, {
             topOffset = topOffset,
             minHeight = options and options.minHeight or 1,
             render = render,
         })
         height = type(height) == "number" and height or 1
-        builder.Spacer(height)
+        builder.Spacer(height, editorHost)
         return height
     end
 
@@ -366,7 +369,7 @@ local function RenderEmbeddedEditorSection(sectionHost, builder, render, options
     end
     height = math.max(1, height)
     editorHost:SetHeight(height)
-    builder.Spacer(height)
+    builder.Spacer(height, editorHost)
     return height
 end
 
