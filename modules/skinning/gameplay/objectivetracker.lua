@@ -36,11 +36,6 @@ local function SafeSetTextColor(fontString, colorTable)
     fontString:SetTextColor(colorTable[1] or 1, colorTable[2] or 1, colorTable[3] or 1, colorTable[4] or 1)
 end
 
--- Hooks installed on tracker mixins fire inside Blizzard's update loop
--- (e.g. QuestObjectiveTracker line updates); an error raised there aborts
--- the rest of that loop and leaves objective lines stale. Styling must
--- therefore never run inline from those hooks — queue the frame and restyle
--- on the next frame, where a failure only costs us our own skinning.
 -- <<< QUI_TEST_EXTRACT deferred_style_queue
 local function CreateDeferredStyleQueue(handler)
     local pending = {}
@@ -189,39 +184,29 @@ local function StyleTrackerProgressBar(pb, preserveColor)
     bar:SetStatusBarColor(r, g, b, a)
 end
 
-local function StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
-    if not line then return false end
-    local heightChanged = false
+local function ApplyTrackerTextFont(text, fontPath, fontSize)
     local targetFlags = GetFontFlags()
-    if line.Text then
-        local curFont, curSize, curFlags = line.Text:GetFont()
-        local fontChanged = curFont ~= fontPath or curSize ~= textFontSize or curFlags ~= targetFlags
-        if fontChanged then
-            CJKFont(line.Text, fontPath, textFontSize, targetFlags)
+    local curFont, curSize, curFlags = text:GetFont()
+    if curFont == fontPath and curSize == fontSize and curFlags == targetFlags then return false end
+    local curObject = text:GetFontObject()
+    CJKFont(text, fontPath, fontSize, targetFlags)
+    local newFont, newSize, newFlags = text:GetFont()
+    return curFont ~= newFont or curSize ~= newSize or curFlags ~= newFlags or curObject ~= text:GetFontObject()
+end
 
-            if not skipHeight then
-                local textHeight = Helpers.SafeNumberOrNil(line.Text:GetStringHeight())
-                if textHeight and textHeight > 0 then
-                    local currentHeight = Helpers.SafeNumberOrNil(line:GetHeight())
-                    local minHeight = textHeight + 4
-                    if currentHeight and minHeight - currentHeight > 1 then
-                        line:SetHeight(minHeight)
-                        heightChanged = true
-                    end
-                end
-            end
-        end
+local function StyleLine(line, fontPath, textFontSize, textColor)
+    if not line then return false end
+    local fontChanged = false
+    if line.Text then
+        fontChanged = ApplyTrackerTextFont(line.Text, fontPath, textFontSize)
         SafeSetTextColor(line.Text, textColor)
     end
     if line.Dash then
-        local curFont, curSize, curFlags = line.Dash:GetFont()
-        if curFont ~= fontPath or curSize ~= textFontSize or curFlags ~= targetFlags then
-            CJKFont(line.Dash, fontPath, textFontSize, targetFlags)
-        end
+        fontChanged = ApplyTrackerTextFont(line.Dash, fontPath, textFontSize) or fontChanged
         SafeSetTextColor(line.Dash, textColor)
     end
     StyleLineIcon(line)
-    return heightChanged
+    return fontChanged
 end
 
 local function RestyleBlockAfterHighlight(block)
@@ -249,25 +234,59 @@ local function EnsureBlockHighlightHook(block)
     hooksecurefunc(block, "UpdateHighlight", QueueBlockHighlightRestyle)
 end
 
-local function StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor, skipHeight)
-    if not block or IsWidgetPoolBlock(block) then return end
+local function StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor)
+    if not block or IsWidgetPoolBlock(block) then return false end
+    local fontChanged = false
 
     EnsureBlockHighlightHook(block)
 
     if titleFontSize > 0 and block.HeaderText then
-        local curFont, curSize, curFlags = block.HeaderText:GetFont()
-        local targetFlags = GetFontFlags()
-        if curFont ~= fontPath or curSize ~= titleFontSize or curFlags ~= targetFlags then
-            CJKFont(block.HeaderText, fontPath, titleFontSize, targetFlags)
-        end
+        fontChanged = ApplyTrackerTextFont(block.HeaderText, fontPath, titleFontSize)
         SafeSetTextColor(block.HeaderText, titleColor)
     end
 
     if textFontSize > 0 and block.usedLines then
         for _, line in pairs(block.usedLines) do
-            StyleLine(line, fontPath, textFontSize, textColor, skipHeight)
+            fontChanged = StyleLine(line, fontPath, textFontSize, textColor) or fontChanged
         end
     end
+    return fontChanged
+end
+
+local function StyleAcquiredTrackerLine(block, objectiveKey)
+    if IsWidgetPoolBlock(block) then return end
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker then return end
+    local textFontSize = settings.objectiveTrackerTextFontSize or 10
+    if textFontSize > 0 then
+        StyleLine(block.usedLines[objectiveKey], GetFontPath(), textFontSize, settings.objectiveTrackerTextColor)
+    end
+end
+
+local function StyleAcquiredTrackerBlock(tracker, blockID, template)
+    if IsWidgetPoolTracker(tracker) then return end
+    local settings = GetSettings()
+    if not settings or not settings.skinObjectiveTracker then return end
+    local blocks = tracker.usedBlocks[template or tracker.blockTemplate]
+    local block = blocks and blocks[blockID]
+    if not block then return end
+    StyleBlock(block, GetFontPath(), settings.objectiveTrackerTitleFontSize or 10,
+        settings.objectiveTrackerTextFontSize or 10, settings.objectiveTrackerTitleColor,
+        settings.objectiveTrackerTextColor)
+    if block.GetLine and not SkinBase.GetFrameData(block, "textLayoutHooked") then
+        hooksecurefunc(block, "GetLine", function(self, objectiveKey)
+            ns.SafeCall("best-effort-style", StyleAcquiredTrackerLine, self, objectiveKey)
+        end)
+        SkinBase.SetFrameData(block, "textLayoutHooked", true)
+    end
+end
+
+local function EnsureTrackerTextHooks(tracker)
+    if IsWidgetPoolTracker(tracker) or not tracker.GetBlock or SkinBase.GetFrameData(tracker, "textLayoutHooked") then return end
+    hooksecurefunc(tracker, "GetBlock", function(self, blockID, template)
+        ns.SafeCall("best-effort-style", StyleAcquiredTrackerBlock, self, blockID, template)
+    end)
+    SkinBase.SetFrameData(tracker, "textLayoutHooked", true)
 end
 
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
@@ -316,7 +335,7 @@ local function ApplyBlockSkinning(tracker, block)
     local itemButton = block.ItemButton or block.itemButton
     if itemButton then StyleQuestPOIIcon(itemButton) end
 
-    StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor, true)
+    StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor)
 end
 
 local trackerModules = {
@@ -849,7 +868,7 @@ local function StyleScenarioTrackerDetails()
     if objectives and objectives.usedLines then
         for _, line in pairs(objectives.usedLines) do
             StyleLine(line, GetFontPath(), settings.objectiveTrackerTextFontSize or 10,
-                settings.objectiveTrackerTextColor, true)
+                settings.objectiveTrackerTextColor)
             StyleLineIcon(line, true)
         end
     end
@@ -861,6 +880,11 @@ local scenarioDimensionsRestored = false
 local function ApplyLayoutSettingsSafely(settings)
     if type(InCombatLockdown) == "function" and InCombatLockdown() then
         pendingProtectedLayoutUpdate = true
+        local trackerFrame = _G.ObjectiveTrackerFrame
+        if not IsScenarioActive() and trackerFrame and not Helpers.FrameMutationRestricted(trackerFrame) then
+            scenarioDimensionsRestored = false
+            return ApplyTrackerMaxHeight(settings)
+        end
         return false
     end
 
@@ -999,11 +1023,13 @@ local function ApplyFontStyles(moduleFontSize, titleFontSize, textFontSize, modu
             end
 
             if tracker.usedBlocks and not WIDGET_POOL_TRACKER_NAMES[trackerName] then
+                local fontChanged = false
                 for template, blocks in pairs(tracker.usedBlocks) do
                     for blockID, block in pairs(blocks) do
-                        StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor)
+                        fontChanged = StyleBlock(block, fontPath, titleFontSize, textFontSize, titleColor, textColor) or fontChanged
                     end
                 end
+                if fontChanged and tracker.MarkDirty then tracker:MarkDirty() end
             end
         end
     end
@@ -1068,6 +1094,7 @@ local function SkinObjectiveTracker()
     if TrackerFrame.UpdateHeight and not SkinBase.GetFrameData(TrackerFrame, "updateHeightHooked") then
         hooksecurefunc(TrackerFrame, "UpdateHeight", function(self)
             CaptureBlizzardTrackerHeight(self)
+            ns.SafeCall("best-effort-style", EnforceSize)
             DeferObjectiveTrackerPostLayoutUpdate()
         end)
         SkinBase.SetFrameData(TrackerFrame, "updateHeightHooked", true)
@@ -1092,6 +1119,7 @@ local function SkinObjectiveTracker()
 
     for _, trackerName in ipairs(trackerModules) do
         local tracker = not WIDGET_POOL_TRACKER_NAMES[trackerName] and _G[trackerName] or nil
+        if tracker then EnsureTrackerTextHooks(tracker) end
         if tracker and not SkinBase.GetFrameData(tracker, "collapseHooked") then
             if tracker.Header and tracker.Header.MinimizeButton then
                 tracker.Header.MinimizeButton:HookScript("OnClick", DeferredScheduleBackdropUpdate)
