@@ -268,6 +268,7 @@ modules\trackers\aura_display_share.lua
 modules\trackers\aura_spell_catalog.lua
 modules\trackers\atonement_counter.lua
 modules\qol\qol.lua
+modules\qol\playerchoice_layout.lua
 modules\qol\blizzard_mover.lua
 modules\qol\blizzard_mover_frames.lua
 modules\qol\quicksalvage.lua
