@@ -218,6 +218,7 @@ local function SuppressLootWonArt(frame, lootItem)
     Kill(frame.shine)
     Kill(frame.BGAtlas)
     Kill(frame.PvPBackground)
+    Kill(frame.RatedPvPBackground)
     Kill(lootItem.IconBorder)
     Kill(lootItem.SpecRing)
 end
@@ -285,8 +286,9 @@ local function SkinMoneyWonAlert(frame)
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "alerts")
 
-    if frame.Background then frame.Background:SetAlpha(0) end
-    if frame.IconBorder then frame.IconBorder:SetAlpha(0) end
+    -- Native toast animation can restore alpha; remove only its decorative art.
+    Kill(frame.Background)
+    Kill(frame.IconBorder)
 
     if frame.Icon then
         StyleIcon(frame.Icon, frame)
@@ -522,6 +524,10 @@ end
 
 local function SkinMiscAlert(frame)
     if not frame then return end
+
+    -- AlertFrame_ShowNewAlert animates these ornamental layers on every acquire.
+    Kill(frame.glow)
+    Kill(frame.shine)
     if type(frame.SetUpDisplay) == "function" and not SkinBase.GetFrameData(frame, "miscDisplayHooked") then
         hooksecurefunc(frame, "SetUpDisplay", SkinMiscAlert)
         SkinBase.SetFrameData(frame, "miscDisplayHooked", true)

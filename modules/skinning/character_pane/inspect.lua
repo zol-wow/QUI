@@ -803,6 +803,12 @@ local function PositionInspectModelScene()
         InspectModelFrame:ResetModel()
     end
 
+    -- The wide full-pane viewport crops bulky models at the native distance.
+    -- Leave a margin for horns, feet and weapons after the native zoom reset.
+    if InspectModelFrame.SetCamDistanceScale then
+        InspectModelFrame:SetCamDistanceScale(1.2)
+    end
+
     InspectModelFrame:Show()
 end
 
