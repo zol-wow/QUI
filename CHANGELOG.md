@@ -4,6 +4,24 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta12 - 2026-10-19
+
+### Improved
+
+- Group-frame Cleanse-Ready Glow has its own debuff scope, custom or per-type
+  colors, opacity, and static, pulse, or moving-highlight animations. Settings
+  previews reflect these choices independently of the dispel border.
+
+### Fixed
+
+- Hidden essential and utility Cooldown Manager buttons no longer intercept
+  clicks under supported mounted and out-of-combat visibility settings. When
+  combat makes the HUD visible, it appears before clicks are enabled.
+- Inspect models have more camera clearance. Trade item rows and acceptance
+  highlights align correctly, with duplicate decorative borders removed.
+- Rated-loot, money, and collection alerts retain QUI styling through native
+  animations. Achievement hover highlights use QUI styling.
+
 ## v5.5.2-beta11 - 2026-10-18
 
 ### Improved
