@@ -418,7 +418,7 @@ function Chrome.ApplyDispelIconLayout(frame, settings)
     end
 end
 
--- Cleanse glow: four gradient strips hugging the host's border, peaking just
+-- Cleanse glow: gradient edges and matching corners hug the border, peaking just
 -- outside the edge and fading to nothing a few pixels inward. Replaces the
 -- old stretched UI-ActionButton-Border ring, whose soft falloff landed in the
 -- middle of wide frames. parent and host differ on the secure feeder path
@@ -435,51 +435,198 @@ local GLOW_STRIPS = {
     glowRight  = { "HORIZONTAL", false },
 }
 
-local function PaintGlowStrip(tex, orientation, edgeFirst, r, g, b, a)
-    if tex.SetGradient and CreateColor then
-        local edge = CreateColor(r, g, b, a)
-        local fade = CreateColor(r, g, b, 0)
-        local ok
-        if edgeFirst then
-            ok = pcall(tex.SetGradient, tex, orientation, edge, fade)
-        else
-            ok = pcall(tex.SetGradient, tex, orientation, fade, edge)
-        end
-        if ok then return end
-    end
-    tex:SetVertexColor(r, g, b, a * 0.5)
+-- A corner fades by distance from its nearest outer edge, matching both
+-- perpendicular strips at their joins. Flips reuse the same white alpha asset.
+local GLOW_CORNERS = {
+    glowTopLeft     = { "TOPLEFT",     0, 1, 0, 1 },
+    glowTopRight    = { "TOPRIGHT",    1, 0, 0, 1 },
+    glowBottomLeft  = { "BOTTOMLEFT",  0, 1, 1, 0 },
+    glowBottomRight = { "BOTTOMRIGHT", 1, 0, 1, 0 },
+}
+local GLOW_CORNER_TEXTURE = ((ns.Helpers and ns.Helpers.AssetPath)
+    or "Interface\\AddOns\\QUI\\assets\\") .. "group_frame_glow_corner.tga"
+
+local GLOW_TYPE_COLORS = {
+    Magic = { 0.2, 0.6, 1.0, 1 }, Curse = { 0.6, 0, 1, 1 },
+    Disease = { 0.6, 0.4, 0, 1 }, Poison = { 0, 0.6, 0, 1 }, Bleed = { 0.8, 0, 0, 1 },
+}
+Chrome.GLOW_TYPE_COLORS = GLOW_TYPE_COLORS
+local GLOW_CUSTOM_COLOR = { 0.1, 1, 0.1, 1 }
+local GLOW_SPARK_TEXTURE = ((ns.Helpers and ns.Helpers.AssetPath)
+    or "Interface\\AddOns\\QUI\\assets\\") .. "group_frame_glow_spark.tga"
+-- The connected base glow uses these eight pieces in every animation mode.
+local GLOW_PARTS = { "glowTop", "glowTopRight", "glowRight", "glowBottomRight",
+    "glowBottom", "glowBottomLeft", "glowLeft", "glowTopLeft" }
+Chrome.GLOW_PARTS = GLOW_PARTS
+
+function Chrome.GetCleanseGlowOpacity(settings)
+    local opacity = settings and settings.opacity
+    if type(opacity) ~= "number" then opacity = settings and settings.color and settings.color[4] end
+    return math.max(0, math.min(1, tonumber(opacity) or 1))
 end
 
-function Chrome.SetCleanseGlowColor(art, color)
+function Chrome.GetCleanseGlowColor(settings, dispelType)
+    if settings and settings.colorMode == "TYPE" then
+        local key = dispelType == "Enrage" and "Bleed" or dispelType
+        key = GLOW_TYPE_COLORS[key] and key or "Magic"
+        return (settings.colors and settings.colors[key]) or GLOW_TYPE_COLORS[key]
+    end
+    return (settings and settings.color) or GLOW_CUSTOM_COLOR
+end
+
+function Chrome.GetCleanseGlowColorMap(settings, strength)
+    local colors = {}
+    for key, fallback in pairs(GLOW_TYPE_COLORS) do
+        local color = (settings and settings.colors and settings.colors[key]) or fallback
+        colors[key] = strength and {color[1] * strength, color[2] * strength, color[3] * strength, color[4]} or color
+    end
+    return colors
+end
+
+local function GlowAlpha(group, target, order, from, to, duration, delay, rest)
+    local animation = group:CreateAnimation("Alpha")
+    animation:SetTarget(target)
+    animation:SetOrder(order)
+    animation:SetFromAlpha(from)
+    animation:SetToAlpha(to)
+    animation:SetDuration(duration)
+    animation:SetStartDelay(delay or 0)
+    animation:SetEndDelay(rest or 0)
+    animation:SetSmoothing("IN_OUT")
+    return animation
+end
+
+-- Native animation groups only: no slot scripts, aura reads or Lua tick loop.
+-- Called while configuring art, never while aura-slot writes are restricted.
+function Chrome.ConfigureCleanseGlowAnimation(owner, art, settings, opacity)
+    if not owner then return end
+    local mode = settings and settings.enabled == true and settings.animation or "NONE"
+    if mode ~= "PULSE" and mode ~= "MOVING" then mode = "NONE" end
+    local duration = math.max(0.4, math.min(6, tonumber(settings and settings.animationDuration) or 1.6))
+    opacity = opacity or 1
+    local width, height = 0, 0
+    local glowHost = art._quiGlowHost or owner
+    if mode == "MOVING" then
+        -- Read configured frame geometry only during unrestricted styling.
+        -- The mask follows the same outer contour as the glow edge and corners.
+        width = math.max(1, (glowHost:GetWidth() or 0) + 2 * GLOW_EXTEND)
+        height = math.max(1, (glowHost:GetHeight() or 0) + 2 * GLOW_EXTEND)
+    end
+    local state = owner._quiGlowAnimation
+    if state and state.mode == mode and state.duration == duration and state.opacity == opacity
+        and state.width == width and state.height == height then return end
+    if not state then state = {}; owner._quiGlowAnimation = state end
+    local animationHost = owner._quiGlowAnimationHost or owner
+    if state.pulse then state.pulse:Stop() end
+    if state.travel then state.travel:Stop() end
+    for _, texture in pairs(art.movingHighlights or {}) do texture:SetShown(false) end
+    owner:SetAlpha(opacity)
+    art._quiGlowBaseStrength = mode == "MOVING" and 0.35 or 1
+    Chrome.SetCleanseGlowColor(art, art._quiGlowColor, art._quiGlowOpacity)
+    for _, key in ipairs(GLOW_PARTS) do if art[key] then art[key]:SetAlpha(1) end end
+    if mode == "PULSE" then
+        if not state.pulse then
+            state.pulse = animationHost:CreateAnimationGroup()
+            state.pulse:SetLooping("REPEAT")
+            state.fadeOut = GlowAlpha(state.pulse, owner, 1, 1, 0.35, duration / 2)
+            state.fadeIn = GlowAlpha(state.pulse, owner, 2, 0.35, 1, duration / 2)
+        end
+        state.fadeOut:SetFromAlpha(opacity); state.fadeOut:SetToAlpha(opacity * 0.35)
+        state.fadeIn:SetFromAlpha(opacity * 0.35); state.fadeIn:SetToAlpha(opacity)
+        state.fadeOut:SetDuration(duration / 2); state.fadeIn:SetDuration(duration / 2)
+        state.pulse:Play()
+    elseif mode == "MOVING" then
+        Chrome.EnsureMovingGlowMask(owner, art)
+        local spark = art.glowMask
+        if spark then
+            if not state.travel then
+                state.travel = animationHost:CreateAnimationGroup()
+                state.travel:SetLooping("REPEAT")
+                state.path = state.travel:CreateAnimation("Path")
+                state.path:SetTarget(spark)
+                state.path:SetCurveType("NONE")
+                state.path:SetSmoothing("NONE")
+                state.points = {}
+                for index = 1, 49 do
+                    local point = state.path:CreateControlPoint()
+                    point:SetOrder(index)
+                    state.points[index] = point
+                end
+            end
+            -- Divide a closed rectangle into nearly equal distances. This keeps
+            -- motion even on wide frames while including each exact corner.
+            local across = math.max(1, math.min(23, math.floor(24 * width / (width + height) + 0.5)))
+            local down = 24 - across
+            local index = 1
+            state.points[index]:SetOffset(0, 0)
+            local function Point(x, y)
+                index = index + 1
+                state.points[index]:SetOffset(x, y)
+            end
+            for step = 1, across do Point(width * step / across, 0) end
+            for step = 1, down do Point(width, -height * step / down) end
+            for step = 1, across do Point(width * (1 - step / across), -height) end
+            for step = 1, down do Point(0, -height * (1 - step / down)) end
+            state.path:SetDuration(duration)
+            spark:ClearAllPoints()
+            spark:SetPoint("CENTER", glowHost, "TOPLEFT", -GLOW_EXTEND, GLOW_EXTEND)
+            for _, texture in pairs(art.movingHighlights) do texture:SetShown(true) end
+            state.travel:Play()
+        end
+    end
+    state.mode, state.duration, state.opacity = mode, duration, opacity
+    state.width, state.height = width, height
+end
+
+local function SetGlowStripTexture(tex, key)
+    tex:SetTexture(Chrome.DISPEL_GRADIENT_TEXTURE)
+    if key == "glowTop" then tex:SetTexCoord(0, 1, 1, 0)
+    elseif key == "glowBottom" then tex:SetTexCoord(0, 1, 0, 1)
+    elseif key == "glowLeft" then tex:SetTexCoord(0, 1, 1, 1, 0, 0, 1, 0)
+    else tex:SetTexCoord(0, 0, 1, 0, 0, 1, 1, 1) end
+end
+
+function Chrome.SetCleanseGlowColor(art, color, opacity)
     if type(art) ~= "table" then return end
+    art._quiGlowColor, art._quiGlowOpacity = color, opacity
     local r = (color and color[1]) or 0.1
     local g = (color and color[2]) or 1.0
     local b = (color and color[3]) or 0.1
-    local a = (color and color[4]) or 1.0
-    for key, spec in pairs(GLOW_STRIPS) do
+    local a = opacity or (color and color[4]) or 1.0
+    local strength = art._quiGlowBaseStrength or 1
+    for key in pairs(GLOW_STRIPS) do
         local tex = art[key]
-        if tex then PaintGlowStrip(tex, spec[1], spec[2], r, g, b, a) end
+        if tex then tex:SetVertexColor(r * strength, g * strength, b * strength, a) end
+        local moving = art.movingHighlights and art.movingHighlights[key]
+        if moving then moving:SetVertexColor(r, g, b, a) end
+    end
+    for key in pairs(GLOW_CORNERS) do
+        local tex = art[key]
+        if tex then tex:SetVertexColor(r * strength, g * strength, b * strength, a) end
+        local moving = art.movingHighlights and art.movingHighlights[key]
+        if moving then moving:SetVertexColor(r, g, b, a) end
     end
 end
 
-function Chrome.StyleCleanseGlowArt(parent, art, host, color)
+function Chrome.StyleCleanseGlowArt(parent, art, host, color, opacity)
     local e, d = GLOW_EXTEND, GLOW_DEPTH
+    art._quiGlowHost = host
     for key in pairs(GLOW_STRIPS) do
         local tex = art[key]
         if not tex then
             tex = parent:CreateTexture(nil, "OVERLAY")
-            tex:SetColorTexture(1, 1, 1, 1)
+            SetGlowStripTexture(tex, key)
             tex:SetBlendMode("ADD")
             if tex.DisablePixelSnap then tex:DisablePixelSnap() end
             art[key] = tex
         end
         tex:ClearAllPoints()
     end
-    art.glowTop:SetPoint("TOPLEFT", host, "TOPLEFT", -e, e)
-    art.glowTop:SetPoint("TOPRIGHT", host, "TOPRIGHT", e, e)
+    art.glowTop:SetPoint("TOPLEFT", host, "TOPLEFT", d - e, e)
+    art.glowTop:SetPoint("TOPRIGHT", host, "TOPRIGHT", e - d, e)
     art.glowTop:SetHeight(d)
-    art.glowBottom:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", -e, -e)
-    art.glowBottom:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", e, -e)
+    art.glowBottom:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", d - e, -e)
+    art.glowBottom:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", e - d, -e)
     art.glowBottom:SetHeight(d)
     -- Side strips fill the span between the horizontal ones: additive blend
     -- would double-brighten any corner overlap.
@@ -489,9 +636,74 @@ function Chrome.StyleCleanseGlowArt(parent, art, host, color)
     art.glowRight:SetPoint("TOPRIGHT", host, "TOPRIGHT", e, e - d)
     art.glowRight:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", e, d - e)
     art.glowRight:SetWidth(d)
-    Chrome.SetCleanseGlowColor(art, color)
+    for key, spec in pairs(GLOW_CORNERS) do
+        local tex = art[key]
+        if not tex then
+            tex = parent:CreateTexture(nil, "OVERLAY")
+            tex:SetTexture(GLOW_CORNER_TEXTURE)
+            tex:SetBlendMode("ADD")
+            if tex.DisablePixelSnap then tex:DisablePixelSnap() end
+            art[key] = tex
+        end
+        local anchor = spec[1]
+        tex:ClearAllPoints()
+        tex:SetPoint(anchor, host, anchor, anchor:find("LEFT") and -e or e, anchor:find("TOP") and e or -e)
+        tex:SetSize(d, d)
+        tex:SetTexCoord(spec[2], spec[3], spec[4], spec[5])
+        tex:Show()
+    end
+    Chrome.SetCleanseGlowColor(art, color, opacity)
     for key in pairs(GLOW_STRIPS) do
         art[key]:Show()
+    end
+end
+
+-- Move a mask over copies of the actual glow, rather than drawing an
+-- unclipped circular sprite. Edge and corner contours then stay identical.
+function Chrome.EnsureMovingGlowMask(parent, art)
+    if art.movingHighlights then return end
+    local mask = parent:CreateMaskTexture()
+    mask:SetTexture(GLOW_SPARK_TEXTURE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+    mask:SetSize(GLOW_DEPTH * 1.6, GLOW_DEPTH * 1.6)
+    art.glowMask = mask
+    art.movingHighlights = {}
+    for _, key in ipairs(GLOW_PARTS) do
+        local texture = parent:CreateTexture(nil, "OVERLAY", nil, 2)
+        texture:SetBlendMode("ADD")
+        texture:SetAllPoints(art[key])
+        local corner = GLOW_CORNERS[key]
+        if corner then
+            texture:SetTexture(GLOW_CORNER_TEXTURE)
+            texture:SetTexCoord(corner[2], corner[3], corner[4], corner[5])
+        else
+            -- Use the same file-backed fade and tint path as the base.
+            SetGlowStripTexture(texture, key)
+        end
+        if texture.DisablePixelSnap then texture:DisablePixelSnap() end
+        texture:AddMaskTexture(mask)
+        art.movingHighlights[key] = texture
+    end
+    Chrome.SetCleanseGlowColor(art, art._quiGlowColor, art._quiGlowOpacity)
+end
+
+-- Horizontal edges own the corners. Vertical edges meet their inner ends,
+-- so translucent outlines have one coat everywhere instead of brighter joins.
+-- Shared by the legacy/preview status bars and engine-owned aura textures.
+function Chrome.LayoutDispelBorderEdge(region, host, edge, thickness)
+    region:ClearAllPoints()
+    if edge == "top" then
+        region:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+        region:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
+        region:SetHeight(thickness)
+    elseif edge == "bottom" then
+        region:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 0)
+        region:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
+        region:SetHeight(thickness)
+    else
+        local side = edge == "left" and "LEFT" or "RIGHT"
+        region:SetPoint("TOP" .. side, host, "TOP" .. side, 0, -thickness)
+        region:SetPoint("BOTTOM" .. side, host, "BOTTOM" .. side, 0, thickness)
+        region:SetWidth(thickness)
     end
 end
 
@@ -787,31 +999,19 @@ function Chrome.Apply(frame, vdb, state)
         end
 
         local bTop = dispelOverlay.borderTop or MakeDispelBorder(dispelOverlay)
-        bTop:ClearAllPoints()
-        bTop:SetPoint("TOPLEFT", dispelOverlay, "TOPLEFT", 0, 0)
-        bTop:SetPoint("TOPRIGHT", dispelOverlay, "TOPRIGHT", 0, 0)
-        bTop:SetHeight(dispelBorderSize)
+        Chrome.LayoutDispelBorderEdge(bTop, dispelOverlay, "top", dispelBorderSize)
         dispelOverlay.borderTop = bTop
 
         local bBottom = dispelOverlay.borderBottom or MakeDispelBorder(dispelOverlay)
-        bBottom:ClearAllPoints()
-        bBottom:SetPoint("BOTTOMLEFT", dispelOverlay, "BOTTOMLEFT", 0, 0)
-        bBottom:SetPoint("BOTTOMRIGHT", dispelOverlay, "BOTTOMRIGHT", 0, 0)
-        bBottom:SetHeight(dispelBorderSize)
+        Chrome.LayoutDispelBorderEdge(bBottom, dispelOverlay, "bottom", dispelBorderSize)
         dispelOverlay.borderBottom = bBottom
 
         local bLeft = dispelOverlay.borderLeft or MakeDispelBorder(dispelOverlay)
-        bLeft:ClearAllPoints()
-        bLeft:SetPoint("TOPLEFT", dispelOverlay, "TOPLEFT", 0, 0)
-        bLeft:SetPoint("BOTTOMLEFT", dispelOverlay, "BOTTOMLEFT", 0, 0)
-        bLeft:SetWidth(dispelBorderSize)
+        Chrome.LayoutDispelBorderEdge(bLeft, dispelOverlay, "left", dispelBorderSize)
         dispelOverlay.borderLeft = bLeft
 
         local bRight = dispelOverlay.borderRight or MakeDispelBorder(dispelOverlay)
-        bRight:ClearAllPoints()
-        bRight:SetPoint("TOPRIGHT", dispelOverlay, "TOPRIGHT", 0, 0)
-        bRight:SetPoint("BOTTOMRIGHT", dispelOverlay, "BOTTOMRIGHT", 0, 0)
-        bRight:SetWidth(dispelBorderSize)
+        Chrome.LayoutDispelBorderEdge(bRight, dispelOverlay, "right", dispelBorderSize)
         dispelOverlay.borderRight = bRight
 
         local dispelFill = dispelOverlay.fill
@@ -852,7 +1052,9 @@ function Chrome.Apply(frame, vdb, state)
             cleanseGlow.art = glowArt
         end
         Chrome.StyleCleanseGlowArt(cleanseGlow, glowArt, frame,
-            healerDB and healerDB.cleanseGlow and healerDB.cleanseGlow.color)
+            healerDB and healerDB.cleanseGlow and healerDB.cleanseGlow.color,
+            Chrome.GetCleanseGlowOpacity(healerDB and healerDB.cleanseGlow))
+        Chrome.ConfigureCleanseGlowAnimation(cleanseGlow, glowArt, healerDB and healerDB.cleanseGlow)
         cleanseGlow:Hide()
         frame.cleanseGlow = cleanseGlow
 

@@ -424,6 +424,7 @@ local function SnapCDMFadeToTarget()
 end
 
 UpdateCDMVisibility = function()
+    if ns.RefreshCDMClickVisibility then ns.RefreshCDMClickVisibility() end
     if not IsCDMMasterEnabled() then
         CDMVisibility:StartFade(0)
         return
@@ -1054,6 +1055,7 @@ visibilityEventFrame:RegisterEvent("UPDATE_OVERRIDE_ACTIONBAR")
 visibilityEventFrame:RegisterEvent("UPDATE_POSSESS_BAR")
 visibilityEventFrame:RegisterEvent("UPDATE_VEHICLE_ACTIONBAR")
 visibilityEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+visibilityEventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORMS")
 visibilityEventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
 visibilityEventFrame:RegisterEvent("PLAYER_IS_GLIDING_CHANGED")
 visibilityEventFrame:RegisterUnitEvent("UNIT_HEALTH", "player")
@@ -1130,6 +1132,11 @@ ns.RefreshCDMVisibilityInstant = function()
     _cdmFramesDirty = true
     UpdateCDMVisibility()
     SnapCDMFadeToTarget()
+end
+ns.RefreshCDMVisibilityForClick = function()
+    if _cdmFramesDirty or CDMVisibility.isFading or CDMVisibility.fadeTargetAlpha <= 0.001 then
+        ns.RefreshCDMVisibilityInstant()
+    end
 end
 _G.QUI_RefreshCustomTrackersVisibility = UpdateCustomTrackersVisibility
 ns.RefreshAuraDisplaysVisibility = UpdateAuraDisplaysVisibility

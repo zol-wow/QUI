@@ -1849,6 +1849,13 @@ function _dispel.ShowIconWithCurves(frame, unit, auraInstanceID)
     return showed
 end
 
+function _dispel.SelectGlowAura(cache, unit, settings)
+    local allTyped = settings and settings.scope == "ALL_TYPED"
+    return _dispel.SelectCachedAura(cache, unit,
+        allTyped and "typedDebuffOrder" or "playerDispellableOrder",
+        allTyped and "typedDebuffs" or "playerDispellable")
+end
+
 function _dispel.HideVisuals(frame)
     if frame.dispelOverlay then frame.dispelOverlay:Hide() end
     Chrome.HideDispelTypeIcons(frame)
@@ -1960,8 +1967,13 @@ local function UpdateDispelOverlay(frame)
 
     local glowFrame = frame.cleanseGlow
     if glowFrame then
-        if glowOn and playerInstID then
-            Chrome.SetCleanseGlowColor(glowFrame.art, glowCfg and glowCfg.color)
+        local glowInstID, glowType = playerInstID, nil
+        if glowOn then
+            glowInstID, glowType = _dispel.SelectGlowAura(cache, unit, glowCfg)
+        end
+        if glowOn and glowInstID then
+            Chrome.SetCleanseGlowColor(glowFrame.art, Chrome.GetCleanseGlowColor(glowCfg, glowType),
+                Chrome.GetCleanseGlowOpacity(glowCfg))
             glowFrame:Show()
         else
             glowFrame:Hide()
