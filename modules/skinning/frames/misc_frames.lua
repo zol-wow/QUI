@@ -199,6 +199,20 @@ local function StyleTradeItem(side, index)
     local rr, rg, rb = sr, sg, sb
     if side == "Recipient" and name and not usable then rr, rg, rb = 0.9, 0, 0 end
     if row then
+        -- Native rows use unequal column offsets; the player row even extends
+        -- beyond its inset. Anchor both edges to the owning panel instead.
+        local inset = _G["Trade" .. side .. (index == 7 and "EnchantInset" or "ItemsInset")]
+        if inset then
+            local top = index == 7 and 20 or 6 + (index - 1) * 44
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", inset, "TOPLEFT", 6, -top)
+            row:SetPoint("TOPRIGHT", inset, "TOPRIGHT", -6, -top)
+        end
+        if label and button then
+            label:ClearAllPoints()
+            label:SetPoint("LEFT", button, "RIGHT", 6, 0)
+            label:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+        end
         for _, region in ipairs({ row:GetRegions() }) do
             if region == row.SlotTexture or region == _G[prefix .. "NameFrame"] then region:SetAlpha(0) end
         end
@@ -234,21 +248,33 @@ local function StyleTradeFrame(frame)
     local sr, sg, sb, sa, r, g, b, a = SkinBase.GetWindowColors()
     for _, name in ipairs({
         "TradePlayerItemsInset", "TradeRecipientItemsInset", "TradePlayerEnchantInset",
-        "TradeRecipientEnchantInset", "TradePlayerInputMoneyInset", "TradeRecipientMoneyInset", "TradeRecipientMoneyBg",
+        "TradeRecipientEnchantInset", "TradePlayerInputMoneyInset", "TradeRecipientMoneyInset",
     }) do
         local panel = _G[name]
         if panel then
-            if name == "TradeRecipientMoneyBg" then panel:SetAlpha(1) end
             SkinBase.StripTextures(panel)
             SkinBase.KillNineSlice(panel.NineSlice, true)
             SkinBase.CreateBackdrop(panel, sr, sg, sb, sa, r, g, b, a, 4)
         end
     end
+    -- The recipient money frame already has an inset. Its native gold-edge
+    -- sibling otherwise creates a second, slightly offset border inside it.
+    SkinBase.ClampTextureHidden(_G.TradeRecipientMoneyBg, true)
+    -- TradePlayerInputMoneyFrame is explicitly forbidden by Blizzard. Leave
+    -- that entry and its children untouched so native money input stays safe.
     for _, name in ipairs({
         "TradeHighlightPlayer", "TradeHighlightRecipient", "TradeHighlightPlayerEnchant", "TradeHighlightRecipientEnchant",
     }) do
         local highlight = _G[name]
         if highlight then
+            local side = name:find("Recipient", 1, true) and "Recipient" or "Player"
+            local inset = _G["Trade" .. side .. (name:find("Enchant", 1, true) and "EnchantInset" or "ItemsInset")]
+            if inset then
+                highlight:ClearAllPoints()
+                local px = SkinBase.GetPixelSize(highlight, 1)
+                highlight:SetPoint("TOPLEFT", inset, "TOPLEFT", px, -px)
+                highlight:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", -px, px)
+            end
             SkinBase.StripTextures(highlight)
             SkinBase.CreateBackdrop(highlight, 0.2, 0.8, 0.3, 1, 0.2, 0.8, 0.3, 0.12, 4)
         end
@@ -261,8 +287,8 @@ local function StyleTradeFrame(frame)
     end
     local overlay = frame.RecipientOverlay
     if overlay then
-        if overlay.portraitFrame then overlay.portraitFrame:SetAlpha(0) end
-        SkinBase.RoundIconTexture(overlay, overlay.portrait)
+        SkinBase.ClampTextureHidden(overlay.portraitFrame, true)
+        SkinBase.ClampTextureHidden(overlay.portrait, true)
     end
     SkinBase.SkinFrameText(_G.TradeRecipientMoneyFrame, { recurse = true })
     StyleTradeWarning()
@@ -451,11 +477,25 @@ local function SkinStandardFrame(frame, settingKey)
     SkinBase.MarkSkinned(frame)
 end
 
+local function SkinStandardFrameWhenShown(frame, settingKey)
+    if not frame or not IsSettingEnabled(settingKey) or SkinBase.IsSkinned(frame) then return end
+    local callback = SkinBase.GetFrameData(frame, "qDeferredStandardSkin")
+    if not callback then
+        callback = function() SkinStandardFrame(frame, settingKey) end
+        SkinBase.SetFrameData(frame, "qDeferredStandardSkin", callback)
+    end
+    if not SkinBase.DeferUntilShown(frame, callback) then callback() end
+end
+
 local function register(key, getFrame)
     if ns.Registry then
         ns.Registry:Register(key, {
             refresh = function()
                 local frame = getFrame()
+                if not SkinBase.IsSkinned(frame) and key ~= "skinSocket" and key ~= "skinItemUpgrade" then
+                    SkinStandardFrameWhenShown(frame, key == "skinPetition" and "skinGuildRegistrar" or key)
+                    return
+                end
                 SkinBase.RefreshFrameBackdropColors(frame)
                 if SkinBase.IsSkinned(frame) then
                     if key == "skinSocket" then StyleSocketingFrame(frame)
@@ -1354,6 +1394,25 @@ local function StyleStableFooter()
     end
 end
 
+local function StyleStableArtwork()
+    local frame = _G.PetStableFrame
+    if not IsSettingEnabled("skinStable") or not frame
+        or (frame.IsForbidden and frame:IsForbidden()) then return end
+    if frame.GetRegions then
+        for _, region in ipairs({ frame:GetRegions() }) do
+            local atlas = region.GetAtlas and region:GetAtlas()
+            if atlas == "ui-stables-footer-bg" or atlas == "ui-stables-subheader-bg" then
+                SkinBase.ClampTextureHidden(region, true)
+            end
+        end
+    end
+    if frame.insideFrameBottom then SkinBase.ClampTextureHidden(frame.insideFrameBottom, true) end
+    for _, key in ipairs({ "TopDividerFrame", "BottomDividerFrame" }) do
+        local divider = frame[key]
+        if divider then SkinBase.ClampTextureHidden(divider.horzDivider, true) end
+    end
+end
+
 local function SkinStable()
     if not (ns.Client and ns.Client.isForever) then return end
     local frame = _G.PetStableFrame
@@ -1366,6 +1425,7 @@ local function SkinStable()
     StyleStableSlots()
     StyleStableModelControls()
     StyleStableFooter()
+    StyleStableArtwork()
     if frame.modelScene and frame.modelScene.Inset then
         SkinBase.KillNineSlice(frame.modelScene.Inset.NineSlice, true)
     end
@@ -1383,6 +1443,7 @@ if ns.Registry then
             StyleStableSlots()
             StyleStableModelControls()
             StyleStableFooter()
+            StyleStableArtwork()
         end,
         priority = 80,
         group = "skinning",
@@ -1393,11 +1454,11 @@ end
 SkinBase.OnAddOnLoaded("Blizzard_StableUI", SkinStable, 0)
 
 SkinBase.OnAddOnLoaded("Blizzard_UIPanels_Game", function()
-    SkinStandardFrame(_G.DressUpFrame, "skinDressUp")
-    SkinStandardFrame(_G.TradeFrame, "skinTrade")
-    SkinStandardFrame(_G.TabardFrame, "skinTabard")
-    SkinStandardFrame(_G.GuildRegistrarFrame, "skinGuildRegistrar")
-    SkinStandardFrame(_G.PetitionFrame, "skinGuildRegistrar")
+    SkinStandardFrameWhenShown(_G.DressUpFrame, "skinDressUp")
+    SkinStandardFrameWhenShown(_G.TradeFrame, "skinTrade")
+    SkinStandardFrameWhenShown(_G.TabardFrame, "skinTabard")
+    SkinStandardFrameWhenShown(_G.GuildRegistrarFrame, "skinGuildRegistrar")
+    SkinStandardFrameWhenShown(_G.PetitionFrame, "skinGuildRegistrar")
 end, 0)
 
 SkinBase.OnAddOnLoaded("Blizzard_ItemUpgradeUI", function()

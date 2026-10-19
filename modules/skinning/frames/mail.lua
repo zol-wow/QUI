@@ -387,18 +387,18 @@ end
 
 local function SkinMail()
     if not IsSettingEnabled("skinMail") then return end
+    local frame = _G.MailFrame
+    if not frame then return end
+    if SkinBase.DeferUntilShown(frame, SkinMail) then return end
     HookMailRefreshes()
 
-    local frame = _G.MailFrame
-    if frame and not SkinBase.IsSkinned(frame) then
+    if not SkinBase.IsSkinned(frame) then
         SkinBase.SkinButtonFrameTemplate(frame)
         SkinBase.SkinTabGroup(SkinBase.CollectNumberedTabs("MailFrame", 2), frame, { resizeToText = true, dockBottom = true })
         SkinBase.MarkSkinned(frame)
     end
-    if frame then
-        LowerFrameBackdrop(frame)
-        SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
-    end
+    LowerFrameBackdrop(frame)
+    SkinBase.ApplyButtonFontObjectsDeep(frame, 4)
 
     SkinMailItems()
     SkinSendMailControls()
@@ -406,13 +406,16 @@ local function SkinMail()
 end
 
 local function RefreshMail()
+    if not IsSettingEnabled("skinMail") then return end
+    if not _G.MailFrame or not SkinBase.IsSkinned(_G.MailFrame) then
+        SkinMail()
+        return
+    end
     RefreshBackdropColors(_G.MailFrame)
     RefreshBackdropColors(_G.OpenMailFrame)
-    if IsSettingEnabled("skinMail") then
-        SkinMailItems()
-        SkinSendMailControls()
-        SkinOpenMailFrame()
-    end
+    SkinMailItems()
+    SkinSendMailControls()
+    SkinOpenMailFrame()
 end
 
 _G.QUI_RefreshMailColors = RefreshMail

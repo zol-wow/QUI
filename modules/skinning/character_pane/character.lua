@@ -549,6 +549,7 @@ local PERMANENT_ENCHANT_EQUIP_LOCS = {
     INVTYPE_SHOULDER = true,
     INVTYPE_CHEST = true,
     INVTYPE_ROBE = true,
+    INVTYPE_HAND = true,
     INVTYPE_FEET = true,
     INVTYPE_FINGER = true,
     INVTYPE_LEGS = true,
@@ -3351,28 +3352,6 @@ local function HookCharacterFrame()
 
     local gearBtn, settingsPanel
 
-    CharacterFrame:HookScript("OnShow", function()
-        C_Timer.After(0.01, function()
-            if PaperDollFrame and PaperDollFrame:IsShown() then
-                ApplyCharacterPaneLayout()
-                InitializeCharacterOverlays()
-                ScheduleUpdate()
-            else
-                if not IsSkinningHandlingBackground() and customBg then
-                    customBg:Hide()
-                end
-                if statsPanel then statsPanel:Hide() end
-                for _, overlay in pairs(slotOverlays) do
-                    if overlay then overlay:Hide() end
-                end
-                RestoreCharacterPanePopouts()
-                if (frameState[CharacterFrame] or EMPTY).ilvlDisplay then (frameState[CharacterFrame] or EMPTY).ilvlDisplay:Hide() end
-                if (frameState[CharacterFrame] or EMPTY).centerILvl then (frameState[CharacterFrame] or EMPTY).centerILvl:Hide() end
-                SetCharacterFrameScale(1.0)
-            end
-        end)
-    end)
-
     CharacterFrame:HookScript("OnHide", function()
         layoutApplied = false
 
@@ -3523,6 +3502,7 @@ local function HookCharacterFrame()
     end
 
     local function HideCustomElements()
+        if not GetSettings().enabled then return end
         if ns.Client and ns.Client.isForever and CharacterFrame.GetTitleText then
             local title = CharacterFrame:GetTitleText()
             if title then title:Show() end
@@ -3537,22 +3517,24 @@ local function HookCharacterFrame()
         if (frameState[CharacterFrame] or EMPTY).gearBtn then (frameState[CharacterFrame] or EMPTY).gearBtn:Hide() end
         if (frameState[CharacterFrame] or EMPTY).settingsPanel then (frameState[CharacterFrame] or EMPTY).settingsPanel:Hide() end
 
-        if IsSkinningHandlingBackground() then
-            local skinningAPI = _G.QUI_CharacterFrameSkinning
-            if skinningAPI and skinningAPI.SetExtended then
-                skinningAPI.SetExtended(false)
-            end
-        else
-            if customBg then customBg:Hide() end
-            if CharacterFramePortrait then CharacterFramePortrait:Show() end
-            if CharacterFrame.Background then CharacterFrame.Background:Show() end
-            if CharacterFrame.NineSlice then CharacterFrame.NineSlice:Show() end
-            if CharacterFrameBg then CharacterFrameBg:Show() end
-        end
+        if chrome and chrome.SetExtended then chrome.SetExtended(false) end
 
         SetCharacterFrameScale(1.30 * (GetSettings().panelScale or 1.0))
         AdjustForNonCharacterTab()
     end
+
+    CharacterFrame:HookScript("OnShow", function()
+        C_Timer.After(0.01, function()
+            if not GetSettings().enabled then return end
+            if PaperDollFrame and PaperDollFrame:IsShown() then
+                ApplyCharacterPaneLayout()
+                InitializeCharacterOverlays()
+                ScheduleUpdate()
+            else
+                HideCustomElements()
+            end
+        end)
+    end)
 
     if ReputationFrame then
         ReputationFrame:HookScript("OnShow", HideCustomElements)

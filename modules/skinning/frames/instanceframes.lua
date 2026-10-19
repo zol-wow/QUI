@@ -1336,6 +1336,7 @@ local function SkinInstanceFrames()
     if not settings or not settings.skinInstanceFrames then return end
 
     SkinVanillaGroupFinder()
+    if _G.PVEFrame and SkinBase.DeferUntilShown(_G.PVEFrame, SkinInstanceFrames) then return end
     SkinPVEFrame()
     SkinLFDFrame()
     SkinRaidFinderFrame()

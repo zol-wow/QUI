@@ -674,17 +674,19 @@ local function ApplyDispelOverlay(f, healer, dispelType)
     end
 end
 
-local function ApplyCleanseGlow(f, healer, hasDispellable)
+local function ApplyCleanseGlow(f, healer, dispelType)
     local glow = f.cleanseGlow
     if not glow then return end
     local cfg = healer and healer.cleanseGlow
-    if not cfg or cfg.enabled ~= true or not hasDispellable then
+    if not cfg or cfg.enabled ~= true or not dispelType
+        or (cfg.scope ~= "ALL_TYPED" and dispelType == "Bleed") then
         glow:Hide()
         return
     end
     local C = GetChrome()
     if C and C.SetCleanseGlowColor then
-        C.SetCleanseGlowColor(glow.art, cfg.color)
+        local color = C.GetCleanseGlowColor and C.GetCleanseGlowColor(cfg, dispelType) or cfg.color
+        C.SetCleanseGlowColor(glow.art, color, C.GetCleanseGlowOpacity and C.GetCleanseGlowOpacity(cfg) or (cfg.color and cfg.color[4]))
     end
     glow:Show()
 end
@@ -898,7 +900,7 @@ local function ApplyFrameSettings(f, member, vdb, gfdb, contextMode)
         sampleDispel = "Bleed"
     end
     ApplyDispelOverlay(f, vdb.healer, sampleDispel)
-    ApplyCleanseGlow(f, vdb.healer, sampleDispel ~= nil and sampleDispel ~= "Bleed")
+    ApplyCleanseGlow(f, vdb.healer, sampleDispel)
 
     ApplyTargetedSpells(f, vdb.targetedSpells, member._sampleTargetedSpells,
         F.targetedSpells ~= false)

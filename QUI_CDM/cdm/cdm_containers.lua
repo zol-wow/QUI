@@ -2104,7 +2104,7 @@ local function SetIconMouseDefault(icon)
     end
     icon:EnableMouse(true)
     if icon.SetMouseClickEnabled then
-        icon:SetMouseClickEnabled(true)
+        icon:SetMouseClickEnabled(not (icon.clickButton and icon.clickButton._quiClickVisibilityManaged))
     end
     if icon.SetMouseMotionEnabled then
         icon:SetMouseMotionEnabled(true)
@@ -2114,6 +2114,10 @@ end
 
 local function SyncClickButtonForVisibility(icon, viewerType, hidden)
     if not icon or not icon.clickButton then
+        return
+    end
+
+    if ns.SyncCDMClickVisibility and ns.SyncCDMClickVisibility(icon, hidden) then
         return
     end
 
@@ -2187,7 +2191,7 @@ local function SyncContainerIconsForVisibility(containerKey, hidden, hoverOnly)
 
     local children = { container:GetChildren() }
     for _, child in ipairs(children) do
-        if child and child._quiCdmShell then
+        if child and (child._quiCdmShell or child._quiCdmClickSlot) then
             if hidden then
                 if hoverOnly then
                     SetFrameHoverOnly(child)
@@ -2642,7 +2646,7 @@ local function LayoutContainer(trackerKey, runtimeVisibilityRelayout)
                 _disabledMouseFrames[icon] = "icon"
                 if icon.clickButton and not InCombatLockdown() then
                     icon.clickButton:EnableMouse(false)
-                    icon.clickButton:Hide()
+                    if not icon.clickButton._quiClickVisibilityManaged then icon.clickButton:Hide() end
                 end
             end
         end
@@ -3052,7 +3056,7 @@ local function DisableMouseForEditMode(viewerType)
         _disabledMouseFrames[icon] = "icon"
         if icon.clickButton and not InCombatLockdown() then
             icon.clickButton:EnableMouse(false)
-            icon.clickButton:Hide()
+            if not icon.clickButton._quiClickVisibilityManaged then icon.clickButton:Hide() end
         end
     end
     if IsBarShape(viewerType) and ns.CDMBars then

@@ -182,5 +182,12 @@ function SurfaceFeatures:Register(spec)
         feature.searchNavigate = BuildSearchNavigateProxy(spec)
     end
 
+    if type(feature.getNavigationContext) ~= "function" then
+        feature.getNavigationContext = function()
+            local surface = ResolveSurface(spec)
+            if surface and surface.GetNavigationContext then return surface.GetNavigationContext() end
+        end
+    end
+
     return registry:RegisterFeature(feature)
 end

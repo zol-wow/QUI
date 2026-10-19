@@ -1,6 +1,6 @@
 local _, ns = ...
 local M, P, Sounds = ns.SpellReminderModel, ns.SpellReminderPresentation, ns.SpellReminderSounds
-local R = { states = {}, hosts = {}, parked = {}, roster = {}, previews = {}, revision = 0 }
+local R = { states = {}, hosts = {}, parked = {}, roster = {}, previews = {}, movers = {}, revision = 0 }
 ns.SpellReminders = R
 
 function R.Store()
@@ -99,13 +99,31 @@ end
 
 local function AnchorKey(id) return "spellReminder:" .. id end
 
-local function Position(id, config, host)
+function R.SyncLayoutSettings()
+    local registry = ns.Settings and ns.Settings.Registry
+    if not registry or not registry:GetFeature("spellRemindersPage") then return end
+    local db = R.Store()
+    if not db then return end
+    for id in pairs(db.reminders) do registry:RegisterLookupKey("spellRemindersPage", AnchorKey(id)) end
+end
+
+local function Position(id, config, host, initial)
+    if host.dragging or (not initial and ns.QUI_LayoutMode and ns.QUI_LayoutMode.isActive) then return end
     if _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(AnchorKey(id)) then
         if _G.QUI_ApplyFrameAnchor then _G.QUI_ApplyFrameAnchor(AnchorKey(id)) end
         return
     end
     host:ClearAllPoints()
     host:SetPoint("CENTER", UIParent, "CENTER", config.x, config.y)
+end
+
+local function SetPreviewBounds(frame, host)
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
+    local sample = host.sample
+    local bottom = sample and sample:IsShown() and sample or host
+    frame:SetPoint("BOTTOMLEFT", bottom, "BOTTOMLEFT", 0, 0)
+    frame:SetWidth(math.max(host:GetWidth(), bottom:GetWidth()))
 end
 
 local function CreateHost(id)
@@ -115,22 +133,32 @@ local function CreateHost(id)
     host.icon:SetPoint("TOPLEFT")
     local drag = CreateFrame("Button", nil, host)
     drag:SetAllPoints(); drag:RegisterForDrag("LeftButton")
+    drag:SetFrameLevel(host.icon.cooldown:GetFrameLevel() + 1)
+    drag:EnableMouse(true)
     host:SetMovable(true)
     host:SetClampedToScreen(true)
     drag:SetScript("OnDragStart", function()
-        if not InCombatLockdown() then host:StartMoving() end
+        if not InCombatLockdown() and R.previews[id] and not (ns.QUI_LayoutMode and ns.QUI_LayoutMode.isActive) then
+            host.dragging = true
+            host:StartMoving()
+        end
     end)
-    drag:SetScript("OnDragStop", function()
+    local function StopDrag()
         host:StopMovingOrSizing()
+        host.dragging = nil
         local config = R.Get(id)
         if not config then return end
         local x, y = host:GetCenter()
         local px, py = UIParent:GetCenter()
-        config.x, config.y = x - px, y - py
+        if not x or not y or not px or not py then return end
+        local scale = host:GetEffectiveScale() / UIParent:GetEffectiveScale()
+        config.x, config.y = x * scale - px, y * scale - py
         local core = ns.Helpers.GetCore()
         local anchors = core and core.db and core.db.profile.frameAnchoring
         if anchors then anchors[AnchorKey(id)] = nil end
-    end)
+    end
+    drag:SetScript("OnDragStop", StopDrag)
+    drag:SetScript("OnHide", function() if host.dragging then StopDrag() end end)
     drag:Hide()
     host.drag = drag
     return host
@@ -141,19 +169,40 @@ local function RegisterMover(id)
     if not layout or not layout.RegisterElement then return end
     local config = R.Get(id)
     local key = AnchorKey(id)
-    layout:RegisterElement({ key = key, label = P.Name(config), group = ns.L["Spell Reminders"], order = 100, isOwned = true,
-        isEnabled = function() return R.Get(id) ~= nil and R.Get(id).enabled end,
-        setEnabled = function(value) if R.Get(id) then R.Get(id).enabled = value end; R.Refresh() end,
+    local enabled = R.Store().enabled and config.enabled
+    local mover = R.movers[id]
+    if mover and mover.layout == layout and mover.enabled == enabled then
+        if layout.UpdateElementLabel then layout:UpdateElementLabel(key, P.Name(config)) end
+        return
+    end
+    R.movers[id] = { layout = layout, enabled = enabled }
+    local definition = { key = key, label = P.Name(config), group = ns.L["Spell Reminders"], order = 100, isOwned = true,
+        isEnabled = function() local db = R.Store(); return db and db.enabled and R.Get(id) ~= nil and R.Get(id).enabled end,
+        setEnabled = function(value) if R.Get(id) and (value or R.Store().enabled) then R.Get(id).enabled = value end; R.Refresh() end,
         getFrame = function() return R.hosts[id] end,
-        getSize = function() local c = R.Get(id); return c and c.size, c and c.size end,
+        setupOverlay = SetPreviewBounds,
         setGameplayHidden = function(hide)
             local host = R.hosts[id]
             if host then
                 host.gameplayHidden = hide
-                host:SetShown(not hide or R.previews[id] == true)
+                host:SetShown(not hide or R.previews[id] == true or host.layoutPreview == true)
             end
         end,
-    })
+        onOpen = function()
+            local host = R.hosts[id]
+            if host then host.layoutPreview = true; host:Show(); R.Update() end
+        end,
+        onClose = function()
+            local host = R.hosts[id]
+            if host then
+                host.layoutPreview = nil
+                host:SetShown(not host.gameplayHidden or R.previews[id] == true)
+                R.Update()
+            end
+        end,
+    }
+    if layout.isActive and not layout._combatSuspended and definition.isEnabled() then definition.onOpen() end
+    layout:RegisterElement(definition)
     if _G.QUI_RegisterFrameResolver then
         _G.QUI_RegisterFrameResolver(key, { resolver = function() return R.hosts[id] end,
             displayName = P.Name(config), category = ns.L["Spell Reminders"], order = 100 })
@@ -169,6 +218,8 @@ function R.Update(onCooldownEvent)
     local db = R.Store()
     if not db then return end
     local now = GetTime()
+    local layout = ns.QUI_LayoutMode
+    local previewsAllowed = not InCombatLockdown() and not (layout and layout._combatSuspended)
     for id, host in pairs(R.hosts) do
         local config = db.reminders[id]
         if config then
@@ -182,13 +233,16 @@ function R.Update(onCooldownEvent)
             local allowed = R.Allowed(config)
             local output = M.Step(config, state, state.cooldown, now, allowed)
             if allowed then Sounds.Notify(config, output) end
-            if R.previews[id] then
+            local preview = previewsAllowed and (R.previews[id] or host.layoutPreview)
+            if host.gameplayHidden then host:SetShown(preview or false) end
+            if preview then
                 P.Draw(host.icon, config, { show = true, ready = true }, nil, P.Name(config))
             else
                 -- Do not draw a native early alert for disabled/unknown spells.
                 P.Draw(host.icon, config, output, allowed and state.cooldown.ready == false and duration or nil)
             end
-            host.drag:SetShown(R.previews[id] == true and not InCombatLockdown())
+            host.drag:SetShown(R.previews[id] == true and not InCombatLockdown()
+                and not (ns.QUI_LayoutMode and ns.QUI_LayoutMode.isActive))
         else
             host.icon:Hide(); host.drag:Hide()
         end
@@ -215,26 +269,34 @@ function R.Refresh()
     for id, host in pairs(R.hosts) do
         if not db.reminders[id] then
             P.StopEffects(host.icon); host:Hide()
+            host.layoutPreview = nil
             R.parked[id] = host
             R.states[id], R.hosts[id] = nil, nil
+            R.movers[id] = nil
             if ns.QUI_LayoutMode then ns.QUI_LayoutMode:UnregisterElement(AnchorKey(id)) end
+            if ns.Settings and ns.Settings.Registry then
+                ns.Settings.Registry:UnregisterLookupKey("spellRemindersPage", AnchorKey(id))
+            end
             if _G.QUI_UnregisterFrameResolver then _G.QUI_UnregisterFrameResolver(AnchorKey(id)) end
         end
     end
+    local initial = {}
     for id, config in pairs(db.reminders) do
         M.Normalize(config)
+        initial[id] = R.hosts[id] == nil
         local host = R.hosts[id] or R.parked[id] or CreateHost(id)
         R.parked[id] = nil
         R.hosts[id] = host
         R.states[id] = R.states[id] or {}
         host:SetSize(config.size, config.size)
         P.ConfigureIcon(host.icon, config)
-        host:SetShown(not host.gameplayHidden or R.previews[id] == true)
+        if not db.enabled or not config.enabled then host.layoutPreview = nil end
+        host:SetShown(not host.gameplayHidden or R.previews[id] == true or host.layoutPreview == true)
         RegisterMover(id)
     end
     -- Resolve anchors after every host is registered, including references
     -- from one spell reminder to another.
-    for id, host in pairs(R.hosts) do Position(id, db.reminders[id], host) end
+    for id, host in pairs(R.hosts) do Position(id, db.reminders[id], host, initial[id]) end
     Sounds.Refresh()
     local tracking = ns.SpellReminderTracking
     if tracking then tracking.Configure() end
@@ -248,7 +310,15 @@ function R.Refresh()
             elseif tracking and not R.Restricted() then tracking.Discover() end
         end)
     end
+    R.SyncLayoutSettings()
     R.Update()
+    local layout = ns.QUI_LayoutMode
+    for id, host in pairs(R.hosts) do
+        SetPreviewBounds(host.drag, host)
+        local handle = layout and layout._handles and layout._handles[AnchorKey(id)]
+        if handle and handle._isChildOverlay and handle._parentFrame == host then SetPreviewBounds(handle, host) end
+        if initial[id] and layout and layout.SyncElement then layout:SyncElement(AnchorKey(id)) end
+    end
 end
 
 local events = CreateFrame("Frame")

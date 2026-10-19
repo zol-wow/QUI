@@ -339,80 +339,6 @@ local function BuildTabStrip(parent)
     })
 end
 
-local SECTION_NAV_TABS = {
-    appearance = true,
-    indicators = true,
-    layout = true,
-}
-
-local function InstallSectionRegistry(host)
-    if type(host._quiNavSections) == "table" then
-        wipe(host._quiNavSections)
-    else
-        host._quiNavSections = {}
-    end
-    if not host.RegisterSection then
-        function host:RegisterSection(id, label, frame)
-            if type(id) ~= "string" or id == "" or not frame then
-                return
-            end
-            local resolved = (type(label) == "string" and label ~= "") and label or id
-            local list = self._quiNavSections
-            for i, existing in ipairs(list) do
-                if existing.id == id then
-                    list[i] = { id = id, label = resolved, frame = frame }
-                    return
-                end
-            end
-            list[#list + 1] = { id = id, label = resolved, frame = frame }
-        end
-    end
-end
-
-local function ResetTabScrollAnchors(cached)
-    local sf = cached and cached.scrollFrame
-    if not sf or not cached.container then
-        return
-    end
-    sf:ClearAllPoints()
-    sf:SetPoint("TOPLEFT", cached.container, "TOPLEFT", 5, -5)
-    sf:SetPoint("BOTTOMRIGHT", cached.container, "BOTTOMRIGHT", -28, 5)
-end
-
-local function BuildTabSectionNav(host, cached)
-    if not host or not cached or not cached.scrollFrame then
-        return
-    end
-
-    if cached._sectionNav then
-        if cached._sectionNav.destroy then
-            cached._sectionNav.destroy()
-        end
-        cached._sectionNav = nil
-    end
-    ResetTabScrollAnchors(cached)
-
-    local sections = host._quiNavSections
-    if type(sections) ~= "table" or #sections < 2 then
-        return
-    end
-
-    local function tryBuild()
-        if cached._sectionNav then
-            return
-        end
-        local bodyH = host.GetHeight and host:GetHeight() or 0
-        local viewH = cached.scrollFrame.GetHeight and cached.scrollFrame:GetHeight() or 0
-        if bodyH > viewH and viewH > 0 then
-            cached._sectionNav = GUI:RenderSectionNav(cached.scrollFrame, host, sections)
-        end
-    end
-    tryBuild()
-    if C_Timer and C_Timer.After then
-        C_Timer.After(0, tryBuild)
-    end
-end
-
 local function InlinePanelFor(body)
     local owner = body
     while owner do
@@ -505,34 +431,8 @@ local function BuildTileBody(body, _, _, feature)
         setActiveTab = function(tabKey)
             tabModel:SetActiveKey(tabKey)
         end,
-        render = function(host, activeTab, cached)
-            local navTab = SECTION_NAV_TABS[activeTab] and cached ~= nil
-            if navTab then
-                InstallSectionRegistry(host)
-            end
-            local result = tabModel:RenderKey(host, activeTab)
-            if navTab then
-                BuildTabSectionNav(host, cached)
-                if not cached._navSizeHooked then
-                    cached._navSizeHooked = true
-                    host:HookScript("OnSizeChanged", function()
-                        if cached._navRebuildPending then
-                            return
-                        end
-                        cached._navRebuildPending = true
-                        local function rebuild()
-                            cached._navRebuildPending = false
-                            BuildTabSectionNav(host, cached)
-                        end
-                        if C_Timer and C_Timer.After then
-                            C_Timer.After(0, rebuild)
-                        else
-                            rebuild()
-                        end
-                    end)
-                end
-            end
-            return result
+        render = function(host, activeTab)
+            return tabModel:RenderKey(host, activeTab)
         end,
         repaintOnSizeChanged = true,
         deferResizeRepaint = true,
@@ -681,6 +581,9 @@ local function InvalidateTabBodies()
 end
 
 ns.QUI_GroupFramesSettingsSurface = {
+    GetNavigationContext = function()
+        return { providerKey = NormalizeContextMode(State.contextMode) == "raid" and "raidFrames" or "partyFrames" }
+    end,
     BuildInlinePreview = BuildInlinePreview,
     InvalidateTabBodies = InvalidateTabBodies,
     SetContextMode = SetContextMode,

@@ -187,9 +187,10 @@ local function SkinForeverCharacterDecorations(frame, depth)
         local backdrop = SkinBase.GetBackdrop(frame)
         -- The native frame is 29 high, but its masked fill is only 15 high.
         if backdrop then
+            local fillArea = frame.FillArea or frame
             backdrop:ClearAllPoints()
-            backdrop:SetPoint("LEFT", frame, "LEFT", 0, 0)
-            backdrop:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+            backdrop:SetPoint("LEFT", fillArea, "LEFT", 0, 0)
+            backdrop:SetPoint("RIGHT", fillArea, "RIGHT", 0, 0)
             backdrop:SetHeight(frame.Fill:GetHeight() + 2 * SkinBase.GetPixelSize(backdrop, 1))
         end
         SkinBase.SkinFontString(frame.Text, { size = 10 })
