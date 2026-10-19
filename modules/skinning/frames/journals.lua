@@ -431,6 +431,10 @@ local function GetEncounterJournalBottomTabs(frame)
         "JourneysTab",
         "MonthlyActivitiesTab",
         "suggestTab",
+        -- Not Blizzard's: Delve Companion adds this after Suggested Content
+        -- and re-anchors Dungeons onto it; docking without it stacks Dungeons
+        -- on top of the Delves tab.
+        "DelvesTab",
         "dungeonsTab",
         "raidsTab",
         "LootJournalTab",
@@ -1311,6 +1315,7 @@ local function SkinEncounterJournal()
     if not IsSettingEnabled("skinEncounterJournal") then return end
     local frame = _G.EncounterJournal
     if not frame or SkinBase.IsSkinned(frame) then return end
+    if SkinBase.DeferUntilShown(frame, SkinEncounterJournal) then return end
     SkinBase.SkinButtonFrameTemplate(frame)
     SkinEncounterJournalContents(frame)
     for _, name in ipairs({ "EncounterJournal_SetTab", "EncounterJournal_DisplayInstance", "EncounterJournal_DisplayEncounter", "EJ_ContentTab_Select", "EJSuggestFrame_RefreshDisplay", "EncounterJournal_LootUpdate", "EncounterJournal_DisplayCreature", "EncounterJournal_UpdateSearchPreview", "EncounterJournal_SearchUpdate", "EncounterJournal_ShowFullSearch" }) do

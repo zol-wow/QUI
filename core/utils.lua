@@ -1230,7 +1230,10 @@ end
 function Helpers.IsPlayerMounted()
     if Helpers.IsPlayerPassenger() then return false end
     if IsMounted and IsMounted() then return true end
-    if GetShapeshiftFormID and GetShapeshiftFormID() == 27 then return true end
+    if GetShapeshiftFormID then
+        local formID = GetShapeshiftFormID()
+        if formID == 3 or formID == 4 or formID == 27 or formID == 29 then return true end
+    end
     if C_UnitAuras and C_UnitAuras.GetPlayerAuraBySpellID then
         local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, SOAR_SPELL_ID)
         if ok then

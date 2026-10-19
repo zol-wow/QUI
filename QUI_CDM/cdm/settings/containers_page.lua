@@ -99,6 +99,14 @@ function Model.NormalizeContainerKey(containerKey)
     return builtinKeys[1]
 end
 
+function Model.GetNavigationContext(containerKey)
+    containerKey = Model.NormalizeContainerKey(containerKey)
+    if Model.IsBuiltIn(containerKey) then return { providerKey = containerKey } end
+    local kind = Shared and Shared.GetContainerType and Shared.GetContainerType(containerKey) or "cooldown"
+    local shape = Shared and Shared.GetContainerShape and Shared.GetContainerShape(containerKey) or "icon"
+    return { providerKey = "custom:" .. kind .. ":" .. shape }
+end
+
 local function SetSearchContext(label)
     local core = GetCore()
     local gui = core and core.GUI
@@ -3047,6 +3055,9 @@ local function BuildTileBody(body, _, _, feature)
 end
 
 ns.QUI_CooldownManagerSettingsSurface = {
+    GetNavigationContext = function()
+        return ResolveModel().GetNavigationContext(State.activeContainer)
+    end,
     preview = {
         height = 230,
         build = BuildPreviewBlock,

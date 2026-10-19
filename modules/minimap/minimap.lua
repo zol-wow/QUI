@@ -1033,6 +1033,33 @@ local hiddenButtonParent = CreateFrame("Frame")
 hiddenButtonParent:Hide()
 hiddenButtonParent.Layout = function() end
 
+do
+    local externalEventButtonOwned = false
+    function Minimap_Module:UpdateExternalEventButton()
+        local button = MinimapBackdrop and MinimapBackdrop.ExternalEventURLButton
+        if not button then return end
+        if InCombatLockdown() then
+            pendingMinimapRefresh = true
+            return
+        end
+        local settings = GetSettings()
+        if not settings or settings.enabled == false or externalHudActive then
+            if externalEventButtonOwned then
+                button:SetParent(MinimapBackdrop)
+                if MinimapCluster and MinimapCluster.ApplyExternalEventURLButtonAnchor then
+                    MinimapCluster:ApplyExternalEventURLButtonAnchor()
+                end
+                externalEventButtonOwned = false
+            end
+            return
+        end
+        button:SetParent(Minimap)
+        button:ClearAllPoints()
+        button:SetPoint("LEFT", Minimap, "LEFT", -5, -40)
+        externalEventButtonOwned = true
+    end
+end
+
 local function ForEachDifficultyFrame(callback)
     if type(callback) ~= "function" then return end
 
@@ -1523,6 +1550,7 @@ local function UpdateButtonVisibility()
         end
     end
 
+    Minimap_Module:UpdateExternalEventButton()
     UpdateGreatVaultButton()
     if MinimapCluster then
         MinimapCluster:Layout()
@@ -3192,6 +3220,7 @@ end
 
 local function HideAllDecorations()
     CountMinimapDebug("hideDecor")
+    Minimap_Module:UpdateExternalEventButton()
     if backdropFrame then backdropFrame:Hide() end
     if clockFrame then clockFrame:Hide() end
     if coordsFrame then coordsFrame:Hide() end

@@ -60,7 +60,7 @@ local function RoundSurface(owner, radius, inset, depth)
             end
             host = CreateFrame("Frame", nil, parent or _G.UIParent)
             host:SetAllPoints(owner)
-            host:SetFrameLevel(owner:GetFrameLevel())
+            host:SetFrameLevel(math.max(0, owner:GetFrameLevel() - 1))
             host:EnableMouse(false)
             backdrop:SetParent(host)
             backdrop:SetAllPoints(owner)
@@ -68,6 +68,9 @@ local function RoundSurface(owner, radius, inset, depth)
             owner:HookScript("OnHide", function() host:Hide() end)
             SkinBase.SetFrameData(owner, "mapLayoutBackdropHost", host)
         end
+        local level = math.max(0, owner:GetFrameLevel() - 1)
+        host:SetFrameLevel(level)
+        backdrop:SetFrameLevel(level)
         host:SetShown(owner:IsShown())
     end
     if inset then
@@ -149,6 +152,15 @@ local function StyleNavigation(frame)
     SkinIconControl(nav.overflowButton, "...")
 end
 
+local function StyleQuestHeaderText(frame)
+    SkinBase.ApplyButtonFontObjects(frame, {
+        size = 13, color = { 0.94, 0.94, 0.94, 1 },
+        highlightColor = { 1, 1, 1, 1 }, disabledColor = { 0.75, 0.75, 0.75, 1 },
+    })
+    SkinBase.SkinFontString(frame.Text, { size = 13, color = { 0.94, 0.94, 0.94, 1 } })
+    SkinBase.SkinFontString(frame.Progress, { size = 11, color = { 0.82, 0.82, 0.82, 1 } })
+end
+
 local function StyleQuestHeader(frame)
     if not frame then return end
     SkinBase.ClampTextureHidden(frame.Background, frame.NextObjective and frame.Progress and true or false)
@@ -158,9 +170,13 @@ local function StyleQuestHeader(frame)
     if frame.GetNormalTexture then HideArt(frame:GetNormalTexture()) end
     if frame.GetHighlightTexture then HideArt(frame:GetHighlightTexture()) end
     RoundSurface(frame, 5, 1, "ROW")
-    SkinBase.ApplyButtonFontObjects(frame)
-    SkinBase.SkinFontString(frame.Text, { size = 12, color = { 0.92, 0.92, 0.92, 1 } })
-    SkinBase.SkinFontString(frame.Progress, { size = 11, fontOnly = true })
+    StyleQuestHeaderText(frame)
+    if not SkinBase.GetFrameData(frame, "mapQuestHeaderTextHooks") then
+        for _, method in ipairs({ "UpdateTitle", "CheckHighlightTitle", "UpdateProgress" }) do
+            if type(frame[method]) == "function" then hooksecurefunc(frame, method, StyleQuestHeaderText) end
+        end
+        SkinBase.SetFrameData(frame, "mapQuestHeaderTextHooks", true)
+    end
     if frame.NextObjective then
         local objective = frame.NextObjective
         if type(frame.UpdateNextObjective) == "function" and not SkinBase.GetFrameData(frame, "mapCampaignObjectiveHook") then
@@ -168,6 +184,15 @@ local function StyleQuestHeader(frame)
             hooksecurefunc(frame, "UpdateNextObjective", StyleQuestHeader)
         end
         SkinBase.SkinFontString(objective.Text, { size = 11, fontOnly = true })
+        -- Extend only QUI's decoration. Blizzard retains the row layout,
+        -- objective anchors, hit rect and padding used by its secure updates.
+        local backdrop = SkinBase.GetBackdrop(frame)
+        if backdrop and objective:IsShown() then
+            backdrop:ClearAllPoints()
+            local pixel = SkinBase.GetPixelSize(frame, 1)
+            backdrop:SetPoint("TOPLEFT", frame, "TOPLEFT", pixel, -pixel)
+            backdrop:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -pixel, -8)
+        end
     end
 end
 
@@ -644,6 +669,7 @@ local function SkinWorldMap()
     if not IsSettingEnabled("skinWorldMap") then return end
     local frame = _G.WorldMapFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
+    if SkinBase.DeferUntilShown(frame, SkinWorldMap) then return end
 
     if frame.BorderFrame then
         SkinBase.SkinButtonFrameTemplate(frame.BorderFrame)
@@ -660,8 +686,13 @@ local function SkinWorldMap()
 end
 
 local function RefreshWorldMap()
+    if not IsSettingEnabled("skinWorldMap") then return end
     local frame = _G.WorldMapFrame
-    if not frame or not SkinBase.IsSkinned(frame) then return end
+    if not frame then return end
+    if not SkinBase.IsSkinned(frame) then
+        SkinWorldMap()
+        return
+    end
     if frame.BorderFrame then
         ApplyBorderBackdrop(SkinBase.GetBackdrop(frame.BorderFrame))
     end

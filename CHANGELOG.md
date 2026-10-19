@@ -4,7 +4,175 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.2-beta12 - 2026-10-19
+
+### Improved
+
+- Group-frame Cleanse-Ready Glow has its own debuff scope, custom or per-type
+  colors, opacity, and static, pulse, or moving-highlight animations. Settings
+  previews reflect these choices independently of the dispel border.
+
+### Fixed
+
+- Hidden essential and utility Cooldown Manager buttons no longer intercept
+  clicks under supported mounted and out-of-combat visibility settings. When
+  combat makes the HUD visible, it appears before clicks are enabled.
+- Inspect models have more camera clearance. Trade item rows and acceptance
+  highlights align correctly, with duplicate decorative borders removed.
+- Rated-loot, money, and collection alerts retain QUI styling through native
+  animations. Achievement hover highlights use QUI styling.
+
+## v5.5.2-beta11 - 2026-10-18
+
+### Improved
+
+- Settings use consistent sidebar section links on pages with three or more
+  available sections. Links follow the selected settings and jump directly to
+  their headings, including when switching action bars or opening a page for
+  the first time.
+- Reduced repeated action bar and aura setup during startup. Hidden Blizzard
+  panels defer skinning until first shown.
+
+### Fixed
+
+- Raid frames can display players joining previously empty allowed subgroups
+  during combat, with group labels following the visible frames.
+- Saved chat history loads before new login messages and default-chat backfill,
+  preserving message order.
+- Info Bar icons use native secure clicks in combat. Spellbook and Talents also
+  use native clicks outside combat to avoid secret-value cooldown errors;
+  on Retail, both follow Blizzard's remembered Player Spells tab.
+- First-show skinning no longer waits for combat to end, and font styling avoids
+  recursive font-object updates.
+- Reputation scans restore collapsed headers correctly, including headers that
+  share faction IDs.
+
+## v5.5.2-beta10 - 2026-10-18
+
+### Fixed
+
+- PlayerChoice windows, including the Codex, no longer grow taller on repeated
+  opens because of stale widget rows.
+- Objective Tracker appearance refreshes no longer request a shared Blizzard
+  tracker update. Font changes now wait for the next native layout, keeping
+  text sizes consistent with their measured spacing.
+
+## v5.5.2-beta9 - 2026-10-17
+
+### Fixed
+
+- Objective Tracker quest and profession recipe text now uses the correct layout
+  height, preventing wrapped text and font changes from overlapping nearby items.
+- Objective Tracker restores Max Height immediately during refreshes, including
+  unrestricted combat updates, preventing extra objectives from briefly flashing
+  before they are hidden.
+
+## v5.5.2-beta8 - 2026-10-17
+
+### Fixed
+
+- Expanding group-frame aura settings now keeps Targeted Spells, Dispel, and
+  following sections below the editor instead of overlapping it.
+- Objective Tracker Max Height now uses the full configured height, allowing
+  more tracked quests and recipes to fit beyond Blizzard's original height.
+
+## v5.5.2-beta7 - 2026-10-17
+
+### Fixed
+
+- Settings pages no longer flash or fade when switching modules or subpages.
+  Navigation flyouts retain their entrance animation.
+- Paging arrows use native images so fonts without triangle symbols no longer
+  display missing-character boxes, including on vendor page buttons.
+
+## v5.5.2-beta6 - 2026-10-17
+
+### Fixed
+
+- Character and Inspect windows now recognize permanent glove enchants and show
+  the missing-enchant marker when gloves have no enchant applied.
+- Options navigation keeps its full scrolling area when the window is resized,
+  including when layout updates briefly report a zero-height content area.
+- World Map quest and campaign headers retain readable title and progress text
+  after native updates, with campaign backgrounds below the text and spacing
+  beneath the next objective.
+- Objective Tracker collapse buttons keep their QUI plus/minus glyphs without
+  native artwork reappearing behind them.
+
+## v5.5.2-beta5 - 2026-10-17
+
+### Improved
+
+- Spell Reminders settings explain each control, list saved reminders clearly,
+  and resize to fit the selected reminder's options.
+- Spell Reminder previews keep their positions during refresh and can be moved
+  from the full Power Infusion recipient sample. Layout Mode opens the matching
+  reminder settings and updates mover bounds when icon sizes change.
+- Layout Mode offers a picker for overlapping movers, a settings gear, and a
+  compact settings window that fits its content. Position and size controls
+  keep enough space as sections resize.
+
+### Fixed
+
+- Reminder enable toggles update existing movers. Closing Layout Mode with the
+  master switch off preserves each reminder's saved enabled choice.
+- Entering combat from Layout Mode restores normal reminder cooldown output and
+  hides preview samples, while respecting hidden gameplay frames and anchors.
+- Reopening mover settings refreshes saved offsets and anchor selections.
+- Character window tabs and the close button remain usable when Character pane
+  enhancements are disabled.
+
+## v5.5.2-beta4 - 2026-10-16
+
+### Fixed
+
+- Missing raid-buff icons now show the current spell rank after spell changes,
+  while retaining saved spell selections and hidden-buff settings.
+- The native external-event minimap shortcut remains visible and clickable when
+  QUI hides the minimap backdrop.
+- Character experience and reputation track backgrounds align with their native
+  fill areas on WoW Forever.
+- Stable windows no longer retain decorative footer, divider, and panel artwork
+  over QUI styling. Native slot states, models, and controls remain intact.
+- **Hide Border (Top)** supports the new WoW Forever minimap header textures and
+  restores native hover and pressed effects when disabled or in Edit Mode.
+
+### Compatibility
+
+- Refreshed Retail and WoW Forever API and interface references. WoW Forever
+  support remains experimental.
+
+## v5.5.2-beta3 - 2026-10-16
+
+### Fixed
+
+- Fixed Lua errors when rounded surfaces update on Blizzard frames with
+  restricted positioning. Rounded borders retain their native anchors and resume
+  pixel alignment when measurements become available.
+
+## v5.5.2-beta2 - 2026-10-15
+
+### Fixed
+
+- The Adventure Guide's Delves tab from Delve Companion no longer merges into
+  the Dungeons tab. It sits between Suggested Content and Dungeons with QUI
+  styling.
+
+## v5.5.2-beta1 - 2026-10-15
+
+### Beta Line
+
+- Starts the 5.5.2 beta line from stable 5.5.1.
+- Updates release versions only; runtime behavior is unchanged from 5.5.1.
+
 ## v5.5.1 - 2026-10-13
+
+### Fixed
+
+- Fixed a Lua error that could interrupt the loot window when transmog markers
+  were enabled, including for items such as Stinging Nettle.
+
+## v5.5.1-beta1 - 2026-10-13
 
 ### Fixed
 

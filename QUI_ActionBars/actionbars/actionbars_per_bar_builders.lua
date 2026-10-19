@@ -277,6 +277,33 @@ do
             return content:GetHeight()
         end
 
+        local function NavigationSections(dbKey, barDB)
+            local sections, headings = {}, {}
+            if not barDB then return sections, headings end
+            local function Add(key, label)
+                headings[key] = label
+                sections[#sections + 1] = { id = label, label = label }
+            end
+            if TOGGLEABLE_MAIN_BARS[dbKey] then Add("bar", ns.L["Bar"]) end
+            if LAYOUT_BARS[dbKey] and barDB.ownedLayout then Add("layout", ns.L["Layout"]) end
+            if dbKey == "microbar" then Add("ticket", ns.L["Ticket Icon"]) end
+            if SKINNABLE_BAR_KEYS[dbKey] then
+                Add("visual", ns.L["Visual"])
+                Add("keybind", ns.L["Keybind Text"])
+                Add("macro", ns.L["Macro Names"])
+                Add("stack", ns.L["Stack Count"])
+                Add("cooldown", ns.L["Cooldown Duration Text"])
+            end
+            Add("context", ns.L["Context Visibility"])
+            return sections, headings
+        end
+
+        ActionBarsPerBarBuilders.GetNavigationSections = function(barKey)
+            local db = GetDB()
+            local dbKey = SETTINGS_DB_KEY_MAP[barKey] or barKey
+            return NavigationSections(dbKey, db and db.bars and db.bars[dbKey])
+        end
+
         local function BuildBarSettings(content, barKey, width)
             if barKey == "totemBar" then
                 return BuildTotemBarSettings(content)
@@ -297,7 +324,7 @@ do
             end
 
             local global = db.global
-            local hasLayout = LAYOUT_BARS[dbKey]
+            local _, headings = NavigationSections(dbKey, barDB)
             local layout = barDB.ownedLayout
 
             local sections = {}
@@ -360,11 +387,11 @@ do
                 end
             end
 
-            if TOGGLEABLE_MAIN_BARS[dbKey] then
+            if headings.bar then
                 local enabledDesc = (dbKey == "microbar" and ns.L["Show or hide the micro menu. Stays in sync with this element's enable toggle in Layout Mode."])
                     or (dbKey == "bags" and ns.L["Show or hide the bag bar. Stays in sync with this element's enable toggle in Layout Mode."])
                     or ns.L["Show or hide this action bar. Bars 2-8 can be individually disabled without affecting the pet or stance bars."]
-                CreateCollapsible(content, ns.L["Bar"], FORM_ROW + 8, function(body)
+                CreateCollapsible(content, headings.bar, FORM_ROW + 8, function(body)
                     local sy = -4
                     P(GUI:CreateFormCheckbox(body, ns.L["Enabled"],
                         "enabled", barDB, ApplyBarEnabledState,
@@ -372,7 +399,7 @@ do
                 end, sections, relayout)
             end
 
-            if hasLayout and layout then
+            if headings.layout then
                 local isMicroBag = (dbKey == "microbar" or dbKey == "bags")
                 local maxButtons = BUTTON_COUNTS[dbKey] or (dbKey == "microbar" and 12 or (dbKey == "bags" and 6 or 12))
                 if isMicroBag and ns.Client and ns.Client.isForever then
@@ -390,7 +417,7 @@ do
                 if barKey == "bar1" then extraRows = extraRows + 1 end
                 if FLYOUT_BARS[barKey] then extraRows = extraRows + 1 end
                 local numRows = 7 + extraRows
-                CreateCollapsible(content, ns.L["Layout"], numRows * FORM_ROW + 8, function(body)
+                CreateCollapsible(content, headings.layout, numRows * FORM_ROW + 8, function(body)
                     local sy = -4
 
                     if barKey == "bar1" then
@@ -482,7 +509,7 @@ do
                 end, sections, relayout)
             end
 
-            if dbKey == "microbar" then
+            if headings.ticket then
                 barDB.ticketIcon = barDB.ticketIcon or {}
                 local ticketDB = barDB.ticketIcon
                 local ticketPositionOptions = {
@@ -490,7 +517,7 @@ do
                     {value = "above", text = ns.L["Above Bar"]},
                     {value = "below", text = ns.L["Below Bar"]},
                 }
-                CreateCollapsible(content, ns.L["Ticket Icon"], 3 * FORM_ROW + 8, function(body)
+                CreateCollapsible(content, headings.ticket, 3 * FORM_ROW + 8, function(body)
                     local sy = -4
                     sy = P(GUI:CreateFormDropdown(body, ns.L["Position"],
                         ticketPositionOptions, "position", ticketDB, RefreshActionBars,
@@ -506,8 +533,8 @@ do
                 end, sections, relayout)
             end
 
-            if SKINNABLE_BAR_KEYS[dbKey] then
-            CreateCollapsible(content, ns.L["Visual"], 7 * FORM_ROW + 8, function(body)
+            if headings.visual then
+            CreateCollapsible(content, headings.visual, 7 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormSlider(body, ns.L["Icon Crop"],
                     0.05, 0.15, 0.01, "iconZoom", barDB, RefreshActionBars, DEFER,
@@ -544,7 +571,7 @@ do
                     { description = ns.L["Visual response when a button is pressed. Blizzard Default replays the stock animation; QUI swaps in a subtle overlay; Off disables both."] }), body, sy)
             end, sections, relayout)
 
-            CreateCollapsible(content, ns.L["Keybind Text"], 7 * FORM_ROW + 8, function(body)
+            CreateCollapsible(content, headings.keybind, 7 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Keybinds"],
                     "showKeybinds", barDB, RefreshActionBars,
@@ -575,7 +602,7 @@ do
                     { description = ns.L["Color used for the keybind text on this bar."] }), body, sy)
             end, sections, relayout)
 
-            CreateCollapsible(content, ns.L["Macro Names"], 6 * FORM_ROW + 8, function(body)
+            CreateCollapsible(content, headings.macro, 6 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Macro Names"],
                     "showMacroNames", barDB, RefreshActionBars,
@@ -602,7 +629,7 @@ do
                     { description = ns.L["Color used for the macro name text on this bar."] }), body, sy)
             end, sections, relayout)
 
-            CreateCollapsible(content, ns.L["Stack Count"], 6 * FORM_ROW + 8, function(body)
+            CreateCollapsible(content, headings.stack, 6 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Counts"],
                     "showCounts", barDB, RefreshActionBars,
@@ -629,7 +656,7 @@ do
                     { description = ns.L["Color used for the stack count text on this bar."] }), body, sy)
             end, sections, relayout)
 
-            CreateCollapsible(content, ns.L["Cooldown Duration Text"], 6 * FORM_ROW + 8, function(body)
+            CreateCollapsible(content, headings.cooldown, 6 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, ns.L["Show Duration Text"],
                     "showCooldownText", barDB, RefreshActionBars,
@@ -657,7 +684,7 @@ do
             end, sections, relayout)
             end
 
-            CreateCollapsible(content, ns.L["Context Visibility"], 6 * FORM_ROW + 8, function(body)
+            CreateCollapsible(content, headings.context, 6 * FORM_ROW + 8, function(body)
                 local sy = -4
                 sy = P(GUI:CreateFormCheckbox(body, ns.L["Open World"],
                     "showInOpenWorld", barDB, RefreshActionBarFade,

@@ -1186,6 +1186,16 @@ function UIKit.CreateRoundedSurface(frame, opts)
             texture:SetPoint(first, frame, first, Aligned(first, x1, y1))
             texture:SetPoint(second, frame, second, Aligned(second, x2, y2))
         end
+        local function GetPosition()
+            if frame.IsAnchoringRestricted then
+                local restricted = frame:IsAnchoringRestricted()
+                if Helpers.IsSecretValue(restricted) or restricted then return end
+            end
+            local left = frame.GetLeft and frame:GetLeft()
+            local bottom = frame.GetBottom and frame:GetBottom()
+            if Helpers.IsSecretValue(left) or Helpers.IsSecretValue(bottom) then return end
+            return left, bottom
+        end
         function surface:Refresh()
             local owner = self.frame
             local px = GetPixelSize(owner)
@@ -1198,9 +1208,7 @@ function UIKit.CreateRoundedSurface(frame, opts)
             local stroke = math.min(3, math.max(1, Round(self.borderPixels)))
             local edge = stroke * px
             local r = radius * px
-            local left = owner.GetLeft and owner:GetLeft()
-            local bottom = owner.GetBottom and owner:GetBottom()
-            if Helpers.IsSecretValue(left) or Helpers.IsSecretValue(bottom) then left, bottom = nil, nil end
+            local left, bottom = GetPosition()
             self.left, self.bottom = left, bottom
             local dl, dr, dt, db = 0, 0, 0, 0
             if type(left) == "number" and type(bottom) == "number" and width and height then
@@ -1240,8 +1248,7 @@ function UIKit.CreateRoundedSurface(frame, opts)
             frame:HookScript("OnShow", function() surface:Refresh() end)
             frame:HookScript("OnUpdate", function()
                 if not surface.shown then return end
-                local left, bottom = frame:GetLeft(), frame:GetBottom()
-                if Helpers.IsSecretValue(left) or Helpers.IsSecretValue(bottom) then left, bottom = nil, nil end
+                local left, bottom = GetPosition()
                 if left ~= surface.left or bottom ~= surface.bottom then surface:Refresh() end
             end)
         end
@@ -1931,9 +1938,20 @@ end
 
 function UIKit.CreateIconButton(parent, opts)
     opts = opts or {}
-    local btn = CreateFrame("Button", opts.name, parent)
+    local clickButton = opts.clickButton or opts.combatClickButton
+    local btn = CreateFrame("Button", opts.name, parent, clickButton and "SecureActionButtonTemplate")
     btn:SetSize(opts.size or 18, opts.size or 18)
     btn:RegisterForClicks(opts.registerClicks or "LeftButtonUp")
+    if clickButton then
+        btn:SetAttribute("type", "click")
+        btn:SetAttribute("clickbutton", clickButton)
+        btn:SetAttribute("useOnKeyDown", false)
+    end
+    if opts.combatClickButton and not opts.clickButton then
+        SecureHandlerWrapScript(btn, "OnClick", btn, [[
+            if not SecureCmdOptionParse("[combat] true") then return false end
+        ]])
+    end
 
     local idle = opts.idleAlpha or 0.85
     local brighten = false
@@ -1990,9 +2008,9 @@ function UIKit.CreateIconButton(parent, opts)
             self.icon:SetVertexColor(v, v, v, 1)
         end)
     end
-    if opts.onClick then
-        local guard, click = opts.combatGuard, opts.onClick
-        btn:SetScript("OnClick", function(self, ...)
+    if opts.onClick and not opts.clickButton then
+        local guard, click = opts.combatGuard or opts.combatClickButton, opts.onClick
+        btn:SetScript(opts.combatClickButton and "PostClick" or "OnClick", function(self, ...)
             if guard and InCombatLockdown() then return end
             click(self, ...)
         end)
@@ -3609,6 +3627,27 @@ function SkinBase.IsAddOnFullyLoaded(addonName)
     return loadedOrLoading == true
 end
 
+function SkinBase.DeferUntilShown(frame, callback)
+    local state = SkinBase.GetFrameData(frame, "deferredUntilShown")
+    if frame:IsShown() then
+        if state then state.pending[callback] = nil end
+        return false
+    end
+    if not state then
+        state = { pending = {} }
+        SkinBase.SetFrameData(frame, "deferredUntilShown", state)
+        frame:HookScript("OnShow", function()
+            if not frame:IsShown() then return end
+            for pending in pairs(state.pending) do
+                state.pending[pending] = nil
+                pending()
+            end
+        end)
+    end
+    state.pending[callback] = true
+    return true
+end
+
 function SkinBase.OnAddOnLoaded(addonName, callback, delay)
     delay = delay or 0
     local function fire()
@@ -3762,8 +3801,13 @@ function SkinBase.LockFontObject(obj, opts)
     opts = opts or { fontOnly = true }
 
     if obj.SetFontObject and obj.SetFont then
+        local styling = false
         hooksecurefunc(obj, "SetFontObject", function(self)
-            if not opts.guard or opts.guard(self) then SkinBase.SkinFontString(self, opts) end
+            if styling or (opts.guard and not opts.guard(self)) then return end
+            styling = true
+            local ok, err = pcall(SkinBase.SkinFontString, self, opts)
+            styling = false
+            if not ok then error(err, 0) end
         end)
     end
 
@@ -4160,7 +4204,8 @@ function SkinBase.SkinNextPrevButton(button, direction, opts)
         local font = (Helpers.GetGeneralFont and Helpers.GetGeneralFont()) or STANDARD_TEXT_FONT
         glyph:SetFont(font, opts.size or 14, "OUTLINE")
         local isPrev = direction == "left" or direction == "prev"
-        glyph:SetText(isPrev and "\226\151\132" or "\226\150\186")
+        glyph:SetText(("|A:%s:%d:%d|a"):format(
+            isPrev and "common-icon-backarrow" or "common-icon-forwardarrow", opts.size or 14, opts.size or 14))
         glyph:SetPoint("CENTER")
         glyph:SetTextColor(1, 1, 1, 1)
         SkinBase.SetFrameData(button, "nextPrevGlyph", glyph)
