@@ -13,6 +13,7 @@ bootstrap.lua
 cdm\cdm_shared.lua
 cdm\cdm_index.lua
 cdm\cdm_catalog.lua
+cdm\cdm_click_visibility.lua
 cdm\hud_visibility.lua
 cdm\cdm_scheduler.lua
 cdm\cdm_sources.lua

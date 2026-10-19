@@ -126,12 +126,7 @@ local function EnsureArtTexture(slot, art, key, layer)
     return tex
 end
 
-local BORDER_ANCHORS = {
-    top    = { { "TOPLEFT", "TOPLEFT" }, { "TOPRIGHT", "TOPRIGHT" } },
-    bottom = { { "BOTTOMLEFT", "BOTTOMLEFT" }, { "BOTTOMRIGHT", "BOTTOMRIGHT" } },
-    left   = { { "TOPLEFT", "TOPLEFT" }, { "BOTTOMLEFT", "BOTTOMLEFT" } },
-    right  = { { "TOPRIGHT", "TOPRIGHT" }, { "BOTTOMRIGHT", "BOTTOMRIGHT" } },
-}
+local BORDER_EDGES = { "top", "bottom", "left", "right" }
 
 -- Build/refresh the overlay art inside the visual slot and (re)bind it to the
 -- engine's dispel-type tinting. Must only run while auras are not secret.
@@ -163,18 +158,10 @@ local function StyleVisualSlot(slot, host, dispelCfg, borderOn, iconOn)
     -- carry the configured opacity (in-game confirmed: the fill rendered fully
     -- opaque regardless of fillOpacity). Opacity rides the asset alpha of the
     -- solid color texture instead, which STYLE_PRESERVE_ASSET keeps intact.
-    for edge, points in pairs(BORDER_ANCHORS) do
+    for _, edge in ipairs(BORDER_EDGES) do
         local tex = EnsureArtTexture(slot, art, edge, "BORDER")
         tex:SetColorTexture(1, 1, 1, borderOn and opacity or 0)
-        tex:ClearAllPoints()
-        for i = 1, #points do
-            tex:SetPoint(points[i][1], host, points[i][2], 0, 0)
-        end
-        if edge == "top" or edge == "bottom" then
-            tex:SetHeight(borderSize)
-        else
-            tex:SetWidth(borderSize)
-        end
+        Chrome.LayoutDispelBorderEdge(tex, host, edge, borderSize)
         tex:SetAlpha(1)
         if slot.AddDispelTypeTexture then
             slot:AddDispelTypeTexture(tex, borderOpts)
@@ -286,7 +273,38 @@ local function StyleGlowSlot(slot, host, glowCfg)
     end
     local GFChrome = ns.QUI_GroupFrameChrome
     if GFChrome and GFChrome.StyleCleanseGlowArt then
-        GFChrome.StyleCleanseGlowArt(slot, art, host, glowCfg and glowCfg.color)
+        local typed = glowCfg and glowCfg.colorMode == "TYPE"
+        local color = typed and { 1, 1, 1, 1 } or (glowCfg and glowCfg.color)
+        GFChrome.StyleCleanseGlowArt(slot, art, host, color, typed and 1 or GFChrome.GetCleanseGlowOpacity(glowCfg))
+        -- Engine tinting owns each registered texture's alpha. Carry global
+        -- opacity on the scriptless slot, above the type-tinted glow art.
+        local opacity = typed and GFChrome.GetCleanseGlowOpacity(glowCfg) or 1
+        -- Keep animation timelines on the visible host; secret slot visibility
+        -- only gates their targets, so a newly present aura needs no Lua OnShow.
+        slot._quiGlowAnimationHost = host
+        GFChrome.ConfigureCleanseGlowAnimation(slot, art, glowCfg, opacity)
+        if slot.ClearDispelTypeTextures then slot:ClearDispelTypeTextures() end
+        if typed and slot.AddDispelTypeTexture then
+            local options = {
+                style = STYLE_PRESERVE_ASSET, showWhenHarmful = true,
+                showWhenHelpful = false, showWithoutDispelType = true,
+                customDispelColorMap = F.BuildColorMap(GFChrome.GetCleanseGlowColorMap(glowCfg, art._quiGlowBaseStrength)),
+            }
+            for _, key in ipairs(GFChrome.GLOW_PARTS) do
+                slot:AddDispelTypeTexture(art[key], options)
+            end
+            if glowCfg.animation == "MOVING" then
+                local highlightOptions = {
+                    style = STYLE_PRESERVE_ASSET, showWhenHarmful = true,
+                    showWhenHelpful = false, showWithoutDispelType = true,
+                    customDispelColorMap = F.BuildColorMap(GFChrome.GetCleanseGlowColorMap(glowCfg)),
+                }
+                for _, key in ipairs(GFChrome.GLOW_PARTS) do
+                    slot:AddDispelTypeTexture(art.movingHighlights[key], highlightOptions)
+                end
+            end
+        end
+
     end
 end
 
@@ -386,6 +404,11 @@ function F.Sync(frame, unit, allowCreate, healerSettings, fillDirection)
         state.configShown = false
         ApplyShown(state)
         frame._quiDispelFeederActive = true
+        local glowSlot = state.slots.glow
+        if glowSlot and glowSlot.frame and glowSlot.frame._quiGlowAnimation then
+            if AurasAreSecret() then return false end
+            Chrome.ConfigureCleanseGlowAnimation(glowSlot.frame, glowSlot.frame._quiDispelArt, { enabled = false })
+        end
         return true
     end
 
@@ -426,9 +449,12 @@ function F.Sync(frame, unit, allowCreate, healerSettings, fillDirection)
             end
         end
     end
-    local glowSlotCF
+    local glowFilter, glowSlotCF = BY_ME_FILTER, nil
+    if glowCfg and glowCfg.scope == "ALL_TYPED" then
+        glowFilter, glowSlotCF = ALL_TYPED_FILTER, ALL_TYPED_CF
+    end
     if not glowOn then glowSlotCF = PARK_FILTER end
-    if not EnsureSlot(state, container, "glow", BY_ME_FILTER, glowSlotCF) then
+    if not EnsureSlot(state, container, "glow", glowFilter, glowSlotCF) then
         complete = false
     end
 
@@ -451,8 +477,12 @@ function F.Sync(frame, unit, allowCreate, healerSettings, fillDirection)
             end
         end
         local glowSlot = state.slots.glow
-        if glowOn and glowSlot and glowSlot.frame then
-            StyleGlowSlot(glowSlot.frame, frame, glowCfg)
+        if glowSlot and glowSlot.frame then
+            if glowOn then
+                StyleGlowSlot(glowSlot.frame, frame, glowCfg)
+            elseif glowSlot.frame._quiGlowAnimation then
+                Chrome.ConfigureCleanseGlowAnimation(glowSlot.frame, glowSlot.frame._quiDispelArt, { enabled = false })
+            end
         end
     end
 
