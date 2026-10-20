@@ -523,7 +523,6 @@ function Chrome.ConfigureCleanseGlowAnimation(owner, art, settings, opacity)
     owner:SetAlpha(opacity)
     art._quiGlowBaseStrength = mode == "MOVING" and 0.35 or 1
     Chrome.SetCleanseGlowColor(art, art._quiGlowColor, art._quiGlowOpacity)
-    for _, key in ipairs(GLOW_PARTS) do if art[key] then art[key]:SetAlpha(1) end end
     if mode == "PULSE" then
         if not state.pulse then
             state.pulse = animationHost:CreateAnimationGroup()
