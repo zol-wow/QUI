@@ -4,6 +4,33 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.3-beta1 - 2026-10-20
+
+### Improved
+
+- Mover Open settings links select the matching section, unit tab, or aura
+  display/group and reveal the destination in the navigation sidebar. Swing
+  timer drawers keep layout controls; gameplay and appearance controls remain
+  in the main settings page.
+- Refined Blizzard window, alert, loot, tooltip, and status-bar styling,
+  including bank rarity borders and native hover states.
+
+### Fixed
+
+- Resizing movers preserves saved anchor gaps across attached movers without
+  reopening Layout Mode. Settings drawers fit after their contents settle.
+- Forever movement-speed stats and tooltips use native values without
+  restricted arithmetic. Swing timer styling and previews preserve native
+  timing, visibility registration, and range presentation.
+- Cooldown Manager setup warnings wait for saved settings to load and clear
+  when the viewer is enabled. Durability anchors survive native repositioning.
+- Bag button creation waits until combat ends, cooldown identities refresh
+  after specialization changes, and offline group members lose stale auras.
+- Loot and loot-roll previews no longer replace or hide active loot windows
+  and roll choices.
+- Theme changes preserve settings navigation, and color-picker styling is
+  consistent across settings controls.
+
 ## v5.5.2-beta12 - 2026-10-19
 
 ### Improved
