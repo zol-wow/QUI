@@ -714,8 +714,8 @@ SkinBase.OnAddOnLoaded("Blizzard_WorldMap", SkinWorldMap, 0)
 
 local function StyleFlightMapTitle(frame)
     if not IsSettingEnabled("skinFlightMap") or (frame.IsForbidden and frame:IsForbidden()) then return end
-    local border = frame.BorderFrame
-    if not border or (border.IsForbidden and border:IsForbidden()) then return end
+    local border = frame.BorderFrame or frame
+    if border.IsForbidden and border:IsForbidden() then return end
     local container = border.TitleContainer
     if container and container.IsForbidden and container:IsForbidden() then return end
     local title = border.TitleText or (container and container.TitleText)
@@ -745,6 +745,7 @@ end
 local function RefreshFlightMap()
     if _G.TaxiFrame and SkinBase.IsSkinned(_G.TaxiFrame) then
         SkinBase.RefreshFrameBackdropColors(_G.TaxiFrame)
+        StyleFlightMapTitle(_G.TaxiFrame)
     end
     local frame = _G.FlightMapFrame
     if not frame or not SkinBase.IsSkinned(frame) then return end
@@ -770,5 +771,6 @@ SkinBase.OnAddOnLoaded("Blizzard_UIPanels_Game", function()
     local frame = _G.TaxiFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
     SkinBase.SkinWindow(frame)
+    StyleFlightMapTitle(frame)
     SkinBase.MarkSkinned(frame)
 end, 0)

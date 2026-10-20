@@ -4714,11 +4714,15 @@ local function OnEvent(self, event, arg1, ...)
             for i = 1, nFrames do UpdateThreat(frames[i]) end
 
         elseif event == "UNIT_CONNECTION" or event == "UNIT_FLAGS" then
+            local GFA = ns.QUI_GroupFrameAuras
             for i = 1, nFrames do
                 local frame = frames[i]
                 UpdateConnection(frame)
                 UpdateHealth(frame)
                 UpdatePower(frame)
+                if event == "UNIT_CONNECTION" and GFA and GFA.UpdateStripContainers then
+                    GFA.UpdateStripContainers(frame)
+                end
             end
             _state.RefreshTrackedSlotAssist(arg1, frames)
 

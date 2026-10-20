@@ -133,8 +133,9 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         if Bags.Junk and Bags.Junk.OnCombat then Bags.Junk.OnCombat() end
         if Bags.GuildWindow.IsShown() then Bags.GuildWindow.Refresh() end
     elseif event == "PLAYER_REGEN_ENABLED" then
-        if Bags.cooldownRefreshPending then
+        if Bags.cooldownRefreshPending or Bags.itemButtonRefreshPending then
             Bags.cooldownRefreshPending = nil
+            Bags.itemButtonRefreshPending = nil
             if Bags.BagWindow.IsShown() then Bags.BagWindow.Refresh() end
             if Bags.BankWindow.IsShown() then Bags.BankWindow.Refresh() end
         end

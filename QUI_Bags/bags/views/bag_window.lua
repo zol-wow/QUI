@@ -764,88 +764,90 @@ function BagWindow.Refresh()
             btn = byBag[cell.slot]
             if not btn then
                 btn = Bags.ItemButtons.CreateLive(holders[cell.bagID], cell.bagID)
-                btn:SetID(cell.slot)
-                local catcher = CreateFrame("Button", nil, btn)
-                catcher:SetAllPoints()
-                catcher:SetFrameLevel(btn:GetFrameLevel() + 5)
-                catcher:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-                catcher:SetScript("OnClick", function(_, mouseButton)
-                    if mouseButton == "RightButton" then
-                        SendSelection()
-                        return
-                    end
-                    local bagID, slot = btn:GetBagID(), btn:GetID()
-                    local info = C_Container.GetContainerItemInfo(bagID, slot)
-                    if info then
-                        local key = bagID .. ":" .. slot
-                        if selectedCells[key] then
-                            selectedCells[key] = nil
-                        else
-                            selectedCells[key] = { bag = bagID, slot = slot, itemID = info.itemID }
+                if btn then
+                    btn:SetID(cell.slot)
+                    local catcher = CreateFrame("Button", nil, btn)
+                    catcher:SetAllPoints()
+                    catcher:SetFrameLevel(btn:GetFrameLevel() + 5)
+                    catcher:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+                    catcher:SetScript("OnClick", function(_, mouseButton)
+                        if mouseButton == "RightButton" then
+                            SendSelection()
+                            return
                         end
-                        Bags.ItemButtons.SetSelectedOverlay(btn, selectedCells[key] ~= nil)
-                        UpdateSendButton()
+                        local bagID, slot = btn:GetBagID(), btn:GetID()
+                        local info = C_Container.GetContainerItemInfo(bagID, slot)
+                        if info then
+                            local key = bagID .. ":" .. slot
+                            if selectedCells[key] then
+                                selectedCells[key] = nil
+                            else
+                                selectedCells[key] = { bag = bagID, slot = slot, itemID = info.itemID }
+                            end
+                            Bags.ItemButtons.SetSelectedOverlay(btn, selectedCells[key] ~= nil)
+                            UpdateSendButton()
+                        end
+                    end)
+                    catcher:SetScript("OnEnter", function(self)
+                        Bags.ItemButtons.DismissNewItemGlow(btn)
+                        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                        GameTooltip:SetBagItem(btn:GetBagID(), btn:GetID())
+                        GameTooltip:AddLine(" ")
+                        GameTooltip:AddLine(ns.L["Click: select / deselect."], 0.2, 0.82, 1, true)
+                        local dest = SendDestination()
+                        local n = SelectedCount()
+                        if dest and n > 0 then
+                            GameTooltip:AddLine((ns.L["Right-click: %s %d selected items."]):format(
+                                dest.verb, n), 0.2, 0.82, 1, true)
+                        end
+                        GameTooltip:Show()
+                    end)
+                    catcher:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                    catcher:Hide()
+                    btn._quiSelectCatcher = catcher
+                    local dep = CreateFrame("Button", nil, btn)
+                    dep:SetAllPoints()
+                    dep:SetFrameLevel(btn:GetFrameLevel() + 4)
+                    dep:RegisterForClicks("RightButtonUp")
+                    if InCombatLockdown()
+                        or not ns.SafeCallMethod("defer-ooc", dep, "SetPassThroughButtons", "LeftButton") then
+                        dep._quiPassThroughFailed = true
                     end
-                end)
-                catcher:SetScript("OnEnter", function(self)
-                    Bags.ItemButtons.DismissNewItemGlow(btn)
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:SetBagItem(btn:GetBagID(), btn:GetID())
-                    GameTooltip:AddLine(" ")
-                    GameTooltip:AddLine(ns.L["Click: select / deselect."], 0.2, 0.82, 1, true)
-                    local dest = SendDestination()
-                    local n = SelectedCount()
-                    if dest and n > 0 then
-                        GameTooltip:AddLine((ns.L["Right-click: %s %d selected items."]):format(
-                            dest.verb, n), 0.2, 0.82, 1, true)
-                    end
-                    GameTooltip:Show()
-                end)
-                catcher:SetScript("OnLeave", function() GameTooltip:Hide() end)
-                catcher:Hide()
-                btn._quiSelectCatcher = catcher
-                local dep = CreateFrame("Button", nil, btn)
-                dep:SetAllPoints()
-                dep:SetFrameLevel(btn:GetFrameLevel() + 4)
-                dep:RegisterForClicks("RightButtonUp")
-                if InCombatLockdown()
-                    or not ns.SafeCallMethod("defer-ooc", dep, "SetPassThroughButtons", "LeftButton") then
-                    dep._quiPassThroughFailed = true
-                end
-                dep:SetScript("OnClick", function()
-                    local route = RightClickRoute()
-                    if route == "auction" then
-                        PostToAuctionHouse(btn)
-                    elseif route == "bankTab" then
-                        DepositToSelectedTab(btn)
-                    end
-                end)
-                dep:SetScript("OnEnter", function(self)
-                    Bags.ItemButtons.DismissNewItemGlow(btn)
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:SetBagItem(btn:GetBagID(), btn:GetID())
-                    GameTooltip:AddLine(" ")
-                    if RightClickRoute() == "auction" then
-                        local loc = ItemLocation:CreateFromBagAndSlot(
-                            btn:GetBagID(), btn:GetID())
-                        if loc and loc:IsValid()
-                            and C_AuctionHouse.IsSellItemValid(loc, false) then
-                            GameTooltip:AddLine(ns.L["Right-click: sell at the auction house."],
+                    dep:SetScript("OnClick", function()
+                        local route = RightClickRoute()
+                        if route == "auction" then
+                            PostToAuctionHouse(btn)
+                        elseif route == "bankTab" then
+                            DepositToSelectedTab(btn)
+                        end
+                    end)
+                    dep:SetScript("OnEnter", function(self)
+                        Bags.ItemButtons.DismissNewItemGlow(btn)
+                        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                        GameTooltip:SetBagItem(btn:GetBagID(), btn:GetID())
+                        GameTooltip:AddLine(" ")
+                        if RightClickRoute() == "auction" then
+                            local loc = ItemLocation:CreateFromBagAndSlot(
+                                btn:GetBagID(), btn:GetID())
+                            if loc and loc:IsValid()
+                                and C_AuctionHouse.IsSellItemValid(loc, false) then
+                                GameTooltip:AddLine(ns.L["Right-click: sell at the auction house."],
+                                    0.2, 0.82, 1, true)
+                            else
+                                GameTooltip:AddLine(ns.L["This item can't be put up for auction."],
+                                    0.6, 0.6, 0.6, true)
+                            end
+                        else
+                            GameTooltip:AddLine(ns.L["Right-click: deposit into the open bank tab."],
                                 0.2, 0.82, 1, true)
-                        else
-                            GameTooltip:AddLine(ns.L["This item can't be put up for auction."],
-                                0.6, 0.6, 0.6, true)
                         end
-                    else
-                        GameTooltip:AddLine(ns.L["Right-click: deposit into the open bank tab."],
-                            0.2, 0.82, 1, true)
-                    end
-                    GameTooltip:Show()
-                end)
-                dep:SetScript("OnLeave", function() GameTooltip:Hide() end)
-                dep:Hide()
-                btn._quiDepositCatcher = dep
-                byBag[cell.slot] = btn
+                        GameTooltip:Show()
+                    end)
+                    dep:SetScript("OnLeave", function() GameTooltip:Hide() end)
+                    dep:Hide()
+                    btn._quiDepositCatcher = dep
+                    byBag[cell.slot] = btn
+                end
             end
         else
             local byBag = cachedButtons[cell.bagID]
@@ -856,11 +858,13 @@ function BagWindow.Refresh()
                 byBag[cell.slot] = btn
             end
         end
-        btn:SetSize(snappedSize, snappedSize)
-        btn:ClearAllPoints()
-        btn:SetPoint("TOPLEFT", win._body, "TOPLEFT", p.x + xOff, p.y)
-        DressPlacedCell(cell, btn, live, rightClickRoute)
-        btn:Show()
+        if btn then
+            btn:SetSize(snappedSize, snappedSize)
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", win._body, "TOPLEFT", p.x + xOff, p.y)
+            DressPlacedCell(cell, btn, live, rightClickRoute)
+            btn:Show()
+        end
     end
 
     UpdateFreeText(slots)

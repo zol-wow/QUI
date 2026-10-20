@@ -242,8 +242,113 @@ local function StyleSpecializationContent(content)
     end
 end
 
+local function StyleHeroTalentContent(content)
+    if not content then return end
+    for _, key in ipairs({ "ColumnDivider", "SpecImageBorder", "SpecImageBorderSelected" }) do
+        SkinBase.ClampTextureHidden(content[key], true)
+    end
+    for _, key in ipairs({ "ActivatedBackFrames", "ActivatedLeftFrames", "ActivatedRightFrames" }) do
+        for _, texture in ipairs(content[key] or {}) do SkinBase.ClampTextureHidden(texture, true) end
+    end
+    for _, key in ipairs({ "ActivateButton", "ApplyChangesButton" }) do
+        SkinBase.SkinButton(content[key])
+        SkinBase.RefreshWidget(content[key])
+    end
+    SkinBase.SkinFontString(content.SpecName, WHITE_TEXT_STYLE)
+    SkinBase.SkinFontString(content.Description, { color = { 0.9, 0.9, 0.9, 1 } })
+    SkinBase.SkinFontString(content.ActivatedText, { fontOnly = true })
+    local currency = content.CurrencyFrame
+    if currency then
+        SkinBase.SkinFontString(currency.LabelText, { fontOnly = true })
+        SkinBase.SkinFontString(currency.AmountText, { fontOnly = true })
+    end
+    if not SkinBase.GetBackdrop(content) then
+        SkinBase.CreateBackdrop(content, nil, nil, nil, nil, nil, nil, nil, nil, 6)
+    end
+    SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(content), {
+        radius = 6, withBackground = true,
+        borderColor = content.isActiveSpec and SkinBase.GetChromePalette().accent or nil,
+    })
+    if not SkinBase.GetFrameData(content, "qHeroTalentChromeHooked") then
+        SkinBase.SetFrameData(content, "qHeroTalentChromeHooked", true)
+        if type(content.SetIsActive) == "function" then
+            hooksecurefunc(content, "SetIsActive", StyleHeroTalentContent)
+        end
+    end
+end
+
+local function StyleHeroTalentsDialog(frame)
+    local talents = frame and frame.TalentsFrame
+    local dialog = talents and talents.heroSpecSelectionDialog or _G.HeroTalentsSelectionDialog
+    if not dialog then return end
+    if not SkinBase.IsSkinned(dialog) then
+        SkinBase.SkinButtonFrameTemplate(dialog)
+        SkinBase.MarkSkinned(dialog)
+    end
+    SkinBase.ClampTextureHidden(dialog.Background, true)
+    RefreshBackdropColors(dialog)
+    local pool = dialog.SpecContentFramePool
+    if pool and pool.EnumerateActive then
+        for content in pool:EnumerateActive() do StyleHeroTalentContent(content) end
+    end
+    if not SkinBase.GetFrameData(dialog, "qHeroTalentDialogHooked") then
+        SkinBase.SetFrameData(dialog, "qHeroTalentDialogHooked", true)
+        dialog:HookScript("OnShow", function()
+            if IsSettingEnabled("skinSpellBook") then StyleHeroTalentsDialog(frame) end
+        end)
+    end
+end
+
+local function StylePvPTalentRow(row)
+    if not row or not IsSettingEnabled("skinSpellBook") then return end
+    local icon = row.Icon
+    local iconAlpha = icon and icon:GetAlpha()
+    SkinBase.SkinScrollRow(row)
+    if icon then
+        icon:SetAlpha(iconAlpha)
+        SkinBase.RoundIconTexture(row, icon)
+        SkinBase.SkinIcon(icon, { crop = false })
+    end
+    for _, key in ipairs({ "Border", "Selected", "SelectedOtherCheck" }) do
+        SkinBase.ClampTextureHidden(row[key], true)
+    end
+    if row.GetHighlightTexture then SkinBase.ClampTextureHidden(row:GetHighlightTexture(), true) end
+    SkinBase.SkinFontString(row.Name, { fontOnly = true })
+    SkinBase.RefreshWidget(row)
+    local border = row.selectedHere and SkinBase.GetChromePalette().accent
+        or SkinBase.GetFrameData(row, "windowColor")
+    if border then
+        SkinBase.SetBackdropColors(SkinBase.GetBackdrop(row), border, nil)
+        SkinBase.SetFrameData(row, "windowColor", border)
+    end
+    if not SkinBase.GetFrameData(row, "qPvPTalentRowHooked") then
+        SkinBase.SetFrameData(row, "qPvPTalentRowHooked", true)
+        if type(row.Update) == "function" then hooksecurefunc(row, "Update", StylePvPTalentRow) end
+    end
+end
+
+local function StylePvPTalentList(frame)
+    local talents = frame and frame.TalentsFrame
+    local list = talents and talents.PvPTalentList
+    if not list then return end
+    SkinBase.SkinListContainer(list, StylePvPTalentRow)
+    if not SkinBase.GetBackdrop(list) then
+        SkinBase.CreateBackdrop(list, nil, nil, nil, nil, nil, nil, nil, nil, 6)
+    end
+    SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(list), { radius = 6, withBackground = true })
+    SkinBase.ForEachScrollBoxFrame(list.ScrollBox, StylePvPTalentRow)
+    if not SkinBase.GetFrameData(list, "qPvPTalentListHooked") then
+        SkinBase.SetFrameData(list, "qPvPTalentListHooked", true)
+        list:HookScript("OnShow", function()
+            if IsSettingEnabled("skinSpellBook") then StylePvPTalentList(frame) end
+        end)
+    end
+end
+
 local function StylePlayerSpellsControls(frame)
     if not frame then return end
+    StyleHeroTalentsDialog(frame)
+    StylePvPTalentList(frame)
     local resize = frame.MaximizeMinimizeButton
     if resize then
         for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
@@ -1532,6 +1637,27 @@ local function StylePetAbilitySelector(selector)
     end
 end
 
+local function StylePetLockedSlot(slot)
+    local help = slot.helpFrame
+    if not help then return end
+    for _, region in ipairs({ help:GetRegions() }) do
+        local atlas = region.GetAtlas and region:GetAtlas()
+        if atlas and atlas:lower() == "petjournal-battleslot-locked" then
+            SkinBase.ClampTextureHidden(region, true)
+        end
+    end
+    -- The illustrated plate includes the lock. Keep that meaning as a separate
+    -- icon so the native help/requirement frames can still control visibility.
+    local lock = SkinBase.GetFrameData(help, "qPetLockedIcon")
+    if not lock then
+        lock = help:CreateTexture(nil, "OVERLAY")
+        lock:SetTexture("Interface\\PetBattles\\PetBattle-LockIcon")
+        lock:SetSize(24, 32)
+        lock:SetPoint("TOPLEFT", help, "TOPLEFT", 16, -14)
+        SkinBase.SetFrameData(help, "qPetLockedIcon", lock)
+    end
+end
+
 local function StylePetCollection(page)
     if not page then return end
     StylePetAbilitySelector(page.SpellSelect)
@@ -1560,6 +1686,7 @@ local function StylePetCollection(page)
     for i = 1, 3 do
         local slot = page.Loadout and page.Loadout["Pet" .. i]
         if slot then
+            StylePetLockedSlot(slot)
             SkinBase.ClampTextureHidden(_G["PetJournalLoadoutPet" .. i .. "BG"])
             SkinBase.ClampTextureHidden(slot.shadows)
             local sr, sg, sb, sa = SkinBase.GetWindowColors()

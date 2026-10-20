@@ -302,7 +302,11 @@ local function skinRow(row)
             texture:SetTexCoord(0, 1, 0, 1)
             texture:ClearAllPoints()
             texture:SetAllPoints(row)
-            texture:SetVertexColor(r, g, b, key == "SelectedHighlight" and 0.15 or 0.08)
+            -- Texture:SetAlpha shares vertex alpha. Native selection updates it,
+            -- so keep tint strength in additive RGB rather than an alpha it replaces.
+            local strength = key == "SelectedHighlight" and 0.15 or 0.08
+            texture:SetBlendMode("ADD")
+            texture:SetVertexColor(r * strength, g * strength, b * strength)
             SkinBase.RoundBarTexture(row, texture)
         end
     end
