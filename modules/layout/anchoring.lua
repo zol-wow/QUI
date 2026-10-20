@@ -541,6 +541,24 @@ local DYNAMIC_REANCHOR_KEYS = { buffFrame = true, debuffFrame = true }
 local function InstallAnchorGuard(frame, key)
     if _anchorGuardedFrames[frame] then return end
     if key == "chatFrame1" then return end
+    if key == "equipmentDurability" then
+        _anchorGuardedFrames[frame] = true
+        local function ReapplyDurabilityAnchor()
+            if _editModeReapplyGuard then return end
+            if _G.QUI_IsLayoutModeActive and _G.QUI_IsLayoutModeActive() then return end
+            local anchoringDB = QUICore.db and QUICore.db.profile
+                and QUICore.db.profile.frameAnchoring
+            local settings = GetSavedFrameAnchorSettings(anchoringDB, key)
+            if settings then
+                ns.SafeCall("best-effort-style", QUI_Anchoring.ApplyFrameAnchor, QUI_Anchoring, key, settings)
+            end
+        end
+        hooksecurefunc(frame, "SetPoint", ReapplyDurabilityAnchor)
+        if frame.ApplySystemAnchor then
+            hooksecurefunc(frame, "ApplySystemAnchor", ReapplyDurabilityAnchor)
+        end
+        return
+    end
     if not frame.ApplySystemAnchor then
         if DYNAMIC_REANCHOR_KEYS[key] then return end
         if _setPointGuardedFrames[frame] then return end
