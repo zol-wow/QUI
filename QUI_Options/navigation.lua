@@ -440,6 +440,23 @@ function GUI:CloseNavigationFlyout(frame)
     flyout._keyboard = false
 end
 
+local function RevealNavigationRow(panel, index)
+    local button = panel._buttons[index]
+    if not button or not button:IsShown() then return end
+    local top = button._navTop or (index - 1) * 30
+    local scroll = panel._scroll
+    local offset = scroll:GetVerticalScroll()
+    local view = scroll:GetHeight()
+    if view <= 0 then return end
+    local target
+    if top < offset then target = top
+    elseif top + button:GetHeight() > offset + view then target = top + button:GetHeight() - view end
+    if target then
+        local controller = UIKit.GetSmoothScroll and UIKit.GetSmoothScroll(scroll)
+        if controller then controller:ScrollTo(target, true) else scroll:SetVerticalScroll(target) end
+    end
+end
+
 local function Highlight(flyout, index)
     flyout._keyboardIndex = index
     for i, button in ipairs(flyout._buttons) do
@@ -448,26 +465,24 @@ local function Highlight(flyout, index)
             button._label:SetTextColor(unpack(GUI.Colors.text))
         end
     end
-    local button = flyout._buttons[index]
-    if button and flyout._keyboard then
-        local top = button._navTop or (index - 1) * 30
-        local scroll = flyout._scroll:GetVerticalScroll()
-        local view = flyout._scroll:GetHeight()
-        if top < scroll then flyout._scroll:SetVerticalScroll(top)
-        elseif top + 30 > scroll + view then flyout._scroll:SetVerticalScroll(top + 30 - view) end
-    end
+    if flyout._keyboard then RevealNavigationRow(flyout, index) end
 end
 
-function GUI:RefreshNavigationSectionHighlight(tile)
+function GUI:RefreshNavigationSectionHighlight(tile, revealActive)
     local frame = self.MainFrame
     if not frame then return end
     local current = self:GetTileNavigationPages(tile)
     for _, panel in pairs({ frame._pageDock, frame._pageFlyout }) do
         if panel._tile == tile and panel:IsShown() then
+            local activeIndex
             for i, button in ipairs(panel._buttons) do
-                if button:IsShown() and current[i] then button._page.active = current[i].active end
+                if button:IsShown() and current[i] then
+                    button._page.active = current[i].active
+                    if current[i].active then activeIndex = i end
+                end
             end
             Highlight(panel, panel._keyboardIndex or 1)
+            if revealActive and activeIndex then RevealNavigationRow(panel, activeIndex) end
         end
     end
 end
@@ -735,7 +750,7 @@ function GUI:SetNavigationDocked(frame, enabled)
     self:RefreshNavigationDock(frame)
 end
 
-function GUI:RefreshNavigationDock(frame)
+function GUI:RefreshNavigationDock(frame, revealActive)
     if frame and frame._selectingFeatureTile then return end
     if not frame or not frame.contentArea or not frame.sidebar or frame._refreshingNavigationDock then return end
     frame._refreshingNavigationDock = true
@@ -774,8 +789,9 @@ function GUI:RefreshNavigationDock(frame)
         dock:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 5, -44)
         dock:SetPoint("BOTTOMLEFT", frame.contentArea, "BOTTOMLEFT", -196, 0)
         dock:SetWidth(184)
-        RenderPages(frame, dock, tile, pages)
+        local activeIndex = RenderPages(frame, dock, tile, pages)
         dock:Show()
+        if revealActive then RevealNavigationRow(dock, activeIndex) end
         if dock._scrollbar and dock._scrollbar.Update then dock._scrollbar:Update() end
     elseif frame._pageDock then frame._pageDock:Hide() end
     frame.contentArea:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", docked and 201 or 5, -44)

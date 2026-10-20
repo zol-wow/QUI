@@ -7130,17 +7130,26 @@ function GUI:SelectFeatureTile(frame, index, opts)
     local navigationToken = tile._settingsNavigationToken
     local destinationPage = tile._activeSubPageIndex or 1
     local function AfterLayout(callback)
-        local owner = tile._subPageBodies and tile._subPageBodies[destinationPage]
+        local surface = opts and opts.scrollToTop and tile._surfacePagesByPage
+            and tile._surfacePagesByPage[destinationPage]
+        local surfaceKey = surface and surface.getActiveTab and surface.getActiveTab()
+        local function GetOwner()
+            return surfaceKey and surface.getPage and surface.getPage(surfaceKey)
+                or tile._subPageBodies and tile._subPageBodies[destinationPage]
+        end
+        local owner = GetOwner()
         if not owner or not self.RunWhenSettingsLayoutReady then return end
-        self:RunWhenSettingsLayoutReady(owner, owner._contentBody, callback, function()
+        self:RunWhenSettingsLayoutReady(owner, owner._contentBody, function() callback(owner) end, function()
             return tile._settingsNavigationToken == navigationToken and tile._isActive
                 and (tile._activeSubPageIndex or 1) == destinationPage
+                and (not surfaceKey or surface.getActiveTab() == surfaceKey)
+                and GetOwner() == owner
         end)
     end
 
-    if opts and (opts.scrollToPath or opts.scrollToLabel or opts.scrollToFeatureId) then
-        AfterLayout(function()
-            local root = opts.searchRoot or tile._pageFrame
+    if opts and (opts.scrollToPath or opts.scrollToLabel or opts.scrollToFeatureId or opts.scrollToTop) then
+        AfterLayout(function(owner)
+            local root = opts.searchRoot or (opts.scrollToTop and owner._contentBody) or tile._pageFrame
             local scrolledToSection = false
 
             if opts.scrollToFeatureId then
@@ -7181,6 +7190,11 @@ function GUI:SelectFeatureTile(frame, index, opts)
                     end
                 end
                 if opts.pulse then GUI:PulseWidget(target) end
+            elseif not scrolledToSection and opts.scrollToTop and owner._scrollFrame then
+                JumpScrollTo(owner._scrollFrame, 0)
+            end
+            if self.RefreshNavigationSectionHighlight then
+                self:RefreshNavigationSectionHighlight(tile, true)
             end
         end)
     elseif opts and opts.sectionName and opts.searchTabIndex then
@@ -7201,7 +7215,7 @@ function GUI:SelectFeatureTile(frame, index, opts)
     frame._selectingFeatureTile = true
     local result = SelectFeatureTileWithContent(self, frame, index, opts)
     frame._selectingFeatureTile = nil
-    if self.RefreshNavigationDock then self:RefreshNavigationDock(frame) end
+    if self.RefreshNavigationDock then self:RefreshNavigationDock(frame, true) end
     local tile = frame._tiles and frame._tiles[index]
     if tile then
         local page = tile.config.subPages and tile.config.subPages[tile._activeSubPageIndex or 1]

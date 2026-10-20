@@ -410,6 +410,10 @@ Registry:RegisterFeature(Schema.Feature({
     nav = { tileId = "action_bars", subPageIndex = 6 },
     moverKey = "extraActionButton",
     lookupKeys = { "extraActionButton", "zoneAbility" },
+    lookupRoutes = {
+        extraActionButton = { scrollToLabel = ns.L["Extra Action Button"] },
+        zoneAbility = { scrollToLabel = ns.L["Zone Ability"] },
+    },
     render = {
         layout = function(host, options)
             local key = options and options.providerKey
