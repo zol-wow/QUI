@@ -23,20 +23,18 @@ local function BuildEnable(L)
     L.closeSection(section)
 end
 
-local function BuildBar(L, entry, includeSize)
+local function BuildBar(L, entry)
     local db = SwingTimers.GetSettings(entry.key)
     if not db then return end
 
-    if includeSize then GUI:SetSearchSection(ns.L[entry.label]) end
+    GUI:SetSearchSection(ns.L[entry.label])
     L.headerAt(ns.L[entry.label])
     local section = L.sectionAt()
-    if includeSize then
-        local width = GUI:CreateFormSlider(section.frame, nil, 80, 800, 1, "width", db, SwingTimers.Refresh,
-            { description = ns.L["Swing timer width in pixels."] })
-        local height = GUI:CreateFormSlider(section.frame, nil, 8, 80, 1, "height", db, SwingTimers.Refresh,
-            { description = ns.L["Swing timer height in pixels."] })
-        section.AddRow(Row(section.frame, ns.L["Width"], width), Row(section.frame, ns.L["Height"], height))
-    end
+    local width = GUI:CreateFormSlider(section.frame, nil, 80, 800, 1, "width", db, SwingTimers.Refresh,
+        { description = ns.L["Swing timer width in pixels."] })
+    local height = GUI:CreateFormSlider(section.frame, nil, 8, 80, 1, "height", db, SwingTimers.Refresh,
+        { description = ns.L["Swing timer height in pixels."] })
+    section.AddRow(Row(section.frame, ns.L["Width"], width), Row(section.frame, ns.L["Height"], height))
 
     local texture = GUI:CreateFormDropdown(section.frame, nil, Shared.GetTextureList(), "texture", db, SwingTimers.Refresh,
         { description = ns.L["Status bar texture used for the swing timer fill."] })
@@ -65,7 +63,7 @@ local function BuildPage(content)
     local L = ns.QUI_SettingsLayoutShared.MakeLayout(content)
     BuildEnable(L)
     for _, entry in ipairs(SwingTimers.entries) do
-        BuildBar(L, entry, true)
+        BuildBar(L, entry)
     end
     return L.finish()
 end
@@ -86,15 +84,13 @@ for _, entry in ipairs(SwingTimers.entries) do
         id = barEntry.key,
         moverKey = barEntry.key,
         category = "gameplay",
-        nav = { tileId = "gameplay", subPageIndex = 9 },
+        nav = { tileId = "gameplay", subPageIndex = 9, scrollToLabel = ns.L[barEntry.label] },
         getDB = function(profile) return profile and profile.swingTimers and profile.swingTimers[barEntry.key] end,
         apply = SwingTimers.Refresh,
         render = {
             layout = function(content)
                 local U = ns.QUI_LayoutMode_Utils
                 local L = ns.QUI_SettingsLayoutShared.MakeLayout(content)
-                BuildEnable(L)
-                BuildBar(L, barEntry, false)
                 local db = SwingTimers.GetSettings(barEntry.key)
                 if not db then return L.finish() end
 

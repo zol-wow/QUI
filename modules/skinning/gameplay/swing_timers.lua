@@ -94,6 +94,7 @@ local function Apply(entry)
     local width = math.max(80, math.min(800, tonumber(settings.width) or 250))
     local height = math.max(8, math.min(80, tonumber(settings.height) or 20))
     local fontSize = math.max(6, math.min(32, tonumber(settings.fontSize) or 11))
+    local sizeChanged = holder:GetWidth() ~= width or holder:GetHeight() ~= height
     holder:SetSize(width, height)
     if not frame.ignoreFramePositionManager then
         frame:BreakFromFrameManager()
@@ -152,6 +153,9 @@ local function Apply(entry)
     UpdateRangeChrome(entry)
     UpdateHolderAlpha(entry)
     UpdatePreview(entry)
+    if sizeChanged and ns.QUI_LayoutMode.isActive and _G.QUI_ReassertAnchorAfterResize then
+        _G.QUI_ReassertAnchorAfterResize(entry.key)
+    end
     entry.applying = false
 end
 

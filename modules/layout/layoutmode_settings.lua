@@ -123,6 +123,7 @@ local function UpdatePanelScroll(panel)
 end
 
 local function FitPanelToContent(panel)
+    if panel._layoutFitGeneration then return end
     local contentHeight = math.max(1, panel._content:GetHeight())
     local chromeHeight = TITLE_HEIGHT + CONTENT_PADDING * 2
     local screenHeight = UIParent:GetHeight() / (panel:GetScale() or 1)
@@ -254,6 +255,7 @@ local function CreatePanel()
 
     panel._scrollFrame = scrollFrame
     panel._content = content
+    panel._contentBody = content
     scrollFrame:HookScript("OnScrollRangeChanged", function() UpdatePanelScroll(panel) end)
     scrollFrame:HookScript("OnSizeChanged", function() UpdatePanelScroll(panel) end)
     content._quiCompactLayout = true
@@ -448,6 +450,9 @@ local function BuildContent(panel, key)
 
     local content = panel._content
     local generation = content._quiLayoutGeneration
+    local GUI = _G.QUI and _G.QUI.GUI
+    local deferFit = panel:IsShown() and GUI and GUI.RunWhenSettingsLayoutReady
+    panel._layoutFitGeneration = deferFit and generation or nil
     local contentWidth = content:GetWidth()
     local feature = ResolveSharedFeature(key)
     content._quiProviderSync = {
@@ -777,6 +782,17 @@ local function BuildContent(panel, key)
         end)
     else
         content:SetHeight(math.max(providerHeight, 80))
+    end
+
+    if deferFit then
+        local function FinishFit()
+            if panel._layoutFitGeneration ~= generation then return end
+            panel._layoutFitGeneration = nil
+            if panel:IsShown() then FitPanelToContent(panel) end
+        end
+        GUI:RunWhenSettingsLayoutReady(panel, content, FinishFit, function()
+            return panel:IsShown() and content._quiLayoutGeneration == generation
+        end, FinishFit)
     end
 end
 

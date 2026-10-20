@@ -2537,6 +2537,11 @@ _G.QUI_ReassertAnchorAfterResize = function(key)
     if not key or not QUICore or not QUICore.db or not QUICore.db.profile then
         return
     end
+    local layout = ns.QUI_LayoutMode
+    if layout and layout.isActive then
+        layout:ReassertAnchorAfterResize(key)
+        return
+    end
     local anchoringDB = QUICore.db.profile.frameAnchoring
     local settings = GetSavedFrameAnchorSettings(anchoringDB, key)
     if not settings then return end

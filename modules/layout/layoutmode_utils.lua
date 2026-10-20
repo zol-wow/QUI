@@ -366,11 +366,15 @@ function Utils.BuildOpenFullSettingsLink(content, providerKey, sections, relayou
     local Registry = Settings and Settings.Registry
     local feature = Registry and type(Registry.GetFeature) == "function"
         and Registry:GetFeature(providerKey) or nil
-    local route = Nav and type(Nav.GetRoute) == "function"
-        and Nav:GetRoute(providerKey) or nil
-    if not route and Nav and type(Nav.GetLookupTarget) == "function" then
-        route, feature = Nav:GetLookupTarget(providerKey)
-    elseif not route and Nav and type(Nav.GetRouteByLookupKey) == "function" then
+    local route
+    if Nav and type(Nav.GetLookupTarget) == "function" then
+        local lookupRoute, lookupFeature = Nav:GetLookupTarget(providerKey)
+        route, feature = lookupRoute, lookupFeature or feature
+    end
+    if not route and Nav and type(Nav.GetRoute) == "function" then
+        route = Nav:GetRoute(providerKey)
+    end
+    if not route and Nav and type(Nav.GetRouteByLookupKey) == "function" then
         route = Nav:GetRouteByLookupKey(providerKey)
     end
     if not feature and Registry and type(Registry.GetFeatureByLookupKey) == "function" then
@@ -456,7 +460,20 @@ function Utils.BuildOpenFullSettingsLink(content, providerKey, sections, relayou
         if frame and GUI.FindV2TileByID and GUI.SelectFeatureTile then
             local _, idx = GUI:FindV2TileByID(frame, route.tileId)
             if idx then
-                GUI:SelectFeatureTile(frame, idx, { subPageIndex = route.subPageIndex })
+                GUI:SelectFeatureTile(frame, idx, {
+                    subPageIndex = route.subPageIndex,
+                    scrollToLabel = route.scrollToLabel,
+                    scrollToPath = route.scrollToPath,
+                    scrollToFeatureId = route.scrollToFeatureId
+                        or (not (route.scrollToLabel or route.scrollToPath) and feature and feature.id),
+                    scrollToTop = true,
+                    searchEntry = (route.surfaceTabKey or route.surfaceUnitKey) and {
+                        featureId = feature and feature.id,
+                        providerKey = providerKey,
+                        surfaceTabKey = route.surfaceTabKey,
+                        surfaceUnitKey = route.surfaceUnitKey,
+                    } or nil,
+                })
             end
         end
     end)
