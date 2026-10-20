@@ -1322,6 +1322,7 @@ local function ApplyElementPass(frame, allowCreate)
         allowCreate = allowCreate == true,
         cancelEligible = false,
         profileOverrides = profileOverrides,
+        skip = function() return not UnitIsConnected(unit) end,
         profileFor = function(element)
             local profile = AuraGlue.ElementProfile(element, profileOverrides)
             if ElementNeedsRangeGate(element) then profile.tooltipHideInCombat = true end

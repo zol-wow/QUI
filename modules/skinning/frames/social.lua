@@ -42,6 +42,11 @@ local function SkinSocialRow(row, depth)
         end
     end
     local invite = row.travelPassButton
+    -- Legacy Recent Allies uses the same tall invite art under another key.
+    -- Modern social cards own a separate Icon that must retain its semantics.
+    if not invite and row.PartyButton and not row.PartyButton.Icon then
+        invite = row.PartyButton
+    end
     if invite then
         if not invite:GetFontString() then
             local label = invite:CreateFontString(nil, "OVERLAY", "GameFontNormal")

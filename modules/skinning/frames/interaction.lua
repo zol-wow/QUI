@@ -25,7 +25,7 @@ end
 local function SkinBankItem(button)
     if not button or not IsSettingEnabled("skinBank") then return end
     SkinBase.ClampTextureHidden(button.Background, true)
-    SkinInteractionItem(button)
+    SkinInteractionItem(button, { singleBorder = true })
     if not SkinBase.GetFrameData(button, "qBankItemHooked") then
         for _, method in ipairs({ "Refresh", "UpdateBackgroundForBankType" }) do
             if type(button[method]) == "function" then
@@ -599,7 +599,14 @@ SkinInteractionItem = function(button, opts)
     SkinBase.SkinFontString(button.Count, { fontOnly = true })
     local icon = button.Icon or button.icon
     local border = SkinBase.SkinIcon(icon, { parent = button, crop = opts and opts.crop })
-    SkinBase.ApplyChromeBackdrop(border, { radius = 4, withBackground = false })
+    if opts and opts.singleBorder then
+        -- Bank icons fill their buttons. Keep rarity and hover on one slot edge,
+        -- rather than drawing the expanded icon edge over the button outline.
+        if border then border:Hide() end
+        border = SkinBase.GetBackdrop(button)
+    else
+        SkinBase.ApplyChromeBackdrop(border, { radius = 4, withBackground = false })
+    end
     SkinBase.RoundIconTexture(button, icon)
     local nativeBorder = button.IconBorder
     SkinBase.HandleIconBorder(nativeBorder, border)
@@ -614,11 +621,18 @@ SkinInteractionItem = function(button, opts)
             SkinBase.SetFrameData(nativeBorder, "qQuestDefaultBorder", true)
         end
         if nativeBorder:IsShown() then
-            local r, g, b, a = nativeBorder:GetVertexColor()
+            local r, g, b, a = SkinBase.GetWindowColors()
+            r, g, b = nativeBorder:GetVertexColor()
             SkinBase.SetBackdropColors(border, { r, g, b, a }, nil)
         else
             reset()
         end
+    end
+    if opts and opts.singleBorder then
+        local r, g, b, a = SkinBase.GetWindowColors()
+        if nativeBorder and nativeBorder:IsShown() then r, g, b = nativeBorder:GetVertexColor() end
+        -- Shared hover must restore the native rarity on the single slot edge.
+        SkinBase.SetFrameData(button, "windowColor", { r, g, b, a })
     end
 end
 
@@ -1095,10 +1109,51 @@ local function SkinGuildBankMoney(frame)
     end
 end
 
+local function SkinGuildBankLog(log)
+    if not log then return end
+    SkinBase.SkinTrimScrollBar(log.ScrollBar)
+    local messages, scrollBar = log.MessageFrame, log.ScrollBar
+    if not messages or not scrollBar or type(messages.GetMaxScrollRange) ~= "function"
+        or type(messages.AddOnDisplayRefreshedCallback) ~= "function" then return end
+    local function refreshVisibility()
+        if IsSettingEnabled("skinGuildBank") then
+            scrollBar:SetShown((messages:GetMaxScrollRange() or 0) > 0)
+        end
+    end
+    if not SkinBase.GetFrameData(messages, "qGuildLogRangeHooked") then
+        messages:AddOnDisplayRefreshedCallback(refreshVisibility)
+        SkinBase.SetFrameData(messages, "qGuildLogRangeHooked", true)
+    end
+    refreshVisibility()
+end
+
 local function SkinGuildBankContents(frame)
     if not IsSettingEnabled("skinGuildBank") or not frame then return end
+    local readOnly = false
+    if frame.mode == "bank" and type(_G.GetGuildBankTabInfo) == "function"
+        and type(_G.GetCurrentGuildBankTab) == "function" then
+        local _, _, _, canDeposit, withdrawals = _G.GetGuildBankTabInfo(_G.GetCurrentGuildBankTab())
+        readOnly = canDeposit == false and withdrawals == 0
+    end
     for _, column in ipairs(frame.Columns or {}) do
-        for _, button in ipairs(column.Buttons or {}) do SkinInteractionItem(button) end
+        SkinBase.ClampTextureHidden(column.Background, true)
+        for _, button in ipairs(column.Buttons or {}) do
+            SkinInteractionItem(button, { singleBorder = true })
+            -- Replace native grid desaturation with muted QUI slot chrome;
+            -- native item visibility, permission labels and handlers stay authoritative.
+            local backdrop = SkinBase.GetBackdrop(button)
+            if backdrop then backdrop:SetAlpha(readOnly and 0.55 or 1) end
+        end
+    end
+    for _, edge in ipairs({ "BottomLeft", "BottomRight", "TopLeft", "TopRight", "Left", "Right", "Top", "Bottom" }) do
+        SkinBase.ClampTextureHidden(_G["GuildBankFrame" .. edge .. "Outer"], true)
+        SkinBase.ClampTextureHidden(_G["GuildBankFrame" .. edge .. "Inner"], true)
+    end
+    local emblem = frame.Emblem
+    if emblem then
+        for _, key in ipairs({ "Left", "Right" }) do
+            SkinBase.ClampTextureHidden(emblem[key], true)
+        end
     end
     for _, tab in ipairs(frame.BankTabs or {}) do
         SkinBase.StripTextures(tab)
@@ -1126,10 +1181,13 @@ local function SkinGuildBankContents(frame)
     SkinBase.SkinFontString(frame.ErrorMessage, { fontOnly = true })
     local info = frame.Info
     if info then
+        -- The multiline scroll child shrinks to its content, including empty
+        -- text. Its viewport owns the panel chrome, independent of text height.
+        SkinInteractionSurface(info.ScrollFrame)
         SkinBase.SkinTrimScrollBar(info.ScrollFrame and info.ScrollFrame.ScrollBar)
         SkinBase.SkinFrameText(info, { recurse = true })
     end
-    SkinBase.SkinTrimScrollBar(frame.Log and frame.Log.ScrollBar)
+    SkinGuildBankLog(frame.Log)
     SkinBase.SkinFontString(frame.Log and frame.Log.MessageFrame, { fontOnly = true })
     SkinIconSelectorPopup(_G.GuildBankPopupFrame, "skinGuildBank")
     SkinBase.SkinFrameText(frame.BuyInfo, { recurse = true })
@@ -1146,7 +1204,7 @@ local function SkinGuildBank()
     SkinBase.SkinButton(frame.BuyInfo and frame.BuyInfo.PurchaseButton, { strip = true, font = true })
     SkinBase.SkinButton(frame.Info and frame.Info.SaveButton, { strip = true, font = true })
     SkinBase.SkinEditBox(_G.GuildItemSearchBox)
-    SkinBase.SkinEditBox(_G.GuildBankTabInfoEditBox)
+    SkinBase.LockFontObject(_G.GuildBankTabInfoEditBox, { fontOnly = true })
     SkinGuildBankContents(frame)
     frame:HookScript("OnShow", SkinGuildBankContents)
     for _, key in ipairs({ "Update", "UpdateTabs", "UpdateFiltered", "UpdateTabInfo" }) do
