@@ -73,6 +73,10 @@ Registry:RegisterFeature(Schema.Feature({
     id = "actionBarsBuffDebuff",
     moverKey = "buffDebuff",
     lookupKeys = { "buffFrame", "debuffFrame" },
+    lookupRoutes = {
+        buffFrame = { scrollToLabel = ns.L["Buffs"] },
+        debuffFrame = { scrollToLabel = ns.L["Debuffs"] },
+    },
     category = "frames",
     nav = {
         tileId = "auras",

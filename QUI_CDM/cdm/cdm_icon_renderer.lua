@@ -1557,12 +1557,13 @@ local function EnsureClickButton(icon)
     if icon.clickButton then
         CDMIcons:EnsureTextOverlayLevel(icon)
         SyncClickButtonFrameLevel(icon)
+        if ns.SyncCDMClickVisibility then ns.SyncCDMClickVisibility(icon) end
         return icon.clickButton
     end
 
     local template = icon._quiLayoutRestricted
         and "SecureActionButtonTemplate, DisableUntrustedLayoutScriptsTemplate"
-        or "SecureActionButtonTemplate"
+        or "SecureActionButtonTemplate, SecureHandlerStateTemplate"
     local btn = CreateFrame("Button", nil, icon, template)
     btn:SetAllPoints()
     btn:RegisterForClicks("AnyUp", "AnyDown")
@@ -1581,6 +1582,7 @@ local function EnsureClickButton(icon)
     end)
 
     icon.clickButton = btn
+    if ns.SyncCDMClickVisibility then ns.SyncCDMClickVisibility(icon) end
     CDMIcons:EnsureTextOverlayLevel(icon)
     SyncClickButtonFrameLevel(icon)
     return btn
@@ -1700,6 +1702,7 @@ UpdateIconSecureAttributes = function(icon, entry, viewerType)
         return
     end
     icon._pendingSecureUpdate = nil
+    icon._quiCdmClickViewerType = viewerType
 
     if viewerType == "buff" then
         if icon.clickButton then

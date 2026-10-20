@@ -89,8 +89,9 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
 
     local function BuildPlacement(db)
         local placedSet, placedList = {}, {}
+        local zones = db and db.zones or {}
         for _, zdef in ipairs(ZONE_DEFS) do
-            for _, widgetId in ipairs(db.zones[zdef.key]) do
+            for _, widgetId in ipairs(zones[zdef.key] or {}) do
                 if not placedSet[widgetId] then
                     placedSet[widgetId] = true
                     placedList[#placedList + 1] = widgetId
@@ -111,7 +112,21 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
     end
 
-    ctx.RegisterShared("infobar", { build = function(content, _key, _width)
+    ctx.RegisterShared("infobar", { getNavigationSections = function()
+        local profile = U.GetProfileDB()
+        if not profile then return {} end
+        local placedSet = BuildPlacement(profile.infobar)
+        local labels = { ns.L["General"], ns.L["Visibility"], ns.L["Arrangement"], ns.L["Widget Overrides"] }
+        if placedSet.currencies and ns.QUI_BuildCurrencyOrderSection then
+            labels[#labels + 1] = ns.L["Currencies"]
+        end
+        if placedSet.alts then labels[#labels + 1] = ns.L["Alts Options"] end
+        labels[#labels + 1] = ns.L["Micro Menu"]
+        labels[#labels + 1] = ns.L["Travel"]
+        local sections = {}
+        for index, label in ipairs(labels) do sections[index] = { id = label, label = label } end
+        return sections
+    end, build = function(content, _key, _width)
         local profile = U.GetProfileDB()
         if not profile or not ns.QUI_Options then return 80 end
 

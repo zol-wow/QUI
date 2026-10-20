@@ -168,11 +168,11 @@ local function SkinButton(button, sr, sg, sb, bgr, bgg, bgb, bga)
     if button.NineSlice then button.NineSlice:SetAlpha(0) end
 
     for _, region in ipairs({button:GetRegions()}) do
-        if region:GetObjectType() == "Texture" then
-            local drawLayer = region:GetDrawLayer()
-            if drawLayer == "BACKGROUND" then
-                region:SetAlpha(0)
-            end
+        if region:GetObjectType() == "Texture"
+            and not SkinBase.GetFrameData(region, OWNED_TEXTURE_KEY) then
+            -- UIPanelButtonTemplate also supplies HIGHLIGHT/ARTWORK state art.
+            -- Keep only our parent-owned rounded surface in every button state.
+            SkinBase.ClampTextureHidden(region, true)
         end
     end
 

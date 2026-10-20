@@ -2002,6 +2002,10 @@ local function RegisterLayoutSettings(anchorKey)
         Registry:RegisterFeature(Schema.Feature({
             id = LAYOUT_FEATURE_ID,
             nav = { tileId = "auras", subPageIndex = 6 },
+            onNavigate = function(key)
+                local page = ns.QUI_AuraDisplaysOptions
+                return page and page.NavigateLayoutKey and page.NavigateLayoutKey(key)
+            end,
             render = {
                 layout = function(host, options)
                     return RenderAdapters.RenderLayoutRoute(host, options and options.providerKey)

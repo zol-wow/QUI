@@ -1938,9 +1938,20 @@ end
 
 function UIKit.CreateIconButton(parent, opts)
     opts = opts or {}
-    local btn = CreateFrame("Button", opts.name, parent)
+    local clickButton = opts.clickButton or opts.combatClickButton
+    local btn = CreateFrame("Button", opts.name, parent, clickButton and "SecureActionButtonTemplate")
     btn:SetSize(opts.size or 18, opts.size or 18)
     btn:RegisterForClicks(opts.registerClicks or "LeftButtonUp")
+    if clickButton then
+        btn:SetAttribute("type", "click")
+        btn:SetAttribute("clickbutton", clickButton)
+        btn:SetAttribute("useOnKeyDown", false)
+    end
+    if opts.combatClickButton and not opts.clickButton then
+        SecureHandlerWrapScript(btn, "OnClick", btn, [[
+            if not SecureCmdOptionParse("[combat] true") then return false end
+        ]])
+    end
 
     local idle = opts.idleAlpha or 0.85
     local brighten = false
@@ -1997,9 +2008,9 @@ function UIKit.CreateIconButton(parent, opts)
             self.icon:SetVertexColor(v, v, v, 1)
         end)
     end
-    if opts.onClick then
-        local guard, click = opts.combatGuard, opts.onClick
-        btn:SetScript("OnClick", function(self, ...)
+    if opts.onClick and not opts.clickButton then
+        local guard, click = opts.combatGuard or opts.combatClickButton, opts.onClick
+        btn:SetScript(opts.combatClickButton and "PostClick" or "OnClick", function(self, ...)
             if guard and InCombatLockdown() then return end
             click(self, ...)
         end)
@@ -3616,6 +3627,27 @@ function SkinBase.IsAddOnFullyLoaded(addonName)
     return loadedOrLoading == true
 end
 
+function SkinBase.DeferUntilShown(frame, callback)
+    local state = SkinBase.GetFrameData(frame, "deferredUntilShown")
+    if frame:IsShown() then
+        if state then state.pending[callback] = nil end
+        return false
+    end
+    if not state then
+        state = { pending = {} }
+        SkinBase.SetFrameData(frame, "deferredUntilShown", state)
+        frame:HookScript("OnShow", function()
+            if not frame:IsShown() then return end
+            for pending in pairs(state.pending) do
+                state.pending[pending] = nil
+                pending()
+            end
+        end)
+    end
+    state.pending[callback] = true
+    return true
+end
+
 function SkinBase.OnAddOnLoaded(addonName, callback, delay)
     delay = delay or 0
     local function fire()
@@ -3769,8 +3801,13 @@ function SkinBase.LockFontObject(obj, opts)
     opts = opts or { fontOnly = true }
 
     if obj.SetFontObject and obj.SetFont then
+        local styling = false
         hooksecurefunc(obj, "SetFontObject", function(self)
-            if not opts.guard or opts.guard(self) then SkinBase.SkinFontString(self, opts) end
+            if styling or (opts.guard and not opts.guard(self)) then return end
+            styling = true
+            local ok, err = pcall(SkinBase.SkinFontString, self, opts)
+            styling = false
+            if not ok then error(err, 0) end
         end)
     end
 

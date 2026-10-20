@@ -496,6 +496,29 @@ function BuildBar(barKey)
             ActionBarsOwned._microLayoutHooked = true
 
             local microCombatLayoutPending = false
+            local microLayoutQueued = false
+            local function ApplyMicroLayout()
+                microLayoutQueued = false
+                if not ActionBarsOwned.initialized or ActionBarsOwned._microOwnedByUI then return end
+                if InCombatLockdown() then
+                    if not microCombatLayoutPending then
+                        microCombatLayoutPending = true
+                        local f = ActionBarsOwned._microLayoutFrame
+                        if not f then
+                            f = CreateFrame("Frame")
+                            ActionBarsOwned._microLayoutFrame = f
+                        end
+                        f:RegisterEvent("PLAYER_REGEN_ENABLED")
+                        f:SetScript("OnEvent", function(self)
+                            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+                            microCombatLayoutPending = false
+                            ApplyMicroLayout()
+                        end)
+                    end
+                else
+                    LayoutNativeButtons("microbar")
+                end
+            end
             local function ReclaimMicroButtons()
                 if not ActionBarsOwned.initialized then return end
                 if ActionBarsOwned._microOwnedByUI then return end
@@ -543,24 +566,10 @@ function BuildBar(barKey)
                 end
 
                 if InCombatLockdown() then
-                    if not microCombatLayoutPending then
-                        microCombatLayoutPending = true
-                        local f = ActionBarsOwned._microLayoutFrame
-                        if not f then
-                            f = CreateFrame("Frame")
-                            ActionBarsOwned._microLayoutFrame = f
-                        end
-                        f:RegisterEvent("PLAYER_REGEN_ENABLED")
-                        f:SetScript("OnEvent", function(self)
-                            self:UnregisterEvent("PLAYER_REGEN_ENABLED")
-                            microCombatLayoutPending = false
-                            if not ActionBarsOwned._microOwnedByUI then
-                                LayoutNativeButtons("microbar")
-                            end
-                        end)
-                    end
-                else
-                    LayoutNativeButtons("microbar")
+                    ApplyMicroLayout()
+                elseif not microLayoutQueued then
+                    microLayoutQueued = true
+                    C_Timer.After(0, ApplyMicroLayout)
                 end
             end
 

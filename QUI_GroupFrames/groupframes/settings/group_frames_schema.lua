@@ -2195,7 +2195,7 @@ local function RenderDispelOverlaySection(sectionHost, ctx)
         refresh()
         UpdateDispelRows()
     end, {
-        description = ns.L["Dispellable by Me shows actionable dispels. All Typed Debuffs also shows awareness-only types such as Bleed and Enrage. Mine + Others as Gradient keeps the full overlay for your dispels and adds a fading color gradient along the health fill for types you cannot dispel. Cleanse-Ready Glow always remains actionable-only."],
+        description = ns.L["Dispellable by Me shows actionable dispels. All Typed Debuffs also shows awareness-only types such as Bleed and Enrage. Mine + Others as Gradient keeps the full overlay for your dispels and adds a fading color gradient along the health fill for types you cannot dispel. Cleanse-Ready Glow has its own independent Show For setting."],
     })
     scopeRow = optionsAPI.BuildSettingRow(dispelCard.frame, ns.L["Show For"], scopeDropdown)
     local iconSizeSlider = gui:CreateFormSlider(dispelCard.frame, nil, 8, 64, 1, "iconSize", dispel, refresh, { deferOnDrag = true }, {
@@ -2299,21 +2299,86 @@ local function RenderDispelOverlaySection(sectionHost, ctx)
 
     local glow = EnsureSubTable(healer, "cleanseGlow")
     if glow then
-        if type(glow.color) ~= "table" then
-            glow.color = { 0.1, 1.0, 0.1, 1 }
+        if type(glow.color) ~= "table" then glow.color = { 0.1, 1.0, 0.1, 1 } end
+        if type(glow.opacity) ~= "number" then glow.opacity = glow.color[4] or 1 end
+        if glow.scope ~= "ALL_TYPED" then glow.scope = "PLAYER_DISPELLABLE" end
+        if glow.colorMode ~= "TYPE" then glow.colorMode = "CUSTOM" end
+        if glow.animation ~= "PULSE" and glow.animation ~= "MOVING" then glow.animation = "NONE" end
+        if type(glow.animationDuration) ~= "number" then glow.animationDuration = 1.6 end
+        if type(glow.colors) ~= "table" then glow.colors = {} end
+        -- Settings/search tooling also renders this schema without runtime chrome.
+        local glowPalette = (ns.QUI_GroupFrameChrome and ns.QUI_GroupFrameChrome.GLOW_TYPE_COLORS) or {
+            Magic = { 0.2, 0.6, 1 }, Curse = { 0.6, 0, 1 }, Disease = { 0.6, 0.4, 0 },
+            Poison = { 0, 0.6, 0 }, Bleed = { 0.8, 0, 0 },
+        }
+        for _, key in ipairs({ "Magic", "Curse", "Disease", "Poison", "Bleed" }) do
+            if type(glow.colors[key]) ~= "table" then
+                local source = dispel.colors[key] or glowPalette[key]
+                glow.colors[key] = { source[1], source[2], source[3], 1 }
+            end
         end
         builder.Header(ns.L["Cleanse-Ready Glow"])
         local glowCard = builder.Card()
-        local glowEnableCheckbox = gui:CreateFormCheckbox(glowCard.frame, nil, "enabled", glow, refresh, {
-            description = ns.L["Show an additive glow around the frame whenever you can dispel a debuff on this unit. Independent of the dispel border above; works on its own."],
+        local customRow, periodRow
+        local typeRows = {}
+        local function UpdateGlowRows()
+            local on = glow.enabled == true
+            if customRow then customRow:SetAlpha(on and glow.colorMode ~= "TYPE" and 1 or 0.4) end
+            if periodRow then periodRow:SetAlpha(on and glow.animation ~= "NONE" and 1 or 0.4) end
+            for _, row in ipairs(typeRows) do row:SetAlpha(on and glow.colorMode == "TYPE" and 1 or 0.4) end
+        end
+        local function GlowChanged() refresh(); UpdateGlowRows() end
+        local enabled = gui:CreateFormCheckbox(glowCard.frame, nil, "enabled", glow, GlowChanged, {
+            description = ns.L["Show a glow independently of the dispel border. Choose actionable cleanses or all typed debuffs, including awareness-only Bleeds and Enrage."],
         })
-        local glowColorPicker = gui:CreateFormColorPicker(glowCard.frame, nil, "color", glow, refresh, nil, {
-            description = ns.L["Color of the cleanse-ready glow."],
+        local scope = gui:CreateFormDropdown(glowCard.frame, nil, {
+            { value = "PLAYER_DISPELLABLE", text = ns.L["Dispellable by Me"] },
+            { value = "ALL_TYPED", text = ns.L["All Typed Debuffs"] },
+        }, "scope", glow, GlowChanged, {
+            description = ns.L["All Typed Debuffs includes Magic, Curse, Disease, Poison, Bleed and Enrage even when you cannot remove them. This does not indicate that a cleanse is available."],
         })
-        glowCard.AddRow(
-            optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Enable Cleanse-Ready Glow"], glowEnableCheckbox),
-            optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Glow Color"], glowColorPicker)
-        )
+        glowCard.AddRow(optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Enable Cleanse-Ready Glow"], enabled),
+            optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Show For"], scope))
+        local mode = gui:CreateFormDropdown(glowCard.frame, nil, {
+            { value = "CUSTOM", text = ns.L["Custom Color"] },
+            { value = "TYPE", text = ns.L["Debuff Type"] },
+        }, "colorMode", glow, GlowChanged, {
+            description = ns.L["Use one custom glow color or independent colors for each debuff type. Enrage uses the Bleed color."],
+        })
+        local color = gui:CreateFormColorPicker(glowCard.frame, nil, "color", glow, GlowChanged, { noAlpha = true }, {
+            description = ns.L["Glow color used in Custom Color mode."],
+        })
+        customRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Glow Color"], color)
+        glowCard.AddRow(optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Color Source"], mode), customRow)
+        local animation = gui:CreateFormDropdown(glowCard.frame, nil, {
+            { value = "NONE", text = ns.L["Static"] },
+            { value = "PULSE", text = ns.L["Pulse"] },
+            { value = "MOVING", text = ns.L["Moving Highlight"] },
+        }, "animation", glow, GlowChanged, {
+            description = ns.L["Pulse fades the whole glow. Moving Highlight sends a bright wave clockwise around the connected edges."],
+        })
+        local period = gui:CreateFormSlider(glowCard.frame, nil, 0.4, 6, 0.1, "animationDuration", glow, GlowChanged, { deferOnDrag = true }, {
+            description = ns.L["Seconds for one complete glow animation cycle. Higher values move more slowly."],
+        })
+        periodRow = optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Animation Period"], period)
+        glowCard.AddRow(optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Glow Animation"], animation), periodRow)
+        local opacity = gui:CreateFormSlider(glowCard.frame, nil, 0.1, 1, 0.05, "opacity", glow, GlowChanged, { deferOnDrag = true }, {
+            description = ns.L["Maximum opacity of the glow in every color and animation mode."],
+        })
+        glowCard.AddRow(optionsAPI.BuildSettingRow(glowCard.frame, ns.L["Glow Opacity"], opacity))
+        local labels = { Magic = ns.L["Magic Color"], Curse = ns.L["Curse Color"], Disease = ns.L["Disease Color"],
+            Poison = ns.L["Poison Color"], Bleed = ns.L["Bleed"] }
+        local pending
+        for _, key in ipairs({ "Magic", "Curse", "Disease", "Poison", "Bleed" }) do
+            local picker = gui:CreateFormColorPicker(glowCard.frame, nil, key, glow.colors, GlowChanged, { noAlpha = true }, {
+                description = ns.L["Independent glow color for this debuff type. Bleed and Enrage are awareness indicators when they cannot be cleansed."],
+            })
+            local row = optionsAPI.BuildSettingRow(glowCard.frame, labels[key], picker)
+            typeRows[#typeRows + 1] = row
+            if pending then glowCard.AddRow(pending, row); pending = nil else pending = row end
+        end
+        if pending then glowCard.AddRow(pending) end
+        UpdateGlowRows()
         builder.CloseCard(glowCard)
     end
 

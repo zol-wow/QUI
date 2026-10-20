@@ -553,24 +553,31 @@ local function ReapplyAll()
     if InCombatLockdown() then return end
     EnsureOverrideCompatibility()
     local t = GetBindingsTable(false)
+    local changed = false
 
     ForEachQUIActionButton(function(buttonName, btn)
         local activeSequence = btn.GetAttribute and btn:GetAttribute("gse-button")
         local desiredSequence = t and t[buttonName] or nil
         if activeSequence and activeSequence ~= desiredSequence then
-            RemoveOverrideFromButton(buttonName, true)
+            if RemoveOverrideFromButton(buttonName, true) then
+                changed = true
+            end
         end
     end)
 
     if t then
         for buttonName, sequenceName in pairs(t) do
             if IsQUIButtonName(buttonName) then
-                InstallOverrideOnButton(buttonName, sequenceName, true)
+                if InstallOverrideOnButton(buttonName, sequenceName, true) then
+                    changed = true
+                end
             end
         end
     end
 
-    RefreshQUIOverrides()
+    if changed then
+        RefreshQUIOverrides()
+    end
 end
 
 local hooksInstalled = false

@@ -2199,6 +2199,68 @@ local function CreateStatBar(parent, yOffset, color)
     return row
 end
 
+local foreverMovementStats = {}
+local foreverMovementHooked = false
+
+local function HookForeverMovementSpeed()
+    if foreverMovementHooked or not (ns.Client and ns.Client.isForever)
+        or type(_G.MovementSpeed_OnUpdate) ~= "function" then return end
+    hooksecurefunc("MovementSpeed_OnUpdate", function(statFrame)
+        foreverMovementStats[statFrame.unit] = {
+            text = statFrame.Value:GetText(),
+            speed = statFrame.speed,
+            runSpeed = statFrame.runSpeed,
+            flightSpeed = statFrame.flightSpeed,
+            swimSpeed = statFrame.swimSpeed,
+        }
+    end)
+    foreverMovementHooked = true
+end
+HookForeverMovementSpeed()
+
+local function ShowForeverMovementTooltip(row)
+    local stats = foreverMovementStats[row.unit]
+    if not stats then return end
+    if not row.movementTooltipText then
+        row.movementTooltipText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        row.movementTooltipText:Hide()
+    end
+    local text = row.movementTooltipText
+    local function AddSpeedLine(pattern, speed)
+        text:SetFormattedText(pattern:gsub("%%(%d*%$?)d", "%%%1s"), C_StringUtil.RoundToNearestString(speed))
+        GameTooltip:AddLine(text:GetText())
+    end
+
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    text:SetFormattedText(HIGHLIGHT_FONT_COLOR_CODE .. string.format(PAPERDOLLFRAME_TOOLTIP_FORMAT, _G.STAT_MOVEMENT_SPEED)
+        .. " %s%%" .. FONT_COLOR_CODE_CLOSE, C_StringUtil.RoundToNearestString(stats.speed))
+    GameTooltip:SetText(text:GetText())
+    AddSpeedLine(_G.STAT_MOVEMENT_GROUND_TOOLTIP, stats.runSpeed)
+    if _G.PaperDollFrame_ShowFlightSpeed() and row.unit ~= "pet" then
+        AddSpeedLine(_G.STAT_MOVEMENT_FLIGHT_TOOLTIP, stats.flightSpeed)
+    end
+    AddSpeedLine(_G.STAT_MOVEMENT_SWIM_TOOLTIP, stats.swimSpeed)
+    GameTooltip:AddLine(" ")
+    text:SetFormattedText(CR_SPEED_TOOLTIP, BreakUpLargeNumbers(GetCombatRating(CR_SPEED)), GetCombatRatingBonus(CR_SPEED))
+    GameTooltip:AddLine(text:GetText())
+    GameTooltip:Show()
+    row.UpdateTooltip = ShowForeverMovementTooltip
+end
+
+local function UpdateForeverMovementSpeed(row, unit)
+    local stats = foreverMovementStats[unit]
+    if not stats then
+        row:Hide()
+        return
+    end
+    row.unit = unit
+    row.label:SetFormattedText(_G.STAT_FORMAT, _G.STAT_MOVEMENT_SPEED)
+    row.value:SetText(stats.text)
+    row.numericValue = stats.speed
+    row.onEnterFunc = ShowForeverMovementTooltip
+    return true
+end
+
 local function UpdateForeverStatsPanel(scrollChild, unit, y)
     for _, category in ipairs(_G.PAPERDOLL_STATCATEGORIES) do
         if not category.unit or category.unit == unit then
@@ -2206,7 +2268,12 @@ local function UpdateForeverStatsPanel(scrollChild, unit, y)
             for _, stat in ipairs(category.stats) do
                 if (not stat.unit or stat.unit == unit) and (not stat.showFunc or stat.showFunc()) then
                     local row = CreateStatRow(scrollChild, y)
-                    local value = _G.PAPERDOLL_STATINFO[stat.stat].updateFunc(row, unit, stat.id)
+                    local value
+                    if stat.stat == "MOVESPEED" then
+                        value = UpdateForeverMovementSpeed(row, unit)
+                    else
+                        value = _G.PAPERDOLL_STATINFO[stat.stat].updateFunc(row, unit, stat.id)
+                    end
                     if row:IsShown() and (stat.hideAt == nil or value ~= stat.hideAt) then
                         if not hasHeader then
                             local _, headerHeight = CreateSectionHeader(scrollChild, category.categoryName, y)
@@ -3345,6 +3412,7 @@ end
 local characterFrameHooked = false
 
 local function HookCharacterFrame()
+    HookForeverMovementSpeed()
     if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
     if not CharacterFrame then return end
     if characterFrameHooked then return end
@@ -3895,7 +3963,7 @@ eventFrame:RegisterEvent("PVP_MATCH_ACTIVE")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
-        if arg1 == "Blizzard_CharacterFrame" then
+        if arg1 == "Blizzard_CharacterFrame" or arg1 == "Blizzard_UIPanels_Game" then
             HookCharacterFrame()
         end
     elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "UPDATE_INVENTORY_DURABILITY" or

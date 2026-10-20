@@ -63,13 +63,24 @@ local function LayoutNeedsManualSetup()
 end
 
 local _applied = false
+local disabledNotice = false
 
 function CDMEditModePolicy.Enforce()
-    if _applied then return end
+    if _applied and not disabledNotice then return end
     if _G.QUI_IsCDMMasterEnabled and not _G.QUI_IsCDMMasterEnabled() then return end
     local C_CVar = _G.C_CVar
-    local viewerDisabled = C_CVar and C_CVar.GetCVarBool
-        and C_CVar.GetCVarBool("cooldownViewerEnabled") == false
+    if C_CVar and C_CVar.AreCVarsLoaded and not C_CVar.AreCVarsLoaded() then return end
+    local viewerEnabled = C_CVar and C_CVar.GetCVarBool
+        and C_CVar.GetCVarBool("cooldownViewerEnabled")
+    if disabledNotice and viewerEnabled == true then
+        if _G.StaticPopup_Hide then
+            _G.StaticPopup_Hide("QUI_CDM_EDITMODE_MANUAL")
+        end
+        disabledNotice = false
+        _applied = false
+    end
+    if _applied then return end
+    local viewerDisabled = viewerEnabled == false
     local needsSetup = viewerDisabled or LayoutNeedsManualSetup()
     if needsSetup == nil then return end
 
@@ -95,25 +106,37 @@ function CDMEditModePolicy.Enforce()
         preferredIndex = 3,
     }
     _G.StaticPopup_Show("QUI_CDM_EDITMODE_MANUAL")
+    disabledNotice = viewerDisabled
 end
 
+local enteredWorld = false
 local enforceFrame = CreateFrame("Frame")
 enforceFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-enforceFrame:SetScript("OnEvent", function(self, event)
+enforceFrame:RegisterEvent("VARIABLES_LOADED")
+enforceFrame:RegisterEvent("CVAR_UPDATE")
+enforceFrame:SetScript("OnEvent", function(self, event, cvar)
     if event == "PLAYER_ENTERING_WORLD" then
+        enteredWorld = true
         if self and self.UnregisterEvent then
             self:UnregisterEvent("PLAYER_ENTERING_WORLD")
         end
-        if _G.InCombatLockdown and _G.InCombatLockdown()
-            and self and self.RegisterEvent then
-            self:RegisterEvent("PLAYER_REGEN_ENABLED")
-            return
+    elseif event == "VARIABLES_LOADED" then
+        if self and self.UnregisterEvent then
+            self:UnregisterEvent("VARIABLES_LOADED")
         end
+    elseif event == "CVAR_UPDATE" then
+        if not cvar or cvar:lower() ~= "cooldownviewerenabled" then return end
     elseif event == "PLAYER_REGEN_ENABLED" then
         if self and self.UnregisterEvent then
             self:UnregisterEvent("PLAYER_REGEN_ENABLED")
         end
     else
+        return
+    end
+    if not enteredWorld then return end
+    if _G.InCombatLockdown and _G.InCombatLockdown()
+        and self and self.RegisterEvent then
+        self:RegisterEvent("PLAYER_REGEN_ENABLED")
         return
     end
     CDMEditModePolicy.Enforce()

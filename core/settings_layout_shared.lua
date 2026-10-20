@@ -94,7 +94,7 @@ function Shared.MakeLayout(content, U, startY, options)
         for _, s in ipairs(sections) do
             s:ClearAllPoints()
             s:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, cy)
-            s:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+            s:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, cy)
             cy = cy - s:GetHeight() - 4
         end
         content:SetHeight(math.abs(cy) - (#sections == 0 and trailingGap or 4) + 10)

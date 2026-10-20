@@ -131,6 +131,33 @@ local function StyleAchievementExpansion(row)
     texture:SetVertexColor(1, 1, 1, 1)
 end
 
+local function StyleAchievementHighlightFrame(highlight, radius)
+    if not highlight then return end
+    local ar, ag, ab, aa = SkinBase.GetSkinColors()
+    -- Keep native hover/selection visibility, replacing only decorative art.
+    SkinBase.ClampAllTextures(highlight, true)
+    SkinBase.CreateBackdrop(highlight, ar, ag, ab, aa, ar, ag, ab, 0.12, radius)
+end
+
+local function StyleAchievementHighlight(row)
+    local ar, ag, ab = SkinBase.GetSkinColors()
+    if row.Highlight then
+        StyleAchievementHighlightFrame(row.Highlight, 5)
+    elseif row.GetHighlightTexture then
+        -- Statistics uses a button highlight texture rather than a child frame.
+        local highlight = row:GetHighlightTexture()
+        if highlight then
+            highlight:SetColorTexture(ar, ag, ab, 0.12)
+            highlight:SetVertexColor(1, 1, 1, 1)
+            highlight:SetAlpha(1)
+            highlight:SetBlendMode("BLEND")
+            highlight:ClearAllPoints()
+            highlight:SetAllPoints(row)
+            SkinBase.RoundBarTexture(row, highlight)
+        end
+    end
+end
+
 local function StyleAchievementRow(row)
     if not row then return end
     for _, key in ipairs({ "Background", "BottomLeftTsunami", "BottomRightTsunami", "TopLeftTsunami",
@@ -139,7 +166,7 @@ local function StyleAchievementRow(row)
     end
     SkinBase.KillNineSlice(row.NineSlice, true)
     if row.SetBackdrop then row:SetBackdrop(nil) end
-    if row.Highlight then SkinBase.StripTextures(row.Highlight) end
+    StyleAchievementHighlight(row)
     local sr, sg, sb, sa = SkinBase.GetWindowColors()
     local r, g, b, a = SkinBase.GetDepthColor("ROW")
     local data = type(row.GetElementData) == "function" and row:GetElementData()
@@ -164,6 +191,7 @@ end
 
 local function StyleAchievementStatistic(row)
     if not row then return end
+    StyleAchievementHighlight(row)
     for _, key in ipairs({ "Background", "Left", "Middle", "Right", "Left2", "Middle2", "Right2" }) do
         SkinBase.ClampTextureHidden(row[key], true)
     end
@@ -173,6 +201,12 @@ local function StyleAchievementStatistic(row)
     SkinBase.SkinFontString(row.Title, { size = 12, color = { 1, 1, 1, 1 } })
     SkinBase.SkinFontString(row.Text or (row.GetFontString and row:GetFontString()), { size = 11, color = { 0.9, 0.9, 0.9, 1 } })
     SkinBase.SkinFontString(row.Value, { size = 11, color = { 1, 1, 1, 1 } })
+    if row.Value and not row.FriendValue then
+        -- Inline coin art can extend past the font advance. Keep it inside
+        -- the rounded row; comparison values retain their native columns.
+        row.Value:ClearAllPoints()
+        row.Value:SetPoint("RIGHT", row, "RIGHT", -14, 0)
+    end
     SkinBase.SkinFontString(row.FriendValue, { size = 11, color = { 1, 1, 1, 1 } })
 end
 
@@ -205,6 +239,9 @@ local function StyleAchievementProgress(bar)
     for _, key in ipairs({ "Left", "Right", "Middle" }) do
         SkinBase.ClampTextureHidden(bar[key], true)
     end
+    -- Progress Overview owns its hover in a named ButtonHighlight child,
+    -- separate from the achievement row Highlight and the status-bar regions.
+    if name then StyleAchievementHighlightFrame(_G[name .. "ButtonHighlight"], 4) end
     SkinBase.SkinStatusBar(bar)
     SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(bar), { radius = 4, withBackground = true })
     local fill = bar:GetStatusBarTexture()

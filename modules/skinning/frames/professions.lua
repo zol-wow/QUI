@@ -694,6 +694,7 @@ local function SkinProfessions()
 
     local frame = _G.ProfessionsFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
+    if SkinBase.DeferUntilShown(frame, SkinProfessions) then return end
 
     HookProfessionTableHeaderFonts()
     HookProfessionFlyout()
@@ -743,9 +744,14 @@ local StyleProfessionBook
 
 local function RefreshProfessionsColors()
     if StyleProfessionBook then StyleProfessionBook() end
+    if not IsEnabled() then return end
     local frame = _G.ProfessionsFrame
+    if not frame then return end
+    if not SkinBase.IsSkinned(frame) then
+        SkinProfessions()
+        return
+    end
     StyleProfessionTopControls(frame)
-    if not frame or not SkinBase.IsSkinned(frame) then return end
 
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
 
@@ -884,7 +890,7 @@ end
 
 StyleProfessionBook = function()
     local frame = _G.ProfessionsBookFrame
-    if not frame or not IsEnabled() or InCombatLockdown() then return end
+    if not frame or not IsEnabled() then return end
     if not SkinBase.IsSkinned(frame) then
         SkinBase.SkinWindow(frame)
         frame:HookScript("OnShow", StyleProfessionBook)
