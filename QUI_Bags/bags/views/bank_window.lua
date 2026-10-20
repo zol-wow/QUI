@@ -703,6 +703,7 @@ local function AcquireGridButton(bagID, slot)
         local btn = byBag[slot]
         if not btn then
             btn = Bags.ItemButtons.CreateLive(holder, bagID)
+            if not btn then return nil end
             btn:SetID(slot)
             byBag[slot] = btn
         end
@@ -720,6 +721,7 @@ end
 
 local function PlaceGridButton(bagID, slot, entry, x, y, snappedSize)
     local btn = AcquireGridButton(bagID, slot)
+    if not btn then return end
     btn:SetSize(snappedSize, snappedSize)
     btn:ClearAllPoints()
     btn:SetPoint("TOPLEFT", win._body, "TOPLEFT", x, y)

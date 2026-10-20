@@ -365,49 +365,6 @@ local function BuildSkinningTab(tabContent)
     end
     if general.skinKeystoneFrame == nil then general.skinKeystoneFrame = true end
 
-    local function EnsureBorderOverrideDefaults(settings, prefix)
-        if type(settings) ~= "table" then return end
-        local kp = type(prefix) == "string" and prefix or ""
-        local overrideKey = kp ~= "" and (kp .. "BorderOverride") or "borderOverride"
-        local hideKey = kp ~= "" and (kp .. "HideBorder") or "hideBorder"
-        local useClassKey = kp ~= "" and (kp .. "BorderUseClassColor") or "borderUseClassColor"
-        local colorKey = kp ~= "" and (kp .. "BorderColor") or "borderColor"
-        if settings[overrideKey] == nil then settings[overrideKey] = false end
-        if settings[hideKey] == nil then settings[hideKey] = false end
-        if settings[useClassKey] == nil then settings[useClassKey] = false end
-        if settings[colorKey] == nil then
-            local fallback = general.skinBorderColor or general.addonAccentColor or {0.376, 0.647, 0.980, 1}
-            settings[colorKey] = { fallback[1], fallback[2], fallback[3], fallback[4] or 1 }
-        end
-    end
-
-    local function AddBorderOverrides(card, settings, prefix)
-        EnsureBorderOverrideDefaults(settings, prefix)
-        local kp = type(prefix) == "string" and prefix or ""
-        local overrideKey = kp ~= "" and (kp .. "BorderOverride") or "borderOverride"
-        local hideKey = kp ~= "" and (kp .. "HideBorder") or "hideBorder"
-        local useClassKey = kp ~= "" and (kp .. "BorderUseClassColor") or "borderUseClassColor"
-        local colorKey = kp ~= "" and (kp .. "BorderColor") or "borderColor"
-
-        local overrideW = GUI:CreateFormCheckbox(card.frame, nil, overrideKey, settings, RefreshSkinSurfaces,
-            { description = ns.L["Use a border style specific to this skin instead of the global default chosen in Theme & Colors."] })
-        local hideW = GUI:CreateFormCheckbox(card.frame, nil, hideKey, settings, RefreshSkinSurfaces,
-            { description = ns.L["Hide the border on this skin entirely. Only takes effect when the override above is enabled."] })
-        card.AddRow(
-            row(card.frame, ns.L["Override Global Border"], overrideW),
-            row(card.frame, ns.L["Hide Border"], hideW)
-        )
-
-        local classW = GUI:CreateFormCheckbox(card.frame, nil, useClassKey, settings, RefreshSkinSurfaces,
-            { description = ns.L["Color this skin's border with your class color. Only takes effect when the override above is enabled."] })
-        local colorW = GUI:CreateFormColorPicker(card.frame, nil, colorKey, settings, RefreshSkinSurfaces, { noAlpha = true },
-            { description = ns.L["Custom border color used when override is on and class color is off."] })
-        card.AddRow(
-            row(card.frame, ns.L["Use Class Color Border"], classW),
-            row(card.frame, ns.L["Border Color"], colorW)
-        )
-    end
-
     local function AddBgOverrides(card, settings, prefix)
         local kp = type(prefix) == "string" and prefix or ""
         local overrideKey = kp ~= "" and (kp .. "BgOverride") or "bgOverride"
@@ -705,12 +662,13 @@ local function BuildSkinningTab(tabContent)
         row(sSTB.frame, ns.L["Bar width %"], stbWidthW)
     )
 
-    local stbShowBorderW = GUI:CreateFormCheckbox(sSTB.frame, nil, "statusTrackingBarsShowBorder", general, RefreshStatusTrackingBars,
-        { description = ns.L["Draw a 1px border around the tracking bars using the global skin border style."] })
+    if ns.MigrateStatusTrackingBorderSettings then ns.MigrateStatusTrackingBorderSettings(general) end
+    local stbHideBorderW = GUI:CreateFormCheckbox(sSTB.frame, nil, "statusTrackingBarsHideBorder", general, RefreshStatusTrackingBars,
+        { description = ns.L["Hide the border around the tracking bars."] })
     local stbBorderThickW = GUI:CreateFormSlider(sSTB.frame, nil, 0, 8, 1, "statusTrackingBarsBorderThickness", general, RefreshStatusTrackingBars,
         { description = ns.L["Thickness of the tracking bar border in pixels. 0 uses the automatic pixel-perfect value."] })
     sSTB.AddRow(
-        row(sSTB.frame, ns.L["Show bar border"], stbShowBorderW),
+        row(sSTB.frame, ns.L["Hide Border"], stbHideBorderW),
         row(sSTB.frame, ns.L["Border thickness (0 = auto)"], stbBorderThickW)
     )
 
@@ -759,7 +717,13 @@ local function BuildSkinningTab(tabContent)
         row(sSTB.frame, ns.L["Text Y offset"], stbOffYW)
     )
 
-    AddBorderOverrides(sSTB, general, "statusTrackingBars")
+    local stbBorderSourceW, stbBorderColorW = ns.QUI_BorderControl.Attach(
+        GUI, sSTB.frame, general, "statusTrackingBars", RefreshStatusTrackingBars
+    )
+    sSTB.AddRow(
+        row(sSTB.frame, ns.L["Border Color Source"], stbBorderSourceW),
+        row(sSTB.frame, ns.L["Border Color"], stbBorderColorW)
+    )
     AddBgOverrides(sSTB, general, "statusTrackingBars")
     L.closeSection(sSTB)
 

@@ -306,6 +306,13 @@ local feature = Schema.Feature({
         subPageIndex = 2,
     },
     lookupKeys = LOOKUP_KEYS,
+    getNavigationSections = function()
+        GetPerBarBuilder()
+        local builders = ns.QUI_ActionBarsPerBarBuilders
+        if builders and builders.GetNavigationSections then
+            return builders.GetNavigationSections(ResolveInitialSelection())
+        end
+    end,
     onNavigate = function(lookupKey)
         SelectBarForNavigation(lookupKey, "lookup-nav")
     end,
@@ -403,6 +410,10 @@ Registry:RegisterFeature(Schema.Feature({
     nav = { tileId = "action_bars", subPageIndex = 6 },
     moverKey = "extraActionButton",
     lookupKeys = { "extraActionButton", "zoneAbility" },
+    lookupRoutes = {
+        extraActionButton = { scrollToLabel = ns.L["Extra Action Button"] },
+        zoneAbility = { scrollToLabel = ns.L["Zone Ability"] },
+    },
     render = {
         layout = function(host, options)
             local key = options and options.providerKey

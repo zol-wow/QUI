@@ -3851,6 +3851,43 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     return container
 end
 
+-- BEGIN settings color picker chrome
+-- All options entry points share native color selection and cancellation.
+-- Only chrome is replaced; never strip Content or resize the color controls.
+function GUI:ShowColorPicker(info)
+    local picker = _G.ColorPickerFrame
+    picker:SetupColorPickerAndShow(info)
+    if SkinBase then
+        SkinBase.StripTextures(picker.Border)
+        SkinBase.KillNineSlice(picker.Border, true)
+        SkinBase.StripTextures(picker.Header)
+        local color = C.optionsWindow or C.bg
+        if not SkinBase.GetBackdrop(picker) then
+            SkinBase.CreateBackdrop(picker, C.border[1], C.border[2], C.border[3], C.border[4] or 1,
+                color[1], color[2], color[3], 0.97, 8)
+        end
+        SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(picker), {
+            radius = 8, borderPixels = 1, withBackground = true,
+            borderColor = C.border, bgColor = { color[1], color[2], color[3], 0.97 },
+        })
+        SkinBase.SkinFontString(picker.Header and picker.Header.Text)
+        SkinBase.SkinCloseButton(picker.CloseButton)
+        local footer = picker.Footer
+        if footer then
+            SkinBase.SkinButton(footer.OkayButton, { strip = true, font = true })
+            SkinBase.SkinButton(footer.CancelButton, { strip = true, font = true })
+            SkinBase.RefreshWidget(footer.OkayButton)
+            SkinBase.RefreshWidget(footer.CancelButton)
+        end
+        local hex = picker.Content and picker.Content.HexBox
+        SkinBase.SkinEditBox(hex)
+        SkinBase.RefreshWidget(hex)
+    end
+    picker:SetFrameStrata("TOOLTIP")
+    picker:Raise()
+end
+-- END settings color picker chrome
+
 function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, options, registryInfo)
     options = options or {}
     local noAlpha = options.noAlpha or false
@@ -3958,7 +3995,7 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
         local currentR, currentG, currentB, currentA = GetColor()
         local originalA = currentA
         local function OpenPicker()
-            ColorPickerFrame:SetupColorPickerAndShow({
+            GUI:ShowColorPicker({
                 r = currentR, g = currentG, b = currentB, opacity = currentA,
                 hasOpacity = not noAlpha,
                 swatchFunc = function()
@@ -3970,8 +4007,6 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
                     SetColor(prev.r, prev.g, prev.b, noAlpha and 1 or originalA)
                 end,
             })
-            ColorPickerFrame:SetFrameStrata("TOOLTIP")
-            ColorPickerFrame:Raise()
         end
         if ColorPickerFrame:IsShown() then
             HideUIPanel(ColorPickerFrame)
@@ -5600,7 +5635,7 @@ function GUI:CreateMainFrame()
                         end
                     end)
                     pickerWatcher:Show()
-                    ColorPickerFrame:SetupColorPickerAndShow({
+                    GUI:ShowColorPicker({
                         r = cur[1], g = cur[2], b = cur[3], opacity = 1,
                         hasOpacity = false,
                         swatchFunc = function()
@@ -5667,7 +5702,7 @@ function GUI:CreateMainFrame()
             end
         end)
         pickerWatcher:Show()
-        ColorPickerFrame:SetupColorPickerAndShow({
+        GUI:ShowColorPicker({
             r = cur[1], g = cur[2], b = cur[3], opacity = 1,
             hasOpacity = false,
             swatchFunc = function()
@@ -6146,6 +6181,14 @@ function GUI:RefreshAccentColor()
         and self.MainFrame._tiles[prevTileIndex]
         or nil
     local prevSubPageIndex = activeTile and activeTile._activeSubPageIndex or nil
+    local pageIndex = prevSubPageIndex or 1
+    local surface = activeTile and activeTile._surfacePagesByPage
+        and activeTile._surfacePagesByPage[pageIndex]
+    local surfaceKey = surface and surface.getActiveTab and surface.getActiveTab()
+    local owner = surfaceKey and surface.getPage and surface.getPage(surfaceKey)
+        or activeTile and activeTile._subPageBodies and activeTile._subPageBodies[pageIndex]
+    local previousScroll = owner and owner._scrollFrame
+    local scrollOffset = previousScroll and previousScroll:GetVerticalScroll()
 
     local point, _, relPoint, xOfs, yOfs = self.MainFrame:GetPoint()
 
@@ -6168,9 +6211,34 @@ function GUI:RefreshAccentColor()
     end
 
     if prevTileIndex and self.MainFrame and self.MainFrame._tiles and self.MainFrame._tiles[prevTileIndex] then
-        self:SelectFeatureTile(self.MainFrame, prevTileIndex, {
+        local rebuilt = self.MainFrame
+        self:SelectFeatureTile(rebuilt, prevTileIndex, {
             subPageIndex = prevSubPageIndex,
+            noHistory = true,
         })
+        local tile = rebuilt._tiles[prevTileIndex]
+        local currentSurface = tile._surfacePagesByPage and tile._surfacePagesByPage[pageIndex]
+        if surfaceKey and currentSurface and currentSurface.selectTab then
+            currentSurface.selectTab(surfaceKey)
+        end
+        local page = surfaceKey and currentSurface and currentSurface.getPage
+            and currentSurface.getPage(surfaceKey)
+            or tile._subPageBodies and tile._subPageBodies[pageIndex]
+        if scrollOffset and page and page._scrollFrame and page._contentBody
+            and self.RunWhenSettingsLayoutReady then
+            local token = tile._settingsNavigationToken
+            self:RunWhenSettingsLayoutReady(page, page._contentBody, function()
+                JumpScrollTo(page._scrollFrame, scrollOffset)
+            end, function()
+                return GUI.MainFrame == rebuilt and tile._isActive
+                    and tile._settingsNavigationToken == token
+                    and (tile._activeSubPageIndex or 1) == pageIndex
+                    and (not surfaceKey or not currentSurface.getActiveTab
+                        or currentSurface.getActiveTab() == surfaceKey)
+                    and (surfaceKey and currentSurface.getPage(surfaceKey) == page
+                        or not surfaceKey and tile._subPageBodies[pageIndex] == page)
+            end)
+        end
     end
 
     if wasShown and self.MainFrame then
@@ -6582,6 +6650,10 @@ local function StartSettingsPerformance()
 end
 
 local function installRegisterSection(targetBody)
+    if GUI.InitializeNavigationSections then
+        GUI:InitializeNavigationSections(targetBody)
+        return
+    end
     targetBody._sections = {}
     function targetBody:RegisterSection(id, label, frame)
         if type(id) ~= "string" or id == "" or not frame then return end
@@ -7058,17 +7130,26 @@ function GUI:SelectFeatureTile(frame, index, opts)
     local navigationToken = tile._settingsNavigationToken
     local destinationPage = tile._activeSubPageIndex or 1
     local function AfterLayout(callback)
-        local owner = tile._subPageBodies and tile._subPageBodies[destinationPage]
+        local surface = opts and opts.scrollToTop and tile._surfacePagesByPage
+            and tile._surfacePagesByPage[destinationPage]
+        local surfaceKey = surface and surface.getActiveTab and surface.getActiveTab()
+        local function GetOwner()
+            return surfaceKey and surface.getPage and surface.getPage(surfaceKey)
+                or tile._subPageBodies and tile._subPageBodies[destinationPage]
+        end
+        local owner = GetOwner()
         if not owner or not self.RunWhenSettingsLayoutReady then return end
-        self:RunWhenSettingsLayoutReady(owner, owner._contentBody, callback, function()
+        self:RunWhenSettingsLayoutReady(owner, owner._contentBody, function() callback(owner) end, function()
             return tile._settingsNavigationToken == navigationToken and tile._isActive
                 and (tile._activeSubPageIndex or 1) == destinationPage
+                and (not surfaceKey or surface.getActiveTab() == surfaceKey)
+                and GetOwner() == owner
         end)
     end
 
-    if opts and (opts.scrollToPath or opts.scrollToLabel or opts.scrollToFeatureId) then
-        AfterLayout(function()
-            local root = opts.searchRoot or tile._pageFrame
+    if opts and (opts.scrollToPath or opts.scrollToLabel or opts.scrollToFeatureId or opts.scrollToTop) then
+        AfterLayout(function(owner)
+            local root = opts.searchRoot or (opts.scrollToTop and owner._contentBody) or tile._pageFrame
             local scrolledToSection = false
 
             if opts.scrollToFeatureId then
@@ -7109,6 +7190,11 @@ function GUI:SelectFeatureTile(frame, index, opts)
                     end
                 end
                 if opts.pulse then GUI:PulseWidget(target) end
+            elseif not scrolledToSection and opts.scrollToTop and owner._scrollFrame then
+                JumpScrollTo(owner._scrollFrame, 0)
+            end
+            if self.RefreshNavigationSectionHighlight then
+                self:RefreshNavigationSectionHighlight(tile, true)
             end
         end)
     elseif opts and opts.sectionName and opts.searchTabIndex then
@@ -7129,7 +7215,7 @@ function GUI:SelectFeatureTile(frame, index, opts)
     frame._selectingFeatureTile = true
     local result = SelectFeatureTileWithContent(self, frame, index, opts)
     frame._selectingFeatureTile = nil
-    if self.RefreshNavigationDock then self:RefreshNavigationDock(frame) end
+    if self.RefreshNavigationDock then self:RefreshNavigationDock(frame, true) end
     local tile = frame._tiles and frame._tiles[index]
     if tile then
         local page = tile.config.subPages and tile.config.subPages[tile._activeSubPageIndex or 1]

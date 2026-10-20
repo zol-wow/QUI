@@ -188,9 +188,25 @@ local function Tabs(config)
     if config.pi then
         tabs[#tabs + 1] = { key = "tracking", label = ns.L["PI Tracking"] }
         tabs[#tabs + 1] = { key = "buffs", label = ns.L["Tracked Buffs"] }
-        tabs[#tabs + 1] = { key = "requests", label = ns.L["Requests"] }
+        tabs[#tabs + 1] = { key = "requests", label = ns.L["Requests"], isSectionAvailable = function(id)
+            local whisper = type(config.pi) == "table" and config.pi.whisper
+            local rotation = whisper and whisper.mode == "rotation"
+            if id == ns.L["Rotation Order"] then return rotation == true end
+            if id == ns.L["Priority Order"] then return not rotation end
+            return true
+        end }
     end
     return tabs
+end
+O.GetTabs = Tabs
+
+local function ReminderSelection(db)
+    local options = {}
+    for id, config in pairs(db.reminders) do
+        options[#options + 1] = { value = id, text = ns.SpellReminderPresentation and ns.SpellReminderPresentation.Name(config) or tostring(id) }
+    end
+    table.sort(options, function(a, b) return a.text < b.text end)
+    return options, selected and db.reminders[selected] and selected or (options[1] and options[1].value)
 end
 
 function O.RenderTab(key, host, config, rebuild)
@@ -217,14 +233,9 @@ function O.Build(content)
     c.Check(ns.L["Enable Spell Reminders"], db, "enabled", ns.L["Enable the configured spell reminders. Individual reminders also have their own enable switch."])
     c.Finish()
     local ui = {}
+    local options
+    options, selected = ReminderSelection(db)
     local selector = { value = selected }
-    local options = {}
-    for id, config in pairs(db.reminders) do
-        options[#options + 1] = { value = id, text = ns.SpellReminderPresentation and ns.SpellReminderPresentation.Name(config) or tostring(id) }
-    end
-    table.sort(options, function(a, b) return a.text < b.text end)
-    if not selected or not db.reminders[selected] then selected = options[1] and options[1].value end
-    selector.value = selected
     local function ChangeSelection(id)
         if selected and R then R.Preview(selected, false) end
         selected = id
@@ -255,7 +266,37 @@ function O.Build(content)
     status = L.intro(ns.L["Changes to protected aura displays apply when combat restrictions allow."])
     local editor = CreateFrame("Frame", nil, content)
     L.placeCustom(editor, 500)
+    local activePage, sidebarTabs
+    local function SelectTab(key)
+        local config = selected and db.reminders[selected]
+        for _, tab in ipairs(config and Tabs(config) or {}) do
+            if tab.key == key and key ~= activeTab then
+                activeTab = key
+                ui.rebuild()
+                return true
+            end
+        end
+        return false
+    end
+    if GUI.RegisterTileSurfacePages then
+        sidebarTabs = GUI:RegisterTileSurfacePages(content, {
+            getTabs = function()
+                local config = selected and db.reminders[selected]
+                return config and Tabs(config) or {}
+            end,
+            getActiveTab = function() return activeTab end,
+            selectTab = SelectTab,
+            getPage = function(key)
+                if key ~= activeTab or not activePage then return nil end
+                local owner = content
+                while owner and not owner._scrollFrame do owner = owner.GetParent and owner:GetParent() end
+                activePage._scrollFrame = owner and owner._scrollFrame
+                return activePage
+            end,
+        })
+    end
     ui.rebuild = function()
+        activePage, O.activeBody = nil, nil
         selector.value = selected
         reminder:Refresh()
         GUI:TeardownFrameTree(editor)
@@ -266,6 +307,7 @@ function O.Build(content)
             local h = empty.finish()
             local _, _, _, _, y = editor:GetPoint(1)
             editor:SetHeight(h); content:SetHeight(math.abs(y) + h + 30)
+            if sidebarTabs then GUI:RefreshTileSurfacePages(content) end
             return
         end
         if not config.pi and (activeTab == "tracking" or activeTab == "buffs" or activeTab == "requests") then activeTab = "timing" end
@@ -276,30 +318,44 @@ function O.Build(content)
                     acceptText = ns.L["Delete"], cancelText = ns.L["Cancel"], isDestructive = true,
                     onAccept = function() R.Remove(selected); selected = nil; GUI:TeardownFrameTree(content); O.Build(content) end })
             end } })
-        local strip, paint = ns.Settings.FullSurface.CreateTabStrip(editor, { wrapRows = true, buttonSpacing = 10 })
-        top.placeCustom(strip, 28)
-        paint(Tabs(config), activeTab, function(key) activeTab = key; ui.rebuild() end)
+        local strip, paint
+        if not sidebarTabs then
+            strip, paint = ns.Settings.FullSurface.CreateTabStrip(editor, { wrapRows = true, buttonSpacing = 10 })
+            top.placeCustom(strip, 28)
+            paint(Tabs(config), activeTab, SelectTab)
+        end
         local body = CreateFrame("Frame", nil, editor)
-        body:SetPoint("TOPLEFT", strip, "BOTTOMLEFT", -15, -10)
-        body:SetPoint("TOPRIGHT", strip, "BOTTOMRIGHT", 15, -10)
+        if strip then
+            body:SetPoint("TOPLEFT", strip, "BOTTOMLEFT", -15, -10)
+            body:SetPoint("TOPRIGHT", strip, "BOTTOMRIGHT", 15, -10)
+        else
+            body:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, top.getY() - 10)
+            body:SetPoint("TOPRIGHT", editor, "TOPRIGHT", 0, top.getY() - 10)
+        end
+        if sidebarTabs and GUI.InitializeNavigationSections then GUI:InitializeNavigationSections(body) end
         O.activeBody = body
         O.RenderTab(activeTab, body, config, ui.rebuild)
+        body._contentBody = body
+        activePage = body
         local function Resize()
             local _, _, _, _, y = editor:GetPoint(1)
             if not y then return end
-            editor:SetHeight(body:GetHeight() + strip:GetHeight() + 60)
+            editor:SetHeight(body:GetHeight() + (strip and strip:GetHeight() or 0) + 60)
             content:SetHeight(math.abs(y) + editor:GetHeight() + 30)
         end
-        local stripWidth = strip:GetWidth()
-        strip:HookScript("OnSizeChanged", function(self, width)
-            if width ~= stripWidth then
-                stripWidth = width
-                paint(Tabs(config), activeTab, function(key) activeTab = key; ui.rebuild() end)
-            end
-            Resize()
-        end)
+        if strip then
+            local stripWidth = strip:GetWidth()
+            strip:HookScript("OnSizeChanged", function(self, width)
+                if width ~= stripWidth then
+                    stripWidth = width
+                    paint(Tabs(config), activeTab, SelectTab)
+                end
+                Resize()
+            end)
+        end
         body:HookScript("OnSizeChanged", Resize)
         Resize()
+        if sidebarTabs then GUI:RefreshTileSurfacePages(content) end
     end
     content:SetScript("OnHide", function()
         if R and selected then R.Preview(selected, false) end
@@ -323,6 +379,12 @@ end
 ns.Settings.Registry:RegisterFeature(ns.Settings.Schema.Feature({
     id = "spellRemindersPage", category = "gameplay", nav = { tileId = "reminders", subPageIndex = 2 },
     keywords = { "Power Infusion", "PIHelper", "Innervate", "BeKindRemind", "whisper", "reminder", "TTS" },
+    getNavigationTabs = function()
+        local db = ns.SpellReminders and ns.SpellReminders.Store()
+        if not db then return {} end
+        local _, id = ReminderSelection(db)
+        return id and Tabs(db.reminders[id]) or {}
+    end,
     render = {
         layout = function(host, options)
             return ns.Settings.RenderAdapters.RenderLayoutRoute(host, options and options.providerKey)

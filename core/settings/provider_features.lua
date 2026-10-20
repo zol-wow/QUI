@@ -96,6 +96,11 @@ function ProviderFeatures:Register(spec)
         getDB = spec.getDB,
         apply = spec.apply,
         createState = spec.createState,
+        getNavigationSections = spec.getNavigationSections or function()
+            local providers = Settings.Providers or Settings.ProviderRegistry
+            local provider = providers and providers.Get and spec.providerKey and providers:Get(spec.providerKey)
+            if provider and provider.getNavigationSections then return provider.getNavigationSections() end
+        end,
         onNavigate = spec.onNavigate,
         layoutPositionOnly = spec.layoutPositionOnly,
         searchContext = spec.searchContext,

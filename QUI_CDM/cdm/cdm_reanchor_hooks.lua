@@ -279,6 +279,33 @@ function CDMReanchorHooks:InstallViewerHooks(getViewer)
                 end
             end
             hooksec(viewer, "RefreshLayout", function(...) _securecall(markRefreshLayout, ...) end)
+            if (key == "essential" or key == "utility") and viewer.RefreshData then
+                local cooldownIDs = setmetatable({}, { __mode = "k" })
+                local identitiesChanged = false
+                local function recordIdentity(frame)
+                    if frame.IsForbidden and frame:IsForbidden() then return end
+                    if not frame.GetCooldownID then return end
+                    local cooldownID = frame:GetCooldownID()
+                    if issecretvalue and issecretvalue(cooldownID) then return end
+                    if cooldownIDs[frame] ~= cooldownID then
+                        cooldownIDs[frame] = cooldownID
+                        identitiesChanged = true
+                    end
+                end
+                EnumerateViewerFrames(viewer, recordIdentity)
+                local function onDataChanged()
+                    identitiesChanged = false
+                    EnumerateViewerFrames(viewer, recordIdentity)
+                    if identitiesChanged then
+                        for _, cooldownKey in ipairs(hooks._keys) do
+                            if cooldownKey == "essential" or cooldownKey == "utility" then
+                                hooks:MarkDirty(cooldownKey)
+                            end
+                        end
+                    end
+                end
+                hooksec(viewer, "RefreshData", function(...) _securecall(onDataChanged, ...) end)
+            end
             if viewer.OnAcquireItemFrame then
                 local function onAcquire(_, itemFrame)
                     hooks:_InstallFrameHooks(itemFrame, key)

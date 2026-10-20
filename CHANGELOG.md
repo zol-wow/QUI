@@ -4,6 +4,76 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.3-beta1 - 2026-10-20
+
+### Improved
+
+- Mover Open settings links select the matching section, unit tab, or aura
+  display/group and reveal the destination in the navigation sidebar. Swing
+  timer drawers keep layout controls; gameplay and appearance controls remain
+  in the main settings page.
+- Refined Blizzard window, alert, loot, tooltip, and status-bar styling,
+  including bank rarity borders and native hover states.
+
+### Fixed
+
+- Resizing movers preserves saved anchor gaps across attached movers without
+  reopening Layout Mode. Settings drawers fit after their contents settle.
+- Forever movement-speed stats and tooltips use native values without
+  restricted arithmetic. Swing timer styling and previews preserve native
+  timing, visibility registration, and range presentation.
+- Cooldown Manager setup warnings wait for saved settings to load and clear
+  when the viewer is enabled. Durability anchors survive native repositioning.
+- Bag button creation waits until combat ends, cooldown identities refresh
+  after specialization changes, and offline group members lose stale auras.
+- Loot and loot-roll previews no longer replace or hide active loot windows
+  and roll choices.
+- Theme changes preserve settings navigation, and color-picker styling is
+  consistent across settings controls.
+
+## v5.5.2-beta12 - 2026-10-19
+
+### Improved
+
+- Group-frame Cleanse-Ready Glow has its own debuff scope, custom or per-type
+  colors, opacity, and static, pulse, or moving-highlight animations. Settings
+  previews reflect these choices independently of the dispel border.
+
+### Fixed
+
+- Hidden essential and utility Cooldown Manager buttons no longer intercept
+  clicks under supported mounted and out-of-combat visibility settings. When
+  combat makes the HUD visible, it appears before clicks are enabled.
+- Inspect models have more camera clearance. Trade item rows and acceptance
+  highlights align correctly, with duplicate decorative borders removed.
+- Rated-loot, money, and collection alerts retain QUI styling through native
+  animations. Achievement hover highlights use QUI styling.
+
+## v5.5.2-beta11 - 2026-10-18
+
+### Improved
+
+- Settings use consistent sidebar section links on pages with three or more
+  available sections. Links follow the selected settings and jump directly to
+  their headings, including when switching action bars or opening a page for
+  the first time.
+- Reduced repeated action bar and aura setup during startup. Hidden Blizzard
+  panels defer skinning until first shown.
+
+### Fixed
+
+- Raid frames can display players joining previously empty allowed subgroups
+  during combat, with group labels following the visible frames.
+- Saved chat history loads before new login messages and default-chat backfill,
+  preserving message order.
+- Info Bar icons use native secure clicks in combat. Spellbook and Talents also
+  use native clicks outside combat to avoid secret-value cooldown errors;
+  on Retail, both follow Blizzard's remembered Player Spells tab.
+- First-show skinning no longer waits for combat to end, and font styling avoids
+  recursive font-object updates.
+- Reputation scans restore collapsed headers correctly, including headers that
+  share faction IDs.
+
 ## v5.5.2-beta10 - 2026-10-18
 
 ### Fixed

@@ -38,15 +38,18 @@ local function SkinPVPMatchContents(frame)
     SkinBase.SkinButton(buttons and buttons.leaveButton, { strip = true, font = true })
 end
 
+local SkinPVPMatch
+
 local function SkinPVPMatchFrame(frame)
     if not frame or SkinBase.IsSkinned(frame) then return end
+    if SkinBase.DeferUntilShown(frame, SkinPVPMatch) then return end
     SkinBase.SkinWindow(frame, { depth = 5 })
     SkinPVPMatchContents(frame)
     frame:HookScript("OnShow", SkinPVPMatchContents)
     SkinBase.MarkSkinned(frame)
 end
 
-local function SkinPVPMatch()
+SkinPVPMatch = function()
     if not IsSettingEnabled("skinPVPMatch") then return end
     SkinPVPMatchFrame(_G.PVPMatchScoreboard)
     SkinPVPMatchFrame(_G.PVPMatchResults)

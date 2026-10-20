@@ -42,6 +42,11 @@ local function SkinSocialRow(row, depth)
         end
     end
     local invite = row.travelPassButton
+    -- Legacy Recent Allies uses the same tall invite art under another key.
+    -- Modern social cards own a separate Icon that must retain its semantics.
+    if not invite and row.PartyButton and not row.PartyButton.Icon then
+        invite = row.PartyButton
+    end
     if invite then
         if not invite:GetFontString() then
             local label = invite:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -381,6 +386,7 @@ local function SkinFriends()
     if not IsSettingEnabled("skinFriends") then return end
     local frame = _G.FriendsFrame
     if not frame then return end
+    if SkinBase.DeferUntilShown(frame, SkinFriends) then return end
     if not SkinBase.IsSkinned(frame) then
         local tabs = {}
         for i = 1, 4 do
@@ -447,6 +453,7 @@ local function SkinSocialUI()
     if not IsSettingEnabled("skinFriends") then return end
     local frame = _G.SocialUIFrame
     if not frame then return end
+    if SkinBase.DeferUntilShown(frame, SkinSocialUI) then return end
     if not SkinBase.IsSkinned(frame) then
         SkinBase.StripTextures(frame)
         SkinBase.SkinWindow(frame)
@@ -826,7 +833,7 @@ local function LayoutCommunityChat(frame)
 end
 
 local function SkinCommunitiesContents(frame)
-    if not frame then return end
+    if not frame or not IsSettingEnabled("skinCommunities") then return end
     StyleCommunitiesTitle(frame)
     SkinBase.ClampTextureHidden(frame.PortraitOverlay, true)
     SkinBase.ClampTextureHidden(frame.PortraitContainer, true)
@@ -917,6 +924,7 @@ local function SkinCommunities()
     if not IsSettingEnabled("skinCommunities") then return end
     local frame = _G.CommunitiesFrame
     if not frame or SkinBase.IsSkinned(frame) then return end
+    if SkinBase.DeferUntilShown(frame, SkinCommunities) then return end
     SkinBase.SkinWindow(frame)
     if frame.MemberList then HookListRows(frame.MemberList.ScrollBox) end
     if frame.CommunitiesList then HookListRows(frame.CommunitiesList.ScrollBox) end
@@ -952,9 +960,13 @@ local function SkinCommunities()
 end
 
 local function RefreshCommunities()
-    RefreshBackdropColors(_G.CommunitiesFrame)
-    LockGuildNameAlertText(_G.CommunitiesFrame)
-    SkinCommunitiesContents(_G.CommunitiesFrame)
+    if not IsSettingEnabled("skinCommunities") then return end
+    local frame = _G.CommunitiesFrame
+    if not frame then return end
+    if not SkinBase.IsSkinned(frame) then return SkinCommunities() end
+    RefreshBackdropColors(frame)
+    LockGuildNameAlertText(frame)
+    SkinCommunitiesContents(frame)
 end
 _G.QUI_RefreshCommunitiesColors = RefreshCommunities
 if ns.Registry then

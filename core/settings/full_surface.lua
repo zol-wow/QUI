@@ -1301,13 +1301,26 @@ local function CreateBodyTabNavigation(body, options)
             if type(gui.RefreshTileSurfacePages) == "function" then
                 gui:RefreshTileSurfacePages(body)
             end
-        end
+        end, descriptor
     end
 
     local createTabStrip = options.createTabStrip or function(parent)
         return FullSurface.CreateTabStrip(parent, options.tabStripOptions)
     end
     return createTabStrip(body)
+end
+
+local function PrepareTabNavigation(descriptor, page)
+    if not descriptor then return end
+    page.container._contentBody = page.content
+    page.container._scrollFrame = page.scrollFrame
+    local gui = _G.QUI and _G.QUI.GUI
+    if gui and gui.InitializeNavigationSections then gui:InitializeNavigationSections(page.content) end
+end
+
+local function RefreshTabNavigation(descriptor, body)
+    local gui = _G.QUI and _G.QUI.GUI
+    if descriptor and gui and gui.RefreshTileSurfacePages then gui:RefreshTileSurfacePages(body) end
 end
 
 local function CreateTabRepainter(options, paintTabs, RenderActive)
@@ -1388,7 +1401,7 @@ function FullSurface.BuildScrollTabBody(body, options)
     local contentRight = options.contentRightPadding or pad
     local contentBottom = options.contentBottomPadding or pad
 
-    local tabStrip, paintTabs = CreateBodyTabNavigation(body, options)
+    local tabStrip, paintTabs, navigation = CreateBodyTabNavigation(body, options)
     local noStripTop = options.tabTopOffset and (tabTop + contentTop) or (options.contentTopOffset or 0)
     if tabStrip then
         tabStrip:SetPoint("TOPLEFT", body, "TOPLEFT", pad, tabTop)
@@ -1403,10 +1416,9 @@ function FullSurface.BuildScrollTabBody(body, options)
     end
     scrollWrap:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -contentRight, contentBottom)
 
-    local scrollContent
+    local scrollContent, scrollFrame
     if not cacheTabBodies and ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
-        local _scrollFrame
-        _scrollFrame, scrollContent = ns.QUI_Options.CreateScrollableContent(scrollWrap)
+        scrollFrame, scrollContent = ns.QUI_Options.CreateScrollableContent(scrollWrap)
     end
 
     local state = type(options.state) == "table" and options.state or nil
@@ -1421,6 +1433,16 @@ function FullSurface.BuildScrollTabBody(body, options)
             end
         end
         return key
+    end
+
+    if navigation then
+        navigation.getPage = function(tabKey)
+            if cacheTabBodies then
+                local cached = tabBodyCache[GetTabCacheKey(tabKey)]
+                return cached and cached.rendered and cached.container or nil
+            end
+            if tabKey == options.getActiveTab() then return scrollWrap end
+        end
     end
 
     local function CreateCachedTabBody(tabKey)
@@ -1471,6 +1493,7 @@ function FullSurface.BuildScrollTabBody(body, options)
             if clearFrame then
                 clearFrame(host)
             end
+            PrepareTabNavigation(navigation, cached)
             if type(options.render) == "function" then
                 options.render(host, tabKey, cached)
             end
@@ -1499,6 +1522,7 @@ function FullSurface.BuildScrollTabBody(body, options)
             if state then
                 state.activeBody = host
             end
+            RefreshTabNavigation(navigation, body)
             return
         end
 
@@ -1509,9 +1533,11 @@ function FullSurface.BuildScrollTabBody(body, options)
         if state then
             state.activeBody = host
         end
+        PrepareTabNavigation(navigation, { container = scrollWrap, content = host, scrollFrame = scrollFrame })
         if type(options.render) == "function" then
             options.render(host)
         end
+        RefreshTabNavigation(navigation, body)
     end
 
     local RepaintTabs, RepaintAndRender = CreateTabRepainter(options, paintTabs, RenderActive)
@@ -1562,7 +1588,7 @@ function FullSurface.BuildMultiHostTabBody(body, options)
     local contentRight = options.contentRightPadding or pad
     local contentBottom = options.contentBottomPadding or pad
 
-    local tabStrip, paintTabs = CreateBodyTabNavigation(body, options)
+    local tabStrip, paintTabs, navigation = CreateBodyTabNavigation(body, options)
     local noStripTop = options.tabTopOffset and (tabTop + contentTop) or (options.contentTopOffset or 0)
     if tabStrip then
         tabStrip:SetPoint("TOPLEFT", body, "TOPLEFT", pad, tabTop)
@@ -1581,15 +1607,15 @@ function FullSurface.BuildMultiHostTabBody(body, options)
             container:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -contentRight, contentBottom)
             container:Hide()
 
-            local content = container
+            local content, scrollFrame = container, nil
             if definition.kind == "scroll" and ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
-                local _scrollFrame
-                _scrollFrame, content = ns.QUI_Options.CreateScrollableContent(container)
+                scrollFrame, content = ns.QUI_Options.CreateScrollableContent(container)
             end
 
             hosts[hostKey] = {
                 container = container,
                 content = content or container,
+                scrollFrame = scrollFrame,
                 clearFrame = definition.clearFrame or clearFrame,
             }
         end
@@ -1605,6 +1631,17 @@ function FullSurface.BuildMultiHostTabBody(body, options)
 
     local function GetTabCacheKey(tabKey, hostKey)
         return tostring(hostKey or "__host") .. "\31" .. tostring(tabKey or "__nil")
+    end
+
+    if navigation then
+        navigation.getPage = function(tabKey)
+            if cacheTabBodies then
+                local cached = tabBodyCache[GetTabCacheKey(tabKey, ResolveHostKey(tabKey))]
+                return cached and cached.rendered and cached.container or nil
+            end
+            local host = hosts[ResolveHostKey(tabKey)] or hosts[options.defaultHostKey]
+            if host and tabKey == options.getActiveTab() then return host.container end
+        end
     end
 
     local function CreateCachedHost(activeTab, activeHostKey)
@@ -1625,15 +1662,15 @@ function FullSurface.BuildMultiHostTabBody(body, options)
         container:SetPoint("BOTTOMRIGHT", body, "BOTTOMRIGHT", -contentRight, contentBottom)
         container:Hide()
 
-        local content = container
+        local content, scrollFrame = container, nil
         if definition.kind == "scroll" and ns.QUI_Options and ns.QUI_Options.CreateScrollableContent then
-            local _scrollFrame
-            _scrollFrame, content = ns.QUI_Options.CreateScrollableContent(container)
+            scrollFrame, content = ns.QUI_Options.CreateScrollableContent(container)
         end
 
         cached = {
             container = container,
             content = content or container,
+            scrollFrame = scrollFrame,
             clearFrame = definition.clearFrame or clearFrame,
             hostKey = activeHostKey,
             tabKey = activeTab,
@@ -1662,6 +1699,7 @@ function FullSurface.BuildMultiHostTabBody(body, options)
             if cached.clearFrame then
                 cached.clearFrame(cached.content)
             end
+            PrepareTabNavigation(navigation, cached)
             if type(options.render) == "function" then
                 options.render(cached.content, activeTab, activeHostKey, cached)
             end
@@ -1692,6 +1730,7 @@ function FullSurface.BuildMultiHostTabBody(body, options)
             if state then
                 state.activeBody = host
             end
+            RefreshTabNavigation(navigation, body)
             return
         end
 
@@ -1716,9 +1755,11 @@ function FullSurface.BuildMultiHostTabBody(body, options)
             state.activeBody = hostInfo.content
         end
 
+        PrepareTabNavigation(navigation, hostInfo)
         if type(options.render) == "function" then
             options.render(hostInfo.content, activeTab, activeHostKey, hostInfo)
         end
+        RefreshTabNavigation(navigation, body)
     end
 
     local RepaintTabs, RepaintAndRender = CreateTabRepainter(options, paintTabs, RenderActive)

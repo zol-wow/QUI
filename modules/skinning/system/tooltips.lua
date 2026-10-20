@@ -960,6 +960,80 @@ local function SetupHealthBarHook()
     end)
 end
 
+-- HelpTips are pooled callouts, not GameTooltip instances. Keep tutorial
+-- acknowledgement and anchoring native; replace only their GlowBox chrome.
+local HELP_TIP_POINTERS = {
+    [1] = { -5, 3, 0, -2, 5, 3 },
+    [2] = { 3, 5, -2, 0, 3, -5 },
+    [3] = { -5, -3, 0, 2, 5, -3 },
+    [4] = { -3, 5, 2, 0, -3, -5 },
+}
+local function StyleHelpTipArrow(frame)
+    if not IsEnabled() then return end
+    local arrow = frame.Arrow
+    if not arrow or not arrow.Arrow or not arrow.CreateLine then return end
+    SkinBase.ClampTextureHidden(arrow.Arrow, true)
+    SkinBase.ClampTextureHidden(arrow.Glow, true)
+    local lines = SkinBase.GetFrameData(arrow, "qHelpTipPointer")
+    if not lines then
+        lines = { arrow:CreateLine(nil, "OVERLAY"), arrow:CreateLine(nil, "OVERLAY") }
+        SkinBase.SetFrameData(arrow, "qHelpTipPointer", lines)
+    end
+    local points = HELP_TIP_POINTERS[arrow.rotation] or HELP_TIP_POINTERS[1]
+    local r, g, b, a = GetEffectiveColors()
+    local thickness = SkinBase.GetPixelSize(arrow, GetEffectiveBorderThickness())
+    for index, line in ipairs(lines) do
+        local offset = (index - 1) * 2
+        line:SetStartPoint("CENTER", arrow.Arrow, points[1 + offset], points[2 + offset])
+        line:SetEndPoint("CENTER", arrow.Arrow, points[3 + offset], points[4 + offset])
+        line:SetThickness(thickness)
+        line:SetColorTexture(r, g, b, a)
+    end
+end
+
+local function StyleHelpTip(frame)
+    if not frame or not IsEnabled() or (frame.IsForbidden and frame:IsForbidden()) then return end
+    SkinBase.StripTextures(frame)
+    SkinBase.ClampTextureHidden(frame.BG)
+    local r, g, b, a, br, bg, bb, ba = GetEffectiveColors()
+    if not SkinBase.GetBackdrop(frame) then
+        SkinBase.CreateBackdrop(frame, r, g, b, a, br, bg, bb, ba, 8)
+    end
+    SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(frame), {
+        radius = 8, borderPixels = GetEffectiveBorderThickness(), withBackground = true,
+        borderColor = { r, g, b, a }, bgColor = { br, bg, bb, ba },
+    })
+    SkinBase.SkinCloseButton(frame.CloseButton)
+    if frame.CloseButton then SkinBase.ClampTextureHidden(frame.CloseButton.Texture, true) end
+    SkinBase.SkinButton(frame.OkayButton)
+    SkinBase.RefreshWidget(frame.OkayButton)
+    StyleHelpTipArrow(frame)
+    if not SkinBase.GetFrameData(frame, "qHelpTipHooked") then
+        SkinBase.SetFrameData(frame, "qHelpTipHooked", true)
+        if type(frame.Init) == "function" then hooksecurefunc(frame, "Init", StyleHelpTip) end
+        if type(frame.RotateArrow) == "function" then hooksecurefunc(frame, "RotateArrow", StyleHelpTipArrow) end
+    end
+end
+
+local function RefreshHelpTips()
+    if not IsEnabled() then return end
+    local helpTip = _G.HelpTip
+    local pool = helpTip and helpTip.framePool
+    if pool and pool.EnumerateActive then
+        for frame in pool:EnumerateActive() do StyleHelpTip(frame) end
+    end
+end
+
+local function HookHelpTips()
+    local helpTip = _G.HelpTip
+    if not helpTip or type(helpTip.Show) ~= "function" then return end
+    if not SkinBase.GetFrameData(helpTip, "qHelpTipShowHooked") then
+        SkinBase.SetFrameData(helpTip, "qHelpTipShowHooked", true)
+        hooksecurefunc(helpTip, "Show", RefreshHelpTips)
+    end
+    RefreshHelpTips()
+end
+
 local function RefreshAllColors()
     if InCombatLockdown() then return end
     for tooltip in pairs(styleFrames) do
@@ -969,6 +1043,7 @@ local function RefreshAllColors()
         end
     end
     ApplyAuraTooltipStyle()
+    RefreshHelpTips()
 end
 
 local function RefreshAllFonts()
@@ -1075,6 +1150,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
                 end
             end
             RefreshAllFonts()
+            RefreshHelpTips()
         end
         DiscoverExtraTooltips()
         return
@@ -1088,6 +1164,7 @@ local function InitializeTooltipSkinning()
     RebuildTooltipList()
 
     HookAllTooltips()
+    HookHelpTips()
     if IsEnabled() then
         RefreshAllFonts()
         for _, name in ipairs(tooltipsToSkin) do

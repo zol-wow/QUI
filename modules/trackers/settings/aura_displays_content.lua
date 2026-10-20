@@ -307,6 +307,27 @@ local function SelectGroup(groupName)
     if UI.RebuildDetail then UI.RebuildDetail() end
 end
 
+function ns.QUI_AuraDisplaysOptions.NavigateLayoutKey(key)
+    AD = ns.QUI_AuraDisplays
+    if type(key) ~= "string" or not AD then return false end
+    local store = AD.Store()
+    if not store then return false end
+    local id = key:match("^" .. AD.ANCHOR_PREFIX .. "(.+)$")
+    if id and store.displays[id] then
+        activeDetailTab = "general"
+        SelectDisplay(id)
+        return true
+    end
+    for name, group in pairs(store.groups) do
+        if type(group) == "table" and type(group.id) == "string"
+            and key == AD.GROUP_ANCHOR_PREFIX .. group.id then
+            SelectGroup(name)
+            return true
+        end
+    end
+    return false
+end
+
 local BuildLeftPane, BuildRightPane
 
 local ShowQuickCreatePopup
