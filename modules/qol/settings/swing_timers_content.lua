@@ -56,7 +56,7 @@ local function BuildBar(L, entry, includeSize)
         { value = 1, text = ns.L["In Combat"] },
         { value = 2, text = ns.L["Hidden"] },
     }, "visibility", db, SwingTimers.Refresh,
-        { description = ns.L["When to show this swing timer during gameplay. Layout Mode always previews all three bars."] })
+        { description = ns.L["When to show this swing timer during gameplay. Set its Blizzard Edit Mode visibility to Always to let QUI control visibility. Layout Mode always previews all three bars."] })
     section.AddRow(Row(section.frame, ns.L["Visibility"], visibility))
     L.closeSection(section)
 end
