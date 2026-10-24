@@ -4,6 +4,18 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.3-beta2 - 2026-10-24
+
+### Fixed
+
+- Objective Tracker placement in QUI Layout Mode stays consistent across
+  scenario changes and native layout resets, with tracker skinning on or off.
+  Blizzard Edit Mode dragging no longer displaces it; restricted positioning
+  changes recover after combat.
+- Info Bar Spellbook and Talents shortcuts use their dedicated native buttons
+  when available, retaining the secure shared fallback on other clients.
+- Group-frame Cleanse-Ready Glow animations preserve the configured opacity.
+
 ## v5.5.3-beta1 - 2026-10-20
 
 ### Improved
