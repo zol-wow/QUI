@@ -304,8 +304,10 @@ local function LayoutSections(runtime)
             end
             if sectionHost._quiRecoveredBounds then
                 sectionHost:SetWidth(math.max(1, runtime.host:GetWidth() - pad * 2))
+            elseif previousHost then
+                sectionHost:SetPoint("TOPRIGHT", previousHost, "BOTTOMRIGHT", 0, -previousGap)
             else
-                sectionHost:SetPoint("RIGHT", runtime.host, "RIGHT", -pad, 0)
+                sectionHost:SetPoint("TOPRIGHT", runtime.host, "TOPRIGHT", -pad, -topPad)
             end
             sectionHost:SetHeight(height)
             previousHost, previousGap = sectionHost, section and section.gapAfter or gap

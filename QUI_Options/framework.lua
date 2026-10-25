@@ -7215,7 +7215,7 @@ function GUI:SelectFeatureTile(frame, index, opts)
     frame._selectingFeatureTile = true
     local result = SelectFeatureTileWithContent(self, frame, index, opts)
     frame._selectingFeatureTile = nil
-    if self.RefreshNavigationDock then self:RefreshNavigationDock(frame, true) end
+    if self.RefreshNavigationDock then self:RefreshNavigationDock(frame, true, opts == nil) end
     local tile = frame._tiles and frame._tiles[index]
     if tile then
         local page = tile.config.subPages and tile.config.subPages[tile._activeSubPageIndex or 1]
