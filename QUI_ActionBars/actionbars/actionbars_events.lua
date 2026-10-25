@@ -398,6 +398,7 @@ function OnOwnedEvent(self, event, ...)
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         local isLogin, isReload = ...
+        local previousInitSafeWindow = ns._inInitSafeWindow
         inInitSafeWindow = true
         ns._inInitSafeWindow = true
         if isReload then
@@ -420,7 +421,7 @@ function OnOwnedEvent(self, event, ...)
         if SyncOwnedFlyoutInfoToHandler then SyncOwnedFlyoutInfoToHandler() end
         RefreshContextVisibilityFade()
         inInitSafeWindow = false
-        ns._inInitSafeWindow = false
+        ns._inInitSafeWindow = previousInitSafeWindow
         C_Timer.After(0.2, function()
             if InCombatLockdown() then
                 ActionBarsOwned.pendingRefresh = true

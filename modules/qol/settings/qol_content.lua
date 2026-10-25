@@ -872,8 +872,9 @@ local function BuildConsumableCheck(L, generalDB)
 end
 
 local function BuildConsumableMacros(L, generalDB)
-    local cmDB = generalDB and generalDB.consumableMacros
-    if not cmDB then return end
+    local cmProfileDB = generalDB and generalDB.consumableMacros
+    if not cmProfileDB then return end
+    local cmDB = ns.Helpers.CreateConsumableMacrosSettings(cmProfileDB)
 
     L.headerAt(ns.L["Consumable Macros"])
     L.intro(ns.L["Auto-create per-character macros that use the best-quality Flask or Potion in your bags. Higher quality variants are tried first (Gold Fleeting > Silver Fleeting > Gold Crafted > Silver Crafted)."])
@@ -883,6 +884,21 @@ local function BuildConsumableMacros(L, generalDB)
     end
 
     local s1 = L.sectionAt()
+    local charSpecW = GUI:CreateFormCheckbox(s1.frame, nil, "characterSpecific", cmDB, function()
+        if ns.ConsumableMacros then
+            if cmDB.enabled then ns.ConsumableMacros:ForceRefresh()
+            else ns.ConsumableMacros:DeleteMacros() end
+        end
+        if DEFAULT_CHAT_FRAME then
+            DEFAULT_CHAT_FRAME:AddMessage(
+                "|cff60A5FA[QUI]|r " .. ns.L["Consumable macro selections are now "]
+                .. (cmDB.characterSpecific
+                    and "|cffffffff" .. ns.L["per-character"] .. "|r " .. ns.L["for this character."]
+                    or "|cffffffff" .. ns.L["shared"] .. "|r " .. ns.L["across this profile."])
+                .. " " .. ns.L["Reopen this page to refresh the displayed values."]
+            )
+        end
+    end, { description = ns.L["When enabled, the macro selections below are stored per-character instead of being shared by every character on this AceDB profile. The toggle itself is always per-character. Turning it on copies your current profile selections as a starting point."] })
     local enableW = GUI:CreateFormCheckbox(s1.frame, nil, "enabled", cmDB, function()
         if ns.ConsumableMacros then
             if cmDB.enabled then ns.ConsumableMacros:ForceRefresh()
@@ -891,7 +907,8 @@ local function BuildConsumableMacros(L, generalDB)
     end, { description = ns.L["Create per-character macros that pick the best available consumable from your bags. Disabling this removes the macros."] })
     local chatW = GUI:CreateFormCheckbox(s1.frame, nil, "chatNotifications", cmDB, nil,
         { description = ns.L["Print a chat message each time the consumable macros are rebuilt so you know which item was chosen."] })
-    s1.AddRow(row(s1.frame, ns.L["Enable Consumable Macros"], enableW), row(s1.frame, ns.L["Chat Notifications"], chatW))
+    s1.AddRow(row(s1.frame, ns.L["Character-specific"], charSpecW), row(s1.frame, ns.L["Enable Consumable Macros"], enableW))
+    s1.AddRow(row(s1.frame, ns.L["Chat Notifications"], chatW))
     L.closeSection(s1)
 
     L.headerAt(ns.L["Macro Selections"])

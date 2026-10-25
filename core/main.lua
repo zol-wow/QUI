@@ -569,9 +569,9 @@ function QUICore:OnEnable()
     self._preservedPanelScale = self.db.profile.configPanelScale
     self._preservedPanelAlpha = self.db.profile.configPanelAlpha
 
-    local function ApplyFrameOverrides()
+    local function ApplyFrameOverrides(force)
         if ns.QUI_Anchoring then
-            ns.QUI_Anchoring:ApplyAllFrameAnchors()
+            ns.QUI_Anchoring:ApplyAllFrameAnchors(force)
         end
     end
 
@@ -591,7 +591,7 @@ function QUICore:OnEnable()
         self.InfoBar:ApplyAll()
     end
 
-    ApplyFrameOverrides()
+    ApplyFrameOverrides(true)
 
     ns._inInitSafeWindow = false
 
