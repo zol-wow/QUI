@@ -4,6 +4,27 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.3-beta3 - 2026-10-25
+
+### Improved
+
+- Settings navigation uses compact nested groups and restores each module's
+  sidebar scroll position. Search and navigation include additional Sound Mute,
+  Blizzard Mover, Import/Export, and Chat controls.
+
+### Fixed
+
+- Castbars follow their configured anchors after combat reloads, layout
+  changes, movement, and resizing. Saved frame placement is preserved during
+  startup.
+- Both consumable settings pages honor character-specific selections.
+- Spell Reminder management controls open on the main page, and editors retain
+  their layout when revisited. Temporary settings controls avoid repeated
+  profile scans.
+- Bags prepare native item buttons outside combat and reuse them during combat.
+  When a native button is unavailable, cached item cells remain visible until
+  the button can be created after combat.
+
 ## v5.5.3-beta2 - 2026-10-24
 
 ### Fixed
