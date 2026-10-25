@@ -289,7 +289,7 @@ function GUI:GetTileNavigationPages(tile)
         end
         return result
     end
-    local function Sections(index, group, key, catalogSections, disabled)
+    local function Sections(index, group, key, catalogSections, disabled, parentGroup)
         local first = #result
         local page = NavigationPage(tile, index, key)
         local body = page and page._contentBody
@@ -305,7 +305,7 @@ function GUI:GetTileNavigationPages(tile)
         end
         for _, section in ipairs(VisibleNavigationSections(body)) do
             result[#result + 1] = {
-                label = section.label or section.id, group = group, pageIndex = index, key = key,
+                label = section.label or section.id, group = group, parentGroup = parentGroup, pageIndex = index, key = key,
                 section = section.frame, sectionId = section.id, disabled = disabled,
             }
             local top = section.frame:GetTop()
@@ -315,7 +315,7 @@ function GUI:GetTileNavigationPages(tile)
             catalogSections = catalogSections or PageCatalog(tile, index)
             for _, section in ipairs(catalogSections) do
                 result[#result + 1] = {
-                    label = ns.L[section.label] or section.label, group = group, pageIndex = index, key = key,
+                    label = ns.L[section.label] or section.label, group = group, parentGroup = parentGroup, pageIndex = index, key = key,
                     sectionId = ns.L[section.id] or section.id, disabled = disabled,
                 }
             end
@@ -367,9 +367,8 @@ function GUI:GetTileNavigationPages(tile)
                 if sectionOrder[a] == sectionOrder[b] then return sourceOrder[a] < sourceOrder[b] end
                 return sectionOrder[a] < sectionOrder[b]
             end)
-            local group = prefix and (prefix .. " / " .. label) or label
             local disabled = tab.disabled == true or tab.enabled == false
-            if not Sections(index, group, tab.key, available, disabled) then
+            if not Sections(index, label, tab.key, available, disabled, prefix or nil) then
                 result[#result + 1] = {
                     label = label, group = prefix or nil, key = tab.key, pageIndex = index,
                     descriptor = descriptor,
@@ -429,11 +428,91 @@ function GUI:UpdateTileNavigationTitle(tile)
     end
 end
 
+local function SaveNavigationScroll(panel)
+    if not panel or not panel._tile then return end
+    local tile = panel._tile
+    tile._navigationScroll = tile._navigationScroll or {}
+    tile._navigationScroll[panel._docked and "dock" or "flyout"] = panel._scroll:GetVerticalScroll()
+end
+
+local function SetNavigationScroll(panel, offset)
+    local scroll = panel._scroll
+    offset = math.max(0, math.min(offset, panel._inner:GetHeight() - scroll:GetHeight()))
+    local controller = UIKit.GetSmoothScroll and UIKit.GetSmoothScroll(scroll)
+    if controller then controller:ScrollTo(offset, true) else scroll:SetVerticalScroll(offset) end
+end
+
+local function NavigationRows(tile, pages, revealActive)
+    local pageIndex = tile._activeSubPageIndex or 1
+    local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[pageIndex]
+    local key = descriptor and descriptor.getActiveTab and descriptor.getActiveTab()
+    local destination = pageIndex .. ":" .. (key or "")
+    local selected
+    for _, page in ipairs(pages) do
+        if page.pageIndex == pageIndex and (not key or page.key == key) then
+            selected = selected or page
+            if page.active then selected = page; break end
+        end
+    end
+    local roots, groups = {}, {}
+    local function Group(page, label, surfaceKey, parent)
+        local id = page.pageIndex .. ":" .. (surfaceKey or "")
+        local header = groups[id]
+        if not header then
+            header = {
+                _group = true, _groupId = id, label = label,
+                pageIndex = page.pageIndex, key = surfaceKey,
+                _parentGroupId = parent and parent._groupId,
+                _children = {}, active = false, disabled = true,
+            }
+            groups[id] = header
+            local children = parent and parent._children or roots
+            children[#children + 1] = header
+        end
+        header.active = header.active or page.active
+        header.disabled = header.disabled and page.disabled == true
+        return header
+    end
+    for _, page in ipairs(pages) do
+        local parent
+        if page.parentGroup then parent = Group(page, page.parentGroup) end
+        if page.group then parent = Group(page, page.group, page.sectionId and page.key or nil, parent) end
+        page._parentGroupId = parent and parent._groupId
+        local children = parent and parent._children or roots
+        children[#children + 1] = page
+    end
+    if descriptor and descriptor.rootKey and descriptor.rootKey == key then
+        selected = groups[pageIndex .. ":"] or selected
+        if selected then selected.active = tile._isActive end
+    end
+    local destinationChanged = tile._navigationDestination ~= destination
+    if not tile._navigationExpanded or destinationChanged or revealActive then
+        tile._navigationExpanded = {}
+        local group = selected and (selected._groupId or selected._parentGroupId)
+        while group do
+            tile._navigationExpanded[group] = true
+            group = groups[group]._parentGroupId
+        end
+    end
+    tile._navigationDestination = destination
+    local rows = {}
+    local function Append(children, depth)
+        for _, row in ipairs(children) do
+            row._depth = depth
+            rows[#rows + 1] = row
+            if row._group and tile._navigationExpanded[row._groupId] then Append(row._children, depth + 1) end
+        end
+    end
+    Append(roots, 0)
+    return rows, destinationChanged
+end
+
 function GUI:CloseNavigationFlyout(frame)
     frame._navHoverToken = (frame._navHoverToken or 0) + 1
     frame._navHoverTile = nil
     local flyout = frame._pageFlyout
     if not flyout then return end
+    SaveNavigationScroll(flyout)
     flyout:Hide()
     flyout._tile = nil
     flyout._pinned = false
@@ -443,7 +522,7 @@ end
 local function RevealNavigationRow(panel, index)
     local button = panel._buttons[index]
     if not button or not button:IsShown() then return end
-    local top = button._navTop or (index - 1) * 30
+    local top = button._navTop or (index - 1) * 26
     local scroll = panel._scroll
     local offset = scroll:GetVerticalScroll()
     local view = scroll:GetHeight()
@@ -462,7 +541,7 @@ local function Highlight(flyout, index)
     for i, button in ipairs(flyout._buttons) do
         if button:IsShown() then
             button._wash:SetShown((flyout._keyboard and i == index) or button._hovered or button._page.active)
-            button._label:SetTextColor(unpack(GUI.Colors.text))
+            button._label:SetTextColor(unpack(button._page._group and button._page.active and GUI.Colors.accent or GUI.Colors.text))
         end
     end
     if flyout._keyboard then RevealNavigationRow(flyout, index) end
@@ -471,14 +550,28 @@ end
 function GUI:RefreshNavigationSectionHighlight(tile, revealActive)
     local frame = self.MainFrame
     if not frame then return end
+    if revealActive and frame._pageDock and frame._pageDock._tile == tile then
+        self:RefreshNavigationDock(frame, true)
+    end
     local current = self:GetTileNavigationPages(tile)
+    local pageIndex = tile._activeSubPageIndex or 1
+    local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[pageIndex]
+    local rootActive = tile._isActive and descriptor and descriptor.rootKey
+        and descriptor.getActiveTab and descriptor.getActiveTab() == descriptor.rootKey
     for _, panel in pairs({ frame._pageDock, frame._pageFlyout }) do
         if panel._tile == tile and panel:IsShown() then
             local activeIndex
             for i, button in ipairs(panel._buttons) do
-                if button:IsShown() and current[i] then
-                    button._page.active = current[i].active
-                    if current[i].active then activeIndex = i end
+                if button:IsShown() then
+                    local row = button._page
+                    row.active = rootActive and row._group and not row.key and row.pageIndex == pageIndex or false
+                    for _, page in ipairs(current) do
+                        local matches = row._group and row.pageIndex == page.pageIndex and (not row.key or row.key == page.key)
+                            or (not row._group and row.pageIndex == page.pageIndex and row.key == page.key
+                                and row.sectionId == page.sectionId and row.section == page.section)
+                        if matches and page.active then row.active = true; break end
+                    end
+                    if row.active then activeIndex = i end
                 end
             end
             Highlight(panel, panel._keyboardIndex or 1)
@@ -489,6 +582,7 @@ end
 
 local function SelectPage(frame, tile, page)
     if page.disabled then return end
+    tile._navigationDestination = nil
     tile._sectionNavigationToken = (tile._sectionNavigationToken or 0) + 1
     local requestToken = tile._sectionNavigationToken
     local pending = (page.section or page.sectionId) and { page = page } or nil
@@ -496,7 +590,11 @@ local function SelectPage(frame, tile, page)
     GUI:CloseNavigationFlyout(frame)
     GUI:SelectFeatureTile(frame, tile.index, { subPageIndex = page.pageIndex })
     local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[page.pageIndex]
-    if page.key and descriptor and descriptor.selectTab then descriptor.selectTab(page.key) end
+    if page.key and descriptor and descriptor.selectTab then
+        descriptor.selectTab(page.key)
+    elseif not page.key and descriptor and descriptor.selectRoot then
+        descriptor.selectRoot()
+    end
     if page.section or page.sectionId then
         local owner = NavigationPage(tile, page.pageIndex, page.key)
         local body = owner and owner._contentBody
@@ -557,6 +655,7 @@ end
 local function CreateFlyout(frame, docked)
     local C = GUI.Colors
     local flyout = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    flyout._docked = docked
     flyout:SetFrameLevel(frame:GetFrameLevel() + 70)
     flyout:SetWidth(270)
     flyout:EnableMouse(true)
@@ -627,76 +726,100 @@ local function CreateFlyout(frame, docked)
     return flyout
 end
 
-local function RenderPages(frame, flyout, tile, pages)
+local function LayoutFlyout(frame, flyout, tile)
+    local width = math.min(280, math.max(180, frame:GetWidth() - frame.sidebar:GetWidth() - 40))
+    flyout:SetWidth(width)
+    flyout._inner:SetWidth(width - 18)
+    flyout._inner:SetHeight(math.max(1, flyout._contentHeight))
+    local height = math.min(63 + flyout._contentHeight, math.max(100, frame:GetHeight() - 65))
+    flyout:SetHeight(height)
+    local top = math.max(42, math.min((frame:GetTop() or 0) - (tile:GetTop() or 0), frame:GetHeight() - height - 10))
+    flyout:ClearAllPoints()
+    local y = (frame:GetTop() or 0) - (frame.sidebar:GetTop() or 0) - top
+    flyout._optionsEntranceAnchor = { relativeTo = frame.sidebar, x = 0, y = y }
+    flyout:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 0, y)
+end
+
+local function RenderPages(frame, flyout, tile, pages, revealActive, restoreModuleScroll)
+    local changed = flyout._tile ~= tile
+    if changed then SaveNavigationScroll(flyout) end
+    local saved = tile._navigationScroll and tile._navigationScroll[flyout._docked and "dock" or "flyout"]
+    local scrollOffset = changed and (saved or 0) or flyout._scroll:GetVerticalScroll()
+    flyout._tile, flyout._pages = tile, pages
+    local rows, destinationChanged = NavigationRows(tile, pages, revealActive and not (changed and restoreModuleScroll))
+    flyout._rows = rows
     for _, button in ipairs(flyout._buttons) do button:Hide() end
-    flyout._headings = flyout._headings or {}
-    for _, heading in ipairs(flyout._headings) do heading:Hide(); heading._divider:Hide() end
-    local activeIndex = 1
-    local offset, group, headingIndex = 0, nil, 0
-    for index, page in ipairs(pages) do
-        if page.group and page.group ~= group then
-            if offset > 0 then offset = offset + 12 end
-            headingIndex = headingIndex + 1
-            local heading = flyout._headings[headingIndex]
-            if not heading then
-                heading = flyout._inner:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-                Font(heading, 12)
-                ns.Helpers.ApplyFontWithFallback(heading, ns.Helpers.AssetPath .. "Poppins-Bold.ttf", 11, "")
-                heading._divider = flyout._inner:CreateTexture(nil, "ARTWORK")
-                heading._divider:SetColorTexture(GUI.Colors.text[1], GUI.Colors.text[2], GUI.Colors.text[3], 0.22)
-                heading._divider:SetHeight(1)
-                heading._divider:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", 0, -4)
-                heading:SetJustifyH("LEFT")
-                flyout._headings[headingIndex] = heading
-            end
-            heading:ClearAllPoints()
-            heading:SetPoint("TOPLEFT", 10, -offset - 5)
-            heading:SetPoint("RIGHT", -8, 0)
-            heading:SetText(page.group)
-            heading._divider:SetWidth(math.min(heading:GetStringWidth(), heading:GetWidth()))
-            heading:Show()
-            heading._divider:Show()
-            offset = offset + 30
-        end
-        group = page.group
+    local activeIndex, offset, previous = 1, 0, nil
+    for index, page in ipairs(rows) do
+        if previous and previous._parentGroupId and not previous._group and previous._parentGroupId ~= page._parentGroupId
+            and previous._parentGroupId ~= page._groupId then offset = offset + 6 end
         local button = flyout._buttons[index]
         if not button then
             button = CreateFrame("Button", nil, flyout._inner)
-            button:SetHeight(30)
-            button:SetPoint("TOPLEFT", 0, -(index - 1) * 30)
-            button:SetPoint("RIGHT", 0, 0)
+            button:SetHeight(26)
             button._wash = button:CreateTexture(nil, "BACKGROUND")
             button._wash:SetAllPoints()
             button._wash:SetColorTexture(GUI.Colors.accent[1], GUI.Colors.accent[2], GUI.Colors.accent[3], 0.13)
             button._label = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             Font(button._label, 12)
-            button._label:SetPoint("LEFT", 10, 0)
-            button._label:SetPoint("RIGHT", -8, 0)
             button._label:SetJustifyH("LEFT")
             button._label:SetWordWrap(false)
             button:SetScript("OnEnter", function(self) self._hovered = true; Highlight(flyout, self._index) end)
             button:SetScript("OnLeave", function(self) self._hovered = nil; Highlight(flyout, flyout._keyboardIndex or 1) end)
             button:SetScript("OnClick", function(self) SelectPage(frame, flyout._tile, self._page) end)
+            local chevron = CreateFrame("Button", nil, button)
+            chevron:SetWidth(24)
+            chevron:SetPoint("TOPRIGHT")
+            chevron:SetPoint("BOTTOMRIGHT")
+            chevron._label = chevron:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            Font(chevron._label, 12)
+            chevron._label:SetPoint("CENTER")
+            chevron:SetScript("OnEnter", function() button._hovered = true; Highlight(flyout, button._index) end)
+            chevron:SetScript("OnLeave", function() button._hovered = nil; Highlight(flyout, flyout._keyboardIndex or 1) end)
+            chevron:SetScript("OnClick", function()
+                if button._page.disabled then return end
+                local group = button._page._groupId
+                local expanded = flyout._tile._navigationExpanded
+                expanded[group] = not expanded[group]
+                local keyboard = flyout._keyboard
+                flyout._keyboard = false
+                RenderPages(frame, flyout, flyout._tile, GUI:GetTileNavigationPages(flyout._tile))
+                SetNavigationScroll(flyout, flyout._scroll:GetVerticalScroll())
+                flyout._keyboard = keyboard
+                for i, row in ipairs(flyout._rows) do
+                    if row._groupId == group then Highlight(flyout, i); break end
+                end
+                if flyout._scrollbar and flyout._scrollbar.Update then flyout._scrollbar:Update() end
+            end)
+            button._chevron = chevron
             flyout._buttons[index] = button
         end
         button:ClearAllPoints()
         button:SetPoint("TOPLEFT", 0, -offset)
         button:SetPoint("RIGHT", 0, 0)
         button._navTop = offset
-        offset = offset + 30
-        button._index, button._page = index, page
+        offset = offset + 26
+        button._index, button._page, button._hovered = index, page, nil
         button._label:ClearAllPoints()
-        button._label:SetPoint("LEFT", page.group and 18 or 10, 0)
-        button._label:SetPoint("RIGHT", -8, 0)
+        button._label:SetPoint("LEFT", 10 + page._depth * 12, 0)
+        button._label:SetPoint("RIGHT", page._group and -26 or -8, 0)
         button._label:SetText(page.label)
         button:SetEnabled(not page.disabled)
+        button._chevron:SetShown(page._group == true)
+        button._chevron:SetEnabled(not page.disabled)
+        button._chevron._label:SetText(page._group and tile._navigationExpanded[page._groupId] and "v" or ">")
         button:Show()
         if page.active then activeIndex = index end
+        previous = page
     end
     flyout._contentHeight = offset
     flyout._inner:SetHeight(math.max(1, offset))
+    if not flyout._docked then LayoutFlyout(frame, flyout, tile) end
+    if changed or destinationChanged or revealActive or scrollOffset > math.max(0, offset - flyout._scroll:GetHeight()) then
+        SetNavigationScroll(flyout, scrollOffset)
+    end
     Highlight(flyout, activeIndex)
-    return activeIndex
+    return activeIndex, changed and saved ~= nil and not destinationChanged and restoreModuleScroll, destinationChanged
 end
 
 function GUI:OpenNavigationFlyout(frame, tile, pinned, keyboard)
@@ -713,24 +836,12 @@ function GUI:OpenNavigationFlyout(frame, tile, pinned, keyboard)
     frame._navHoverToken = (frame._navHoverToken or 0) + 1
     frame._navHoverTile = nil
     local flyout = existing or CreateFlyout(frame)
-    flyout._tile, flyout._pinned, flyout._keyboard = tile, keepOpen, keyboard == true
+    flyout._pinned, flyout._keyboard = keepOpen, keyboard == true
     flyout._away = 0
     flyout._pages = pages
     flyout._title:SetText(tile.config.name)
     flyout._hint:SetText(ns.L["Choose a page · Click module to close"])
     local activeIndex = RenderPages(frame, flyout, tile, pages)
-    local width = math.min(280, math.max(180, frame:GetWidth() - frame.sidebar:GetWidth() - 40))
-    flyout:SetWidth(width)
-    flyout._inner:SetWidth(width - 18)
-    flyout._inner:SetHeight(math.max(1, flyout._contentHeight))
-    local height = math.min(63 + flyout._contentHeight, math.max(100, frame:GetHeight() - 65))
-    flyout:SetHeight(height)
-    local top = math.max(42, math.min((frame:GetTop() or 0) - (tile:GetTop() or 0), frame:GetHeight() - height - 10))
-    flyout:ClearAllPoints()
-    local y = (frame:GetTop() or 0) - (frame.sidebar:GetTop() or 0) - top
-    flyout._optionsEntranceAnchor = { relativeTo = frame.sidebar, x = 0, y = y }
-    flyout:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 0, y)
-    flyout._scroll:SetVerticalScroll(0)
     flyout:Show()
     if flyout._scrollbar and flyout._scrollbar.Update then flyout._scrollbar:Update() end
     Highlight(flyout, activeIndex)
@@ -750,7 +861,7 @@ function GUI:SetNavigationDocked(frame, enabled)
     self:RefreshNavigationDock(frame)
 end
 
-function GUI:RefreshNavigationDock(frame, revealActive)
+function GUI:RefreshNavigationDock(frame, revealActive, restoreModuleScroll)
     if frame and frame._selectingFeatureTile then return end
     if not frame or not frame.contentArea or not frame.sidebar or frame._refreshingNavigationDock then return end
     frame._refreshingNavigationDock = true
@@ -762,6 +873,7 @@ function GUI:RefreshNavigationDock(frame, revealActive)
     local tile = frame._tiles and frame._tiles[frame._lastTileIndex or 0]
     local pages = tile and self:GetTileNavigationPages(tile) or {}
     local docked = enabled and #pages > 1
+    if tile and not docked and revealActive and not restoreModuleScroll then tile._navigationDestination = nil end
     frame._navigationDocked = enabled
     if not frame._navigationModeButton and frame._searchBox then
         frame._navigationModeButton = self:CreateButton(frame, ns.L["Dock pages"], 132, 28, function()
@@ -782,18 +894,22 @@ function GUI:RefreshNavigationDock(frame, revealActive)
     end
     if docked then
         local dock = frame._pageDock or CreateFlyout(frame, true)
-        dock._tile, dock._pages, dock._pinned = tile, pages, true
+        dock._pinned = true
         dock._title:SetText(tile.config.name)
         dock._hint:SetText(ns.L["Pages"])
         dock:ClearAllPoints()
         dock:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 5, -44)
         dock:SetPoint("BOTTOMLEFT", frame.contentArea, "BOTTOMLEFT", -196, 0)
         dock:SetWidth(184)
-        local activeIndex = RenderPages(frame, dock, tile, pages)
+        local activeIndex, restored, destinationChanged = RenderPages(frame, dock, tile, pages, revealActive, restoreModuleScroll)
         dock:Show()
-        if revealActive then RevealNavigationRow(dock, activeIndex) end
+        if (revealActive or destinationChanged) and not restored then RevealNavigationRow(dock, activeIndex) end
         if dock._scrollbar and dock._scrollbar.Update then dock._scrollbar:Update() end
-    elseif frame._pageDock then frame._pageDock:Hide() end
+    elseif frame._pageDock then
+        SaveNavigationScroll(frame._pageDock)
+        frame._pageDock:Hide()
+        frame._pageDock._tile = nil
+    end
     frame.contentArea:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", docked and 201 or 5, -44)
     frame._refreshingNavigationDock = nil
 end
@@ -902,7 +1018,7 @@ end
 
 function GUI:HandleNavigationKey(frame, key)
     local dock = frame._pageDock
-    if dock and dock:IsShown() and key == "RIGHT" then
+    if dock and dock:IsShown() and key == "RIGHT" and not dock._keyboard then
         dock._keyboard = true
         Highlight(dock, dock._keyboardIndex or 1)
         return true
@@ -915,22 +1031,35 @@ function GUI:HandleNavigationKey(frame, key)
         end
         return false
     end
+    local index = flyout._keyboardIndex or 1
+    local row = flyout._rows[index]
+    if row and (key == "RIGHT" or key == "LEFT") then
+        local expanded = row._group and flyout._tile._navigationExpanded[row._groupId]
+        if row._group and ((key == "RIGHT" and not expanded) or (key == "LEFT" and expanded)) then
+            flyout._buttons[index]._chevron:Click()
+            return true
+        elseif key == "LEFT" and row._parentGroupId then
+            for i = index - 1, 1, -1 do
+                if flyout._rows[i]._groupId == row._parentGroupId then Highlight(flyout, i); return true end
+            end
+        end
+    end
+    if key == "RIGHT" then return true end
     if key == "ESCAPE" or key == "LEFT" then
         if flyout == dock then dock._keyboard = false else self:CloseNavigationFlyout(frame) end
         return true
     end
     if key == "UP" or key == "DOWN" or key == "TAB" or key == "HOME" or key == "END" then
         flyout._keyboard = true
-        local index = flyout._keyboardIndex or 1
         if key == "HOME" then index = 1
-        elseif key == "END" then index = #flyout._pages
-        else index = (index - 1 + (key == "UP" and -1 or 1)) % #flyout._pages + 1 end
+        elseif key == "END" then index = #flyout._rows
+        else index = (index - 1 + (key == "UP" and -1 or 1)) % #flyout._rows + 1 end
         Highlight(flyout, index)
         return true
     end
     if key == "ENTER" or key == "SPACE" then
         flyout._keyboard = false
-        SelectPage(frame, flyout._tile, flyout._pages[flyout._keyboardIndex or 1])
+        if row then SelectPage(frame, flyout._tile, row) end
         return true
     end
     self:CloseNavigationFlyout(frame)

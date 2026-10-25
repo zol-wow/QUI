@@ -75,15 +75,15 @@ function Shared.MakeLayout(content, U, startY, options)
         return c
     end
     function L.closeSection(c)
-        c.Finalize()
-        y = y - c.frame:GetHeight() - SECTION_GAP
+        local height = c.Finalize() or c.frame:GetHeight()
+        y = y - height - SECTION_GAP
         trailingGap = SECTION_GAP
     end
     function L.placeCustom(frame, height)
         frame:SetParent(content)
         frame:ClearAllPoints()
         frame:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, y)
-        frame:SetPoint("RIGHT", content, "RIGHT", -PAD, 0)
+        frame:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, y)
         frame:SetHeight(height)
         y = y - height - SECTION_GAP
         trailingGap = SECTION_GAP
