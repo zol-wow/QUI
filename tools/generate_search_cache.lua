@@ -158,6 +158,12 @@ local function should_load_script(path)
     end
 
     if path == "QUI_CDM/cdm/cdm_shared.lua"
+        or path == "modules/qol/sound_mute_catalog.lua"
+        or path == "modules/qol/blizzard_mover.lua"
+        or path == "modules/qol/blizzard_mover_frames.lua"
+        or path == "QUI_Chat/chat/button_bar.lua"
+        or path == "QUI_Chat/chat/tab_manager.lua"
+        or path == "QUI_Chat/chat/tab_filters.lua"
         or path == "QUI_Reminders/spell_reminders/model.lua" or path == "QUI_Reminders/spell_reminders/catalog.lua" then
         return true
     end
@@ -170,6 +176,7 @@ local function should_load_script(path)
     end
 
     if path == "core/utils.lua"
+        or path == "core/profile_io.lua"
         or path == "core/theme.lua"
         or path == "core/infobar_shared.lua"
         or path == "core/settings_layout_shared.lua"
@@ -384,6 +391,12 @@ local function create_stub_node(kind, parent, is_region)
     return setmetatable(node, {
         __index = function(self, key)
             if key == "RegisterSection" then return nil end
+            if key == "GetFontString" then
+                return function(frame)
+                    frame._fontString = frame._fontString or create_region(frame, "FontString")
+                    return frame._fontString
+                end
+            end
             if key == "GetChildren" then
                 return function(frame) return unpack(frame._children or {}) end
             end
@@ -984,6 +997,11 @@ local ns = {
     UIKit = {},
     LSM = libs["LibSharedMedia-3.0"],
 }
+ns.QUI = _G.QUI
+ns.QUI.Chat = {
+    _internals = { GetSettings = function() return profile_db.chat end },
+    _afterRefresh = {},
+}
 
 -- i18n: resolve L["..."] in content files against the enUS base so the emitted
 -- strings are exactly the ns.L KEYS the runtime resolver looks up. Do not add a
@@ -1119,6 +1137,7 @@ collect_scripts_from_toc("QUI.toc", scripts, script_xml_seen)
 collect_scripts_from_toc("QUI_Reminders/QUI_Reminders.toc", scripts, script_xml_seen)
 collect_scripts_from_toc("QUI_ActionBars/QUI_ActionBars.toc", scripts, script_xml_seen)
 collect_scripts_from_toc("QUI_CDM/QUI_CDM.toc", scripts, script_xml_seen)
+collect_scripts_from_toc("QUI_Chat/QUI_Chat.toc", scripts, script_xml_seen)
 collect_qui_options_scripts(scripts, script_xml_seen)
 
 local failures = {}
@@ -1801,6 +1820,21 @@ local function install_search_capture_overrides()
             register_widget_row_capture(widget, labelText)
             return original_build_setting_row(parent, labelText, widget, desc)
         end
+    end
+
+    local original_reorder_build = ns.QUI_ReorderList.Build
+    ns.QUI_ReorderList.Build = function(parent, y, spec)
+        local list, height = original_reorder_build(parent, y, spec)
+        if spec.GUI and spec.getToggleBinding then
+            for index, item in ipairs(spec.items or {}) do
+                local db, key, description = spec.getToggleBinding(item, index)
+                if db and key then
+                    local label = spec.getLabel(item, index)
+                    create_captured_search_widget("toggle", label, key, db, nil, { description = description })
+                end
+            end
+        end
+        return list, height
     end
 
     if options_api and type(options_api.RegisterFeatureTile) == "function" then
