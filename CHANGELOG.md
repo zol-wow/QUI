@@ -4,6 +4,28 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.3-beta4 - 2026-10-26
+
+### Improved
+
+- Settings search includes more Action Bar, Minimap, and Info Bar controls and
+  opens the matching page, section, and selected unit or display.
+- Spell Reminders appear individually in navigation, with direct links to each
+  reminder's settings and a separate Add Reminder entry.
+- Settings cards, text, pickers, and editors adapt more consistently to the
+  available window width.
+
+### Fixed
+
+- Returning to cached settings pages preserves editor state instead of
+  rebuilding unchanged controls. Pages refresh controls when their selected
+  context changes elsewhere.
+- Opening settings or search no longer turns inherited values into local
+  overrides. Search keeps controls with the same label bound to their own
+  settings.
+- Confirmation dialogs stay above their options window, and reminder font
+  selection includes the Global Font option.
+
 ## v5.5.3-beta3 - 2026-10-25
 
 ### Improved
