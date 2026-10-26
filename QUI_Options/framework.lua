@@ -605,6 +605,11 @@ local function CopySearchRegistryEntry(entry)
     return copy
 end
 
+local function BuildSearchBindingIdentity(entry)
+    local binding = entry and entry.widgetDescriptor
+    return table.concat({ binding and binding.dbPath or "", tostring(binding and binding.dbKey or "") }, "\31")
+end
+
 local function BuildStaticRegistryKey(entry, extra)
     local parts = {
         extra or "",
@@ -624,6 +629,7 @@ local function BuildStaticRegistryKey(entry, extra)
         entry and entry.surfaceUnitKey or "",
         entry and entry.surfaceTypeKey or "",
     }
+    parts[#parts + 1] = BuildSearchBindingIdentity(entry)
     return table.concat(parts, "\31")
 end
 
@@ -667,11 +673,17 @@ local function BuildSearchNavigationLabel(navType, info)
         if subTabLabel and subTabLabel ~= "" then
             parts[#parts + 1] = subTabLabel
         end
+        if info.surfaceTabKey and info.contextLabel and info.contextLabel ~= parts[#parts] then
+            parts[#parts + 1] = info.contextLabel
+        end
         return #parts > 0 and table.concat(parts, " > ") or nil
     end
 
     if subTabLabel and subTabLabel ~= "" then
         parts[#parts + 1] = subTabLabel
+    end
+    if info.contextLabel and info.contextLabel ~= "" then
+        parts[#parts + 1] = info.contextLabel
     end
     if sectionLabel and sectionLabel ~= "" then
         parts[#parts + 1] = sectionLabel
@@ -688,6 +700,9 @@ local function BuildSearchNavigationKeywords(info)
     end
     if subTabLabel and subTabLabel ~= "" then
         keywords[#keywords + 1] = subTabLabel
+    end
+    if info.contextLabel and info.contextLabel ~= "" then
+        keywords[#keywords + 1] = info.contextLabel
     end
     if sectionLabel and sectionLabel ~= "" then
         keywords[#keywords + 1] = sectionLabel
@@ -967,22 +982,6 @@ function GUI:ResolveSearchDBTable(dbPath)
     return type(current) == "table" and current or nil
 end
 
-local function BuildSearchSettingsRegistryKey(context, label)
-    return table.concat({
-        label or "",
-        tostring(context and context.tabIndex or 0),
-        tostring(context and context.subTabIndex or 0),
-        context and context.sectionName or "",
-        context and context.tileId or "",
-        tostring(context and context.subPageIndex or 0),
-        context and context.featureId or "",
-        context and context.providerKey or "",
-        context and context.surfaceTabKey or "",
-        context and context.surfaceUnitKey or "",
-        context and context.surfaceTypeKey or "",
-    }, "\31")
-end
-
 local function IsTransientOptionsBinding(dbTable)
     return type(dbTable) == "table" and rawget(dbTable, "_quiTransientOptionsProxy") == true
 end
@@ -992,6 +991,24 @@ local function ShouldRegisterSearchSetting(registryInfo, dbTable)
         return false
     end
     return not (type(registryInfo) == "table" and registryInfo.searchable == false)
+end
+
+-- Keep inherited settings reads separate from their writable database identity.
+-- The fallback stays live: opening a page/search must not create local overrides.
+GUI._formFallbacks = GUI._formFallbacks or setmetatable({}, { __mode = "k" })
+
+function GUI:RegisterFormFallback(dbTable, fallbackTable)
+    if type(dbTable) == "table" then
+        self._formFallbacks[dbTable] = type(fallbackTable) == "table" and fallbackTable or nil
+    end
+end
+
+function GUI:GetFormValue(dbTable, dbKey)
+    if type(dbTable) ~= "table" or dbKey == nil then return nil end
+    local value = dbTable[dbKey]
+    if value ~= nil then return value end
+    local fallback = self._formFallbacks[dbTable]
+    return fallback and fallback[dbKey]
 end
 
 function GUI:BuildSearchWidgetDescriptor(kind, dbKey, dbTable, extra)
@@ -1011,6 +1028,7 @@ function GUI:BuildSearchWidgetDescriptor(kind, dbKey, dbTable, extra)
         kind = kind,
         dbKey = dbKey,
         dbPath = dbPath,
+        fallbackDbPath = self:ResolveSearchDBTablePath(self._formFallbacks[dbTable]),
         featureId = self._searchContext.featureId,
         providerKey = self._searchContext.providerKey,
         category = self._searchContext.category,
@@ -1061,7 +1079,7 @@ function GUI:RegisterSearchSettingWidget(entry)
         relatedTo = entry.relatedTo,
     }
 
-    local regKey = BuildSearchSettingsRegistryKey(context, entry.label)
+    local regKey = BuildStaticRegistryKey(stored, "setting")
     if self.SettingsRegistryKeys[regKey] then
         return nil
     end
@@ -1354,6 +1372,12 @@ function GUI:TeardownFrameTree(root, options)
 end
 
 function GUI:SetSearchContext(info)
+    local route = ns.Settings and ns.Settings.SearchRoute
+    if route and route.Active and route.Active() then
+        local scoped = {}
+        for key, value in pairs(info) do scoped[key] = value end
+        info = route.Apply(scoped)
+    end
     self._searchContext.tabIndex = info.tabIndex
     self._searchContext.tabName = info.tabName
     self._searchContext.subTabIndex = info.subTabIndex or nil
@@ -1982,11 +2006,16 @@ function GUI:ShowConfirmation(options)
     local anchorFrame = self.MainFrame
     confirmDialog:ClearAllPoints()
     if anchorFrame and anchorFrame ~= confirmDialog and anchorFrame.IsShown and anchorFrame:IsShown() then
+        -- Native top-level raising reorders entire owner trees. Keep the
+        -- confirmation with its options window so focusing it cannot cover
+        -- the dialog with an unrelated sibling tree.
+        confirmDialog:SetParent(anchorFrame)
         confirmDialog:SetPoint("CENTER", anchorFrame, "CENTER", 0, 0)
         if anchorFrame.GetFrameLevel and confirmDialog.SetFrameLevel then
             confirmDialog:SetFrameLevel(math.max((anchorFrame:GetFrameLevel() or 0) + 20, 500))
         end
     else
+        confirmDialog:SetParent(UIParent)
         confirmDialog:SetPoint("CENTER")
         if confirmDialog.SetFrameLevel then
             confirmDialog:SetFrameLevel(500)
@@ -2518,7 +2547,7 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
 
     local function GetValue()
         if dbTable and dbKey then
-            local db = dbTable[dbKey]
+            local db = GUI:GetFormValue(dbTable, dbKey)
             if invert then return not db end
             return db
         end
@@ -2709,7 +2738,7 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange,
     text:SetJustifyH("LEFT")
 
     local function GetValue()
-        if dbTable and dbKey then return dbTable[dbKey] end
+        if dbTable and dbKey then return GUI:GetFormValue(dbTable, dbKey) end
         return container.checked
     end
 
@@ -2728,6 +2757,7 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange,
     container.label = text
 
     local function UpdateVisual(val)
+        container.checked = val
         box:SetChecked(val and true or false, true)
     end
 
@@ -2754,7 +2784,8 @@ function GUI:CreateFormCheckboxOriginal(parent, label, dbKey, dbTable, onChange,
     RegisterWidgetInstance(container, dbTable, dbKey)
     MaybeBindPinnedWidget(container, "checkbox", label, dbKey, dbTable, box, registryInfo)
 
-    SetValue(GetValue(), true)
+    -- Initial display must not materialize an inherited value as an override.
+    UpdateVisual(GetValue())
 
     -- SetEnabled(enabled, reason): the square control owns its own .30 mute
     -- and reason tooltip; the label goes to .45; the row is never SetAlpha'd.
@@ -2808,6 +2839,8 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
         text:SetJustifyH("LEFT")
     else
         container:SetSize((options.width and options.width > 0) and options.width or 180, FORM_ROW_HEIGHT)
+        container._quiPreferredControlWidth = container:GetWidth()
+        container._quiMinimumControlWidth = math.min(container:GetWidth(), 140)
         fieldLeftOffset = 0
     end
 
@@ -2871,7 +2904,7 @@ function GUI:CreateFormEditBox(parent, label, dbKey, dbTable, onChange, options,
 
     local function GetValue()
         if dbTable and dbKey then
-            local v = dbTable[dbKey]
+            local v = GUI:GetFormValue(dbTable, dbKey)
             if v == nil then
                 return initialValue or ""
             end
@@ -3187,7 +3220,7 @@ function GUI:CreateFormSlider(parent, label, min, max, step, dbKey, dbTable, onC
     end
 
     local function GetValue()
-        if dbTable and dbKey then return dbTable[dbKey] or container.min end
+        if dbTable and dbKey then return GUI:GetFormValue(dbTable, dbKey) or container.min end
         return container.value or container.min
     end
 
@@ -3540,11 +3573,12 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     end
 
     local function GetValue()
-        if dbTable and dbKey then return dbTable[dbKey] end
+        if dbTable and dbKey then return GUI:GetFormValue(dbTable, dbKey) end
         return container.selectedValue
     end
 
     local function UpdateVisual(val)
+        container.selectedValue = val
         dropdown.selected:SetText(val ~= nil and val ~= "" and tostring(val) or opts.placeholder or "")
         for _, opt in ipairs(container.options) do
             if not opt.isHeader and opt.value == val then
@@ -3816,7 +3850,8 @@ function GUI:CreateFormDropdown(parent, label, options, dbKey, dbTable, onChange
     RegisterWidgetInstance(container, dbTable, dbKey)
     MaybeBindPinnedWidget(container, "dropdown", label, dbKey, dbTable, dropdown, registryInfo)
 
-    SetValue(GetValue(), true)
+    -- Initial display must not materialize an inherited value as an override.
+    UpdateVisual(GetValue())
 
     container.SetEnabled = function(self, enabled, reason)
         enabled = enabled and true or false
@@ -3953,7 +3988,7 @@ function GUI:CreateFormColorPicker(parent, label, dbKey, dbTable, onChange, opti
 
     local function GetColor()
         if dbTable and dbKey then
-            local c = dbTable[dbKey]
+            local c = GUI:GetFormValue(dbTable, dbKey)
             if c then return c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1 end
         end
         return 1, 1, 1, 1
@@ -4182,6 +4217,7 @@ function GUI:PrepareSearchEntry(entry, localize)
         entry.tabName = LocalizeGeneratedString(entry.tabName)
         entry.subTabName = LocalizeGeneratedString(entry.subTabName)
         entry.sectionName = LocalizeGeneratedString(entry.sectionName)
+        entry.contextLabel = LocalizeGeneratedString(entry.contextLabel)
         if type(entry.keywords) == "table" then
             local localized = {}
             for index, keyword in ipairs(entry.keywords) do
@@ -4212,17 +4248,22 @@ function GUI:PrepareSearchEntry(entry, localize)
         entry._normKeywords = nil
     end
 
-    if entry.tabName or entry.subTabName or entry.sectionName then
+    if entry.tabName or entry.subTabName or entry.sectionName or entry.contextLabel then
         local context = table.concat({
             entry.tabName or "",
             entry.subTabName or "",
+            entry.contextLabel or "",
             entry.sectionName or "",
         }, " ")
         entry._rawContext = ns.Helpers.FoldSearchUTF8(context)
         entry._normContext = NormalizeSearchText(context)
+        entry._rawLabelContext = (entry._rawLabel or "") .. " " .. entry._rawContext
+        entry._normLabelContext = (entry._normLabel or "") .. " " .. entry._normContext
     else
         entry._rawContext = nil
         entry._normContext = nil
+        entry._rawLabelContext = nil
+        entry._normLabelContext = nil
     end
 
     return entry
@@ -4401,13 +4442,18 @@ local function BuildMergedSearchIdentity(gui, entry)
         if entry.subTabName and entry.subTabName ~= "" then
             parts[#parts + 1] = entry.subTabName
         end
+        if entry.contextLabel and entry.contextLabel ~= "" then
+            parts[#parts + 1] = entry.contextLabel
+        end
         if entry.sectionName and entry.sectionName ~= "" then
             parts[#parts + 1] = entry.sectionName
         end
         crumbText = table.concat(parts, " ")
     end
 
-    return NormalizeSearchText((entry.label or "") .. "\31" .. crumbText)
+    -- Display labels can match while the settings write to different fields.
+    -- Keep binding identity exact; only presentation text is normalized.
+    return NormalizeSearchText((entry.label or "") .. "\31" .. crumbText) .. "\31" .. BuildSearchBindingIdentity(entry)
 end
 
 local SEARCH_INDEX_MIN_TOKEN = 3
@@ -4424,9 +4470,10 @@ local function AddSearchPosting(index, token, entry)
     end
 end
 
-local function IndexSearchText(index, text, entry)
+local function IndexSearchText(index, words, text, entry)
     if type(text) ~= "string" or text == "" then return end
     for token in text:gmatch("%S+") do
+        words[token] = true
         AddSearchPosting(index, token, entry)
         local limit = math.min(#token - 1, SEARCH_INDEX_MAX_PREFIX)
         for length = SEARCH_INDEX_MIN_TOKEN, limit do
@@ -4441,29 +4488,34 @@ end
 
 function GUI:BuildSearchTokenIndex()
     local navIndex, settingsIndex = {}, {}
+    local navWords, settingsWords = {}, {}
 
-    local function feed(index, registry)
+    local function feed(index, words, registry)
         for _, entry in ipairs(registry or {}) do
             if not entry._normLabel then
                 self:PrepareSearchEntry(entry)
             end
-            IndexSearchText(index, entry._normLabel, entry)
-            IndexSearchText(index, entry._normSourceLabel, entry)
-            IndexSearchText(index, entry._normContext, entry)
+            IndexSearchText(index, words, entry._normLabel, entry)
+            IndexSearchText(index, words, entry._normSourceLabel, entry)
+            IndexSearchText(index, words, entry._normContext, entry)
             if entry._normKeywords then
                 for _, keyword in ipairs(entry._normKeywords) do
-                    IndexSearchText(index, keyword, entry)
+                    IndexSearchText(index, words, keyword, entry)
                 end
             end
         end
     end
 
-    feed(navIndex, self.StaticNavigationRegistry)
-    feed(navIndex, self.NavigationRegistry)
-    feed(settingsIndex, self.StaticSettingsRegistry)
-    feed(settingsIndex, self.SettingsRegistry)
+    feed(navIndex, navWords, self.StaticNavigationRegistry)
+    feed(navIndex, navWords, self.NavigationRegistry)
+    feed(settingsIndex, settingsWords, self.StaticSettingsRegistry)
+    feed(settingsIndex, settingsWords, self.SettingsRegistry)
 
-    self._searchTokenIndex = { navigation = navIndex, settings = settingsIndex }
+    self._searchTokenIndex = {
+        navigation = navIndex,
+        settings = settingsIndex,
+        words = { navigation = navWords, settings = settingsWords },
+    }
     return self._searchTokenIndex
 end
 
@@ -4475,8 +4527,8 @@ function GUI:CollectSearchCandidates(searchTerms, kind)
         end
     end
 
-    local index = self._searchTokenIndex or self:BuildSearchTokenIndex()
-    index = index[kind]
+    local tokenIndex = self._searchTokenIndex or self:BuildSearchTokenIndex()
+    local index = tokenIndex[kind]
     if not index then return nil end
 
     local candidates, seen = {}, {}
@@ -4498,6 +4550,26 @@ function GUI:CollectSearchCandidates(searchTerms, kind)
     end
 
     if #candidates == 0 then return nil end
+
+    -- Existing exact/prefix hits must not hide the scorer's other matches.
+    -- Check unique words, then score their postings normally; this also covers
+    -- synonyms such as "map" matching the middle of "BattlefieldMapFrame".
+    for word in pairs(tokenIndex.words[kind]) do
+        local matches = false
+        for _, term in ipairs(searchTerms) do
+            for _, token in ipairs(term.tokens) do
+                if word:find(token, 1, true) then
+                    matches = true
+                    break
+                end
+            end
+            if not matches and #term.tokens == 1 and #term.normalized >= 4 then
+                matches = DL1(term.normalized, word)
+            end
+            if matches then break end
+        end
+        if matches then drain(index[word]) end
+    end
     return candidates
 end
 
@@ -4723,7 +4795,8 @@ function GUI:ExecuteSearch(searchTerm)
             end
             if contextWeight and entry._rawContext then
                 score = math.max(score,
-                    ScorePreparedText(entry._rawContext, entry._normContext, term) * contextWeight)
+                    ScorePreparedText(entry._rawContext, entry._normContext, term) * contextWeight,
+                    ScorePreparedText(entry._rawLabelContext, entry._normLabelContext, term) * contextWeight)
             end
             bestScore = math.max(bestScore, score)
         end
@@ -4843,6 +4916,10 @@ function GUI:CreateSearchWidgetFromDescriptor(parent, entry)
         return nil
     end
 
+    if descriptor.fallbackDbPath then
+        self:RegisterFormFallback(dbTable, self:ResolveSearchDBTable(descriptor.fallbackDbPath))
+    end
+
     local label = entry.label
     local registryInfo = {
         keywords = entry.keywords,
@@ -4850,13 +4927,13 @@ function GUI:CreateSearchWidgetFromDescriptor(parent, entry)
         relatedTo = entry.relatedTo,
     }
 
-    if descriptor.kind == "toggle" then
+    if descriptor.kind == "toggle" or descriptor.kind == "checkbox" then
         return self:CreateFormToggle(parent, label, descriptor.dbKey, dbTable, function()
             GUI:HandleSearchDescriptorChange(descriptor)
         end, registryInfo)
     end
 
-    if descriptor.kind == "toggle_inverted" then
+    if descriptor.kind == "toggle_inverted" or descriptor.kind == "checkbox_inverted" then
         return self:CreateFormToggleInverted(parent, label, descriptor.dbKey, dbTable, function()
             GUI:HandleSearchDescriptorChange(descriptor)
         end, registryInfo)
@@ -4932,7 +5009,22 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
             tex = {},
         }
         content._searchRenderCache = cache
+        local queued
+        local function RefreshWidth()
+            if queued or not content:IsShown() or content:GetWidth() == cache.renderWidth then return end
+            queued = true
+            C_Timer.After(0, function()
+                queued = nil
+                if content:IsShown() and content:GetWidth() ~= cache.renderWidth and cache.renderArgs then
+                    GUI:RenderSearchResults(content, unpack(cache.renderArgs, 1, 3))
+                end
+            end)
+        end
+        content:HookScript("OnSizeChanged", RefreshWidth)
+        content:HookScript("OnShow", RefreshWidth)
     end
+    cache.renderArgs = { results, searchTerm, navResults }
+    cache.renderWidth = content:GetWidth()
     for _, w in pairs(cache.widgets) do w:Hide(); w:ClearAllPoints() end
     for _, r in pairs(cache.navRows) do r:Hide(); r:ClearAllPoints() end
     for _, b in pairs(cache.goButtons) do b:Hide(); b:ClearAllPoints() end
@@ -4952,6 +5044,7 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
             cache.fs[cache.fsUsed] = fs
         end
         fs:ClearAllPoints()
+        fs:SetSize(0, 0)
         fs:SetJustifyH("LEFT")
         fs:SetWordWrap(false)
         fs:Show()
@@ -5224,7 +5317,6 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                 local crumbText = table.concat(crumbParts, " \194\187 ")
 
                 local CRUMB_HEIGHT = 14
-                local DESC_HEIGHT = 16
 
                 if crumbText ~= "" then
                     local crumbBtn = cache.crumbs[entryKey]
@@ -5253,6 +5345,8 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                     end
                     crumbBtn._navEntry = entry
                     crumbBtn._crumb:SetText(crumbText)
+                    crumbBtn._crumb:SetWidth(math.max(1, content:GetWidth() - (PADDING * 2) - 8))
+                    crumbBtn._crumb:SetWordWrap(false)
                     crumbBtn:SetPoint("TOPLEFT", content, "TOPLEFT", PADDING + 4, y - 2)
                     crumbBtn:SetHeight(14)
                     crumbBtn:SetWidth(content:GetWidth() - (PADDING * 2) - 8)
@@ -5261,13 +5355,9 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                 end
 
                 widget = cache.widgets[entryKey]
+                local cachedWidget = widget ~= nil
                 if widget then
                     widget:Show()
-                    if widget.Refresh then
-                        widget.Refresh()
-                    elseif widget.UpdateVisual and widget.GetValue then
-                        widget.UpdateVisual(widget.GetValue())
-                    end
                 else
                     if entry.widgetBuilder then
                         widget = entry.widgetBuilder(content)
@@ -5281,6 +5371,16 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                 if widget then
                     widget:SetPoint("TOPLEFT", PADDING, y)
                     widget:SetPoint("RIGHT", content, "RIGHT", -PADDING, 0)
+                    -- Clearing cached anchors temporarily restores the slider's
+                    -- construction width. Refresh only after its final layout;
+                    -- native size events may coalesce when the width is unchanged.
+                    if cachedWidget then
+                        if widget.Refresh then
+                            widget.Refresh()
+                        elseif widget.UpdateVisual and widget.GetValue then
+                            widget.UpdateVisual(widget.GetValue())
+                        end
+                    end
                     y = y - FORM_ROW
                 end
 
@@ -5288,12 +5388,13 @@ function GUI:RenderSearchResults(content, results, searchTerm, navResults)
                     local desc = AcquireFS()
                     SetFont(desc, 11, "")
                     desc:SetPoint("TOPLEFT", PADDING + 4, y)
-                    desc:SetPoint("RIGHT", content, "RIGHT", -(PADDING + 4), 0)
                     desc:SetText(entry.description)
                     desc:SetTextColor(0.7, 0.7, 0.72, 1)
                     desc:SetJustifyH("LEFT")
                     desc:SetWordWrap(true)
-                    y = y - DESC_HEIGHT
+                    local height = ns.QUI_SettingsLayoutShared.MeasureWrappedLabel(desc,
+                        content:GetWidth() - 2 * (PADDING + 4))
+                    y = y - height - 6
                 end
             end
 
@@ -6382,17 +6483,18 @@ end
 
 local function SidebarBottomInset(frame)
     local bottomCount = frame._bottomTiles and #frame._bottomTiles or 0
+    local toolsReserve = frame._toolsStrip and (frame._toolsStrip:GetHeight() + 12) or SIDEBAR_TOOLS_RESERVE
     if bottomCount > 0 then
-        return SIDEBAR_TOOLS_RESERVE + SIDEBAR_BOTTOM_GAP
+        return toolsReserve + SIDEBAR_BOTTOM_GAP
             + SidebarStackHeight(bottomCount) + SIDEBAR_BOTTOM_GAP
     end
     if frame._toolsStrip then
-        return SIDEBAR_TOOLS_RESERVE + SIDEBAR_BOTTOM_GAP
+        return toolsReserve + SIDEBAR_BOTTOM_GAP
     end
     return 10
 end
 
-local function UpdateSidebarScrollBounds(frame)
+function GUI:UpdateSidebarScrollBounds(frame)
     local scroll = frame._sidebarScroll
     if not scroll then return end
     scroll:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", 0, SidebarBottomInset(frame))
@@ -6535,7 +6637,7 @@ function GUI:AddFeatureTile(frame, config)
     bucket[bucketIndex] = tile
 
     if config.isBottomItem then
-        UpdateSidebarScrollBounds(frame)
+        self:UpdateSidebarScrollBounds(frame)
     else
         frame._sidebarScrollChild:SetHeight(math.max(1, SidebarStackHeight(bucketIndex)))
         if frame._sidebarClampScroll then frame._sidebarClampScroll() end
@@ -6887,7 +6989,7 @@ local function FindStaticNavigationRoute(gui, navType, tileId, subPageIndex)
     for _, entry in ipairs(gui and gui.StaticNavigationRegistry or {}) do
         if entry.navType == navType
             and entry.tileId == tileId
-            and entry.subPageIndex == subPageIndex then
+            and entry.subPageIndex == subPageIndex and not entry.surfaceTabKey then
             return entry
         end
     end
@@ -6963,6 +7065,22 @@ function GUI:SeedStaticSearchRoutesFromTiles(frame)
 
     for _, tile in ipairs(frame._tiles) do
         if tile and tile.config then
+            local function SeedSurfaceTabs(config, pageIndex)
+                local record = ns.QUI_OptionsNavigationCatalog and ns.QUI_OptionsNavigationCatalog[config.featureId]
+                for _, tab in ipairs(record and record.tabs or {}) do
+                    local entry = {
+                        navType = "subtab", tileId = tile.id, subPageIndex = pageIndex,
+                        featureId = config.featureId, surfaceTabKey = tab.key,
+                        tabName = tile.config.name,
+                        subTabName = pageIndex and config.name or nil,
+                        contextLabel = ns.L[tab.label] or tab.label,
+                    }
+                    entry.label = BuildSearchNavigationLabel("subtab", entry)
+                    entry.keywords = BuildSearchNavigationKeywords(entry)
+                    self:RegisterStaticNavigationEntry(entry)
+                end
+            end
+            if not tile.config.subPages then SeedSurfaceTabs(tile.config) end
             if not FindStaticNavigationRoute(self, "tab", tile.id, nil) then
                 self:RegisterStaticNavigationEntry({
                     navType = "tab",
@@ -6977,6 +7095,7 @@ function GUI:SeedStaticSearchRoutesFromTiles(frame)
             end
 
             for subPageIndex, subPage in ipairs(tile.config.subPages or {}) do
+                if type(subPage) == "table" then SeedSurfaceTabs(subPage, subPageIndex) end
                 if type(subPage) == "table"
                     and type(subPage.name) == "string"
                     and subPage.name ~= ""
@@ -7121,7 +7240,11 @@ function GUI:SelectFeatureTile(frame, index, opts)
     end
 
     if opts and type(opts.searchEntry) == "table" then
-        self:ApplyFeatureSearchNavigation(tile, opts.searchEntry, opts)
+        local handled = self:ApplyFeatureSearchNavigation(tile, opts.searchEntry, opts)
+        local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[tile._activeSubPageIndex or 1]
+        if not handled and opts.searchEntry.surfaceTabKey and descriptor and descriptor.selectTab then
+            descriptor.selectTab(opts.searchEntry.surfaceTabKey)
+        end
     end
 
     if self.UpdateTileNavigationTitle then self:UpdateTileNavigationTitle(tile) end
@@ -7147,7 +7270,17 @@ function GUI:SelectFeatureTile(frame, index, opts)
         end)
     end
 
-    if opts and (opts.scrollToPath or opts.scrollToLabel or opts.scrollToFeatureId or opts.scrollToTop) then
+    local handledSection = false
+    if opts and opts.sectionName and not opts.scrollToPath and not opts.scrollToLabel and not opts.scrollToTop
+        and self.ScrollToTileNavigationSection then
+        local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[destinationPage]
+        handledSection = self:ScrollToTileNavigationSection(tile, {
+            pageIndex = destinationPage,
+            key = descriptor and descriptor.getActiveTab and descriptor.getActiveTab(),
+            sectionId = opts.sectionName,
+        })
+    end
+    if not handledSection and opts and (opts.scrollToPath or opts.scrollToLabel or opts.scrollToFeatureId or opts.scrollToTop) then
         AfterLayout(function(owner)
             local root = opts.searchRoot or (opts.scrollToTop and owner._contentBody) or tile._pageFrame
             local scrolledToSection = false
@@ -7197,7 +7330,7 @@ function GUI:SelectFeatureTile(frame, index, opts)
                 self:RefreshNavigationSectionHighlight(tile, true)
             end
         end)
-    elseif opts and opts.sectionName and opts.searchTabIndex then
+    elseif not handledSection and opts and opts.sectionName and opts.searchTabIndex then
         AfterLayout(function()
             GUI:ScrollToRegisteredSection(
                 opts.searchTabIndex,
@@ -7757,7 +7890,7 @@ function GUI:AddToolsStripButton(frame, config)
         heading:SetTextColor(C.textDim[1], C.textDim[2], C.textDim[3], 0.5)
 
         frame._toolsStrip = strip
-        UpdateSidebarScrollBounds(frame)
+        self:UpdateSidebarScrollBounds(frame)
     end
 
     local strip = frame._toolsStrip
@@ -7829,7 +7962,7 @@ function GUI:AddToolsStripButton(frame, config)
 
     frame._tools[idx] = btn
     strip:SetHeight(20 + idx * 26 - 2)
-    UpdateSidebarScrollBounds(frame)
+    self:UpdateSidebarScrollBounds(frame)
     return btn
 end
 
@@ -7967,6 +8100,12 @@ end
 
 function GUI:ResolveSearchNavigation(entry)
     if not entry then return nil end
+    local registry = ns.Settings and ns.Settings.Registry
+    local destination = registry and registry.GetDestination
+        and registry:GetDestination(entry.tileId, entry.subPageIndex, entry.featureId)
+    if destination then
+        return { tileId = destination.tileId, subPageIndex = entry.subPageIndex }
+    end
     local sectionRoute = self:ResolveV2SectionNavigation(entry.tabIndex, entry.sectionName, entry.tileId)
     if sectionRoute then return sectionRoute end
 
@@ -8025,6 +8164,11 @@ function GUI:GetSearchBreadcrumb(entry)
                     table.insert(parts, subPage.name)
                 end
             end
+            -- A selector context (for example Bar 2) distinguishes identical
+            -- controls without changing the section name used for navigation.
+            if entry.contextLabel and entry.contextLabel ~= "" and entry.contextLabel ~= parts[#parts] then
+                table.insert(parts, entry.contextLabel)
+            end
             if entry.sectionName and entry.sectionName ~= "" and entry.sectionName ~= parts[#parts] then
                 table.insert(parts, entry.sectionName)
             end
@@ -8035,6 +8179,7 @@ function GUI:GetSearchBreadcrumb(entry)
     local parts = {}
     if entry.tabName and entry.tabName ~= "" then table.insert(parts, entry.tabName) end
     if entry.subTabName and entry.subTabName ~= "" then table.insert(parts, entry.subTabName) end
+    if entry.contextLabel and entry.contextLabel ~= "" then table.insert(parts, entry.contextLabel) end
     if entry.sectionName and entry.sectionName ~= "" then table.insert(parts, entry.sectionName) end
     if #parts > 0 then return parts end
 

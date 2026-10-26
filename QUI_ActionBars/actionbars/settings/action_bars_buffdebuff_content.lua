@@ -158,9 +158,8 @@ local function BuildBuffDebuffTab(tabContent)
     end
 
     local PAD = Opts.PADDING
-    local HEADER_GAP = 26
     local SECTION_GAP = 14
-    local y = -10
+    local layout = ns.QUI_SettingsLayoutShared.MakeLayout(tabContent)
 
     local buffDebuffContext = {
         tabIndex = 21,
@@ -178,29 +177,7 @@ local function BuildBuffDebuffTab(tabContent)
     end
     GUI:SetSearchContext(buffDebuffContext)
 
-    local function headerAt(text)
-        local originY = y
-        local header = Opts.CreateAccentDotLabel(tabContent, text, y)
-        header:ClearAllPoints()
-        header:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
-        header:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, y)
-        y = y - HEADER_GAP
-        return header, originY
-    end
-
-    local function sectionAt()
-        local originY = y
-        local card = Opts.CreateSettingsCardGroup(tabContent, y)
-        card.frame:ClearAllPoints()
-        card.frame:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
-        card.frame:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, y)
-        return card, originY
-    end
-
-    local function closeSection(card)
-        card.Finalize()
-        y = y - card.frame:GetHeight() - SECTION_GAP
-    end
+    local headerAt, sectionAt, closeSection = layout.headerAt, layout.sectionAt, layout.closeSection
 
     BuildSharedSection(tabContent, headerAt, sectionAt, closeSection, settings)
 
@@ -216,11 +193,12 @@ local function BuildBuffDebuffTab(tabContent)
         fadeDescription = ns.L["Fade the buff frame out until you hover it."],
     })
     local BB = ns.QUI_BuffBorders
-    local _buffEditorHost, buffOriginalHeight, buffSetOnLayoutChanged
+    local y, _buffEditorHost, buffOriginalHeight, buffSetOnLayoutChanged
     y, _buffEditorHost, buffOriginalHeight, buffSetOnLayoutChanged = BuildAuraEditorSection(
-        tabContent, PAD, SECTION_GAP, y, settings, "buffAuras", BB and BB.DefaultBuffBucket, true, "HELPFUL")
+        tabContent, PAD, SECTION_GAP, layout.getY(), settings, "buffAuras", BB and BB.DefaultBuffBucket, true, "HELPFUL")
+    layout.setY(y)
 
-    local debuffHeader, debuffHeaderY, debuffCardFrame, debuffCardY = BuildAuraSection(
+    local debuffHeader, _, debuffCardFrame = BuildAuraSection(
         tabContent, headerAt, sectionAt, closeSection, settings, {
         title = ns.L["Debuffs"],
         enabledKey = "enableDebuffs",
@@ -233,35 +211,38 @@ local function BuildBuffDebuffTab(tabContent)
         fadeDescription = ns.L["Fade the debuff frame out until you hover it."],
     })
 
-    local debuffEditorY = y
+    local debuffEditorY = layout.getY()
     local debuffEditorHost, debuffOriginalHeight, debuffSetOnLayoutChanged
     y, debuffEditorHost, debuffOriginalHeight, debuffSetOnLayoutChanged = BuildAuraEditorSection(
-        tabContent, PAD, SECTION_GAP, y, settings, "debuffAuras", BB and BB.DefaultDebuffBucket, false, "HARMFUL")
+        tabContent, PAD, SECTION_GAP, debuffEditorY, settings, "debuffAuras", BB and BB.DefaultDebuffBucket, false, "HARMFUL")
 
     local baseTabHeight = math.abs(y) - SECTION_GAP + 10
     tabContent:SetHeight(baseTabHeight)
 
     if buffSetOnLayoutChanged or debuffSetOnLayoutChanged then
         local buffDelta, debuffDelta = 0, 0
+        local appliedBuffDelta, appliedDebuffDelta = 0, 0
 
         local function ApplyReflow()
-            local shift = buffDelta
-            if debuffHeader then
-                debuffHeader:ClearAllPoints()
-                debuffHeader:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, debuffHeaderY - shift)
-                debuffHeader:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, debuffHeaderY - shift)
+            local shift = buffDelta - appliedBuffDelta
+            local heightDelta = shift + debuffDelta - appliedDebuffDelta
+            appliedBuffDelta, appliedDebuffDelta = buffDelta, debuffDelta
+            -- Cards also move these frames as their rows stack or compact.
+            -- Apply only this editor change to the mounted anchors; rebuilding
+            -- from the original origins would discard those responsive deltas.
+            if shift ~= 0 then
+                for _, frame in pairs({debuffHeader, debuffCardFrame, debuffEditorHost}) do
+                    for index = 1, frame:GetNumPoints() do
+                        local point, relative, relativePoint, x, offset = frame:GetPoint(index)
+                        if relative == tabContent then
+                            frame:SetPoint(point, relative, relativePoint, x, offset - shift)
+                        end
+                    end
+                end
             end
-            if debuffCardFrame then
-                debuffCardFrame:ClearAllPoints()
-                debuffCardFrame:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, debuffCardY - shift)
-                debuffCardFrame:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, debuffCardY - shift)
+            if heightDelta ~= 0 then
+                tabContent:SetHeight(tabContent:GetHeight() + heightDelta)
             end
-            if debuffEditorHost then
-                debuffEditorHost:ClearAllPoints()
-                debuffEditorHost:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, debuffEditorY - shift)
-                debuffEditorHost:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, debuffEditorY - shift)
-            end
-            tabContent:SetHeight(baseTabHeight + buffDelta + debuffDelta)
         end
 
         if buffSetOnLayoutChanged then

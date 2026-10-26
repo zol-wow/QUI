@@ -354,12 +354,6 @@ local function ApplyDualColumnLayout(section)
     for _, item in ipairs(layoutItems) do
         if item._quiCardGroup then return end
     end
-    for _, item in ipairs(layoutItems) do
-        if item._quiLayoutFormSlider then
-            item:_quiLayoutFormSlider(math.max(1, body:GetWidth() / 2 - 24))
-        end
-    end
-
     table.sort(layoutItems, function(a, b)
         local ay = a._quiDualColumnOriginalY
         local by = b._quiDualColumnOriginalY
@@ -404,109 +398,48 @@ local function ApplyDualColumnLayout(section)
         return rf
     end
 
-    local ly = -4
-    local rowIdx = 0
-    local lastColumns = 2
+    local shared = ns.QUI_SettingsLayoutShared
+    local width = body:GetWidth()
+    local groups = {}
     local i = 1
     while i <= #layoutItems do
-        local left = layoutItems[i]
-        if left._quiDualColumnFullWidth then
-            rowIdx = rowIdx + 1
-            local rf = AcquireRowFrame(rowIdx)
-            local rowHeight = GetDualColumnRowHeight(left)
-            rf:ClearAllPoints()
-            rf:SetPoint("TOPLEFT", body, "TOPLEFT", -2, ly)
-            rf:SetPoint("TOPRIGHT", body, "TOPRIGHT", 2, ly)
-            rf:SetHeight(rowHeight)
-            rf:Show()
-            rf._bg:Hide()
-            rf._divider:Hide()
-
-            left:ClearAllPoints()
-            left:SetPoint("LEFT", rf, "LEFT", 12, 0)
-            left:SetPoint("RIGHT", rf, "RIGHT", -12, 0)
-
-            ly = ly - rowHeight
-            i = i + 1
-        else
-            local right = layoutItems[i + 1]
-            if right and right._quiDualColumnFullWidth then
-                right = nil
-            end
-
-            rowIdx = rowIdx + 1
-            local rf = AcquireRowFrame(rowIdx)
-            local rowHeight = math.max(GetDualColumnRowHeight(left), right and GetDualColumnRowHeight(right) or CARD_ROW_HEIGHT)
-            rf:ClearAllPoints()
-            rf:SetPoint("TOPLEFT", body, "TOPLEFT", -2, ly)
-            rf:SetPoint("TOPRIGHT", body, "TOPRIGHT", 2, ly)
-            rf:SetHeight(rowHeight)
-            rf:Show()
-
-            if (rowIdx % 2) == 0 then
-                rf._bg:SetColorTexture(1, 1, 1, 0.02)
-                rf._bg:Show()
-            end
-
-            left:ClearAllPoints()
-            left:SetPoint("LEFT", rf, "LEFT", 12, 0)
-            local third = layoutItems[i + 2]
-            local width = body.GetWidth and body:GetWidth() or 0
-            local function IsCompact(item)
-                return item and not item._quiDualColumnFullWidth and item.label
-                    and item.track and item.track.GetWidth and item.track:GetWidth() <= 32
-                    and not item.slider
-                    and ns.QUI_SettingsLayoutShared.FitsThreeColumns(item.label, item.track, width)
-            end
-            if IsCompact(left) and IsCompact(right) and IsCompact(third) then
-                local cellWidth = (width + 4) / 3
-                rowHeight = math.max(rowHeight, GetDualColumnRowHeight(third))
-                rf:SetHeight(rowHeight)
-                if not rf._thirdDivider then
-                    rf._thirdDivider = rf:CreateTexture(nil, "ARTWORK")
-                    rf._thirdDivider:SetWidth(1)
-                    rf._thirdDivider:SetColorTexture(1, 1, 1, 0.05)
-                end
-                for column, item in ipairs({left, right, third}) do
-                    item:ClearAllPoints()
-                    item:SetPoint("LEFT", rf, "LEFT", (column - 1) * cellWidth + 12, 0)
-                    item:SetPoint("RIGHT", rf, "LEFT", column * cellWidth - 12, 0)
-                end
-                for index, divider in ipairs({rf._divider, rf._thirdDivider}) do
-                    divider:ClearAllPoints()
-                    divider:SetPoint("TOPLEFT", rf, "TOPLEFT", index * cellWidth, -6)
-                    divider:SetPoint("BOTTOMLEFT", rf, "BOTTOMLEFT", index * cellWidth, 6)
-                    divider:Show()
-                end
-                lastColumns = 3
-                i = i + 3
-            elseif right then
-                left:SetPoint("RIGHT", rf, "CENTER", -12, 0)
-                right:ClearAllPoints()
-                right:SetPoint("LEFT", rf, "CENTER", 12, 0)
-                right:SetPoint("RIGHT", rf, "RIGHT", -12, 0)
-                rf._divider:ClearAllPoints()
-                rf._divider:SetPoint("TOP", rf, "TOP", 0, -6)
-                rf._divider:SetPoint("BOTTOM", rf, "BOTTOM", 0, 6)
-                rf._divider:Show()
-                lastColumns = 2
-                i = i + 2
-            else
-                local third = lastColumns == 3 and IsCompact(left)
-                if third then
-                    left:SetPoint("RIGHT", rf, "LEFT", (width + 4) / 3 - 12, 0)
-                else
-                    left:SetPoint("RIGHT", rf, "CENTER", -12, 0)
-                end
-                rf._divider:ClearAllPoints()
-                rf._divider:SetPoint("TOPLEFT", rf, "TOPLEFT", third and (width + 4) / 3 or width / 2, -6)
-                rf._divider:SetPoint("BOTTOMLEFT", rf, "BOTTOMLEFT", third and (width + 4) / 3 or width / 2, 6)
-                rf._divider:Show()
-                i = i + 1
-            end
-
-            ly = ly - rowHeight
+        local item, nextItem = layoutItems[i], layoutItems[i + 1]
+        local fullWidth = item._quiDualColumnFullWidth
+        local pair = not fullWidth and nextItem and not nextItem._quiDualColumnFullWidth
+        groups[#groups + 1] = {cells = {item, pair and nextItem or nil}, pack = not fullWidth,
+            fullWidth = fullWidth, bare = fullWidth}
+        i = i + (pair and 2 or 1)
+    end
+    local plans = shared.PlanSettingsRows(groups, width, function(item)
+        return item.label and item.track and item.track.GetWidth and item.track:GetWidth() <= 32
+            and not item.slider and shared.FitsThreeColumns(item.label, item.track, width)
+    end)
+    local style = {inset = -2, padding = 12, minimumHeight = CARD_ROW_HEIGHT,
+        verticalPadding = 0, gap = 0, centered = true,
+        measure = function(item, cellWidth)
+            if item._quiLayoutFormSlider then item:_quiLayoutFormSlider(cellWidth) end
+            return GetDualColumnRowHeight(item)
+        end}
+    local ly = -4
+    for index, plan in ipairs(plans) do
+        local rf = AcquireRowFrame(index)
+        rf:ClearAllPoints()
+        rf:SetPoint("TOPLEFT", body, "TOPLEFT", -2, ly)
+        rf:SetPoint("TOPRIGHT", body, "TOPRIGHT", 2, ly)
+        rf:Show()
+        style.minimumHeight = plan.bare and 0 or CARD_ROW_HEIGHT
+        local height, columnWidth = shared.LayoutSettingsRow(rf, plan, width, style)
+        if not plan.bare and index % 2 == 0 then
+            rf._bg:SetColorTexture(1, 1, 1, 0.02)
+            rf._bg:Show()
         end
+        if plan.columns == 3 and not rf._thirdDivider then
+            rf._thirdDivider = rf:CreateTexture(nil, "ARTWORK")
+            rf._thirdDivider:SetWidth(1)
+            rf._thirdDivider:SetColorTexture(1, 1, 1, 0.05)
+        end
+        shared.LayoutSettingsDividers(rf, plan, {rf._divider, rf._thirdDivider}, columnWidth, 6)
+        ly = ly - height
     end
 
     local contentHeight = math.abs(ly) + 4

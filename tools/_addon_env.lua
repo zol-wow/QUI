@@ -259,6 +259,8 @@ local function LoadCore()
     LoadAddonFile("core/defaults.lua",       "QUI", SHARED_NS)
     LoadAddonFile("core/migrations.lua",     "QUI", SHARED_NS)
     LoadAddonFile("core/compatibility.lua", "QUI", SHARED_NS)
+    LoadAddonFile("core/settings_layout_shared.lua", "QUI", SHARED_NS)
+    LoadAddonFile("core/settings/model_kit.lua", "QUI", SHARED_NS)
     LoadAddonFile("core/settings/pins.lua", "QUI", SHARED_NS)
     LoadAddonFile("core/profile_io.lua",    "QUI", SHARED_NS)
 

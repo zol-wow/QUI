@@ -71,6 +71,8 @@ Registry:RegisterFeature(Schema.Feature({
 
 Registry:RegisterFeature(Schema.Feature({
     id = "actionBarsBuffDebuff",
+    -- Mover alias; its controls are indexed through the registered page homes.
+    noSearch = true,
     moverKey = "buffDebuff",
     lookupKeys = { "buffFrame", "debuffFrame" },
     lookupRoutes = {

@@ -105,3 +105,18 @@ local TAB_DEFINITIONS = {
 function Model.GetTabDefinitions()
     return ModelKit.NormalizeTabDefinitions(TAB_DEFINITIONS)
 end
+
+function Model.GetSearchContexts(tabKey)
+    if not Model.IsPerTypeTab(tabKey) then
+        return { { state = {}, searchContext = {} } }
+    end
+    local contexts = {}
+    for _, option in ipairs(Model.GetTypeOptions()) do
+        contexts[#contexts + 1] = {
+            state = { selectedType = option.value },
+            searchContext = { surfaceTypeKey = option.value },
+            label = option.text,
+        }
+    end
+    return contexts
+end

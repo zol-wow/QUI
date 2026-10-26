@@ -17,19 +17,22 @@ local SECTION_LABEL_GAP = 30
 local function BuildHelpContent(content)
     if not HelpContent then return end
 
+    local lastContent
     local y = -10
-    local contentWidth = 700
+    local contentWidth = math.max(1, content:GetWidth())
 
     GUI:SetSearchContext({tabIndex = 13, tabName = "Help"})
 
     local title = CreateWrappedLabel(content, ns.L["Help & Documentation"], 20, C.accent, contentWidth)
     title:SetPoint("TOPLEFT", PADDING, y)
+    ns.QUI_SettingsLayoutShared.BindWrappedLabel(title, content, PADDING)
     y = y - 28
 
     local subtitle = CreateWrappedLabel(content,
         ns.L["Everything you need to get started and troubleshoot QUI."],
         12, C.textMuted, contentWidth - PADDING * 2)
     subtitle:SetPoint("TOPLEFT", PADDING, y)
+    ns.QUI_SettingsLayoutShared.BindWrappedLabel(subtitle, content, PADDING)
     y = y - (subtitle:GetStringHeight() or 14) - 18
 
     Shared.CreateAccentDotLabel(content, ns.L["Getting Started"], y); y = y - SECTION_LABEL_GAP
@@ -40,6 +43,7 @@ local function BuildHelpContent(content)
                 "|cff60A5FA" .. step.num .. "|r  " .. step.text,
                 12, C.text, contentWidth - PADDING * 2 - 10)
             stepLabel:SetPoint("TOPLEFT", PADDING + 10, y)
+            ns.QUI_SettingsLayoutShared.BindWrappedLabel(stepLabel, content, PADDING)
             y = y - (stepLabel:GetStringHeight() or 14) - 8
         end
     end
@@ -51,11 +55,13 @@ local function BuildHelpContent(content)
         for _, guide in ipairs(HelpContent.FeatureGuides) do
             local titleLabel = CreateWrappedLabel(content, guide.title, 13, C.accent, contentWidth - PADDING * 2)
             titleLabel:SetPoint("TOPLEFT", PADDING, y)
+            ns.QUI_SettingsLayoutShared.BindWrappedLabel(titleLabel, content, PADDING)
             y = y - (titleLabel:GetStringHeight() or 14) - 4
 
             local desc = CreateWrappedLabel(content, guide.description,
                 11, C.textMuted, contentWidth - PADDING * 2 - 10)
             desc:SetPoint("TOPLEFT", PADDING + 10, y)
+            ns.QUI_SettingsLayoutShared.BindWrappedLabel(desc, content, PADDING)
             y = y - (desc:GetStringHeight() or 14) - 8
 
             if guide.tips then
@@ -64,6 +70,7 @@ local function BuildHelpContent(content)
                         "|cff60A5FA\226\128\162|r  " .. tip,
                         11, C.text, contentWidth - PADDING * 2 - 30)
                     tipLabel:SetPoint("TOPLEFT", PADDING + 20, y)
+                    ns.QUI_SettingsLayoutShared.BindWrappedLabel(tipLabel, content, PADDING)
                     y = y - (tipLabel:GetStringHeight() or 14) - 4
                 end
             end
@@ -79,6 +86,7 @@ local function BuildHelpContent(content)
                 "|cff60A5FA" .. cmd.command .. "|r  \226\128\148  " .. cmd.description,
                 12, C.text, contentWidth - PADDING * 2)
             cmdLabel:SetPoint("TOPLEFT", PADDING + 10, y)
+            ns.QUI_SettingsLayoutShared.BindWrappedLabel(cmdLabel, content, PADDING)
             y = y - (cmdLabel:GetStringHeight() or 14) - 6
         end
     end
@@ -90,10 +98,12 @@ local function BuildHelpContent(content)
         for _, qa in ipairs(HelpContent.Troubleshooting) do
             local qLabel = CreateWrappedLabel(content, qa.question, 12, C.text, contentWidth - PADDING * 2)
             qLabel:SetPoint("TOPLEFT", PADDING, y)
+            ns.QUI_SettingsLayoutShared.BindWrappedLabel(qLabel, content, PADDING)
             y = y - (qLabel:GetStringHeight() or 14) - 4
 
             local aLabel = CreateWrappedLabel(content, qa.answer, 11, C.textMuted, contentWidth - PADDING * 2 - 10)
             aLabel:SetPoint("TOPLEFT", PADDING + 10, y)
+            ns.QUI_SettingsLayoutShared.BindWrappedLabel(aLabel, content, PADDING)
             y = y - (aLabel:GetStringHeight() or 14) - 12
         end
     end
@@ -109,11 +119,13 @@ local function BuildHelpContent(content)
                 link.iconTexture, link.popupTitle)
             linkItem:SetPoint("TOPLEFT", PADDING, y)
             linkItem:SetSize(contentWidth - PADDING * 2, 22)
+            lastContent = linkItem
             y = y - 28
         end
     end
 
-    content:SetHeight(math.abs(y) + 10)
+    if lastContent then ns.QUI_SettingsLayoutShared.BindContentBottom(content, lastContent, 10)
+    else content:SetHeight(math.abs(y) + 10) end
 end
 
 local function CreateHelpPage(parent)
