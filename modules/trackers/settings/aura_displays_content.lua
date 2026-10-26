@@ -1348,25 +1348,27 @@ function ns.QUI_AuraDisplaysOptions._BuildLoadTab(host, ctx, display)
     local P = ns.QUI_AuraDisplayPickers
     local width = host:GetWidth()
     if not width or width < 100 then width = 520 end
-    local y = 8
+    local layout = ns.QUI_SettingsLayoutShared
+    local L = layout.MakeLayout(host, nil, -8, {padding = 4, explicitWidth = true})
 
     local function Place(builder, get, onSet)
         local frame, h = builder(host, width - 8, get, onSet or function()
             AD.Refresh()
         end)
-        frame:SetPoint("TOPLEFT", host, "TOPLEFT", 4, -y)
-        y = y + h + 12
+        L.placeCustom(frame, h, 12)
+        if frame.Layout then frame:Layout(true) end
+        layout.WatchContentHeight(frame, host)
         return frame
     end
 
     local rolesHeader = GUI:CreateLabel(host, ns.L["Roles"], 11, C.textMuted)
-    rolesHeader:SetPoint("TOPLEFT", 4, -y)
-    y = y + 18
+    rolesHeader:SetPoint("TOPLEFT", 4, L.getY())
+    L.spacer(18)
     Place(P.BuildRolePicker, function() return display.load.roles end)
 
     local classHeader = GUI:CreateLabel(host, ns.L["Classes"], 11, C.textMuted)
-    classHeader:SetPoint("TOPLEFT", 4, -y)
-    y = y + 18
+    classHeader:SetPoint("TOPLEFT", 4, L.getY())
+    L.spacer(18)
     Place(P.BuildClassPicker, function() return display.load.classes end)
 
     local specFrame, specH = P.BuildSpecPicker(host, width - 8,
@@ -1377,12 +1379,13 @@ function ns.QUI_AuraDisplaysOptions._BuildLoadTab(host, ctx, display)
             specsExpanded = not specsExpanded
             if ctx and ctx.RebuildDetail then ctx.RebuildDetail() end
         end)
-    specFrame:SetPoint("TOPLEFT", host, "TOPLEFT", 4, -y)
-    y = y + specH + 12
+    L.placeCustom(specFrame, specH, 12)
+    if specFrame.Layout then specFrame:Layout(true) end
+    layout.WatchContentHeight(specFrame, host)
 
     local encHeader = GUI:CreateLabel(host, ns.L["Encounters"], 11, C.textMuted)
-    encHeader:SetPoint("TOPLEFT", 4, -y)
-    y = y + 18
+    encHeader:SetPoint("TOPLEFT", 4, L.getY())
+    L.spacer(18)
     Place(P.BuildEncounterPicker, function() return display.load.encounters end,
         function()
             AD.Refresh()
@@ -1391,11 +1394,10 @@ function ns.QUI_AuraDisplaysOptions._BuildLoadTab(host, ctx, display)
 
     local hint = GUI:CreateLabel(host,
         ns.L["Nothing selected in a category means it always loads."], 10, C.textMuted)
-    hint:SetPoint("TOPLEFT", 4, -y)
-    y = y + 20
-
-    host:SetHeight(y)
-    return y
+    hint:SetPoint("TOPLEFT", 4, L.getY())
+    layout.BindWrappedLabel(hint, host, 4)
+    layout.BindContentBottom(host, hint, 10)
+    return host:GetHeight()
 end
 
 BuildRightPane = function(right, ctx)
@@ -1403,10 +1405,10 @@ BuildRightPane = function(right, ctx)
     local header = CreateFrame("Frame", nil, right)
     header:SetPoint("TOPLEFT")
     header:SetPoint("TOPRIGHT")
-    header:SetHeight(28)
+    header:SetHeight(54)
 
     local title = GUI:CreateLabel(header, "", 13)
-    title:SetPoint("LEFT", 2, 0)
+    title:SetPoint("TOPLEFT", 2, -2)
 
     local deleteBtn = GUI:CreateButton(header, ns.L["Delete"], 70, 22, function()
         if selectedGroup then
@@ -1451,7 +1453,7 @@ BuildRightPane = function(right, ctx)
             end,
         })
     end)
-    deleteBtn:SetPoint("RIGHT", 0, 0)
+    deleteBtn:SetPoint("BOTTOMRIGHT", 0, 0)
 
     local dupBtn = GUI:CreateButton(header, ns.L["Duplicate"], 80, 22, function()
         if not selectedID then return end
@@ -1493,7 +1495,8 @@ BuildRightPane = function(right, ctx)
     end)
     previewBtn:SetPoint("RIGHT", exportBtn, "LEFT", -4, 0)
     PaintPreviewButton()
-    title:SetPoint("RIGHT", previewBtn, "LEFT", -8, 0)
+    title:SetPoint("TOPRIGHT", header, "TOPRIGHT", -2, -2)
+    title:SetJustifyH("LEFT")
 
     local strip, paint
     if FullSurface and type(FullSurface.CreateTabStrip) == "function" then
@@ -1548,23 +1551,33 @@ BuildRightPane = function(right, ctx)
         dupBtn:SetShown(display ~= nil)
         exportBtn:SetShown(display ~= nil or groupName ~= nil)
         previewBtn:SetShown(display ~= nil or groupName ~= nil)
+        header:SetShown(display ~= nil or groupName ~= nil)
+        if strip then strip:SetShown(display ~= nil or groupName ~= nil) end
+        if UI.LayoutPanes then UI.LayoutPanes() end
         if paint then
             paint(groupName and GROUP_TABS or TABS, activeDetailTab, function(key)
                 activeDetailTab = key
                 UI.RebuildDetail()
             end)
         end
+        body:ClearAllPoints()
+        body:SetPoint("TOPLEFT", right, "TOPLEFT", 0, 0)
+        if display or groupName then
+            body:ClearAllPoints()
+            body:SetPoint("TOPLEFT", strip or header, "BOTTOMLEFT", 0, -4)
+        end
+        body:SetPoint("BOTTOMRIGHT", right, "BOTTOMRIGHT", 0, 0)
         if not display and not groupName then
             local hint = GUI:CreateLabel(tabContent,
                 ns.L["Select a display or group on the left, or create a display."], 11, C.textMuted)
             hint:SetPoint("TOPLEFT", 4, -12)
+            hint:SetPoint("RIGHT", tabContent, "RIGHT", -4, 0)
+            hint:SetWordWrap(true)
             tabContent:SetHeight(60)
             return
         end
         local host = CreateFrame("Frame", nil, tabContent)
-        host:SetPoint("TOPLEFT")
-        host:SetPoint("TOPRIGHT")
-        host:SetHeight(1)
+        ns.QUI_SettingsLayoutShared.MakeLayout(tabContent, nil, 0, {padding = 0}).placeCustom(host, 1)
         local detailContext = { RebuildDetail = UI.RebuildDetail,
             ResizeTab = function(h) tabContent:SetHeight(math.max(h, 1)) end }
         local height
@@ -1575,6 +1588,9 @@ BuildRightPane = function(right, ctx)
             height = builder(host, detailContext, display)
         end
         tabContent:SetHeight(math.max(height or 1, 1))
+        host:HookScript("OnSizeChanged", function(self)
+            tabContent:SetHeight(math.max(self:GetHeight(), 1))
+        end)
         SyncPreview()
     end
     UI.RebuildDetail()
@@ -1594,19 +1610,15 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
     if selectedID and not AD.GetDisplay(selectedID) then selectedID = nil end
     if selectedGroup and not AD.GetGroup(selectedGroup, false) then selectedGroup = nil end
 
-    local topOffset = 0
+    local layoutShared = ns.QUI_SettingsLayoutShared
+    local L = layoutShared.MakeLayout(content, nil, 0)
     local profileCopy = ns.QUI_ProfileCopyOptions
     if profileCopy
         and type(profileCopy.CreateCard) == "function"
     then
-        local copyHeader = Shared.CreateAccentDotLabel(content, ns.L["Copy Settings"], 0)
-        copyHeader:ClearAllPoints()
-        copyHeader:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, 0)
-        copyHeader:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, 0)
-
+        L.headerAt(ns.L["Copy Settings"])
         local copyHost = CreateFrame("Frame", nil, content)
-        copyHost:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -22)
-        copyHost:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -22)
+        L.placeCustom(copyHost, 1)
         local controller = profileCopy.CreateCard(copyHost, {
             fixedCategoryID = "auraDisplays",
             fixedCategoryLabel = ns.L["Aura Displays"],
@@ -1625,13 +1637,11 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
             end,
         })
         copyHost:SetHeight(controller.frame:GetHeight())
-        topOffset = 22 + controller.frame:GetHeight() + 14
+        layoutShared.WatchContentHeight(copyHost, content)
     end
 
     local pane = CreateFrame("Frame", nil, content)
-    pane:SetPoint("TOPLEFT", content, "TOPLEFT", PAD, -topOffset)
-    pane:SetPoint("TOPRIGHT", content, "TOPRIGHT", -PAD, -topOffset)
-    pane:SetHeight(PAGE_H)
+    L.placeCustom(pane, PAGE_H, 0)
     UI.previewOwner = pane
     pane:SetScript("OnHide", function()
         if UI.lastPreviewID then
@@ -1660,9 +1670,34 @@ function ns.QUI_AuraDisplaysOptions.BuildAuraDisplaysContent(content, ctx)
     right:SetPoint("TOPLEFT", left, "TOPRIGHT", PANE_GAP, 0)
     right:SetPoint("BOTTOMRIGHT")
 
+    local layingOut
+    UI.LayoutPanes = function()
+        if layingOut then return end
+        layingOut = true
+        local width = math.max(1, content:GetWidth() - PAD * 2)
+        local compact = width < 600
+        local editing = selectedID ~= nil or selectedGroup ~= nil
+        left:ClearAllPoints()
+        right:ClearAllPoints()
+        local paneHeight = editing and (compact and PAGE_H + 172 or PAGE_H) or 180
+        left:SetPoint("TOPLEFT", pane, "TOPLEFT", 0, 0)
+        if compact then
+            local listHeight = editing and 160 or 70
+            left:SetSize(width, listHeight)
+            right:SetPoint("TOPLEFT", left, "BOTTOMLEFT", 0, -12)
+            right:SetSize(width, paneHeight - listHeight - 12)
+        else
+            left:SetSize(LIST_W, paneHeight)
+            right:SetPoint("TOPLEFT", left, "TOPRIGHT", PANE_GAP, 0)
+            right:SetSize(math.max(1, width - LIST_W - PANE_GAP), paneHeight)
+        end
+        pane:SetHeight(paneHeight)
+        L.finish()
+        layingOut = nil
+    end
     BuildLeftPane(left)
     BuildRightPane(right, ctx)
-
-    content:SetHeight(PAGE_H + topOffset)
-    return PAGE_H + topOffset
+    content:HookScript("OnSizeChanged", UI.LayoutPanes)
+    UI.LayoutPanes()
+    return content:GetHeight()
 end

@@ -103,3 +103,18 @@ local TAB_DEFINITIONS = {
 function Model.GetTabDefinitions()
     return ModelKit.NormalizeTabDefinitions(TAB_DEFINITIONS)
 end
+
+function Model.GetSearchContexts(tabKey)
+    if not Model.IsPerUnitTab(tabKey) then
+        return { { state = {}, searchContext = {} } }
+    end
+    local contexts = {}
+    for _, option in ipairs(Model.GetUnitOptions()) do
+        contexts[#contexts + 1] = {
+            state = { selectedUnit = option.value },
+            searchContext = { surfaceUnitKey = option.value },
+            label = option.text,
+        }
+    end
+    return contexts
+end

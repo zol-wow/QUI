@@ -338,7 +338,26 @@ function UIKit.RefreshScaleBoundWidgets()
     end
 end
 
-function UIKit.RefreshPixelBorders()
+local function RefreshSubtreePixelBorders(frame)
+    if borderLineState[frame] then
+        local ok = ns.SafeCall("bulkhead", RefreshBorderLines, frame)
+        if not ok then ForgetBorderLineState(frame) end
+    end
+    if backdropBorderState[frame] then
+        ns.SafeCall("bulkhead", ApplyBackdropBorderLayout, frame)
+    end
+    if frame.GetChildren then
+        for _, child in ipairs({ frame:GetChildren() }) do
+            RefreshSubtreePixelBorders(child)
+        end
+    end
+end
+
+function UIKit.RefreshPixelBorders(root)
+    if root then
+        RefreshSubtreePixelBorders(root)
+        return
+    end
     local failedBorderFrames
     for frame in pairs(borderLineState) do
         local ok = ns.SafeCall("bulkhead", RefreshBorderLines, frame)

@@ -10,7 +10,10 @@ if not Registry or type(Registry.RegisterFeature) ~= "function"
     return
 end
 
+local mountedEditor
+
 local function BuildAurasUnitContent(host, ctx, section)
+    mountedEditor = { host = host, ctx = ctx, section = section }
     local FullSurface = Settings and Settings.FullSurface
     local UF = ns.QUI_UnitFramesSettingsSchema
     local UFModel = ns.QUI_UnitFramesSettingsModel
@@ -19,6 +22,8 @@ local function BuildAurasUnitContent(host, ctx, section)
     local unitKey = (UFSurface and type(UFSurface.GetSelectedUnit) == "function" and UFSurface.GetSelectedUnit())
         or (UFModel and type(UFModel.NormalizeUnitKey) == "function" and UFModel.NormalizeUnitKey(nil))
         or "player"
+
+    mountedEditor.key = unitKey
 
     local y = 0
     if FullSurface and type(FullSurface.BuildContextDropdownRow) == "function" then
@@ -48,22 +53,8 @@ local function BuildAurasUnitContent(host, ctx, section)
     editorHost:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -y)
     editorHost:SetPoint("RIGHT", host, "RIGHT", 0, 0)
     editorHost:SetHeight(1)
-    local SearchRoute = Settings and Settings.SearchRoute
-    local HUB_ROUTE = {
-        tabIndex = 21,
-        tabName = ns.L["Auras"],
-        subTabIndex = 3,
-        subTabName = ns.L["Unit Frames"],
-        tileId = "auras",
-        subPageIndex = 3,
-        featureId = "aurasUnitPage",
-    }
     if UF and type(UF.RenderIconsTab) == "function" then
-        if SearchRoute and type(SearchRoute.With) == "function" then
-            SearchRoute.With(HUB_ROUTE, UF.RenderIconsTab, editorHost, unitKey)
-        else
-            UF.RenderIconsTab(editorHost, unitKey)
-        end
+        UF.RenderIconsTab(editorHost, unitKey)
     end
 
     local total = y + ((editorHost.GetHeight and editorHost:GetHeight()) or 1)
@@ -76,11 +67,41 @@ Registry:RegisterFeature(Schema.Feature({
     id = "aurasUnitPage",
     category = "frames",
     nav = { tileId = "auras", subPageIndex = 3 },
+    getSearchContexts = function()
+        local model = ns.QUI_UnitFramesSettingsModel
+        return model and model.GetSearchContexts("icons") or {}
+    end,
+    getNavigationContext = function()
+        local surface = ns.QUI_UnitFramesSettingsSurface
+        return surface and surface.GetNavigationContext() or {}
+    end,
+    searchNavigate = function(entry, context)
+        local surface = ns.QUI_UnitFramesSettingsSurface
+        if not surface then return false end
+        local key = entry and entry.surfaceUnitKey
+        local model = ns.QUI_UnitFramesSettingsModel
+        if type(key) ~= "string" or not model or model.NormalizeUnitKey(key) ~= key then return false end
+        local changed = surface.GetSelectedUnit() ~= key
+        if changed then surface.SetSelectedUnit(key) end
+        local mounted = mountedEditor
+        if mounted and mounted.key ~= key and mounted.ctx and mounted.section
+            and mounted.ctx.host._quiSettingsRuntime == mounted.ctx.runtime then
+            mounted.ctx:RerenderSection(mounted.section.id)
+        end
+        if context and context.opts and mountedEditor then
+            context.opts.searchRoot = mountedEditor.host
+        end
+        return true
+    end,
     sections = {
         Schema.Section({
             id = "settings",
             kind = "page",
             minHeight = 80,
+            getContextKey = function()
+                local surface = ns.QUI_UnitFramesSettingsSurface
+                return surface and surface.GetSelectedUnit() or "player"
+            end,
             build = BuildAurasUnitContent,
         }),
     },

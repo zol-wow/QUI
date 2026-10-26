@@ -81,13 +81,14 @@ function GUI:PushNavigationHistory(frame)
     local entry = {
         tileIndex = tile.index, pageIndex = pageIndex,
         key = descriptor and descriptor.getActiveTab and descriptor.getActiveTab(),
+        contextId = descriptor and descriptor.getActiveContext and descriptor.getActiveContext(),
         query = box and box:GetText() or "",
     }
     frame._navigationHistory = frame._navigationHistory or {}
     local history = frame._navigationHistory
     local previous = history[#history]
     if not previous or previous.tileIndex ~= entry.tileIndex or previous.pageIndex ~= entry.pageIndex
-        or previous.key ~= entry.key or previous.query ~= entry.query then
+        or previous.key ~= entry.key or previous.contextId ~= entry.contextId or previous.query ~= entry.query then
         history[#history + 1] = entry
         if #history > 40 then table.remove(history, 1) end
     end
@@ -101,7 +102,7 @@ function GUI:NavigateOptionsBack(frame)
     self:SelectFeatureTile(frame, entry.tileIndex, { subPageIndex = entry.pageIndex, noHistory = true })
     local tile = frame._tiles[entry.tileIndex]
     local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[entry.pageIndex]
-    if entry.key and descriptor and descriptor.selectTab then descriptor.selectTab(entry.key) end
+    if entry.key and descriptor and descriptor.selectTab then descriptor.selectTab(entry.key, entry.contextId) end
     if entry.query ~= "" and frame._searchBox and frame._searchBox.editBox then
         frame._searchBox.editBox:SetText(entry.query)
         frame._searchBox.onSearch(entry.query)
@@ -177,7 +178,7 @@ end
 
 -- Wait for real, stable bounds after a page is shown. The driver exists only
 -- during a pending jump and stops on completion, cancellation, or timeout.
-function GUI:RunWhenSettingsLayoutReady(owner, target, callback, isCurrent, onFinished)
+function GUI:RunWhenSettingsLayoutReady(owner, target, callback, isCurrent, onFinished, resolveTarget)
     if not owner or not target then
         if onFinished then onFinished() end
         return
@@ -207,12 +208,20 @@ function GUI:RunWhenSettingsLayoutReady(owner, target, callback, isCurrent, onFi
     local previous, stable, elapsed = nil, 0, 0
     driver:SetScript("OnUpdate", function(self, delta)
         elapsed = elapsed + delta
-        if elapsed > 2 or (isCurrent and not isCurrent()) or not target:IsShown() then
+        if elapsed > 2 or (isCurrent and not isCurrent()) then
             Finish(false); return
+        end
+        local currentTarget = target
+        if resolveTarget then currentTarget = resolveTarget() end
+        if currentTarget and not currentTarget:IsShown() then Finish(false); return end
+        if not currentTarget then
+            if not resolveTarget then Finish(false) end
+            previous, stable = nil, 0
+            return
         end
         local scroll = owner._scrollFrame
         local body = owner._contentBody
-        local top, targetTop = body and body:GetTop(), target:GetTop()
+        local top, targetTop = body and body:GetTop(), currentTarget:GetTop()
         local width, height = owner:GetWidth(), owner:GetHeight()
         local range = scroll and scroll:GetVerticalScrollRange()
         local bounds = top and targetTop and width > 0 and height > 0
@@ -226,10 +235,10 @@ function GUI:RunWhenSettingsLayoutReady(owner, target, callback, isCurrent, onFi
     driver:Show()
 end
 
-local function NavigationPage(tile, index, key)
+local function NavigationPage(tile, index, key, contextId)
     if key then
         local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[index]
-        return descriptor and descriptor.getPage and descriptor.getPage(key)
+        return descriptor and descriptor.getPage and descriptor.getPage(key, contextId)
     end
     return tile._subPageBodies and tile._subPageBodies[index]
 end
@@ -274,6 +283,18 @@ local function VisibleNavigationSections(body)
     return visible
 end
 
+-- Providers can identify the entity whose controls are currently mounted.
+-- This is presentation context; routes continue using stable page/tab keys.
+local function NavigationContextLabel(tile, pageIndex)
+    local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[pageIndex]
+    local config = tile.config.subPages and tile.config.subPages[pageIndex] or tile.config
+    local registry = ns.Settings and ns.Settings.Registry
+    local feature = config and registry and registry:GetFeature(config.featureId)
+    local getter = descriptor and descriptor.getContextLabel or feature and feature.getNavigationContextLabel
+    local label = getter and getter()
+    return type(label) == "string" and label ~= "" and label or nil
+end
+
 function GUI:GetTileNavigationPages(tile)
     local result = {}
     local activePage = tile._activeSubPageIndex or 1
@@ -282,16 +303,16 @@ function GUI:GetTileNavigationPages(tile)
         if pending and (not pending.isCurrent or pending.isCurrent()) then
             local target = pending.page
             for _, page in ipairs(result) do
-                page.active = page.pageIndex == target.pageIndex and page.key == target.key
+                page.active = page.pageIndex == target.pageIndex and page.key == target.key and page.contextId == target.contextId
                     and ((target.sectionId and page.sectionId == target.sectionId)
                         or (not target.sectionId and page.section == target.section))
             end
         end
         return result
     end
-    local function Sections(index, group, key, catalogSections, disabled, parentGroup)
+    local function Sections(index, group, key, catalogSections, disabled, parentGroup, contextId)
         local first = #result
-        local page = NavigationPage(tile, index, key)
+        local page = NavigationPage(tile, index, key, contextId)
         local body = page and page._contentBody
         local selected
         local scroll = page and page._scrollFrame
@@ -305,7 +326,7 @@ function GUI:GetTileNavigationPages(tile)
         end
         for _, section in ipairs(VisibleNavigationSections(body)) do
             result[#result + 1] = {
-                label = section.label or section.id, group = group, parentGroup = parentGroup, pageIndex = index, key = key,
+                label = section.label or section.id, group = group, parentGroup = parentGroup, pageIndex = index, key = key, contextId = contextId,
                 section = section.frame, sectionId = section.id, disabled = disabled,
             }
             local top = section.frame:GetTop()
@@ -315,12 +336,14 @@ function GUI:GetTileNavigationPages(tile)
             catalogSections = catalogSections or PageCatalog(tile, index)
             for _, section in ipairs(catalogSections) do
                 result[#result + 1] = {
-                    label = ns.L[section.label] or section.label, group = group, parentGroup = parentGroup, pageIndex = index, key = key,
+                    label = ns.L[section.label] or section.label, group = group, parentGroup = parentGroup, pageIndex = index, key = key, contextId = contextId,
                     sectionId = ns.L[section.id] or section.id, disabled = disabled,
                 }
             end
         end
-        if #result - first < 3 then
+        local config = tile.config.subPages and tile.config.subPages[index] or tile.config
+        local minimum = config.sectionNav == true and 2 or 3
+        if #result - first < minimum then
             for row = #result, first + 1, -1 do result[row] = nil end
             return false
         end
@@ -328,6 +351,7 @@ function GUI:GetTileNavigationPages(tile)
         if selected then
             result[selected].active = tile._isActive and index == activePage
                 and (not key or (descriptor and descriptor.getActiveTab() == key))
+                and (not contextId or (descriptor and descriptor.getActiveContext and descriptor.getActiveContext() == contextId))
         end
         return #result > first
     end
@@ -341,42 +365,77 @@ function GUI:GetTileNavigationPages(tile)
         local activeKey = descriptor and descriptor.getActiveTab and descriptor.getActiveTab()
         local tabs = descriptor and descriptor.getTabs and descriptor.getTabs()
             or (feature and feature.getNavigationTabs and feature.getNavigationTabs()) or catalogTabs
-        for _, tab in ipairs(tabs) do
-            local label = ns.L[tab.label or tab.key] or tab.label or tab.key
-            local sections = tab.sections or {}
-            for _, catalogTab in ipairs(catalogTabs) do
-                if catalogTab.key == tab.key then sections = catalogTab.sections or sections; break end
-            end
-            local available, sectionOrder, sourceOrder = {}, {}, {}
-            for sectionIndex, section in ipairs(sections) do
-                local matches = not section.contexts
-                local order = sectionIndex
-                for _, variant in ipairs(section.contexts or {}) do
-                    local same = true
-                    for key, value in pairs(variant) do
-                        if key ~= "order" and context[key] ~= value then same = false; break end
+        local contextsGetter = descriptor and descriptor.getNavigationContexts or feature and feature.getNavigationContexts
+        local rootGetter = descriptor and descriptor.getNavigationRoot or feature and feature.getNavigationRoot
+        local labelGetter = descriptor and descriptor.getNavigationLabel or feature and feature.getNavigationLabel
+        local contexts = contextsGetter and contextsGetter()
+        if contexts then prefix = labelGetter and labelGetter() or prefix end
+        local function EmitTabs(contextInfo)
+            local contextId = contextInfo and contextInfo.id
+            local currentContext = not contextInfo or (descriptor and descriptor.getActiveContext and descriptor.getActiveContext() == contextId)
+            for _, tab in ipairs(contextInfo and contextInfo.tabs or tabs) do
+                local first = #result
+                local label = ns.L[tab.label or tab.key] or tab.label or tab.key
+                local sections = tab.sections or {}
+                for _, catalogTab in ipairs(catalogTabs) do
+                    if catalogTab.key == tab.key then sections = catalogTab.sections or sections; break end
+                end
+                local available, sectionOrder, sourceOrder = {}, {}, {}
+                for sectionIndex, section in ipairs(sections) do
+                    local matches = not section.contexts
+                    local order = sectionIndex
+                    for _, variant in ipairs(section.contexts or {}) do
+                        local same = true
+                        for key, value in pairs(variant) do
+                            if key ~= "order" and context[key] ~= value then same = false; break end
+                        end
+                        if same then matches = true; order = variant.order or order; break end
                     end
-                    if same then matches = true; order = variant.order or order; break end
+                    if matches and (not tab.isSectionAvailable or tab.isSectionAvailable(ns.L[section.id] or section.id)) then
+                        available[#available + 1] = section
+                        sectionOrder[section], sourceOrder[section] = order, sectionIndex
+                    end
                 end
-                if matches and (not tab.isSectionAvailable or tab.isSectionAvailable(ns.L[section.id] or section.id)) then
-                    available[#available + 1] = section
-                    sectionOrder[section], sourceOrder[section] = order, sectionIndex
+                table.sort(available, function(a, b)
+                    if sectionOrder[a] == sectionOrder[b] then return sourceOrder[a] < sourceOrder[b] end
+                    return sectionOrder[a] < sectionOrder[b]
+                end)
+                local disabled = tab.disabled == true or tab.enabled == false
+                if not Sections(index, label, tab.key, available, disabled, prefix or nil, contextId) then
+                    result[#result + 1] = {
+                        label = label, group = prefix or nil, key = tab.key, pageIndex = index, contextId = contextId,
+                        descriptor = descriptor,
+                        active = tile._isActive and index == activePage and tab.key == activeKey and currentContext,
+                        disabled = disabled,
+                    }
                 end
-            end
-            table.sort(available, function(a, b)
-                if sectionOrder[a] == sectionOrder[b] then return sourceOrder[a] < sourceOrder[b] end
-                return sectionOrder[a] < sectionOrder[b]
-            end)
-            local disabled = tab.disabled == true or tab.enabled == false
-            if not Sections(index, label, tab.key, available, disabled, prefix or nil) then
-                result[#result + 1] = {
-                    label = label, group = prefix or nil, key = tab.key, pageIndex = index,
-                    descriptor = descriptor,
-                    active = tile._isActive and index == activePage and tab.key == activeKey,
-                    disabled = disabled,
-                }
+                if contextInfo then
+                    for row = first + 1, #result do
+                        local item = result[row]
+                        item.navigationGroups = {
+                            { id = "", label = prefix },
+                            { id = "context:" .. tostring(contextId), label = contextInfo.label,
+                                key = contextInfo.defaultTab or contextInfo.tabs[1].key, contextId = contextId },
+                        }
+                        if item.sectionId then
+                            item.navigationGroups[3] = { id = "context:" .. tostring(contextId) .. ":" .. tab.key,
+                                label = label, key = tab.key, contextId = contextId }
+                        end
+                    end
+                end
             end
         end
+        if contexts then
+            local root = rootGetter and rootGetter()
+            if root then
+                result[#result + 1] = { label = root.label, key = root.key, pageIndex = index,
+                    navigationGroups = { { id = "", label = prefix } },
+                    active = tile._isActive and index == activePage and activeKey == root.key }
+            end
+            for _, contextInfo in ipairs(contexts) do EmitTabs(contextInfo) end
+            return root ~= nil or #contexts > 0
+        end
+        EmitTabs()
         return #tabs > 0
     end
     local subPages = tile.config.subPages
@@ -413,6 +472,7 @@ function GUI:UpdateTileNavigationTitle(tile)
     local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[pageIndex]
     if descriptor and descriptor.getTabs then
         local active = descriptor.getActiveTab and descriptor.getActiveTab()
+        if active == descriptor.rootKey and descriptor.rootLabel then title = descriptor.rootLabel end
         for _, tab in ipairs(descriptor.getTabs() or {}) do
             if tab.key == active then
                 title = tab.label or tab.key
@@ -420,6 +480,8 @@ function GUI:UpdateTileNavigationTitle(tile)
             end
         end
     end
+    local contextLabel = NavigationContextLabel(tile, pageIndex)
+    if contextLabel then title = contextLabel .. " > " .. title end
     tile._title:SetText(title)
     if tile._navArrow then tile._navArrow:SetShown(#self:GetTileNavigationPages(tile) > 1) end
     if tile._isActive then
@@ -446,22 +508,23 @@ local function NavigationRows(tile, pages, revealActive)
     local pageIndex = tile._activeSubPageIndex or 1
     local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[pageIndex]
     local key = descriptor and descriptor.getActiveTab and descriptor.getActiveTab()
-    local destination = pageIndex .. ":" .. (key or "")
+    local contextId = descriptor and descriptor.getActiveContext and descriptor.getActiveContext()
+    local destination = pageIndex .. ":" .. (key or "") .. (contextId and ":context:" .. tostring(contextId) or "")
     local selected
     for _, page in ipairs(pages) do
-        if page.pageIndex == pageIndex and (not key or page.key == key) then
+        if page.pageIndex == pageIndex and (not key or page.key == key) and page.contextId == contextId then
             selected = selected or page
             if page.active then selected = page; break end
         end
     end
     local roots, groups = {}, {}
-    local function Group(page, label, surfaceKey, parent)
-        local id = page.pageIndex .. ":" .. (surfaceKey or "")
+    local function Group(page, label, surfaceKey, parent, explicitId, groupContext)
+        local id = page.pageIndex .. ":" .. (explicitId or surfaceKey or "")
         local header = groups[id]
         if not header then
             header = {
                 _group = true, _groupId = id, label = label,
-                pageIndex = page.pageIndex, key = surfaceKey,
+                pageIndex = page.pageIndex, key = surfaceKey, contextId = groupContext,
                 _parentGroupId = parent and parent._groupId,
                 _children = {}, active = false, disabled = true,
             }
@@ -475,8 +538,14 @@ local function NavigationRows(tile, pages, revealActive)
     end
     for _, page in ipairs(pages) do
         local parent
-        if page.parentGroup then parent = Group(page, page.parentGroup) end
-        if page.group then parent = Group(page, page.group, page.sectionId and page.key or nil, parent) end
+        if page.navigationGroups then
+            for _, group in ipairs(page.navigationGroups) do
+                parent = Group(page, group.label, group.key, parent, group.id, group.contextId)
+            end
+        else
+            if page.parentGroup then parent = Group(page, page.parentGroup) end
+            if page.group then parent = Group(page, page.group, page.sectionId and page.key or nil, parent) end
+        end
         page._parentGroupId = parent and parent._groupId
         local children = parent and parent._children or roots
         children[#children + 1] = page
@@ -566,9 +635,16 @@ function GUI:RefreshNavigationSectionHighlight(tile, revealActive)
                     local row = button._page
                     row.active = rootActive and row._group and not row.key and row.pageIndex == pageIndex or false
                     for _, page in ipairs(current) do
-                        local matches = row._group and row.pageIndex == page.pageIndex and (not row.key or row.key == page.key)
-                            or (not row._group and row.pageIndex == page.pageIndex and row.key == page.key
-                                and row.sectionId == page.sectionId and row.section == page.section)
+                        local matches
+                        if row._group and page.navigationGroups then
+                            for _, group in ipairs(page.navigationGroups) do
+                                if row._groupId == page.pageIndex .. ":" .. group.id then matches = true; break end
+                            end
+                        else
+                            matches = row._group and row.pageIndex == page.pageIndex and (not row.key or row.key == page.key)
+                                or (not row._group and row.pageIndex == page.pageIndex and row.key == page.key
+                                    and row.contextId == page.contextId and row.sectionId == page.sectionId and row.section == page.section)
+                        end
                         if matches and page.active then row.active = true; break end
                     end
                     if row.active then activeIndex = i end
@@ -580,73 +656,104 @@ function GUI:RefreshNavigationSectionHighlight(tile, revealActive)
     end
 end
 
+-- Sidebar and search share the mounted section owner, readiness, and jump.
+function GUI:ScrollToTileNavigationSection(tile, page)
+    local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[page.pageIndex]
+    local owner = NavigationPage(tile, page.pageIndex, page.key, page.contextId)
+    local body = owner and owner._contentBody
+    local function ResolveTarget()
+        if not page.sectionId then return page.section end
+        for _, section in ipairs(body and body._sections or {}) do
+            if section.id == page.sectionId then return section.frame end
+        end
+    end
+    local function RevealTarget()
+        local target = ResolveTarget()
+        -- Providers can replace their headings during initial width recovery.
+        -- Resolve and reveal the current heading while the destination settles.
+        local ancestor = target
+        while ancestor and ancestor ~= owner do
+            if ancestor.SetExpanded and ancestor._expanded == false then ancestor:SetExpanded(true) end
+            ancestor = ancestor.GetParent and ancestor:GetParent()
+        end
+        return target
+    end
+    local target = RevealTarget()
+    if not owner or not target then return false end
+    tile._sectionNavigationToken = (tile._sectionNavigationToken or 0) + 1
+    local requestToken = tile._sectionNavigationToken
+    local pending = { page = page }
+    tile._pendingNavigationSection = pending
+    local function IsCurrent()
+        return tile._sectionNavigationToken == requestToken and tile._isActive
+            and (tile._activeSubPageIndex or 1) == page.pageIndex
+            and (not page.key or (descriptor and descriptor.getActiveTab() == page.key))
+            and NavigationPage(tile, page.pageIndex, page.key, page.contextId) == owner
+            and owner._contentBody == body
+    end
+    pending.isCurrent = IsCurrent
+    local function ClearPending()
+        if tile._pendingNavigationSection == pending then
+            tile._pendingNavigationSection = nil
+            GUI:RefreshNavigationSectionHighlight(tile)
+        end
+    end
+    local function Jump()
+        if not IsCurrent() then ClearPending(); return end
+        local owner = NavigationPage(tile, page.pageIndex, page.key, page.contextId)
+        local scroll = owner and owner._scrollFrame
+        local sections = VisibleNavigationSections(owner and owner._contentBody)
+        local visible = {}
+        local selected
+        for _, section in ipairs(sections) do
+            visible[#visible + 1] = section.frame
+            if section.frame == page.section or (page.sectionId and section.id == page.sectionId) then selected = #visible end
+        end
+        local body = scroll and scroll:GetScrollChild()
+        local top = body and body:GetTop()
+        local sectionTop = selected and visible[selected]:GetTop()
+        if top and sectionTop then
+            local range = scroll:GetVerticalScrollRange()
+            local extent = range + scroll:GetHeight()
+            local nextTop = visible[selected + 1] and visible[selected + 1]:GetTop()
+            local position = math.max(0, top - sectionTop)
+            local offset = math.min(range, position)
+            if nextTop and extent > 0 then
+                -- Stay inside this section, beyond the highlight's 8px
+                -- tolerance even when native fractional bounds settle later.
+                local endOffset = math.max(0, top - nextTop - 16) * range / extent
+                offset = math.min(offset, endOffset)
+            end
+            if selected == 1 and (not page.key or owner._contentBody == body) then offset = 0 end
+            offset = math.min(range, math.max(0, offset))
+            local controller = UIKit.GetSmoothScroll and UIKit.GetSmoothScroll(scroll)
+            if controller then controller:ScrollTo(offset, true) else scroll:SetVerticalScroll(offset) end
+        end
+        ClearPending()
+    end
+    GUI:RunWhenSettingsLayoutReady(owner, target, Jump, IsCurrent, ClearPending, RevealTarget)
+    return true
+end
+
 local function SelectPage(frame, tile, page)
     if page.disabled then return end
     tile._navigationDestination = nil
     tile._sectionNavigationToken = (tile._sectionNavigationToken or 0) + 1
-    local requestToken = tile._sectionNavigationToken
+    -- Keep the clicked section highlighted while its destination page mounts.
     local pending = (page.section or page.sectionId) and { page = page } or nil
     tile._pendingNavigationSection = pending
     GUI:CloseNavigationFlyout(frame)
     GUI:SelectFeatureTile(frame, tile.index, { subPageIndex = page.pageIndex })
     local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[page.pageIndex]
     if page.key and descriptor and descriptor.selectTab then
-        descriptor.selectTab(page.key)
+        descriptor.selectTab(page.key, page.contextId)
     elseif not page.key and descriptor and descriptor.selectRoot then
         descriptor.selectRoot()
     end
-    if page.section or page.sectionId then
-        local owner = NavigationPage(tile, page.pageIndex, page.key)
-        local body = owner and owner._contentBody
-        local target = not page.sectionId and page.section or nil
-        for _, section in ipairs(body and body._sections or {}) do
-            if section.id == page.sectionId then target = section.frame; break end
-        end
-        local function IsCurrent()
-            return tile._sectionNavigationToken == requestToken and tile._isActive
-                and (tile._activeSubPageIndex or 1) == page.pageIndex
-                and (not page.key or (descriptor and descriptor.getActiveTab() == page.key))
-                and NavigationPage(tile, page.pageIndex, page.key) == owner
-        end
-        pending.isCurrent = IsCurrent
-        local function ClearPending()
-            if tile._pendingNavigationSection == pending then
-                tile._pendingNavigationSection = nil
-                GUI:RefreshNavigationSectionHighlight(tile)
-            end
-        end
-        local function Jump()
-            if not IsCurrent() then ClearPending(); return end
-            local owner = NavigationPage(tile, page.pageIndex, page.key)
-            local scroll = owner and owner._scrollFrame
-            local sections = VisibleNavigationSections(owner and owner._contentBody)
-            local visible = {}
-            local selected
-            for _, section in ipairs(sections) do
-                visible[#visible + 1] = section.frame
-                if section.frame == page.section or (page.sectionId and section.id == page.sectionId) then selected = #visible end
-            end
-            local body = scroll and scroll:GetScrollChild()
-            local top = body and body:GetTop()
-            local sectionTop = selected and visible[selected]:GetTop()
-            if top and sectionTop then
-                local range = scroll:GetVerticalScrollRange()
-                local extent = range + scroll:GetHeight()
-                local nextTop = visible[selected + 1] and visible[selected + 1]:GetTop()
-                local position = math.max(0, top - sectionTop)
-                local offset = math.min(range, position)
-                if nextTop and extent > 0 then
-                    local endOffset = math.max(0, top - nextTop - 9) * range / extent
-                    offset = math.min(offset, endOffset)
-                end
-                if selected == 1 and (not page.key or owner._contentBody == body) then offset = 0 end
-                offset = math.min(range, math.max(0, offset))
-                local controller = UIKit.GetSmoothScroll and UIKit.GetSmoothScroll(scroll)
-                if controller then controller:ScrollTo(offset, true) else scroll:SetVerticalScroll(offset) end
-            end
-            ClearPending()
-        end
-        GUI:RunWhenSettingsLayoutReady(owner, target, Jump, IsCurrent, ClearPending)
+    if pending and not GUI:ScrollToTileNavigationSection(tile, page)
+        and tile._pendingNavigationSection == pending then
+        tile._pendingNavigationSection = nil
+        GUI:RefreshNavigationSectionHighlight(tile)
     end
     GUI:UpdateTileNavigationTitle(tile)
     GUI:AnimateOptionsPage(tile._pageFrame)
@@ -740,6 +847,12 @@ local function LayoutFlyout(frame, flyout, tile)
     flyout:SetPoint("TOPLEFT", frame.sidebar, "TOPRIGHT", 0, y)
 end
 
+local function SameNavigationRow(a, b)
+    return a and a.pageIndex == b.pageIndex and a.key == b.key and a.contextId == b.contextId
+        and a.sectionId == b.sectionId and a.section == b.section
+        and a._groupId == b._groupId
+end
+
 local function RenderPages(frame, flyout, tile, pages, revealActive, restoreModuleScroll)
     local changed = flyout._tile ~= tile
     if changed then SaveNavigationScroll(flyout) end
@@ -748,12 +861,15 @@ local function RenderPages(frame, flyout, tile, pages, revealActive, restoreModu
     flyout._tile, flyout._pages = tile, pages
     local rows, destinationChanged = NavigationRows(tile, pages, revealActive and not (changed and restoreModuleScroll))
     flyout._rows = rows
-    for _, button in ipairs(flyout._buttons) do button:Hide() end
     local activeIndex, offset, previous = 1, 0, nil
     for index, page in ipairs(rows) do
         if previous and previous._parentGroupId and not previous._group and previous._parentGroupId ~= page._parentGroupId
             and previous._parentGroupId ~= page._groupId then offset = offset + 6 end
         local button = flyout._buttons[index]
+        -- Hiding a pressed native button cancels its pending click. Keep the
+        -- same destination mounted across layout/section refreshes, but cancel
+        -- input when a pooled button is assigned a different destination.
+        if button and (changed or not SameNavigationRow(button._page, page)) then button:Hide() end
         if not button then
             button = CreateFrame("Button", nil, flyout._inner)
             button:SetHeight(26)
@@ -812,6 +928,7 @@ local function RenderPages(frame, flyout, tile, pages, revealActive, restoreModu
         if page.active then activeIndex = index end
         previous = page
     end
+    for index = #rows + 1, #flyout._buttons do flyout._buttons[index]:Hide() end
     flyout._contentHeight = offset
     flyout._inner:SetHeight(math.max(1, offset))
     if not flyout._docked then LayoutFlyout(frame, flyout, tile) end
@@ -1006,8 +1123,7 @@ function GUI:LayoutSidebarGroups(frame)
     parent:SetHeight(y)
     frame._bottomTiles = {}
     frame._sidebarScroll:SetPoint("TOPLEFT", frame.sidebar, "TOPLEFT", 0, -4)
-    frame._sidebarScroll:SetPoint("BOTTOMRIGHT", frame.sidebar, "BOTTOMRIGHT", 0, frame._toolsStrip and 102 or 8)
-    if frame._sidebarClampScroll then frame._sidebarClampScroll() end
+    self:UpdateSidebarScrollBounds(frame)
     if UIKit.RegisterScaleRefresh then
         UIKit.RegisterScaleRefresh(frame, "optionsNavigationDock", function() GUI:RefreshNavigationDock(frame) end)
     end
@@ -1071,13 +1187,14 @@ function GUI:RememberNavigationDestination(frame, tile, descriptor)
     local entry = {
         tileIndex = tile.index, pageIndex = tile._activeSubPageIndex or 1,
         key = descriptor and descriptor.getActiveTab and descriptor.getActiveTab(),
+        contextId = descriptor and descriptor.getActiveContext and descriptor.getActiveContext(),
         label = tile.config.name .. " / " .. tile._title:GetText(),
     }
     local recent = frame._recentDestinations or {}
     frame._recentDestinations = recent
     for index = #recent, 1, -1 do
         local previous = recent[index]
-        if previous.tileIndex == entry.tileIndex and previous.pageIndex == entry.pageIndex and previous.key == entry.key then
+        if previous.tileIndex == entry.tileIndex and previous.pageIndex == entry.pageIndex and previous.key == entry.key and previous.contextId == entry.contextId then
             table.remove(recent, index)
         end
     end
@@ -1127,7 +1244,7 @@ function GUI:ShowNavigationSuggestions(frame)
             GUI:SelectFeatureTile(frame, entry.tileIndex, { subPageIndex = entry.pageIndex })
             local tile = frame._tiles[entry.tileIndex]
             local descriptor = tile._surfacePagesByPage and tile._surfacePagesByPage[entry.pageIndex]
-            if entry.key and descriptor and descriptor.selectTab then descriptor.selectTab(entry.key) end
+            if entry.key and descriptor and descriptor.selectTab then descriptor.selectTab(entry.key, entry.contextId) end
         end)
     end
     wrapper.inner:SetHeight(y + 18)

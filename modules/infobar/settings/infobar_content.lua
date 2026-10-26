@@ -403,9 +403,10 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
         local precedingHeight = -L.getY() - editor:GetHeight()
         local remaining = CreateFrame("Frame", nil, content)
+        ns.QUI_SettingsLayoutShared.MakeLayout(content, U, 0, { padding = 0, explicitWidth = true }).placeCustom(remaining, 1)
+        remaining:ClearAllPoints()
         local padding = ns.QUI_Options.PADDING or 15
         remaining:SetPoint("TOPLEFT", editor, "BOTTOMLEFT", -padding, -14)
-        remaining:SetPoint("TOPRIGHT", editor, "BOTTOMRIGHT", padding, -14)
         L = ns.QUI_SettingsLayoutShared.MakeLayout(remaining, U, 0)
 
         L.headerAt(ns.L["Widget Overrides"])

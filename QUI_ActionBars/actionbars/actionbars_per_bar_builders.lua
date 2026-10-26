@@ -324,6 +324,9 @@ do
             end
 
             local global = db.global
+            if SKINNABLE_BAR_KEYS[dbKey] then
+                GUI:RegisterFormFallback(barDB, global)
+            end
             local _, headings = NavigationSections(dbKey, barDB)
             local layout = barDB.ownedLayout
 

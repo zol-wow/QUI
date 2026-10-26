@@ -380,15 +380,8 @@ local TILE_TAB_SOURCES = {
     cooldown_manager = "QUI_CDM/cdm/settings/containers_page.lua",
 }
 
--- surfaceTabKey is set from whatever key the schema's context factory was
--- called with, and a few call sites pass a SECTION key rather than a tab key.
--- Those resolve to their host tab via subTabIndex, so they are legal -- but
--- they are not tabs and must not be treated as dead routes.
--- group_frames_schema.lua:2250 calls CreateSearchContext("healer"); the healer
--- section lives inside the General tab.
-local SECTION_SURFACE_KEYS = {
-    ["group_frames::healer"] = true,
-}
+-- Dynamic Reminders/Auras editor routes are independently checked by
+-- tests/unit/settings_search_runtime_routes_test.lua using actual providers.
 
 local function collect_live_tab_keys(path)
     local text, err = read_file(path)
@@ -552,7 +545,7 @@ if strict_routes then
                 local tabs = live_tabs[tile]
                 if not tabs then
                     skipped_tiles[tile] = true
-                elseif not tabs[key] and not SECTION_SURFACE_KEYS[tile .. "::" .. key] then
+                elseif not tabs[key] then
                     checked = checked + 1
                     errors[#errors + 1] = ("dead surface route: %s group=%s tileId=%s surfaceTabKey=%s label=%s")
                         :format(tostring(entry.featureId), group, tile, key, tostring(entry.label))
@@ -562,9 +555,9 @@ if strict_routes then
             end
         end
     end
-    print("  route check: " .. tostring(checked) .. " rows verified against live TAB_DEFINITIONS")
+    print("  route check: " .. tostring(checked) .. " rows verified against live TAB_DEFINITIONS (static model check)")
     for tile in pairs(skipped_tiles) do
-        print("  route check SKIPPED (no TAB_DEFINITIONS source mapped): " .. tile)
+        print("  dynamic route coverage: " .. tile .. " is checked by settings_search_runtime_routes_test.lua against actual providers")
     end
 end
 

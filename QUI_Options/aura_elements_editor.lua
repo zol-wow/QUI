@@ -1561,6 +1561,7 @@ local function ReleaseRows(activeRows, pool)
 end
 
 local function RenderDetail(ctx, element)
+    ctx.detailArea:SetScript("OnSizeChanged", nil)
     ctx.ClearDetailWidgets()
     ctx.RelayoutDetail = nil
     ctx.BeginDetailSection = nil
@@ -1591,7 +1592,7 @@ local function RenderDetail(ctx, element)
         ctx.RegisterDetailWidget(rowFrame)
         rowFrame:ClearAllPoints()
         rowFrame:SetPoint("TOPLEFT", detailArea, "TOPLEFT", 0, ctx.detailY)
-        rowFrame:SetPoint("TOPRIGHT", detailArea, "TOPRIGHT", 0, ctx.detailY)
+        rowFrame:SetWidth(math.max(1, detailArea:GetWidth() or 1))
         rowFrame:SetHeight(rowH)
         rowFrame._quiDetailHeight = rowH
         rowFrame._quiDetailSection = ctx._detailSectionKey
@@ -1615,7 +1616,9 @@ local function RenderDetail(ctx, element)
             rowFrame._quiDetailBackground = bg
         end
 
-        rowFrame._quiLeft = left
+        rowFrame._quiLeft, rowFrame._quiRight = left, right
+        rowFrame._quiLeftHeight, rowFrame._quiRightHeight = leftH, rightH
+        rowFrame._quiDetailSpan = span
         left:SetParent(rowFrame)
         left._quiDetailRow = rowFrame
         left:ClearAllPoints()
@@ -1697,7 +1700,14 @@ local function RenderDetail(ctx, element)
         ctx.AddDetailWidget(cell or widget, FORM_ROW, span)
     end
 
+    local layingOut = false
     local function RelayoutDetail()
+        if layingOut then return detailArea:GetHeight() end
+        layingOut = true
+        local width = detailArea:GetWidth()
+        if not width or width <= 0 then width = 680 end
+        ctx._detailWidth = width
+        local paired = width >= 560
         local disclosure = sectionState(element)
         local y = -2
         local rowParity = 0
@@ -1707,8 +1717,42 @@ local function RenderDetail(ctx, element)
             if visible then
                 rowFrame:ClearAllPoints()
                 rowFrame:SetPoint("TOPLEFT", detailArea, "TOPLEFT", 0, y)
-                rowFrame:SetPoint("TOPRIGHT", detailArea, "TOPRIGHT", 0, y)
+                -- Reused rows can lose native bounds when opposing anchors are
+                -- installed before the detail host is shown. Keep one origin
+                -- and assign the measured width on every disclosure/resize.
+                rowFrame:SetWidth(width)
                 rowFrame:Show()
+                local left, right = rowFrame._quiLeft, rowFrame._quiRight
+                local columns = paired and not rowFrame._quiDetailSpan
+                local cellWidth = math.max(1, columns and (width - 2 * PAD - COL_GAP) / 2 or width - 2 * PAD)
+                local leftH = math.max(rowFrame._quiLeftHeight or 1,
+                    left.Layout and left:Layout(cellWidth) or 1)
+                local rightH = right and math.max(rowFrame._quiRightHeight or 1,
+                    right.Layout and right:Layout(cellWidth) or 1) or 0
+                left:ClearAllPoints()
+                left:SetPoint("TOPLEFT", rowFrame, "TOPLEFT", PAD, 0)
+                left:SetPoint("TOPRIGHT", rowFrame, columns and "TOP" or "TOPRIGHT",
+                    columns and -(COL_GAP / 2) or -PAD, 0)
+                if right then
+                    local offset = columns and 0 or -(leftH + 4)
+                    right:ClearAllPoints()
+                    right:SetPoint("TOPLEFT", rowFrame, columns and "TOP" or "TOPLEFT",
+                        columns and COL_GAP / 2 or PAD, offset)
+                    right:SetPoint("TOPRIGHT", rowFrame, "TOPRIGHT", -PAD, offset)
+                end
+                if rowFrame._quiColDiv then rowFrame._quiColDiv:SetShown(columns and right ~= nil) end
+                rowFrame._quiDetailHeight = right and (columns and math.max(leftH, rightH) or leftH + 4 + rightH) or leftH
+                rowFrame:SetHeight(rowFrame._quiDetailHeight)
+                local layoutShared = ns.QUI_SettingsLayoutShared
+                if layoutShared and layoutShared.VerifyInitialBounds then
+                    layoutShared.VerifyInitialBounds(rowFrame, detailArea, function(self)
+                        local point, relativeTo, relativePoint, x, offsetY = self:GetPoint(1)
+                        self:ClearAllPoints()
+                        self:SetPoint(point or "TOPLEFT", relativeTo or detailArea,
+                            relativePoint or "TOPLEFT", x or 0, offsetY or -2)
+                        self:SetWidth(math.max(1, detailArea:GetWidth() or 1))
+                    end)
+                end
                 if rowFrame._quiDetailBackground then
                     rowFrame._quiDetailBackground:SetColorTexture(
                         1, 1, 1, (rowParity % 2) == 1 and 0.02 or 0)
@@ -1722,9 +1766,15 @@ local function RenderDetail(ctx, element)
         ctx.detailY = y
         local used = math.abs(y) + 8
         detailArea:SetHeight(used)
+        layingOut = false
         return used
     end
     ctx.RelayoutDetail = RelayoutDetail
+    detailArea:SetScript("OnSizeChanged", function(self, width)
+        if layingOut or not width or width <= 0 or width == ctx._detailWidth then return end
+        RelayoutDetail()
+        if ctx.RelayoutList then ctx.RelayoutList() end
+    end)
     ctx.SetDetailSectionExpanded = function(sectionKey, expanded)
         local disclosure = sectionState(element)
         disclosure[sectionKey] = expanded == true
@@ -1746,11 +1796,9 @@ local function RenderDetail(ctx, element)
             return
         end
         newHeight = math.max(1, newHeight)
-        if rowFrame._quiDetailHeight == newHeight then
-            return
-        end
-        rowFrame._quiDetailHeight = newHeight
-        rowFrame:SetHeight(newHeight)
+        local key = rowFrame._quiLeft == widget and "_quiLeftHeight" or "_quiRightHeight"
+        if rowFrame[key] == newHeight then return end
+        rowFrame[key] = newHeight
         RelayoutDetail()
         if ctx.RelayoutList then
             ctx.RelayoutList()

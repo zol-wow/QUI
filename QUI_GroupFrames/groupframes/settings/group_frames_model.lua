@@ -58,3 +58,15 @@ local TAB_DEFINITIONS = {
 function Model.GetTabDefinitions()
     return ModelKit.NormalizeTabDefinitions(TAB_DEFINITIONS)
 end
+
+function Model.GetSearchContexts()
+    local contexts = {}
+    for _, option in ipairs(Model.GetContextOptions()) do
+        contexts[#contexts + 1] = {
+            state = { contextMode = option.value },
+            searchContext = { providerKey = option.value == "raid" and "raidFrames" or "partyFrames" },
+            label = option.text,
+        }
+    end
+    return contexts
+end

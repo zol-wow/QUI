@@ -102,6 +102,10 @@ function ProviderFeatures:Register(spec)
             if provider and provider.getNavigationSections then return provider.getNavigationSections() end
         end,
         onNavigate = spec.onNavigate,
+        searchNavigate = spec.searchNavigate,
+        getSearchContexts = spec.getSearchContexts,
+        getNavigationContext = spec.getNavigationContext,
+        model = spec.model,
         layoutPositionOnly = spec.layoutPositionOnly,
         searchContext = spec.searchContext,
         preview = spec.preview,

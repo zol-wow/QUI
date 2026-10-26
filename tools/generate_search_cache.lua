@@ -27,6 +27,8 @@ enUS.lua + cache + overlay-TOC pass.
     os.exit(1)
 end
 _G.unpack = _G.unpack or table.unpack
+_G.tinsert = table.insert
+_G.UISpecialFrames = {}
 local unpack = _G.unpack
 
 local function normalize_path(path)
@@ -1360,7 +1362,7 @@ local function build_capture_route_labels(info)
     return tab_label, subtab_label, section_label
 end
 
-local function build_capture_navigation_label(nav_type, info)
+local function build_capture_navigation_label(nav_type, info, context_label)
     local tab_label, subtab_label, section_label = build_capture_route_labels(info)
     if nav_type == "tab" then
         return tab_label or section_label
@@ -1381,6 +1383,9 @@ local function build_capture_navigation_label(nav_type, info)
     if subtab_label and subtab_label ~= "" then
         parts[#parts + 1] = subtab_label
     end
+    if context_label and context_label ~= "" then
+        parts[#parts + 1] = context_label
+    end
     if section_label and section_label ~= "" then
         parts[#parts + 1] = section_label
     end
@@ -1388,7 +1393,7 @@ local function build_capture_navigation_label(nav_type, info)
     return #parts > 0 and table.concat(parts, " > ") or nil
 end
 
-local function build_capture_navigation_keywords(info)
+local function build_capture_navigation_keywords(info, context_label)
     local tab_label, subtab_label, section_label = build_capture_route_labels(info)
     local keywords = {}
     if tab_label and tab_label ~= "" then
@@ -1396,6 +1401,9 @@ local function build_capture_navigation_keywords(info)
     end
     if subtab_label and subtab_label ~= "" then
         keywords[#keywords + 1] = subtab_label
+    end
+    if context_label and context_label ~= "" then
+        keywords[#keywords + 1] = context_label
     end
     if section_label and section_label ~= "" then
         keywords[#keywords + 1] = section_label
@@ -1438,30 +1446,11 @@ local function emit_tile_search_aliases(tile_config)
     end
 end
 
-local seen_capture_setting_identities = {}
 local capturing_navigation_only
-
-local row_identity = assert(loadfile("tools/lib/search_row_identity.lua"),
-    "tools/lib/search_row_identity.lua not found (run from the repository root)")()
+local capturing_context_label
 
 local function resolve_surface_type_key(widget_descriptor, context)
-    return row_identity.ResolveSurfaceTypeKey(widget_descriptor, context.surfaceTypeKey)
-end
-
-local function build_capture_setting_identity(label, widget_descriptor, context)
-    return row_identity.Build(label, widget_descriptor, context)
-end
-
--- Returns true (and records the identity) the first time a given identity is
--- claimed; returns false without recording anything on every later call for
--- the same identity, so the caller should skip emitting that row.
-local function claim_capture_setting_identity(label, widget_descriptor, context)
-    local identity = build_capture_setting_identity(label, widget_descriptor, context)
-    if seen_capture_setting_identities[identity] then
-        return false
-    end
-    seen_capture_setting_identities[identity] = true
-    return true
+    return type(widget_descriptor) == "table" and widget_descriptor.dbPath and context.surfaceTypeKey or nil
 end
 
 local function register_capture_setting_entry(entry)
@@ -1471,12 +1460,12 @@ local function register_capture_setting_entry(entry)
         return nil
     end
 
-    if not claim_capture_setting_identity(entry.label, entry.widgetDescriptor, context) then
-        return nil
-    end
-
+    local surfaceTypeKey = resolve_surface_type_key(entry.widgetDescriptor, context)
+    local contextLabel = capturing_context_label
+    if context.surfaceTypeKey and not surfaceTypeKey then contextLabel = nil end
     return GUI:RegisterStaticSettingEntry({
         label = entry.label,
+        contextLabel = contextLabel,
         widgetType = entry.widgetType,
         tabIndex = context.tabIndex,
         tabName = context.tabName,
@@ -1490,7 +1479,7 @@ local function register_capture_setting_entry(entry)
         category = context.category,
         surfaceTabKey = context.surfaceTabKey,
         surfaceUnitKey = context.surfaceUnitKey,
-        surfaceTypeKey = resolve_surface_type_key(entry.widgetDescriptor, context),
+        surfaceTypeKey = surfaceTypeKey,
         widgetDescriptor = entry.widgetDescriptor,
         keywords = entry.keywords,
         description = entry.description,
@@ -1536,29 +1525,24 @@ local function copy_capture_entry(entry)
 end
 
 local function register_widget_row_capture(widget, label)
-    if type(widget) ~= "table"
-        or type(label) ~= "string"
-        or label == ""
-        or type(widget._quiSearchCaptureEntry) ~= "table" then
-        return nil
+    if type(widget) ~= "table" or type(label) ~= "string" or label == "" then return end
+    if rawget(widget, "_quiSearchCaptureExcluded") then return end
+    local entry = rawget(widget, "_quiSearchCaptureEntry")
+    if type(entry) ~= "table" then
+        -- Composite rows own real form controls plus action buttons. Inherit the
+        -- row label for the controls; action buttons keep their own captions.
+        for _, child in ipairs({ widget:GetChildren() }) do register_widget_row_capture(child, label) end
+        return
     end
-
-    if widget._quiSearchCaptureRegisteredLabel == label then
-        return nil
-    end
-
-    local entry = copy_capture_entry(widget._quiSearchCaptureEntry)
-    if not entry then
-        return nil
-    end
-
+    if entry.widgetType == "action_button" or widget._quiSearchCaptureRegisteredLabel == label then return end
+    entry = copy_capture_entry(entry)
     entry.label = label
     widget._widgetLabel = label
     widget._quiSearchCaptureRegisteredLabel = label
     return register_capture_setting_entry(entry)
 end
 
-local function create_captured_search_widget(kind, label, dbKey, dbTable, extra, registryInfo)
+local function create_captured_search_widget(kind, parent, label, dbKey, dbTable, extra, registryInfo)
     local entry = {
         label = label,
         widgetType = kind,
@@ -1568,63 +1552,15 @@ local function create_captured_search_widget(kind, label, dbKey, dbTable, extra,
         relatedTo = registryInfo and registryInfo.relatedTo or nil,
     }
 
-    register_capture_setting_entry(entry)
+    local excluded = type(registryInfo) == "table" and registryInfo.searchable == false
+    if not excluded then register_capture_setting_entry(entry) end
 
     local stub = create_captured_widget_stub(kind)
-    stub._quiSearchCaptureEntry = entry
+    stub:SetParent(parent)
+    stub._quiSearchCaptureEntry = not excluded and entry or nil
+    stub._quiSearchCaptureExcluded = excluded
     stub._widgetLabel = label
     return stub
-end
-
-local function register_manual_static_setting(context, label, widget_type, db_path, db_key, extra)
-    if type(context) ~= "table" or type(label) ~= "string" or label == "" then
-        return nil
-    end
-
-    local descriptor = nil
-    if widget_type and db_path and db_key ~= nil then
-        descriptor = {
-            kind = widget_type,
-            dbPath = db_path,
-            dbKey = db_key,
-            providerKey = context.providerKey,
-        }
-        if type(extra) == "table" then
-            for key, value in pairs(extra) do
-                descriptor[key] = value
-            end
-        end
-    end
-
-    -- Same dedupe as register_capture_setting_entry above -- see the comment
-    -- block there. This is the manual/declarative emit path
-    -- (capture_action_bar_per_bar_setting, Totem Bar Grow Direction,
-    -- capture_minimap_setting, capture_datatext_setting), and it shares the
-    -- identity builder and seen-set rather than duplicating the check.
-    if not claim_capture_setting_identity(label, descriptor, context) then
-        return nil
-    end
-
-    return GUI:RegisterStaticSettingEntry({
-        label = label,
-        widgetType = widget_type,
-        tabIndex = context.tabIndex,
-        tabName = context.tabName,
-        subTabIndex = context.subTabIndex,
-        subTabName = context.subTabName,
-        sectionName = context.sectionName,
-        tileId = context.tileId,
-        subPageIndex = context.subPageIndex,
-        featureId = context.featureId,
-        providerKey = context.providerKey,
-        category = context.category,
-        surfaceTabKey = context.surfaceTabKey,
-        surfaceUnitKey = context.surfaceUnitKey,
-        surfaceTypeKey = resolve_surface_type_key(descriptor, context),
-        widgetDescriptor = descriptor,
-        keywords = extra and extra.keywords or context.keywords,
-        description = extra and extra.description or nil,
-    })
 end
 
 local function install_search_capture_overrides()
@@ -1648,7 +1584,7 @@ local function install_search_capture_overrides()
         if isModuleToggle and type(info.label) == "string" and info.label ~= "" then
             label = info.label
         else
-            label = build_capture_navigation_label(navType, info)
+            label = build_capture_navigation_label(navType, info, capturing_context_label)
         end
         if type(label) ~= "string" or label == "" then
             return nil
@@ -1664,12 +1600,13 @@ local function install_search_capture_overrides()
             end
         end
         if not keywords or #keywords == 0 then
-            keywords = build_capture_navigation_keywords(info)
+            keywords = build_capture_navigation_keywords(info, capturing_context_label)
         end
 
         return self:RegisterStaticNavigationEntry({
             navType = navType,
             label = label,
+            contextLabel = capturing_context_label,
             tabIndex = info.tabIndex,
             tabName = info.tabName,
             subTabIndex = info.subTabIndex,
@@ -1678,7 +1615,7 @@ local function install_search_capture_overrides()
             tileId = info.tileId,
             subPageIndex = info.subPageIndex,
             featureId = info.featureId,
-            providerKey = info.providerKey,
+            providerKey = info.providerKey or (capturing_context_label and self._searchContext.providerKey),
             category = info.category,
             surfaceTabKey = info.surfaceTabKey,
             surfaceUnitKey = info.surfaceUnitKey,
@@ -1693,24 +1630,24 @@ local function install_search_capture_overrides()
 
     GUI.CreateFormToggle = function(self, parent, label, dbKey, dbTable, onChange, registryInfo)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("toggle", label, dbKey, dbTable, nil, registryInfo)
+        return create_captured_search_widget("toggle", parent, label, dbKey, dbTable, nil, registryInfo)
     end
 
     GUI.CreateFormToggleInverted = function(self, parent, label, dbKey, dbTable, onChange, registryInfo)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("toggle_inverted", label, dbKey, dbTable, nil, registryInfo)
+        return create_captured_search_widget("toggle_inverted", parent, label, dbKey, dbTable, nil, registryInfo)
     end
 
     GUI.CreateFormEditBox = function(self, parent, label, dbKey, dbTable, onChange, options, registryInfo)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("editbox", label, dbKey, dbTable, {
+        return create_captured_search_widget("editbox", parent, label, dbKey, dbTable, {
             options = options or {},
         }, registryInfo)
     end
 
     GUI.CreateFormSlider = function(self, parent, label, min, max, step, dbKey, dbTable, onChange, options, registryInfo)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("slider", label, dbKey, dbTable, {
+        return create_captured_search_widget("slider", parent, label, dbKey, dbTable, {
             min = min,
             max = max,
             step = step,
@@ -1720,7 +1657,7 @@ local function install_search_capture_overrides()
 
     GUI.CreateFormDropdown = function(self, parent, label, options, dbKey, dbTable, onChange, registryInfo, opts)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("dropdown", label, dbKey, dbTable, {
+        return create_captured_search_widget("dropdown", parent, label, dbKey, dbTable, {
             options = options,
             dropdownOptions = opts or {},
         }, registryInfo)
@@ -1728,72 +1665,72 @@ local function install_search_capture_overrides()
 
     GUI.CreateFormColorPicker = function(self, parent, label, dbKey, dbTable, onChange, options, registryInfo)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("colorpicker", label, dbKey, dbTable, {
+        return create_captured_search_widget("colorpicker", parent, label, dbKey, dbTable, {
             options = options or {},
         }, registryInfo)
     end
 
     GUI.CreateFormCheckbox = function(self, parent, label, dbKey, dbTable, _onChange, registryInfo)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("checkbox", label, dbKey, dbTable, nil, registryInfo)
+        return create_captured_search_widget("checkbox", parent, label, dbKey, dbTable, nil, registryInfo)
     end
 
     GUI.CreateFormCheckboxInverted = function(self, parent, label, dbKey, dbTable, _onChange, registryInfo)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("checkbox_inverted", label, dbKey, dbTable, nil, registryInfo)
+        return create_captured_search_widget("checkbox_inverted", parent, label, dbKey, dbTable, nil, registryInfo)
     end
 
     GUI.CreateCheckbox = function(self, parent, label, dbKey, dbTable, _onChange, description)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("checkbox", label, dbKey, dbTable, nil, { description = description })
+        return create_captured_search_widget("checkbox", parent, label, dbKey, dbTable, nil, { description = description })
     end
 
     GUI.CreateCheckboxCentered = function(self, parent, label, dbKey, dbTable, _onChange, description)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("checkbox", label, dbKey, dbTable, nil, { description = description })
+        return create_captured_search_widget("checkbox", parent, label, dbKey, dbTable, nil, { description = description })
     end
 
     GUI.CreateCheckboxInverted = function(self, parent, label, dbKey, dbTable, _onChange, description)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("checkbox_inverted", label, dbKey, dbTable, nil, { description = description })
+        return create_captured_search_widget("checkbox_inverted", parent, label, dbKey, dbTable, nil, { description = description })
     end
 
     GUI.CreateAccentCheckbox = function(self, parent, options)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
         local opts = type(options) == "table" and options or {}
-        return create_captured_search_widget("checkbox", opts.label, opts.dbKey, opts.dbTable, nil, { description = opts.description })
+        return create_captured_search_widget("checkbox", parent, opts.label, opts.dbKey, opts.dbTable, nil, { description = opts.description })
     end
 
     GUI.CreateSlider = function(self, parent, label, min, max, step, dbKey, dbTable, _onChange, options)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
         local opts = type(options) == "table" and options or {}
-        return create_captured_search_widget("slider", label, dbKey, dbTable, {
+        return create_captured_search_widget("slider", parent, label, dbKey, dbTable, {
             min = min, max = max, step = step, options = opts,
         }, { description = opts.description })
     end
 
     GUI.CreateDropdown = function(self, parent, label, options, dbKey, dbTable, _onChange, description)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("dropdown", label, dbKey, dbTable, {
+        return create_captured_search_widget("dropdown", parent, label, dbKey, dbTable, {
             options = options,
         }, { description = description })
     end
 
     GUI.CreateDropdownFullWidth = function(self, parent, label, options, dbKey, dbTable, _onChange, description)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("dropdown", label, dbKey, dbTable, {
+        return create_captured_search_widget("dropdown", parent, label, dbKey, dbTable, {
             options = options,
         }, { description = description })
     end
 
     GUI.CreateColorPicker = function(self, parent, label, dbKey, dbTable, _onChange, description)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("colorpicker", label, dbKey, dbTable, nil, { description = description })
+        return create_captured_search_widget("colorpicker", parent, label, dbKey, dbTable, nil, { description = description })
     end
 
     GUI.CreateColorPickerCentered = function(self, parent, label, dbKey, dbTable, _onChange, description)
         if parent and parent._hasContent ~= nil then parent._hasContent = true end
-        return create_captured_search_widget("colorpicker", label, dbKey, dbTable, nil, { description = description })
+        return create_captured_search_widget("colorpicker", parent, label, dbKey, dbTable, nil, { description = description })
     end
 
     GUI.CreateButton = function(self, parent, text, _width, _height, _onClick, variant)
@@ -1816,25 +1753,10 @@ local function install_search_capture_overrides()
     local options_api = ns.QUI_Options
     if options_api and type(options_api.BuildSettingRow) == "function" then
         local original_build_setting_row = options_api.BuildSettingRow
-        options_api.BuildSettingRow = function(parent, labelText, widget, desc)
+        options_api.BuildSettingRow = function(parent, labelText, widget, desc, opts)
             register_widget_row_capture(widget, labelText)
-            return original_build_setting_row(parent, labelText, widget, desc)
+            return original_build_setting_row(parent, labelText, widget, desc, opts)
         end
-    end
-
-    local original_reorder_build = ns.QUI_ReorderList.Build
-    ns.QUI_ReorderList.Build = function(parent, y, spec)
-        local list, height = original_reorder_build(parent, y, spec)
-        if spec.GUI and spec.getToggleBinding then
-            for index, item in ipairs(spec.items or {}) do
-                local db, key, description = spec.getToggleBinding(item, index)
-                if db and key then
-                    local label = spec.getLabel(item, index)
-                    create_captured_search_widget("toggle", label, key, db, nil, { description = description })
-                end
-            end
-        end
-        return list, height
     end
 
     if options_api and type(options_api.RegisterFeatureTile) == "function" then
@@ -1895,12 +1817,19 @@ local function build_search_capture_queue()
         return queue
     end
 
+    local hosted = {}
+    for destination in registry:IterateDestinations() do
+        local feature = registry:GetFeature(destination.featureId)
+        if feature then
+            queue[#queue + 1] = { featureId = feature.id, feature = feature, destination = destination }
+            hosted[feature.id] = true
+        end
+    end
+    -- Keep standalone provider/layout features searchable through their default
+    -- route. Registered tile homes always take precedence over that fallback.
     for featureId, feature in registry:IterateFeatures() do
-        if type(feature) == "table" then
-            queue[#queue + 1] = {
-                featureId = featureId,
-                feature = feature,
-            }
+        if type(feature) == "table" and not hosted[featureId] and not feature.noSearch then
+            queue[#queue + 1] = { featureId = featureId, feature = feature }
         end
     end
 
@@ -1923,7 +1852,7 @@ local function collect_feature_keywords()
     end
 end
 
-local function build_feature_search_context(feature)
+local function build_feature_search_context(feature, destinationContext)
     if type(feature) ~= "table" then
         return {}
     end
@@ -1949,6 +1878,8 @@ local function build_feature_search_context(feature)
     context.featureId = feature.id
     context.providerKey = feature.providerKey
     context.category = feature.category
+
+    for key, value in pairs(destinationContext or {}) do context[key] = value end
 
     return context
 end
@@ -2028,7 +1959,13 @@ local function CaptureNavigationSection(text)
 end
 local original_accent_label = ns.QUI_Options.CreateAccentDotLabel
 ns.QUI_Options.CreateAccentDotLabel = function(parent, text, offset, skip)
-    if not skip then CaptureNavigationSection(text) end
+    if not skip then
+        local featureId = GUI._searchContext and GUI._searchContext.featureId
+        if featureId == "minimap" or featureId == "datatextPanel" then
+            GUI:SetSearchSection(text)
+        end
+        CaptureNavigationSection(text)
+    end
     return original_accent_label(parent, text, offset, skip)
 end
 local original_surface_pages = GUI.RegisterTileSurfacePages
@@ -2050,7 +1987,7 @@ GUI.RegisterTileSurfacePages = function(self, body, descriptor)
     return original_surface_pages(self, body, descriptor)
 end
 
-local function capture_search_feature(feature)
+local function capture_search_feature(feature, providerKey, contextLabel, destination, bindingContext)
     if type(feature) ~= "table" then
         return false
     end
@@ -2063,17 +2000,21 @@ local function capture_search_feature(feature)
 
     local original_after = C_Timer and C_Timer.After or nil
     local original_new_timer = C_Timer and C_Timer.NewTimer or nil
-    local layout = ns.QUI_LayoutMode_Utils
-    local original_collapsible = layout.CreateCollapsible
-    local context = build_feature_search_context(feature)
+    local context = build_feature_search_context(feature, destination and destination.searchContext)
+    for key, value in pairs(bindingContext or {}) do context[key] = value end
+    context.providerKey = providerKey or context.providerKey
+    -- Dedicated bar pages retain their registered provider identity for module
+    -- toggle routing and refresh. Extra & Zone hosts two providers together.
+    if not context.providerKey and feature.id:match("^actionBars")
+        and feature.lookupKeys and #feature.lookupKeys == 1 then
+        context.providerKey = feature.lookupKeys[1]
+    end
+    local renderContext = {}
+    for key, value in pairs(context) do renderContext[key] = value end
+    if feature.model then renderContext.subTabName = nil end
     local host = create_stub_node("Frame", nil, false)
     host:SetSize(760, 1)
     host.RegisterSection = function(_, _, label) CaptureNavigationSection(label) end
-    if feature.id:match("^actionBars") then
-        layout.CreateCollapsible = function(parent, title, height, _, sections, relayout)
-            return original_collapsible(parent, title, height, function() end, sections, relayout)
-        end
-    end
 
     if C_Timer then
         C_Timer.After = function()
@@ -2086,31 +2027,33 @@ local function capture_search_feature(feature)
 
     GUI:ClearSearchContext()
     capturing_navigation_feature = feature.id
+    capturing_context_label = contextLabel
     local ok, err = xpcall(function()
         GUI:SetSearchContext(context)
         if context.sectionName then
             GUI:SetSearchSection(context.sectionName)
         end
-        renderer:RenderFeature(feature, host, {
-            surface = "tile",
-            width = 760,
-            tileLayout = true,
-            includePosition = true,
-            providerKey = feature.providerKey,
-        })
+        local options = {
+            surface = "tile", width = 760, tileLayout = true,
+            includePosition = true, providerKey = context.providerKey,
+        }
+        for key, value in pairs(destination and destination.renderOptions or {}) do options[key] = value end
+        settings.SearchRoute.With(renderContext, function()
+            renderer:RenderFeature(feature, host, options)
+        end)
         local descriptor = capturing_navigation_descriptor
         if descriptor and type(descriptor.selectTab) == "function" then
             for _, tab in ipairs(descriptor.getTabs() or {}) do
                 GUI:SetSearchContext(context)
-                descriptor.selectTab(tab.key)
+                settings.SearchRoute.With(renderContext, function() descriptor.selectTab(tab.key) end)
             end
         end
         GUI:ClearSearchContext()
     end, debug.traceback)
     capturing_navigation_feature = nil
     capturing_navigation_descriptor = nil
+    capturing_context_label = nil
     GUI:ClearSearchContext()
-    layout.CreateCollapsible = original_collapsible
 
     if C_Timer then
         C_Timer.After = original_after
@@ -2129,6 +2072,8 @@ local function capture_search_feature(feature)
     return true
 end
 
+local capture_model_search_tabs
+
 local function capture_all_search_features()
     local settings = ns.Settings
     local renderer = settings and settings.Renderer
@@ -2138,74 +2083,81 @@ local function capture_all_search_features()
         return false
     end
 
-    GUI:ResetStaticSearchIndex()
-    seen_capture_setting_identities = {}
-
     for _, step in ipairs(build_search_capture_queue()) do
         if step and step.feature then
-            capture_search_feature(step.feature)
+            local feature = step.feature
+            if type(feature.model) == "function" or type(feature.model) == "table" then
+                capture_model_search_tabs(feature, step.destination and step.destination.searchContext)
+                capture_search_feature(feature, nil, nil, step.destination)
+            elseif type(feature.getSearchContexts) == "function" then
+                local previous = feature.getNavigationContext and feature.getNavigationContext()
+                for _, variant in ipairs(feature.getSearchContexts()) do
+                    capturing_navigation_only = true
+                    assert(feature.searchNavigate(variant.searchContext), "unsupported feature context: " .. feature.id)
+                    capturing_navigation_only = nil
+                    capture_search_feature(feature, variant.searchContext.providerKey, variant.label, step.destination, variant.searchContext)
+                end
+                if previous then
+                    capturing_navigation_only = true
+                    feature.searchNavigate(previous)
+                    capturing_navigation_only = nil
+                end
+            else
+                capture_search_feature(feature, nil, nil, step.destination)
+            end
         end
     end
 
     return #capture_errors == 0
 end
 
-local CDM_SEARCH_CAPTURE_CONTAINERS = {
-    "essential",
-    "utility",
-    "buff",
-    "trackedBar",
-}
+local function capture_model_search_tab(feature, destinationContext, variant)
+    local settings = ns.Settings
+    local context = build_feature_search_context(feature, variant.searchContext)
+    -- The outer host owns the route, including dual-home/stack destinations.
+    for key, value in pairs(destinationContext or {}) do context[key] = value end
+    context.subTabName = variant.tab.label
+    local host = create_stub_node("Frame", nil, false)
+    host:SetSize(760, 1)
+    host.RegisterSection = function(_, _, label) CaptureNavigationSection(label) end
 
-local CDM_SEARCH_CAPTURE_TABS = {
-    { key = "layout", label = "Appearance", method = "RenderLayoutTab" },
-    { key = "effects", label = "Effects", method = "RenderEffectsTab" },
-    { key = "keybinds", label = "Keybinds", method = "RenderKeybindsTab" },
-}
-
-local function capture_cdm_settings_tabs()
-    local schema = ns.QUI_CooldownManagerSettingsSchema
-    if type(schema) ~= "table" then
-        return true
+    GUI:ClearSearchContext()
+    capturing_navigation_feature = feature.id
+    capturing_context_label = variant.label
+    GUI:SetSearchContext(context)
+    local record = NavigationRecord()
+    local found
+    for _, tab in ipairs(record.tabs) do
+        if tab.key == variant.tab.key then found = true; break end
     end
-
-    for _, container_key in ipairs(CDM_SEARCH_CAPTURE_CONTAINERS) do
-        for _, tab in ipairs(CDM_SEARCH_CAPTURE_TABS) do
-            local render = schema[tab.method]
-            if type(render) == "function" then
-                local host = create_stub_node("Frame", nil, false)
-                host:SetSize(760, 1)
-
-                GUI:ClearSearchContext()
-                local ok, err = xpcall(function()
-                    GUI:SetSearchContext({
-                        tabIndex = 4,
-                        tabName = "Cooldown Manager",
-                        subTabIndex = 0,
-                        subTabName = tab.label,
-                        tileId = "cooldown_manager",
-                        subPageIndex = 1,
-                        featureId = "cooldownManagerContainersPage",
-                        providerKey = container_key,
-                        category = "cooldowns",
-                        surfaceTabKey = tab.key,
-                    })
-                    render(host, container_key)
-                    GUI:ClearSearchContext()
-                end, debug.traceback)
-                GUI:ClearSearchContext()
-
-                if not ok then
-                    capture_errors[#capture_errors + 1] = {
-                        featureId = "cooldownManagerContainersPage",
-                        providerKey = container_key .. ":" .. tab.key,
-                        error = err,
-                    }
-                end
-            end
-        end
+    if not found then
+        record.tabs[#record.tabs + 1] = { key = variant.tab.key, label = variant.tab.label, sections = {} }
     end
+    local ok, err = xpcall(function()
+        settings.SearchRoute.With(context, function()
+            variant.tab.render(host, variant.state)
+        end)
+    end, debug.traceback)
+    capturing_navigation_feature = nil
+    capturing_navigation_descriptor = nil
+    capturing_context_label = nil
+    GUI:ClearSearchContext()
+    if not ok then
+        capture_errors[#capture_errors + 1] = {
+            featureId = feature.id,
+            providerKey = table.concat({ context.providerKey or context.surfaceUnitKey
+                or context.surfaceTypeKey or "", variant.tab.key }, ":"),
+            error = err,
+        }
+    end
+    return ok
+end
 
+capture_model_search_tabs = function(feature, destinationContext)
+    local model = type(feature.model) == "function" and feature.model() or feature.model
+    for _, variant in ipairs(ns.Settings.ModelKit.EnumerateSearchTabs(model)) do
+        capture_model_search_tab(feature, destinationContext, variant)
+    end
     return #capture_errors == 0
 end
 
@@ -2213,106 +2165,33 @@ local function capture_custom_cdm_navigation()
     local containers = profile_db.ncdm.containers
     local key = "__navigation_sample"
     local previous = rawget(containers, key)
-    local tabs = {
-        { key = "layout", method = "RenderLayoutTab" },
-        { key = "filters", method = "RenderFiltersTab" },
-        { key = "perspec", method = "RenderPerSpecTab" },
-        { key = "effects", method = "RenderEffectsTab" },
-        { key = "keybinds", method = "RenderKeybindsTab" },
-    }
+    local registry = ns.Settings.Registry
+    local feature = registry:GetFeature("cooldownManagerContainersPage")
+    local model = feature.model()
+    local destinationContext
+    for destination in registry:IterateDestinations() do
+        if destination.featureId == feature.id then
+            destinationContext = destination.searchContext
+            break
+        end
+    end
     capturing_navigation_only = true
+    -- These are conditional editor fixtures, not a duplicate destination list.
     for _, kind in ipairs({ "cooldown", "customBar", "aura", "auraBar" }) do
         for _, shape in ipairs({ "icon", "bar" }) do
             local base = kind == "aura" and "buff" or (kind == "auraBar" and "trackedBar" or "essential")
             local db = ns.Helpers.DeepCopy(ns.defaults.profile.ncdm[base])
             db.containerType, db.shape, db.builtIn = kind, shape, false
             containers[key] = db
-            for _, tab in ipairs(tabs) do
-                local host = create_stub_node("Frame", nil, false)
-                host:SetSize(760, 1)
-                GUI:SetSearchContext({
-                    featureId = "cooldownManagerContainersPage", providerKey = key,
-                    surfaceTabKey = tab.key,
-                })
-                local ok, err = xpcall(function()
-                    ns.QUI_CooldownManagerSettingsSchema[tab.method](host, key)
-                end, debug.traceback)
-                if not ok then
-                    capture_errors[#capture_errors + 1] = {
-                        featureId = "cooldownManagerContainersPage", providerKey = kind .. ":" .. shape .. ":" .. tab.key,
-                        error = err,
-                    }
+            for _, variant in ipairs(ns.Settings.ModelKit.EnumerateSearchTabs(model)) do
+                if variant.state.activeContainer == key then
+                    capture_model_search_tab(feature, destinationContext, variant)
                 end
-                GUI:ClearSearchContext()
             end
         end
     end
     containers[key] = previous
     capturing_navigation_only = nil
-end
-
-local GROUP_FRAMES_SEARCH_CAPTURE_CONTEXTS = {
-    { key = "party", providerKey = "partyFrames" },
-    { key = "raid", providerKey = "raidFrames" },
-}
-
--- Tab strip order after the beta restructure. Spotlight folded into Layout
--- (rendered only in the raid context, where RenderLayoutTab appends it) and
--- Dispel Overlay folded into Appearance, so neither needs a standalone capture
--- entry -- their widgets are harvested through the host tab's render method.
-local GROUP_FRAMES_SEARCH_CAPTURE_TABS = {
-    { key = "general", label = "General", method = "RenderGeneralTab", subTabIndex = 1 },
-    { key = "appearance", label = "Appearance", method = "RenderAppearanceTab", subTabIndex = 2 },
-    { key = "layout", label = "Layout", method = "RenderLayoutTab", subTabIndex = 3 },
-    { key = "health", label = "Health", method = "RenderHealthTab", subTabIndex = 4 },
-    { key = "indicators", label = "Indicators", method = "RenderIndicatorsTab", subTabIndex = 5 },
-    { key = "auras", label = "Auras", method = "RenderAurasTab", subTabIndex = 6 },
-}
-
-local function capture_group_frames_settings_tabs()
-    local schema = ns.QUI_GroupFramesSettingsSchema
-    if type(schema) ~= "table" then
-        return true
-    end
-
-    for _, group_context in ipairs(GROUP_FRAMES_SEARCH_CAPTURE_CONTEXTS) do
-        for _, tab in ipairs(GROUP_FRAMES_SEARCH_CAPTURE_TABS) do
-            local render = schema[tab.method]
-            if type(render) == "function" and not (tab.raidOnly and group_context.key ~= "raid") then
-                local host = create_stub_node("Frame", nil, false)
-                host:SetSize(760, 1)
-
-                GUI:ClearSearchContext()
-                local ok, err = xpcall(function()
-                    GUI:SetSearchContext({
-                        tabIndex = 6,
-                        tabName = "Group Frames",
-                        subTabIndex = tab.subTabIndex,
-                        subTabName = tab.label,
-                        tileId = "group_frames",
-                        subPageIndex = 1,
-                        featureId = "groupFramesPage",
-                        providerKey = group_context.providerKey,
-                        category = "frames",
-                        surfaceTabKey = tab.key,
-                    })
-                    render(host, group_context.key)
-                    GUI:ClearSearchContext()
-                end, debug.traceback)
-                GUI:ClearSearchContext()
-
-                if not ok then
-                    capture_errors[#capture_errors + 1] = {
-                        featureId = "groupFramesPage",
-                        providerKey = group_context.providerKey .. ":" .. tab.key,
-                        error = err,
-                    }
-                end
-            end
-        end
-    end
-
-    return #capture_errors == 0
 end
 
 -- The per-element aura config controls (Aura Type, Filter Mode, classifications,
@@ -2324,360 +2203,113 @@ end
 -- variant, each time with a single-element bucket and forceSelectedIndex = 1 so
 -- the element renders expanded. The variant matrix covers every conditional
 -- branch (each filterMode, each tracked displayType, multi-spell per-spell rows).
-local function capture_group_frames_auras_elements()
-    local AurasEditor = ns.QUI_AuraElementsEditor
-    local Model = ns.QUI_GroupFramesAuraModel
-    if type(AurasEditor) ~= "table"
-        or type(AurasEditor.RenderAuras) ~= "function"
-        or type(Model) ~= "table"
-        or type(Model.NewFilterStripElement) ~= "function"
-        or type(Model.NewTrackedElement) ~= "function" then
-        return true
-    end
-
-    -- Builders return a single element configured to exercise one branch. Two
-    -- example spell IDs on tracked icon strips so the per-spell Only Mine rows
-    -- render (they only appear when a strip tracks more than one spell). Missing
-    -- raid buff renders twice so both auto-detect and manual buff rows enter the
-    -- generated search cache.
-    local function strip(filterMode, auraType)
-        local element = Model.NewFilterStripElement(auraType or "HARMFUL")
-        element.filterMode = filterMode
-        element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
-            anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
-        element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
-        return element
-    end
-    local function tracked(displayType)
-        local element = Model.NewTrackedElement({ 12345, 67890 }, displayType)
-        return element
-    end
-    local function missing_raid_buff(class_detection)
-        if type(Model.NewMissingRaidBuffElement) ~= "function" then
-            return nil
-        end
-        local element = Model.NewMissingRaidBuffElement()
-        element.classDetection = class_detection ~= false
-        return element
-    end
-
-    -- One entry per expanded-element render. label is diagnostic only.
-    local variants = {
-        { label = "filterStrip:off", element = strip("off") },
-        { label = "filterStrip:flags", element = strip("flags") },
-        { label = "filterStrip:classify", element = strip("classify") },
-        -- HELPFUL variants: the classify checkboxes + flag tokens differ by
-        -- polarity (Cancelable / Not Cancelable / Big Defensive / External
-        -- Defensive are HELPFUL-only) — without these renders those labels
-        -- vanish from the search cache (they were searchable at HEAD via the
-        -- old flat filter rows).
-        { label = "filterStrip:classify:HELPFUL", element = strip("classify", "HELPFUL") },
-        { label = "filterStrip:flags:HELPFUL", element = strip("flags", "HELPFUL") },
-        { label = "filterStrip:whitelist", element = strip("whitelist") },
-        { label = "tracked:icon", element = tracked("icon") },
-        { label = "tracked:bar", element = tracked("bar") },
-        { label = "tracked:square", element = tracked("square") },
-        { label = "tracked:healthTint", element = tracked("healthTint") },
-        { label = "missingRaidBuff:auto", element = missing_raid_buff(true) },
-        { label = "missingRaidBuff:manual", element = missing_raid_buff(false) },
-    }
-
-    for _, variant in ipairs(variants) do
-        if not variant.element then
-            -- Older branches may not have the missing-raid-buff element model.
-        else
-            local host = create_stub_node("Frame", nil, false)
-            host:SetSize(760, 1)
-
-            -- Fresh auras container holding exactly this one element in the "*" bucket.
-            local auras = { enabled = true, elements = { ["*"] = { variant.element } } }
-
-            GUI:ClearSearchContext()
-            local ok, err = xpcall(function()
-                GUI:SetSearchContext({
-                    tabIndex = 6,
-                    tabName = "Group Frames",
-                    subTabIndex = 12,
-                    subTabName = "Auras",
-                    tileId = "group_frames",
-                    subPageIndex = 1,
-                    featureId = "groupFramesPage",
-                    providerKey = "partyFrames",
-                    category = "frames",
-                    surfaceTabKey = "auras",
-                })
-                AurasEditor.RenderAuras(host, auras, "*", function() end, {
-                    forceSelectedIndex = 1,
-                })
-                GUI:ClearSearchContext()
-            end, debug.traceback)
-            GUI:ClearSearchContext()
-
-            if not ok then
-                capture_errors[#capture_errors + 1] = {
-                    featureId = "groupFramesPage",
-                    providerKey = "auras:" .. variant.label,
-                    error = err,
-                }
+-- Expanded-content fixtures describe inner editor state; their outer routes
+-- come from the same registrations as normal page capture.
+local function fixture_search_contexts(bindingsByFeature)
+    local contexts = {}
+    local registry = ns.Settings.Registry
+    for destination in registry:IterateDestinations() do
+        local binding = bindingsByFeature[destination.featureId]
+        if binding then
+            local feature = registry:GetFeature(destination.featureId)
+            local context = build_feature_search_context(feature, destination.searchContext)
+            for key, value in pairs(binding) do context[key] = value end
+            if feature.model and context.surfaceTabKey then
+                local model = type(feature.model) == "function" and feature.model() or feature.model
+                local tab = ns.Settings.ModelKit.GetTabDefinition(model, context.surfaceTabKey)
+                if tab then context.subTabName = tab.label end
             end
+            contexts[#contexts + 1] = context
         end
     end
-
-    return #capture_errors == 0
+    return contexts
 end
 
-local UNIT_FRAMES_SEARCH_CAPTURE_UNITS = {
-    { key = "player", label = "Player" },
-    { key = "target", label = "Target" },
-    { key = "targettarget", label = "Target of Target" },
-    { key = "pet", label = "Pet" },
-    { key = "focus", label = "Focus" },
-    { key = "boss", label = "Boss" },
-}
-
-local UNIT_FRAMES_SEARCH_CAPTURE_TABS = {
-    { key = "frame", label = "Frame", method = "RenderFrameTab" },
-    { key = "bars", label = "Bars", method = "RenderBarsTab" },
-    { key = "castbar", label = "Castbar", method = "RenderCastbarTab" },
-    { key = "text", label = "Text", method = "RenderTextTab" },
-    { key = "icons", label = "Auras", method = "RenderIconsTab" },
-    { key = "indicators", label = "Indicators", method = "RenderIndicatorsTab" },
-    { key = "portrait", label = "Portrait", method = "RenderPortraitTab" },
-}
-
-local function capture_unit_frames_settings_tabs()
-    local schema = ns.QUI_UnitFramesSettingsSchema
-    if type(schema) ~= "table" then
-        return true
+-- Observe capabilities and routes supplied by every mounted editor. New hosts
+-- automatically participate; host-specific copies of the editor matrix drift.
+local function aura_capability_identity(value)
+    if type(value) ~= "table" then return type(value) == "function" and "function" or tostring(value) end
+    local keys, parts = {}, {}
+    for key in pairs(value) do keys[#keys + 1] = key end
+    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+    for _, key in ipairs(keys) do parts[#parts + 1] = tostring(key) .. "=" .. aura_capability_identity(value[key]) end
+    return table.concat(parts, ";")
+end
+local aura_editor_hosts = {}
+local render_aura_editor = ns.QUI_AuraElementsEditor.RenderAuras
+ns.QUI_AuraElementsEditor.RenderAuras = function(host, db, specID, changed, options)
+    if not capturing_navigation_only then
+        local context = copy_capture_entry(GUI._searchContext or {})
+        local caps = options and options.capabilities
+        local parts = {}
+        for _, field in ipairs({"tileId", "subPageIndex", "featureId", "providerKey", "surfaceTabKey", "surfaceUnitKey", "surfaceTypeKey"}) do
+            parts[#parts + 1] = tostring(context[field] or "")
+        end
+        parts[#parts + 1] = aura_capability_identity(caps)
+        aura_editor_hosts[table.concat(parts, "|")] = {context = context, capabilities = caps}
     end
+    return render_aura_editor(host, db, specID, changed, options)
+end
 
-    for _, unit_context in ipairs(UNIT_FRAMES_SEARCH_CAPTURE_UNITS) do
-        for _, tab in ipairs(UNIT_FRAMES_SEARCH_CAPTURE_TABS) do
-            local render = schema[tab.method]
-            if type(render) == "function" then
-                local host = create_stub_node("Frame", nil, false)
-                host:SetSize(760, 1)
-
-                GUI:ClearSearchContext()
-                local ok, err = xpcall(function()
-                    GUI:SetSearchContext({
-                        tabIndex = 5,
-                        tabName = "Unit Frames",
-                        subTabIndex = 0,
-                        subTabName = tab.label,
-                        tileId = "unit_frames",
-                        subPageIndex = 1,
-                        featureId = "unitFramesPage",
-                        category = "frames",
-                        surfaceTabKey = tab.key,
-                        surfaceUnitKey = unit_context.key,
-                    })
-                    render(host, unit_context.key)
-                    GUI:ClearSearchContext()
-                end, debug.traceback)
-                GUI:ClearSearchContext()
-
-                if not ok then
-                    capture_errors[#capture_errors + 1] = {
-                        featureId = "unitFramesPage",
-                        providerKey = unit_context.key .. ":" .. tab.key,
-                        error = err,
-                    }
+local function capture_expanded_aura_editors()
+    local E = ns.AuraElements
+    local keys = {}
+    for key in pairs(aura_editor_hosts) do keys[#keys + 1] = key end
+    table.sort(keys)
+    for _, key in ipairs(keys) do
+        local sample = aura_editor_hosts[key]
+        local caps, variants = sample.capabilities, {}
+        if not caps or not caps.elementTypes or caps.elementTypes.filterStrip then
+            for _, auraType in ipairs({"HELPFUL", "HARMFUL"}) do
+                for _, mode in ipairs({"off", "flags", "classify", "whitelist"}) do
+                    local element = E.NewFilterStripElement(auraType)
+                    element.filterMode = mode
+                    element.casterName = {showRealmName = false, useClassColors = true, fontSize = 10,
+                        anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = {1, 1, 1, 1}}
+                    element.pandemicGlow = {style = "steady", color = {1, 0.85, 0.2, 1}}
+                    variants[#variants + 1] = element
                 end
             end
         end
-    end
-
-    return #capture_errors == 0
-end
-
-local NAMEPLATES_SEARCH_CAPTURE_TABS = {
-    { key = "general", label = "General", method = "RenderGeneralTab", subTabIndex = 1 },
-    { key = "visibility", label = "Visibility", method = "RenderVisibilityTab", subTabIndex = 2 },
-    { key = "frame", label = "Frame", method = "RenderFrameTab", subTabIndex = 3, perType = true },
-    { key = "text", label = "Text", method = "RenderTextTab", subTabIndex = 4, perType = true },
-    { key = "indicators", label = "Indicators", method = "RenderIndicatorsTab", subTabIndex = 5, perType = true },
-    { key = "auras", label = "Auras", method = "RenderAurasTab", subTabIndex = 6, perType = true },
-    { key = "castbars", label = "Castbar", method = "RenderCastbarsTab", subTabIndex = 7, perType = true },
-    { key = "colors", label = "Colors", method = "RenderColorsTab", subTabIndex = 8, perType = true },
-}
-
-local NAMEPLATES_SEARCH_CAPTURE_TYPES = {
-    { key = "petMinion" },
-    { key = "friendly" },
-    { key = "bossElite" },
-    { key = "minorTrivial" },
-    { key = "enemyPlayer" },
-    { key = "enemyNPC" },
-}
-
-local function capture_nameplates_settings_tab_variant(schema, tab, typeKey)
-    local render = schema[tab.method]
-    if type(render) ~= "function" then
-        return
-    end
-
-    local host = create_stub_node("Frame", nil, false)
-    host:SetSize(760, 1)
-
-    GUI:ClearSearchContext()
-    local ok, err = xpcall(function()
-        GUI:SetSearchContext({
-            tabIndex = 22,
-            tabName = "Nameplates",
-            subTabIndex = tab.subTabIndex,
-            subTabName = tab.label,
-            tileId = "nameplates",
-            subPageIndex = 1,
-            featureId = "nameplatesPage",
-            category = "frames",
-            surfaceTabKey = tab.key,
-            surfaceTypeKey = typeKey,
-        })
-        render(host, typeKey)
-        GUI:ClearSearchContext()
-    end, debug.traceback)
-    GUI:ClearSearchContext()
-
-    if not ok then
-        capture_errors[#capture_errors + 1] = {
-            featureId = "nameplatesPage",
-            providerKey = typeKey and (typeKey .. ":" .. tab.key) or tab.key,
-            error = err,
-        }
-    end
-end
-
-local function capture_nameplates_settings_tabs()
-    local schema = ns.QUI_NameplatesSettingsSchema
-    if type(schema) ~= "table" then
-        return true
-    end
-
-    for _, tab in ipairs(NAMEPLATES_SEARCH_CAPTURE_TABS) do
-        if tab.perType then
-            for _, type_context in ipairs(NAMEPLATES_SEARCH_CAPTURE_TYPES) do
-                capture_nameplates_settings_tab_variant(schema, tab, type_context.key)
+        if not caps or not caps.elementTypes or caps.elementTypes.tracked then
+            for _, shape in ipairs({"icon", "square", "bar", "healthTint"}) do
+                if not caps or not caps.trackedDisplayTypes or caps.trackedDisplayTypes[shape] then
+                    variants[#variants + 1] = E.NewTrackedElement({12345, 67890}, shape)
+                end
             end
-        else
-            capture_nameplates_settings_tab_variant(schema, tab, nil)
         end
-    end
-
-    return #capture_errors == 0
-end
-
--- Mirrors capture_group_frames_auras_elements(): the per-element aura config
--- controls only render for the EXPANDED element, so a collapsed-by-default
--- RenderAurasTab harvest never sees them. Nameplates mounts the same
--- AurasEditor.RenderAuras() (nameplates_schema.lua RenderAuraRowsSection) on
--- both its module page and the Auras hub page (auras_nameplate_page.lua), so
--- both contexts are captured here, each driven with the SAME restricted
--- capabilities nameplates_schema.lua actually passes at runtime (filterStrip
--- + tracked only, icon/square/bar display types, hostile polarity) so no
--- label gets indexed that a real Nameplates user could never reach.
-local NAMEPLATES_AURA_ELEMENT_SEARCH_CONTEXTS = {
-    {
-        tabIndex = 22, tabName = "Nameplates", subTabIndex = 2, subTabName = "Auras",
-        tileId = "nameplates", subPageIndex = 1, featureId = "nameplatesPage",
-        category = "frames", surfaceTabKey = "auras",
-    },
-    {
-        tabIndex = 21, tabName = "Auras", subTabIndex = 5, subTabName = "Nameplates",
-        tileId = "auras", subPageIndex = 5, featureId = "aurasNameplatePage",
-    },
-}
-
-local function capture_nameplates_auras_elements()
-    local AurasEditor = ns.QUI_AuraElementsEditor
-    local E = ns.AuraElements
-    if type(AurasEditor) ~= "table"
-        or type(AurasEditor.RenderAuras) ~= "function"
-        or type(E) ~= "table"
-        or type(E.NewFilterStripElement) ~= "function"
-        or type(E.NewTrackedElement) ~= "function" then
-        return true
-    end
-
-    local function buildVariants()
-        local function strip(filterMode, auraType)
-            local element = E.NewFilterStripElement(auraType or "HARMFUL")
-            element.filterMode = filterMode
-            element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
-                anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
-            element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
-            return element
+        if not caps or not caps.elementTypes or caps.elementTypes.missingRaidBuff then
+            for _, automatic in ipairs({true, false}) do
+                local element = E.NewMissingRaidBuffElement()
+                element.classDetection = automatic
+                variants[#variants + 1] = element
+            end
         end
-        local function tracked(displayType)
-            return E.NewTrackedElement({ 12345, 67890 }, displayType)
-        end
-        return {
-            { label = "filterStrip:off", element = strip("off") },
-            { label = "filterStrip:flags", element = strip("flags") },
-            { label = "filterStrip:classify", element = strip("classify") },
-            { label = "filterStrip:classify:HELPFUL", element = strip("classify", "HELPFUL") },
-            { label = "filterStrip:flags:HELPFUL", element = strip("flags", "HELPFUL") },
-            { label = "filterStrip:whitelist", element = strip("whitelist") },
-            { label = "tracked:icon", element = tracked("icon") },
-            { label = "tracked:bar", element = tracked("bar") },
-            { label = "tracked:square", element = tracked("square") },
-            { label = "tracked:healthTint", element = tracked("healthTint") },
-        }
-    end
-
-    local NAMEPLATES_AURA_ELEMENT_CAPS = {
-        elementTypes        = { filterStrip = true, tracked = true },
-        trackedDisplayTypes = { icon = true, square = true, bar = true, healthTint = true },
-        unitPolarity        = "hostile",
-        durationDecimals    = true,
-        roleGate            = false,
-        healthTintAnimation = false,
-        allowSpecOverride   = false,
-    }
-
-    for _, context in ipairs(NAMEPLATES_AURA_ELEMENT_SEARCH_CONTEXTS) do
-        for _, variant in ipairs(buildVariants()) do
+        for _, element in ipairs(variants) do
             local host = create_stub_node("Frame", nil, false)
             host:SetSize(760, 1)
-
-            local auras = { enabled = true, elements = { ["*"] = { variant.element } } }
-
             GUI:ClearSearchContext()
+            GUI:SetSearchContext(sample.context)
             local ok, err = xpcall(function()
-                GUI:SetSearchContext(context)
-                AurasEditor.RenderAuras(host, auras, "*", function() end, {
-                    forceSelectedIndex = 1,
-                    capabilities = NAMEPLATES_AURA_ELEMENT_CAPS,
-                })
-                GUI:ClearSearchContext()
+                ns.Settings.SearchRoute.With(sample.context, function()
+                    render_aura_editor(host, {enabled = true, elements = {["*"] = {element}}}, "*", function() end,
+                        {forceSelectedIndex = 1, capabilities = caps})
+                end)
             end, debug.traceback)
             GUI:ClearSearchContext()
-
             if not ok then
-                capture_errors[#capture_errors + 1] = {
-                    featureId = context.featureId,
-                    providerKey = "auras:" .. variant.label,
-                    error = err,
-                }
+                capture_errors[#capture_errors + 1] = {featureId = sample.context.featureId, providerKey = key, error = err}
             end
         end
     end
-
     return #capture_errors == 0
 end
-
-local AURA_DISPLAYS_SEARCH_CONTEXT = {
-    tabIndex = 21, tabName = "Auras", subTabIndex = 6, subTabName = "Aura Displays",
-    tileId = "auras", subPageIndex = 6, featureId = "aurasDisplaysPage",
-    category = "frames", providerKey = "detail",
-}
 
 local function capture_aura_displays_elements()
     local AurasEditor = ns.QUI_AuraElementsEditor
     local E = ns.AuraElements
     local AD = ns.QUI_AuraDisplays
     local Page = ns.QUI_AuraDisplaysOptions
-    local LayoutShared = ns.QUI_SettingsLayoutShared
     if type(AurasEditor) ~= "table"
         or type(AurasEditor.RenderAuras) ~= "function"
         or type(E) ~= "table"
@@ -2689,27 +2321,16 @@ local function capture_aura_displays_elements()
         return true
     end
 
-    local function capabilities(polarity)
-        return {
-            elementTypes        = { filterStrip = true, tracked = true },
-            trackedDisplayTypes = { icon = true, square = true, bar = true },
-            dynamicTrackedLayout = true,
-            allowSpecOverride   = true,
-            roleGate            = false,
-            cancelEligible      = false,
-            unitPolarity        = polarity,
-            defaultBucketFn     = AD.DefaultBucket,
-        }
-    end
-
+    local contexts = fixture_search_contexts({ aurasDisplaysPage = { providerKey = "detail" } })
     local function render(providerKey, fn)
+        for _, context in ipairs(contexts) do
         local host = create_stub_node("Frame", nil, false)
         host:SetSize(760, 1)
 
         GUI:ClearSearchContext()
         local ok, err = xpcall(function()
-            GUI:SetSearchContext(AURA_DISPLAYS_SEARCH_CONTEXT)
-            fn(host)
+            GUI:SetSearchContext(context)
+            ns.Settings.SearchRoute.With(context, fn, host)
             GUI:ClearSearchContext()
         end, debug.traceback)
         GUI:ClearSearchContext()
@@ -2720,6 +2341,7 @@ local function capture_aura_displays_elements()
                 providerKey = providerKey,
                 error = err,
             }
+        end
         end
     end
 
@@ -2742,19 +2364,16 @@ local function capture_aura_displays_elements()
             render("load:" .. unit, function(host)
                 Page._BuildLoadTab(host, nil, display)
             end)
+            render("auras:" .. unit, function(host)
+                Page._BuildAurasTab(host, nil, display)
+            end)
             local tracked = E.NewTrackedElement({ 12345 }, "icon")
             display.auras = { enabled = true, elements = { ["*"] = { tracked } } }
             render("alerts:" .. unit, function(host)
                 Page._BuildAlertsTab(host, nil, display)
             end)
         end
-        local alertDescription = "Blizzard plays this sound when the aura event occurs. None disables this event."
-        for _, label in ipairs({ "Aura Applied", "Stacks Increased", "Aura Removed" }) do
-            register_manual_static_setting(AURA_DISPLAYS_SEARCH_CONTEXT, label, "dropdown", nil, nil, {
-                keywords = { "Alerts", "Aura Displays", "sound" },
-                description = alertDescription,
-            })
-        end
+
     end
     if type(Page) == "table" and type(Page._BuildGroupTab) == "function"
         and type(AD.GetGroup) == "function" then
@@ -2765,492 +2384,85 @@ local function capture_aura_displays_elements()
         end)
     end
 
-    local function buildVariants()
-        local function strip(filterMode, auraType)
-            local element = E.NewFilterStripElement(auraType or "HARMFUL")
-            element.filterMode = filterMode
-            element.casterName = { showRealmName = false, useClassColors = true, fontSize = 10,
-                anchor = "BOTTOM", offsetX = 0, offsetY = 1, color = { 1, 1, 1, 1 } }
-            element.pandemicGlow = { style = "steady", color = { 1, 0.85, 0.2, 1 } }
-            return element
-        end
-        local function tracked(displayType)
-            return E.NewTrackedElement({ 12345, 67890 }, displayType)
-        end
-        return {
-            { label = "filterStrip:off", element = strip("off") },
-            { label = "filterStrip:flags", element = strip("flags") },
-            { label = "filterStrip:classify", element = strip("classify") },
-            { label = "filterStrip:classify:HELPFUL", element = strip("classify", "HELPFUL") },
-            { label = "filterStrip:flags:HELPFUL", element = strip("flags", "HELPFUL") },
-            { label = "filterStrip:whitelist", element = strip("whitelist") },
-            { label = "tracked:icon", element = tracked("icon") },
-            { label = "tracked:bar", element = tracked("bar") },
-            { label = "tracked:square", element = tracked("square") },
-        }
-    end
-
-    for _, polarity in ipairs({ "friendly", "hostile" }) do
-        local caps = capabilities(polarity)
-        for _, variant in ipairs(buildVariants()) do
-            render("auras:" .. polarity .. ":" .. variant.label, function(host)
-                local auras = { enabled = true, elements = { ["*"] = { variant.element } } }
-                AurasEditor.RenderAuras(host, auras, "*", function() end, {
-                    forceSelectedIndex = 1,
-                    capabilities = caps,
-                })
-            end)
-        end
-    end
 
     return #capture_errors == 0
 end
 
-local ACTION_BAR_ANCHOR_OPTIONS = {
-    { value = "TOPLEFT", text = "Top Left" },
-    { value = "TOP", text = "Top" },
-    { value = "TOPRIGHT", text = "Top Right" },
-    { value = "LEFT", text = "Left" },
-    { value = "CENTER", text = "Center" },
-    { value = "RIGHT", text = "Right" },
-    { value = "BOTTOMLEFT", text = "Bottom Left" },
-    { value = "BOTTOM", text = "Bottom" },
-    { value = "BOTTOMRIGHT", text = "Bottom Right" },
-}
-
-local ACTION_BAR_ORIENTATION_OPTIONS = {
-    { value = "horizontal", text = "Horizontal" },
-    { value = "vertical", text = "Vertical" },
-}
-
-local ACTION_BAR_TICKET_POSITION_OPTIONS = {
-    { value = "auto", text = "Auto (Screen-Aware)" },
-    { value = "above", text = "Above Bar" },
-    { value = "below", text = "Below Bar" },
-}
-
-local ACTION_BAR_FLYOUT_OPTIONS = {
-    { value = "AUTO", text = "Auto" },
-    { value = "UP", text = "Up" },
-    { value = "DOWN", text = "Down" },
-    { value = "LEFT", text = "Left" },
-    { value = "RIGHT", text = "Right" },
-}
-
-local ACTION_BAR_PRESSED_OPTIONS = {
-    { value = "off", text = "Off" },
-    { value = "blizzard", text = "Default" },
-    { value = "qui", text = "QUI" },
-}
-
-local ACTION_BAR_TOTEM_GROW_OPTIONS = {
-    { value = "RIGHT", text = "Right" },
-    { value = "LEFT", text = "Left" },
-    { value = "UP", text = "Up" },
-    { value = "DOWN", text = "Down" },
-}
-
-local ACTION_BAR_PER_BAR_CAPTURE_BARS = {
-    { key = "bar1", label = ns.L["Bar 1"], dbKey = "bar1", layout = true, skinnable = true, flyout = true, hidePageArrow = true },
-    { key = "bar2", label = ns.L["Bar 2"], dbKey = "bar2", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar3", label = ns.L["Bar 3"], dbKey = "bar3", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar4", label = ns.L["Bar 4"], dbKey = "bar4", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar5", label = ns.L["Bar 5"], dbKey = "bar5", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar6", label = ns.L["Bar 6"], dbKey = "bar6", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar7", label = ns.L["Bar 7"], dbKey = "bar7", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "bar8", label = ns.L["Bar 8"], dbKey = "bar8", layout = true, skinnable = true, flyout = true, toggleable = true },
-    { key = "stanceBar", label = ns.L["Stance Bar"], dbKey = "stance", layout = true, skinnable = true },
-    { key = "petBar", label = ns.L["Pet Bar"], dbKey = "pet", layout = true, skinnable = true },
-    { key = "microMenu", label = ns.L["Micro Menu"], dbKey = "microbar", layout = true, clickthrough = true, ticketIcon = true },
-    { key = "bagBar", label = ns.L["Bag Bar"], dbKey = "bags", layout = true, clickthrough = true,
-        route = { featureId = "actionBarsBagBar", subPageIndex = 5, subTabIndex = 7, subTabName = "Bag Bar" } },
-}
-
-local function capture_action_bar_per_bar_setting(bar, section, label, widget_type, db_path, db_key, extra)
-    local route = bar.route
-    local subTabName = route and route.subTabName or "Per-Bar"
-    register_manual_static_setting({
-        tabIndex = 8,
-        tabName = "Action Bars",
-        subTabIndex = route and route.subTabIndex or 3,
-        subTabName = subTabName,
-        sectionName = bar.label .. " - " .. section,
-        tileId = "action_bars",
-        subPageIndex = route and route.subPageIndex or 2,
-        featureId = route and route.featureId or "actionBarsPerBar",
-        providerKey = bar.key,
-        category = "frames",
-        keywords = { label, bar.label, section, "Action Bars", subTabName },
-    }, label, widget_type, db_path, db_key, extra)
-end
-
-local function capture_action_bar_text_section(bar, bar_path, section_raw, prefix, toggle_label)
-    local lower_key = section_raw:gsub("%s+", "")
-    local section = ns.L[section_raw]
-    capture_action_bar_per_bar_setting(bar, section, toggle_label, "toggle", bar_path, prefix.show)
-    capture_action_bar_per_bar_setting(bar, section, ns.L["Font Size"], "slider", bar_path, prefix.fontSize, { min = 8, max = section_raw == "Stack Count" and 20 or 18, step = 1 })
-    capture_action_bar_per_bar_setting(bar, section, ns.L["Anchor"], "dropdown", bar_path, prefix.anchor, { options = ACTION_BAR_ANCHOR_OPTIONS })
-    capture_action_bar_per_bar_setting(bar, section, ns.L["X-Offset"], "slider", bar_path, prefix.offsetX, { min = -20, max = 20, step = 1 })
-    capture_action_bar_per_bar_setting(bar, section, ns.L["Y-Offset"], "slider", bar_path, prefix.offsetY, { min = -20, max = 20, step = 1 })
-    capture_action_bar_per_bar_setting(bar, section, ns.L["Color"], "colorpicker", bar_path, prefix.color)
-    return lower_key
-end
-
-local function capture_action_bar_per_bar_settings()
-    for _, bar in ipairs(ACTION_BAR_PER_BAR_CAPTURE_BARS) do
-        local bar_path = "profile.actionBars.bars." .. bar.dbKey
-        local layout_path = bar_path .. ".ownedLayout"
-
-        if bar.toggleable then
-            capture_action_bar_per_bar_setting(bar, ns.L["Bar"], ns.L["Enabled"], "toggle", bar_path, "enabled")
-        end
-        if bar.hidePageArrow then
-            capture_action_bar_per_bar_setting(bar, ns.L["Bar"], ns.L["Hide Default Paging Arrow"], "toggle", bar_path, "hidePageArrow")
-        end
-        if bar.clickthrough then
-            capture_action_bar_per_bar_setting(bar, ns.L["Bar"], ns.L["Clickthrough"], "toggle", bar_path, "clickthrough")
-        end
-        if bar.ticketIcon then
-            local ticket_path = bar_path .. ".ticketIcon"
-            capture_action_bar_per_bar_setting(bar, ns.L["Ticket Icon"], ns.L["Position"], "dropdown", ticket_path, "position", { options = ACTION_BAR_TICKET_POSITION_OPTIONS })
-            capture_action_bar_per_bar_setting(bar, ns.L["Ticket Icon"], ns.L["Offset X"], "slider", ticket_path, "offsetX", { min = -200, max = 200, step = 1 })
-            capture_action_bar_per_bar_setting(bar, ns.L["Ticket Icon"], ns.L["Offset Y"], "slider", ticket_path, "offsetY", { min = -200, max = 200, step = 1 })
-        end
-
-        if bar.layout then
-            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Orientation"], "dropdown", layout_path, "orientation", { options = ACTION_BAR_ORIENTATION_OPTIONS })
-            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Buttons Per Row"], "slider", layout_path, "columns", { min = 1, max = 12, step = 1 })
-            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Visible Buttons"], "slider", layout_path, "iconCount", { min = 1, max = 12, step = 1 })
-            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Button Size"], "slider", layout_path, "buttonSize", { min = 20, max = 64, step = 1 })
-            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Button Spacing"], "slider", layout_path, "buttonSpacing", { min = 0, max = 12, step = 1 })
-            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Grow Upward"], "toggle", layout_path, "growUp")
-            capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Grow Left"], "toggle", layout_path, "growLeft")
-            if bar.flyout then
-                capture_action_bar_per_bar_setting(bar, ns.L["Layout"], ns.L["Flyout Direction"], "dropdown", layout_path, "flyoutDirection", { options = ACTION_BAR_FLYOUT_OPTIONS })
+-- Traverse the registered datatext choices so the provider itself exposes
+-- conditional Spec/Time/Alts/Currencies settings. Keep callback-only controls
+-- unbound, and restore the generator profile and registry after harvesting.
+local function capture_chat_tab_variants()
+    local feature = ns.Settings.Registry:GetFeature("chatFrame1")
+    local chat = profile_db.chat
+    local previous = rawget(chat, "defaultTabPerSpec")
+    for destination in ns.Settings.Registry:IterateDestinations() do
+        if destination.featureId == feature.id then
+            for _, perSpec in ipairs({false, true}) do
+                chat.defaultTabPerSpec = perSpec
+                capture_search_feature(feature, nil, nil, destination)
             end
         end
+    end
+    chat.defaultTabPerSpec = previous
+end
 
-        if bar.skinnable then
-            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Icon Crop"], "slider", bar_path, "iconZoom", { min = 0.05, max = 0.15, step = 0.01 })
-            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Show Backdrop"], "toggle", bar_path, "showBackdrop")
-            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Backdrop Opacity"], "slider", bar_path, "backdropAlpha", { min = 0, max = 1, step = 0.05 })
-            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Show Gloss"], "toggle", bar_path, "showGloss")
-            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Gloss Opacity"], "slider", bar_path, "glossAlpha", { min = 0, max = 1, step = 0.05 })
-            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Show Borders"], "toggle", bar_path, "showBorders")
-            capture_action_bar_per_bar_setting(bar, ns.L["Visual"], ns.L["Pressed Effect"], "dropdown", bar_path, "showFlash", { options = ACTION_BAR_PRESSED_OPTIONS })
-
-            capture_action_bar_per_bar_setting(bar, ns.L["Keybind Text"], ns.L["Show Keybinds"], "toggle", bar_path, "showKeybinds")
-            capture_action_bar_per_bar_setting(bar, ns.L["Keybind Text"], ns.L["Hide Empty Keybinds"], "toggle", bar_path, "hideEmptyKeybinds")
-            capture_action_bar_text_section(bar, bar_path, "Keybind Text", {
-                show = "showKeybinds",
-                fontSize = "keybindFontSize",
-                anchor = "keybindAnchor",
-                offsetX = "keybindOffsetX",
-                offsetY = "keybindOffsetY",
-                color = "keybindColor",
-            }, ns.L["Show Keybinds"])
-
-            capture_action_bar_text_section(bar, bar_path, "Macro Names", {
-                show = "showMacroNames",
-                fontSize = "macroNameFontSize",
-                anchor = "macroNameAnchor",
-                offsetX = "macroNameOffsetX",
-                offsetY = "macroNameOffsetY",
-                color = "macroNameColor",
-            }, ns.L["Show Macro Names"])
-
-            capture_action_bar_text_section(bar, bar_path, "Stack Count", {
-                show = "showCounts",
-                fontSize = "countFontSize",
-                anchor = "countAnchor",
-                offsetX = "countOffsetX",
-                offsetY = "countOffsetY",
-                color = "countColor",
-            }, ns.L["Show Counts"])
+local function capture_datatext_variants()
+    local registry = ns.Settings.Registry
+    local feature = registry:GetFeature("datatextPanel")
+    local destination
+    for registered in registry:IterateDestinations() do
+        if registered.featureId == feature.id then destination = registered; break end
+    end
+    assert(destination, "Datatext tile destination must be registered before capture")
+    local datatext = profile_db.datatext
+    local selection = ns.QUI_DatatextPanelSelection
+    local previousSlots = datatext.slots
+    local previousPanel = selection.getActivePanel(profile_db)
+    local previousRegistry = ns.Addon.Datatexts
+    local ok, err = xpcall(function()
+        assert(loadfile("modules/datatexts/datatexts.lua"))(ADDON_NAME, ns)
+        assert(loadfile("modules/datatexts/providers_extra.lua"))(ADDON_NAME, ns)
+        selection.setActivePanel("datatextPanel", profile_db)
+        local definitions = ns.Addon.Datatexts:GetAll()
+        for first = 1, #definitions, 3 do
+            datatext.slots = {}
+            for index = first, math.min(first + 2, #definitions) do
+                datatext.slots[index - first + 1] = definitions[index].id
+            end
+            capture_search_feature(feature, nil, nil, destination)
         end
-    end
-
-    local function capture_totem_bar_setting(label, widget_type, db_key, extra)
-        register_manual_static_setting({
-            tabIndex = 8,
-            tabName = "Action Bars",
-            subTabIndex = 5,
-            subTabName = "Totem Bar",
-            sectionName = ns.L["Layout"],
-            tileId = "action_bars",
-            subPageIndex = 3,
-            featureId = "actionBarsTotemBar",
-            providerKey = "totemBar",
-            category = "frames",
-            keywords = { label, "Totem Bar", "Action Bars" },
-        }, label, widget_type, "profile.totemBar", db_key, extra)
-    end
-
-    capture_totem_bar_setting(ns.L["Grow Direction"], "dropdown", "growDirection", { options = ACTION_BAR_TOTEM_GROW_OPTIONS })
-    capture_totem_bar_setting(ns.L["Button Size"], "slider", "iconSize", { min = 20, max = 300, step = 1 })
-
-    local function capture_raid_markers_bar_setting(section, label, widget_type, db_path, db_key, extra)
-        register_manual_static_setting({
-            tabIndex = 8,
-            tabName = "Action Bars",
-            subTabIndex = 6,
-            subTabName = "Raid Markers",
-            sectionName = section,
-            tileId = "action_bars",
-            subPageIndex = 4,
-            featureId = "actionBarsRaidMarkersBar",
-            providerKey = "raidMarkersBar",
-            category = "frames",
-            keywords = { label, "Raid Markers Bar", "Raid Marker", "Action Bars" },
-        }, label, widget_type, db_path, db_key, extra)
-    end
-
-    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Enabled"], "toggle", "profile.raidMarkersBar", "enabled")
-    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Only In Dungeons & Raids"], "toggle", "profile.raidMarkersBar", "onlyInInstances")
-    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Grow Direction"], "dropdown", "profile.raidMarkersBar", "growDirection", { options = ACTION_BAR_TOTEM_GROW_OPTIONS })
-    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Button Size"], "slider", "profile.raidMarkersBar", "iconSize", { min = 20, max = 64, step = 1 })
-    capture_raid_markers_bar_setting(ns.L["Layout"], ns.L["Button Spacing"], "slider", "profile.raidMarkersBar", "spacing", { min = -10, max = 10, step = 1 })
-    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["World Markers"], "toggle", "profile.raidMarkersBar.worldMarkers", "enabled")
-    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["Leader Actions"], "toggle", "profile.raidMarkersBar.leaderStrip", "enabled")
-    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["Show Only As Leader"], "toggle", "profile.raidMarkersBar", "autoShowForLeader")
-    capture_raid_markers_bar_setting(ns.L["Leader Tools"], ns.L["Pull Countdown Seconds"], "slider", "profile.raidMarkersBar.leaderStrip", "pullSeconds", { min = 3, max = 30, step = 1 })
-
-    local function capture_extra_zone_setting(button, label, widget_type, db_key, extra)
-        register_manual_static_setting({
-            tabIndex = 8,
-            tabName = "Action Bars",
-            subTabIndex = 8,
-            subTabName = "Extra & Zone",
-            sectionName = button.label,
-            tileId = "action_bars",
-            subPageIndex = 6,
-            featureId = "actionBarsExtraZone",
-            providerKey = button.dbKey,
-            category = "frames",
-            keywords = { label, button.label, "Action Bars", "Extra & Zone" },
-        }, label, widget_type, "profile.actionBars.bars." .. button.dbKey, db_key, extra)
-    end
-
-    for _, button in ipairs({
-        { label = ns.L["Extra Action Button"], dbKey = "extraActionButton" },
-        { label = ns.L["Zone Ability"], dbKey = "zoneAbility" },
-    }) do
-        capture_extra_zone_setting(button, ns.L["Enabled"], "toggle", "enabled")
-        capture_extra_zone_setting(button, ns.L["Hide Artwork"], "toggle", "hideArtwork")
-        capture_extra_zone_setting(button, ns.L["Scale"], "slider", "scale", { min = 0.5, max = 2.0, step = 0.05 })
+    end, debug.traceback)
+    datatext.slots = previousSlots
+    selection.setActivePanel(previousPanel, profile_db)
+    ns.Addon.Datatexts = previousRegistry
+    if not ok then
+        capture_errors[#capture_errors + 1] = { featureId = "datatextPanel", error = err }
     end
 end
 
-local MINIMAP_CORNER_OPTIONS = {
-    { value = "TOPRIGHT", text = "Top Right" },
-    { value = "TOPLEFT", text = "Top Left" },
-    { value = "BOTTOMRIGHT", text = "Bottom Right" },
-    { value = "BOTTOMLEFT", text = "Bottom Left" },
-}
-
-local MINIMAP_DRAWER_ANCHOR_OPTIONS = {
-    { value = "RIGHT", text = "Right" },
-    { value = "LEFT", text = "Left" },
-    { value = "TOP", text = "Top" },
-    { value = "BOTTOM", text = "Bottom" },
-    { value = "TOPLEFT", text = "Top Left" },
-    { value = "TOPRIGHT", text = "Top Right" },
-    { value = "BOTTOMLEFT", text = "Bottom Left" },
-    { value = "BOTTOMRIGHT", text = "Bottom Right" },
-}
-
-local MINIMAP_DRAWER_GROWTH_OPTIONS = {
-    { value = "RIGHT", text = "Right" },
-    { value = "LEFT", text = "Left" },
-    { value = "DOWN", text = "Down" },
-    { value = "UP", text = "Up" },
-}
-
--- HARDCODED MIRROR of toggleIconOptions in
--- modules/minimap/settings/minimap_providers.lua. The generator does not read
--- that provider for this control, so the two drift silently — the guard is
--- tests/unit/minimap_drawer_toggle_icon_test.lua. Text is English on purpose:
--- this mirror bypasses ns.L, which is the correct outcome for the brand name
--- but a side effect, not a deliberate guard.
-local MINIMAP_DRAWER_TOGGLE_ICON_OPTIONS = {
-    { value = "qui", text = "QUI" },
-    { value = "hammer", text = "Hammer" },
-    { value = "grid", text = "Grid Dots" },
-}
-
-local DATATEXT_SLOT_OPTIONS = {
-    { value = "", text = "(empty)" },
-    { value = "bags", text = "Bags" },
-    { value = "coords", text = "Coordinates" },
-    { value = "currencies", text = "Currencies" },
-    { value = "durability", text = "Durability" },
-    { value = "experience", text = "Experience" },
-    { value = "fps", text = "FPS" },
-    { value = "friends", text = "Friends" },
-    { value = "gold", text = "Gold" },
-    { value = "guild", text = "Guild" },
-    { value = "latency", text = "Latency" },
-    { value = "lootspec", text = "Loot Specialization" },
-    { value = "mythickey", text = "Mythic+ Key" },
-    { value = "playerspec", text = "Player Spec" },
-    { value = "system", text = "System" },
-    { value = "time", text = "Time" },
-    { value = "volume", text = "Volume" },
-}
-
-local DATATEXT_SPEC_DISPLAY_OPTIONS = {
-    { value = "icon", text = "Icon Only" },
-    { value = "loadout", text = "Icon + Loadout" },
-    { value = "full", text = "Full (Spec / Loadout)" },
-}
-
-local DATATEXT_TIME_FORMAT_OPTIONS = {
-    { value = "local", text = "Local Time" },
-    { value = "server", text = "Server Time" },
-}
-
-local DATATEXT_CLOCK_FORMAT_OPTIONS = {
-    { value = true, text = "24-Hour Clock" },
-    { value = false, text = "AM/PM" },
-}
-
-local DATATEXT_ALTS_MODE_OPTIONS = {
-    { value = "gold", text = "Total Gold" },
-    { value = "count", text = "Alt Count" },
-}
-
-local function capture_minimap_setting(section, label, widget_type, db_path, db_key, extra)
-    register_manual_static_setting({
-        tabIndex = 9,
-        tabName = "Minimap & Datatext",
-        subTabIndex = 1,
-        subTabName = "Minimap",
-        sectionName = section,
-        tileId = "minimap",
-        subPageIndex = 1,
-        featureId = "minimap",
-        providerKey = "minimap",
-        category = "ui",
-        keywords = { label, section, "Minimap", "Minimap & Datatext" },
-    }, label, widget_type, db_path, db_key, extra)
+local function capture_spell_reminder_fixture()
+    if not ns.SpellReminderOptions then return end
+    for _, context in ipairs(fixture_search_contexts({ spellRemindersPage = {} })) do
+        GUI:SetSearchContext(context)
+        local host = create_stub_node("Frame", nil, false)
+        host:SetSize(760, 1)
+        ns.Settings.SearchRoute.With(context, function()
+            if ns.SpellReminderOptions.GetTabs then
+                GUI:RegisterTileSurfacePages(host, {
+                    getTabs = function() return ns.SpellReminderOptions.GetTabs({ pi = true }) end,
+                })
+            end
+            ns.SpellReminderOptions.CaptureSearch(host)
+        end)
+        capturing_navigation_descriptor = nil
+        GUI:ClearSearchContext()
+    end
 end
 
-local function capture_datatext_setting(section, label, widget_type, db_path, db_key, extra)
-    register_manual_static_setting({
-        tabIndex = 9,
-        tabName = "Minimap & Datatext",
-        subTabIndex = 2,
-        subTabName = "Datatext",
-        sectionName = section,
-        tileId = "minimap",
-        subPageIndex = 2,
-        featureId = "datatextPanel",
-        providerKey = "datatextPanel",
-        category = "ui",
-        keywords = { label, section, "Datatext", "Data Text", "Data Ext", "Minimap & Datatext" },
-    }, label, widget_type, db_path, db_key, extra)
-end
-
-local function capture_datatext_slot(slot_index, slot_label, slot_path)
-    capture_datatext_setting("Slot Configuration", "Slot " .. slot_index .. " (" .. slot_label .. ")", "dropdown", "profile.datatext.slots", slot_index, { options = DATATEXT_SLOT_OPTIONS })
-    capture_datatext_setting("Slot Configuration", "Slot " .. slot_index .. " Short Label", "toggle", slot_path, "shortLabel")
-    capture_datatext_setting("Slot Configuration", "Slot " .. slot_index .. " No Label", "toggle", slot_path, "noLabel")
-    capture_datatext_setting("Slot Configuration", "Slot " .. slot_index .. " X Offset", "slider", slot_path, "xOffset", { min = -50, max = 50, step = 1 })
-    capture_datatext_setting("Slot Configuration", "Slot " .. slot_index .. " Y Offset", "slider", slot_path, "yOffset", { min = -20, max = 20, step = 1 })
-end
-
-local function capture_minimap_datatext_settings()
-    capture_minimap_setting("General", "Map Dimensions", "slider", "profile.minimap", "size", { min = 120, max = 380, step = 1 })
-    capture_minimap_setting("General", "Map Zoom Level", "slider", "profile.minimap", "zoomLevel", { min = 0, max = 5, step = 1 })
-    capture_minimap_setting("General", "Middle-Click Menu", "toggle", "profile.minimap", "middleClickMenuEnabled")
-    capture_minimap_setting("General", "Auto-Zoom After Idle", "toggle", "profile.minimap", "autoZoom")
-    capture_minimap_setting("General", "Coord Update Interval (sec)", "slider", "profile.minimap", "coordUpdateInterval", { min = 1, max = 10, step = 1 })
-    capture_minimap_setting("General", "Addon Button Corner Radius", "slider", "profile.minimap", "buttonRadius", { min = 0, max = 12, step = 1 })
-    capture_minimap_setting("General", "Hide Addon Buttons Until Hover", "toggle", "profile.minimap", "hideAddonButtons")
-
-    capture_minimap_setting("Border", "Border Size", "slider", "profile.minimap", "borderSize", { min = 1, max = 16, step = 1 })
-    capture_minimap_setting("Border", "Border Color", "colorpicker", "profile.minimap", "borderColor")
-    capture_minimap_setting("Border", "Class Color Border", "toggle", "profile.minimap", "useClassColorBorder")
-    capture_minimap_setting("Border", "Accent Color Border", "toggle", "profile.minimap", "useAccentColorBorder")
-
-    capture_minimap_setting("Hide Elements", "Hide Mail (reload after)", "toggle_inverted", "profile.minimap", "showMail")
-    capture_minimap_setting("Hide Elements", "Hide Work Order Notification", "toggle_inverted", "profile.minimap", "showCraftingOrder")
-    capture_minimap_setting("Hide Elements", "Hide Tracking", "toggle_inverted", "profile.minimap", "showTracking")
-    capture_minimap_setting("Hide Elements", "Hide Difficulty", "toggle_inverted", "profile.minimap", "showDifficulty")
-    capture_minimap_setting("Hide Elements", "Hide Garrison/Mission Report", "toggle_inverted", "profile.minimap", "showMissions")
-    capture_minimap_setting("Hide Elements", "Hide Border (Top)", "toggle", "profile.uiHider", "hideMinimapBorder")
-    capture_minimap_setting("Hide Elements", "Hide Clock Button", "toggle", "profile.uiHider", "hideTimeManager")
-    capture_minimap_setting("Hide Elements", "Hide Calendar Button", "toggle", "profile.uiHider", "hideGameTime")
-    capture_minimap_setting("Hide Elements", "Hide Zone Text (Native)", "toggle", "profile.uiHider", "hideMinimapZoneText")
-    capture_minimap_setting("Hide Elements", "Hide Zoom Buttons", "toggle_inverted", "profile.minimap", "showZoomButtons")
-
-    capture_minimap_setting("Zone Label", "Show Zone Label", "toggle", "profile.minimap", "showZoneText")
-    capture_minimap_setting("Zone Label", "Horizontal Offset", "slider", "profile.minimap.zoneTextConfig", "offsetX", { min = -150, max = 150, step = 1 })
-    capture_minimap_setting("Zone Label", "Vertical Offset", "slider", "profile.minimap.zoneTextConfig", "offsetY", { min = -150, max = 150, step = 1 })
-    capture_minimap_setting("Zone Label", "Label Size", "slider", "profile.minimap.zoneTextConfig", "fontSize", { min = 8, max = 20, step = 1 })
-    capture_minimap_setting("Zone Label", "Uppercase Text", "toggle", "profile.minimap.zoneTextConfig", "allCaps")
-    capture_minimap_setting("Zone Label", "Use Class Color", "toggle", "profile.minimap.zoneTextConfig", "useClassColor")
-
-    capture_minimap_setting("Dungeon Eye", "Enable Dungeon Eye", "toggle", "profile.minimap.dungeonEye", "enabled")
-    capture_minimap_setting("Dungeon Eye", "Corner Position", "dropdown", "profile.minimap.dungeonEye", "corner", { options = MINIMAP_CORNER_OPTIONS })
-    capture_minimap_setting("Dungeon Eye", "Icon Scale", "slider", "profile.minimap.dungeonEye", "scale", { min = 0.1, max = 2.0, step = 0.1 })
-    capture_minimap_setting("Dungeon Eye", "X Offset", "slider", "profile.minimap.dungeonEye", "offsetX", { min = -30, max = 30, step = 1 })
-    capture_minimap_setting("Dungeon Eye", "Y Offset", "slider", "profile.minimap.dungeonEye", "offsetY", { min = -30, max = 30, step = 1 })
-
-    capture_minimap_setting("Great Vault", "Enable Great Vault Button", "toggle", "profile.minimap.greatVault", "enabled")
-    capture_minimap_setting("Great Vault", "Fade When Not Hovered", "toggle", "profile.minimap.greatVault", "fadeWhenMouseOut")
-    capture_minimap_setting("Great Vault", "Fade Opacity", "slider", "profile.minimap.greatVault", "fadeOpacity", { min = 0, max = 1, step = 0.05, options = { precision = 2 } })
-    capture_minimap_setting("Great Vault", "Anchor", "dropdown", "profile.minimap.greatVault", "anchor", { options = ACTION_BAR_ANCHOR_OPTIONS })
-    capture_minimap_setting("Great Vault", "Icon Scale", "slider", "profile.minimap.greatVault", "scale", { min = 0.5, max = 2.0, step = 0.1 })
-    capture_minimap_setting("Great Vault", "X Offset", "slider", "profile.minimap.greatVault", "offsetX", { min = -200, max = 200, step = 1 })
-    capture_minimap_setting("Great Vault", "Y Offset", "slider", "profile.minimap.greatVault", "offsetY", { min = -200, max = 200, step = 1 })
-
-    capture_minimap_setting("Button Drawer", "Enable Button Drawer", "toggle", "profile.minimap.buttonDrawer", "enabled")
-    capture_minimap_setting("Button Drawer", "Open on Mouseover", "toggle", "profile.minimap.buttonDrawer", "openOnMouseover")
-    capture_minimap_setting("Button Drawer", "Anchor Side", "dropdown", "profile.minimap.buttonDrawer", "anchor", { options = MINIMAP_DRAWER_ANCHOR_OPTIONS })
-    capture_minimap_setting("Button Drawer", "Drawer X Offset", "slider", "profile.minimap.buttonDrawer", "offsetX", { min = -200, max = 200, step = 1 })
-    capture_minimap_setting("Button Drawer", "Drawer Y Offset", "slider", "profile.minimap.buttonDrawer", "offsetY", { min = -200, max = 200, step = 1 })
-    capture_minimap_setting("Button Drawer", "Button X Offset", "slider", "profile.minimap.buttonDrawer", "toggleOffsetX", { min = -200, max = 200, step = 1 })
-    capture_minimap_setting("Button Drawer", "Button Y Offset", "slider", "profile.minimap.buttonDrawer", "toggleOffsetY", { min = -200, max = 200, step = 1 })
-    capture_minimap_setting("Button Drawer", "Toggle Size", "slider", "profile.minimap.buttonDrawer", "toggleSize", { min = 12, max = 40, step = 1 })
-    capture_minimap_setting("Button Drawer", "Toggle Icon", "dropdown", "profile.minimap.buttonDrawer", "toggleIcon", { options = MINIMAP_DRAWER_TOGGLE_ICON_OPTIONS })
-    capture_minimap_setting("Button Drawer", "Auto-Hide Delay (0=manual)", "slider", "profile.minimap.buttonDrawer", "autoHideDelay", { min = 0, max = 5, step = 0.5 })
-    capture_minimap_setting("Button Drawer", "Button Size", "slider", "profile.minimap.buttonDrawer", "buttonSize", { min = 20, max = 40, step = 1 })
-    capture_minimap_setting("Button Drawer", "Button Spacing", "slider", "profile.minimap.buttonDrawer", "buttonSpacing", { min = 0, max = 12, step = 1 })
-    capture_minimap_setting("Button Drawer", "Inner Padding", "slider", "profile.minimap.buttonDrawer", "padding", { min = 0, max = 20, step = 1 })
-    capture_minimap_setting("Button Drawer", "Columns", "slider", "profile.minimap.buttonDrawer", "columns", { min = 1, max = 6, step = 1 })
-    capture_minimap_setting("Button Drawer", "Growth Direction", "dropdown", "profile.minimap.buttonDrawer", "growthDirection", { options = MINIMAP_DRAWER_GROWTH_OPTIONS })
-    capture_minimap_setting("Button Drawer", "Center Growth", "toggle", "profile.minimap.buttonDrawer", "centerGrowth")
-    capture_minimap_setting("Button Drawer", "Auto-Hide Toggle Button", "toggle", "profile.minimap.buttonDrawer", "autoHideToggle")
-
-    capture_minimap_setting("Drawer Appearance", "Background Color", "colorpicker", "profile.minimap.buttonDrawer", "bgColor", { options = { noAlpha = true } })
-    capture_minimap_setting("Drawer Appearance", "Background Opacity", "slider", "profile.minimap.buttonDrawer", "bgOpacity", { min = 0, max = 100, step = 1 })
-    capture_minimap_setting("Drawer Appearance", "Border Size (0=hidden)", "slider", "profile.minimap.buttonDrawer", "borderSize", { min = 0, max = 8, step = 1 })
-    capture_minimap_setting("Drawer Appearance", "Border Color", "colorpicker", "profile.minimap.buttonDrawer", "borderColor", { options = { noAlpha = true } })
-
-    capture_datatext_setting("Panel Settings", "Enable Minimap Datatext", "toggle", "profile.datatext", "enabled")
-    capture_datatext_setting("Panel Settings", "Panel Height (Per Row)", "slider", "profile.datatext", "height", { min = 18, max = 50, step = 1 })
-    capture_datatext_setting("Panel Settings", "Background Transparency", "slider", "profile.datatext", "bgOpacity", { min = 0, max = 100, step = 5 })
-    capture_datatext_setting("Panel Settings", "Border Size (0=hidden)", "slider", "profile.datatext", "borderSize", { min = 0, max = 8, step = 1 })
-    capture_datatext_setting("Panel Settings", "Border Color", "colorpicker", "profile.datatext", "borderColor")
-    capture_datatext_setting("Panel Settings", "Vertical Offset", "slider", "profile.datatext", "offsetY", { min = -40, max = 40, step = 1 })
-    capture_datatext_setting("Panel Settings", "Text Size", "slider", "profile.datatext", "fontSize", { min = 9, max = 18, step = 1 })
-
-    capture_datatext_slot(1, "Left", "profile.datatext.slot1")
-    capture_datatext_slot(2, "Center", "profile.datatext.slot2")
-    capture_datatext_slot(3, "Right", "profile.datatext.slot3")
-
-    capture_datatext_setting("Text Styling", "Use Class Color", "toggle", "profile.datatext", "useClassColor")
-    capture_datatext_setting("Text Styling", "Custom Text Color", "colorpicker", "profile.datatext", "valueColor")
-
-    capture_datatext_setting("Spec Display", "Spec Display Mode", "dropdown", "profile.datatext", "specDisplayMode", { options = DATATEXT_SPEC_DISPLAY_OPTIONS })
-    capture_datatext_setting("Time Options", "Time Format", "dropdown", "profile.datatext", "timeFormat", { options = DATATEXT_TIME_FORMAT_OPTIONS })
-    capture_datatext_setting("Time Options", "Clock Format", "dropdown", "profile.datatext", "use24Hour", { options = DATATEXT_CLOCK_FORMAT_OPTIONS })
-    capture_datatext_setting("Time Options", "Lockout Refresh (minutes)", "slider", "profile.datatext", "lockoutCacheMinutes", { min = 1, max = 30, step = 1 })
-    capture_datatext_setting("Alts Options", "Bar Text", "dropdown", "profile.datatext", "altsMode", { options = DATATEXT_ALTS_MODE_OPTIONS })
-end
 
 install_search_capture_overrides()
+GUI:ResetStaticSearchIndex()
+ns.QUI_Options.RegisterAllFeatureTiles(frame)
 capture_all_search_features()
 do
     local originalClient = ns.Client
@@ -3258,111 +2470,22 @@ do
     capture_search_feature(ns.Settings.Registry:GetFeature("skinningPage"))
     ns.Client = originalClient
 end
-capture_cdm_settings_tabs()
 capture_custom_cdm_navigation()
-capture_group_frames_settings_tabs()
-capture_group_frames_auras_elements()
-capture_unit_frames_settings_tabs()
-capture_nameplates_settings_tabs()
-capture_nameplates_auras_elements()
 capture_aura_displays_elements()
-capture_action_bar_per_bar_settings()
-capture_minimap_datatext_settings()
+capture_expanded_aura_editors()
+capture_datatext_variants()
+capture_chat_tab_variants()
 
 -- The reminder editor starts empty, so render its configurable tabs against
 -- a transient PI preset to index them before a player creates a reminder.
-if ns.SpellReminderOptions then
-    GUI:SetSearchContext({ tileId = "reminders", subPageIndex = 2, tabName = "Reminders",
-        subTabName = "Spell Reminders", featureId = "spellRemindersPage", category = "gameplay" })
-    local host = create_stub_node("Frame", nil, false)
-    host:SetSize(760, 1)
-    if ns.SpellReminderOptions.GetTabs then
-        GUI:RegisterTileSurfacePages(host, {
-            getTabs = function() return ns.SpellReminderOptions.GetTabs({ pi = true }) end,
-        })
-    end
-    ns.SpellReminderOptions.CaptureSearch(host)
-    capturing_navigation_descriptor = nil
-    GUI:ClearSearchContext()
-end
+capture_spell_reminder_fixture()
 
--- Tile registration runs AFTER install_search_capture_overrides() so the
--- alias-emit wrappers actually intercept the RegisterFeatureTile /
--- AddFeatureTile calls, and AFTER capture_all_search_features() because
--- that function resets the navigation registry on entry — any alias
--- entries emitted before then would be wiped.
-
--- Welcome tile registration lives in QUI_Options/init.lua, which
--- should_load_script() excludes from the headless generator load. The
--- stub below mirrors init.lua's RegisterFeatureTile call and carries
--- the searchAliases this file owns for welcome. If you change init.lua's
--- welcome tile shape, update this stub too — and welcome aliases are
--- declared here, not in init.lua, since the runtime drops the field.
-if ns.QUI_Options and type(ns.QUI_Options.RegisterFeatureTile) == "function" then
-    ns.QUI_Options.RegisterFeatureTile(frame, {
-        id = "welcome",
-        icon = "*",
-        name = "Welcome",
-        subtitle = "Getting started · Tips · What's new",
-        featureId = "welcomePage",
-        noScroll = false,
-        searchAliases = {
-            "welcome",
-            "getting started",
-            "first time setup",
-            "intro",
-            "home",
-        },
-    })
-end
-
-local tile_order = {
-    "QUI_GlobalTile",
-    "QUI_UnitFramesTile",
-    "QUI_GroupFramesTile",
-    "QUI_NameplatesTile",
-    "QUI_AurasTile",
-    "QUI_ActionBarsTile",
-    "QUI_CooldownManagerTile",
-    "QUI_ResourceBarsTile",
-    "QUI_MinimapTile",
-    "QUI_InfoBarTile",
-    "QUI_AppearanceTile",
-    "QUI_ChatTooltipsTile",
-    "QUI_GameplayTile",
-    "QUI_RemindersTile",
-    "QUI_QoLTile",
-    "QUI_BagsTile",
-    "QUI_AltsTile",
-    "QUI_HelpTile",
-}
-
-for _, key in ipairs(tile_order) do
-    local tile = ns[key]
-    if tile and type(tile.Register) == "function" then
-        local ok, err = xpcall(function()
-            tile.Register(frame)
-        end, debug.traceback)
-        if not ok then
-            io.stderr:write(("tile registration failed for %s\n%s\n"):format(key, tostring(err)))
-            os.exit(1)
-        end
-    end
-end
 
 collect_feature_keywords()
 
 local function clear_non_plain_arrays_before_route_seed()
-    local function trim_plain_array(list, limit)
-        if type(list) ~= "table" or getmetatable(list) ~= nil then
-            return {}
-        end
-        for index = 1, limit do
-            if rawget(list, index) == nil then
-                return list
-            end
-        end
-        list[limit + 1] = nil
+    local function plain_array(list)
+        if type(list) ~= "table" or getmetatable(list) ~= nil then return {} end
         return list
     end
 
@@ -3374,13 +2497,9 @@ local function clear_non_plain_arrays_before_route_seed()
             or value_type == "boolean"
     end
 
-    local function filter_registry_entries(list, limit)
+    local function filter_registry_entries(list)
         local filtered = {}
-        for index = 1, limit do
-            local entry = rawget(list, index)
-            if entry == nil then
-                break
-            end
+        for _, entry in ipairs(list) do
             if type(entry) == "table"
                 and getmetatable(entry) == nil
                 and type(entry.label) == "string"
@@ -3410,16 +2529,14 @@ local function clear_non_plain_arrays_before_route_seed()
     if type(GUI.StaticNavigationRegistry) ~= "table" or getmetatable(GUI.StaticNavigationRegistry) ~= nil then
         GUI.StaticNavigationRegistry = {}
     end
-    GUI.StaticSettingsRegistry = trim_plain_array(GUI.StaticSettingsRegistry, 5000)
-    GUI.StaticNavigationRegistry = trim_plain_array(GUI.StaticNavigationRegistry, 2000)
-    GUI.StaticSettingsRegistry = filter_registry_entries(GUI.StaticSettingsRegistry, 5000)
-    GUI.StaticNavigationRegistry = filter_registry_entries(GUI.StaticNavigationRegistry, 2000)
+    GUI.StaticSettingsRegistry = filter_registry_entries(plain_array(GUI.StaticSettingsRegistry))
+    GUI.StaticNavigationRegistry = filter_registry_entries(plain_array(GUI.StaticNavigationRegistry))
 
     if type(frame._tiles) ~= "table" or getmetatable(frame._tiles) ~= nil then
         frame._tiles = {}
         return
     end
-    frame._tiles = trim_plain_array(frame._tiles, 30)
+    frame._tiles = plain_array(frame._tiles)
     local filtered_tiles = {}
     for _, tile in ipairs(frame._tiles) do
         local config = tile and tile.config
@@ -3433,7 +2550,7 @@ local function clear_non_plain_arrays_before_route_seed()
                 config.subPages = nil
             elseif type(config.subPages) == "table" then
                 local sub_pages = {}
-                for _, sub_page in ipairs(trim_plain_array(config.subPages, 30)) do
+                for _, sub_page in ipairs(plain_array(config.subPages)) do
                     if type(sub_page) == "table"
                         and getmetatable(sub_page) == nil
                         and type(sub_page.name) == "string" then

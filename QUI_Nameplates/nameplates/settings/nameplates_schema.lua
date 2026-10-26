@@ -87,16 +87,6 @@ local JUSTIFY_OPTIONS = {
     { value = "RIGHT", text = ns.L["Right"] },
 }
 
-local TAB_SEARCH_CONTEXTS = {
-    general = { subTabIndex = 1, subTabName = "General" },
-    visibility = { subTabIndex = 2, subTabName = "Visibility" },
-    frame = { subTabIndex = 3, subTabName = "Frame" },
-    text = { subTabIndex = 4, subTabName = "Text" },
-    indicators = { subTabIndex = 5, subTabName = "Indicators" },
-    auras = { subTabIndex = 6, subTabName = "Auras" },
-    castbars = { subTabIndex = 7, subTabName = "Castbar" },
-    colors = { subTabIndex = 8, subTabName = "Colors" },
-}
 local NAMEPLATES_SEARCH_TAB_INDEX = 22
 local NAMEPLATES_SEARCH_TILE_ID = "nameplates"
 local NAMEPLATES_SEARCH_FEATURE_ID = "nameplatesPage"
@@ -192,13 +182,13 @@ local function SetSearchContext(searchContext)
 end
 
 local function CreateSearchContext(tabKey, typeKey)
-    local context = TAB_SEARCH_CONTEXTS[tabKey] or TAB_SEARCH_CONTEXTS.display
+    local tab, index = ns.Settings.ModelKit.GetTabDefinition(ns.QUI_NameplatesSettingsModel, tabKey)
     local SearchRoute = ns.Settings and ns.Settings.SearchRoute
     local searchContext = {
         tabIndex = NAMEPLATES_SEARCH_TAB_INDEX,
         tabName = "Nameplates",
-        subTabIndex = context.subTabIndex,
-        subTabName = context.subTabName,
+        subTabIndex = index,
+        subTabName = tab and tab.label or tabKey,
         tileId = NAMEPLATES_SEARCH_TILE_ID,
         subPageIndex = NAMEPLATES_SEARCH_SUB_PAGE_INDEX,
         featureId = NAMEPLATES_SEARCH_FEATURE_ID,
@@ -247,80 +237,24 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
     PrepareSectionHost(sectionHost, ctx)
     SetSearchContext(searchContext)
 
-    local y = 0
-    local builder = {}
-    local cards = {}
-    sectionHost._quiMeasureSettingsHeight = nil
-
-    function builder.Header(text)
-        if type(text) ~= "string" or text == "" then
-            return nil, nil
-        end
-
-        local originY = y
-        local header = optionsAPI.CreateAccentDotLabel(sectionHost, text, y)
-        header:ClearAllPoints()
-        header:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        header:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
-        y = y - HEADER_GAP
-        return header, originY
-    end
-
-    local function AddParagraph(text, color)
-        if type(text) ~= "string" or text == "" then
-            return
-        end
-
-        local description = sectionHost:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        description:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        description:SetWidth(sectionHost:GetWidth())
-        description:SetWordWrap(true)
-        description:SetJustifyH("LEFT")
-        description:SetText(text)
-        description:SetTextColor(color[1], color[2], color[3], color[4])
-        local height = 14
-        if description.GetStringHeight then
-            height = math.max(14, math.ceil(description:GetStringHeight() or 14))
-        end
-        description:SetHeight(height)
-        y = y - height - 8
-        return description
-    end
-
-    function builder.Description(text)
-        return AddParagraph(text, DESCRIPTION_TEXT_COLOR)
-    end
-
-
-    function builder.Card()
-        local card = optionsAPI.CreateSettingsCardGroup(sectionHost, y)
-        card.frame:ClearAllPoints()
-        card.frame:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        card.frame:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
-        return card
-    end
-
-    function builder.CloseCard(card)
-        local height = card.Finalize() or card.frame:GetHeight()
-        cards[#cards + 1] = {frame = card.frame, height = height}
-        y = y - height
-    end
-
-    function builder.Spacer(amount)
-        y = y - (amount or 10)
-    end
-
-    function builder.Height(extra)
-        local height = math.abs(y) + (extra or SECTION_BOTTOM_PAD)
-        sectionHost._quiMeasureSettingsHeight = function()
-            local settledHeight = height
-            for _, card in ipairs(cards) do
-                settledHeight = settledHeight + (card.frame._quiMeasuredHeight or card.frame:GetHeight()) - card.height
-            end
-            return settledHeight
-        end
-        return height
-    end
+    local layout = ns.QUI_SettingsLayoutShared.MakeLayout(sectionHost, nil, 0, {
+        padding = 0,
+        headerGap = HEADER_GAP,
+        sectionGap = 0,
+        bottomPadding = SECTION_BOTTOM_PAD,
+        measureHeight = true,
+        textColor = DESCRIPTION_TEXT_COLOR,
+        wrapParagraph = true,
+        paragraphGap = 8,
+    })
+    local builder = {
+        Header = layout.headerAt,
+        Card = layout.sectionAt,
+        CloseCard = layout.closeSection,
+        Spacer = layout.spacer,
+        Height = layout.height,
+        Description = layout.paragraph,
+    }
 
     return builder
 end

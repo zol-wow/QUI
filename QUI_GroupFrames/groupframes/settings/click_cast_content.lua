@@ -23,9 +23,6 @@ local CreateScrollableContent = Shared.CreateScrollableContent
 
 local FORM_ROW = 32
 local PAD = 10
-local COPY_LABEL_WIDTH = 72
-local COPY_DROPDOWN_WIDTH = 420
-local COPY_CONTROL_GAP = 12
 local BINDINGS_SECTION_GAP = 22
 local UIKit = ns.UIKit
 
@@ -1032,27 +1029,14 @@ local function BuildClickCastBindings(L, content, cc, refreshClickCast, state)
 
     local copySelector = { selected = nil }
     local copyCard = Shared.CreateSettingsCardGroup(bindingsBlock, by)
-    local copyControls = CreateFrame("Frame", nil, copyCard.frame)
-    copyControls:SetHeight(FORM_ROW)
-
-    local copyDropdown = GUI:CreateFormDropdown(copyControls, ns.L["Copy From"], {}, "selected", copySelector)
-    copyDropdown:ClearAllPoints()
-    copyDropdown:SetPoint("LEFT", copyControls, "LEFT", 0, 0)
-    copyDropdown:SetWidth(COPY_LABEL_WIDTH + COPY_CONTROL_GAP + COPY_DROPDOWN_WIDTH)
-    if copyDropdown.dropdown then
-        copyDropdown.dropdown:ClearAllPoints()
-        copyDropdown.dropdown:SetPoint("LEFT", copyDropdown, "LEFT", COPY_LABEL_WIDTH + COPY_CONTROL_GAP, 0)
-        copyDropdown.dropdown:SetPoint("RIGHT", copyDropdown, "RIGHT", 0, 0)
-    end
-
-    local applyCopyBtn = GUI:CreateButton(copyControls, ns.L["Apply Copy"], 100, 24, function()
+    local copyDropdown = GUI:CreateFormDropdown(copyCard.frame, nil, {}, "selected", copySelector)
+    local applyCopyBtn = GUI:CreateButton(copyCard.frame, ns.L["Apply Copy"], 100, 24, function()
         if not copySelector.selected or copySelector.selected == "" then return end
         local ok = GFCC:CopyBindingsFrom(copySelector.selected)
         if ok and RefreshBindingList then RefreshBindingList() end
     end)
-    applyCopyBtn:SetPoint("LEFT", copyDropdown, "RIGHT", COPY_CONTROL_GAP, 0)
-
-    copyCard.AddRow(copyControls)
+    copyCard.AddRow(Shared.BuildSettingRow(copyCard.frame, ns.L["Copy From"], copyDropdown),
+        Shared.BuildSettingRow(copyCard.frame, ns.L["Apply Copy"], applyCopyBtn))
     copyCard.Finalize()
     by = by - copyCard.frame:GetHeight() - BINDINGS_SECTION_GAP
 

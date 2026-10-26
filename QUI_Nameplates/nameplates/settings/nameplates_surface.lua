@@ -86,38 +86,7 @@ local function GetSelectedType()
 end
 
 local function SetActiveTab(tabKey)
-    if type(tabKey) ~= "string" or tabKey == "" then
-        return false
-    end
-
-    local tabModel = EnsureTabModel()
-    if not tabModel or type(tabModel.SetActiveKey) ~= "function" then
-        return false
-    end
-
-    if type(tabModel.GetTabs) == "function" then
-        local found = false
-        for _, tab in ipairs(tabModel:GetTabs() or {}) do
-            if type(tab) == "table" and tab.key == tabKey then
-                found = true
-                break
-            end
-        end
-        if not found then
-            return false
-        end
-    end
-
-    local activeKey = type(tabModel.GetActiveKey) == "function" and tabModel:GetActiveKey() or nil
-    if activeKey == tabKey then
-        return true
-    end
-
-    tabModel:SetActiveKey(tabKey)
-    if State.repaintTabs then
-        State.repaintTabs()
-    end
-    return true
+    return FullSurface.SelectTab(State, EnsureTabModel(), tabKey)
 end
 
 local function NavigateSearchEntry(entry)
