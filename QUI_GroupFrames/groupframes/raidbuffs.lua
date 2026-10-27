@@ -1196,7 +1196,8 @@ UpdateDisplay = function()
         lastLayoutKey = layoutKey
     end
 
-    if inCombat then mainFrame:SetAlpha(1) else mainFrame:Show() end
+    mainFrame:SetAlpha(1)
+    if not inCombat then mainFrame:Show() end
 end
 
 local function ThrottledUpdate()
