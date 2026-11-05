@@ -4,6 +4,16 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.3-beta5 - 2026-11-05
+
+### Fixed
+
+- Raid Buff reminders reappear after combat when a tracked buff is missing,
+  including when the buff expires after combat.
+- Profiles exported in Retail can be imported in Forever and vice versa,
+  including selected settings and nameplate profiles. Existing import
+  validation remains in place.
+
 ## v5.5.3-beta4 - 2026-10-26
 
 ### Improved
