@@ -48,13 +48,18 @@ local function BuildDispelHintBlock(host, y)
     return y
 end
 
+local mountedEditor
+
 local function BuildAurasGroupContent(host, ctx, section)
+    mountedEditor = { host = host, ctx = ctx, section = section }
     local FullSurface = Settings and Settings.FullSurface
     local GF = ns.QUI_GroupFramesSettingsSchema
     local GFModel = ns.QUI_GroupFramesSettingsModel
     local GFSurface = ns.QUI_GroupFramesSettingsSurface
 
     local contextMode = (GFSurface and type(GFSurface.GetContextMode) == "function" and GFSurface.GetContextMode()) or "party"
+
+    mountedEditor.key = contextMode
 
     local y = 0
     local built
@@ -89,23 +94,9 @@ local function BuildAurasGroupContent(host, ctx, section)
     editorHost:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -y)
     editorHost:SetPoint("RIGHT", host, "RIGHT", 0, 0)
     editorHost:SetHeight(1)
-    local SearchRoute = Settings and Settings.SearchRoute
-    local HUB_ROUTE = {
-        tabIndex = 21,
-        tabName = ns.L["Auras"],
-        subTabIndex = 2,
-        subTabName = ns.L["Group Frames"],
-        tileId = "auras",
-        subPageIndex = 2,
-        featureId = "aurasGroupPage",
-    }
     local h = 1
     if GF and type(GF.RenderAurasTab) == "function" then
-        if SearchRoute and type(SearchRoute.With) == "function" then
-            h = SearchRoute.With(HUB_ROUTE, GF.RenderAurasTab, editorHost, contextMode) or 1
-        else
-            h = GF.RenderAurasTab(editorHost, contextMode) or 1
-        end
+        h = GF.RenderAurasTab(editorHost, contextMode) or 1
     end
 
     local dispelHost = CreateFrame("Frame", nil, host)
@@ -114,11 +105,7 @@ local function BuildAurasGroupContent(host, ctx, section)
     dispelHost:SetHeight(1)
     local dispelHeight = 1
     if GF and type(GF.RenderDispelTab) == "function" then
-        if SearchRoute and type(SearchRoute.With) == "function" then
-            dispelHeight = SearchRoute.With(HUB_ROUTE, GF.RenderDispelTab, dispelHost, contextMode) or 1
-        else
-            dispelHeight = GF.RenderDispelTab(dispelHost, contextMode) or 1
-        end
+        dispelHeight = GF.RenderDispelTab(dispelHost, contextMode) or 1
     end
     local hintHost = CreateFrame("Frame", nil, host)
     hintHost:SetPoint("TOPLEFT", dispelHost, "BOTTOMLEFT", 0, -16)
@@ -157,11 +144,42 @@ Registry:RegisterFeature(Schema.Feature({
     id = "aurasGroupPage",
     category = "frames",
     nav = { tileId = "auras", subPageIndex = 2 },
+    getSearchContexts = function()
+        local model = ns.QUI_GroupFramesSettingsModel
+        return model and model.GetSearchContexts("auras") or {}
+    end,
+    getNavigationContext = function()
+        local surface = ns.QUI_GroupFramesSettingsSurface
+        return surface and surface.GetNavigationContext() or {}
+    end,
+    searchNavigate = function(entry, context)
+        local surface = ns.QUI_GroupFramesSettingsSurface
+        if not surface then return false end
+        local provider = entry and entry.providerKey
+        local key = provider == "partyFrames" and "party"
+            or ((provider == "raidFrames" or provider == "spotlightFrames") and "raid")
+        if not key then return false end
+        local changed = surface.GetContextMode() ~= key
+        if changed then surface.SetContextMode(key) end
+        local mounted = mountedEditor
+        if mounted and mounted.key ~= key and mounted.ctx and mounted.section
+            and mounted.ctx.host._quiSettingsRuntime == mounted.ctx.runtime then
+            mounted.ctx:RerenderSection(mounted.section.id)
+        end
+        if context and context.opts and mountedEditor then
+            context.opts.searchRoot = mountedEditor.host
+        end
+        return true
+    end,
     sections = {
         Schema.Section({
             id = "settings",
             kind = "page",
             minHeight = 80,
+            getContextKey = function()
+                local surface = ns.QUI_GroupFramesSettingsSurface
+                return surface and surface.GetContextMode() or "party"
+            end,
             build = BuildAurasGroupContent,
         }),
     },

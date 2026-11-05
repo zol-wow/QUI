@@ -201,6 +201,12 @@ local function StyleAchievementStatistic(row)
     SkinBase.SkinFontString(row.Title, { size = 12, color = { 1, 1, 1, 1 } })
     SkinBase.SkinFontString(row.Text or (row.GetFontString and row:GetFontString()), { size = 11, color = { 0.9, 0.9, 0.9, 1 } })
     SkinBase.SkinFontString(row.Value, { size = 11, color = { 1, 1, 1, 1 } })
+    if row.Value and not row.FriendValue then
+        -- Inline coin art can extend past the font advance. Keep it inside
+        -- the rounded row; comparison values retain their native columns.
+        row.Value:ClearAllPoints()
+        row.Value:SetPoint("RIGHT", row, "RIGHT", -14, 0)
+    end
     SkinBase.SkinFontString(row.FriendValue, { size = 11, color = { 1, 1, 1, 1 } })
 end
 

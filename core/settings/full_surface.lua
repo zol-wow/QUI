@@ -1323,9 +1323,41 @@ local function RefreshTabNavigation(descriptor, body)
     if descriptor and gui and gui.RefreshTileSurfacePages then gui:RefreshTileSurfacePages(body) end
 end
 
+-- Apply one validated selection for sidebar, public, and cold navigation.
+-- The second result distinguishes an accepted current destination from rejection.
+local function ApplyTabSelection(options, tabKey)
+    local tabs = type(options.getTabs) == "function" and options.getTabs() or {}
+    local definition
+    for _, candidate in ipairs(tabs) do
+        if candidate.key == tabKey then
+            definition = candidate
+            break
+        end
+    end
+    if not definition or definition.disabled == true or definition.enabled == false then
+        return false, false
+    end
+    local previous = type(options.getActiveTab) == "function" and options.getActiveTab() or nil
+    if tabKey == previous then return false, true end
+    if type(options.setActiveTab) == "function" then options.setActiveTab(tabKey) end
+    if type(options.onTabChanged) == "function" then options.onTabChanged(tabKey) end
+    return true, true
+end
+
 local function CreateTabRepainter(options, paintTabs, RenderActive)
     local repainting = false
-    local function RepaintTabs()
+    local RepaintTabs
+    local function SelectTab(tabKey)
+        local changed, accepted = ApplyTabSelection(options, tabKey)
+        if changed then
+            repainting = false
+            RepaintTabs()
+            RenderActive(false)
+        end
+        return changed, accepted
+    end
+
+    RepaintTabs = function()
         if options.preventReentry and repainting then
             return
         end
@@ -1340,37 +1372,7 @@ local function CreateTabRepainter(options, paintTabs, RenderActive)
                 activeTab = normalized
             end
         end
-
-        local function HandleTabClick(tabKey)
-            local currentTabs = type(options.getTabs) == "function" and options.getTabs() or {}
-            local definition
-            for _, candidate in ipairs(currentTabs) do
-                if candidate.key == tabKey then
-                    definition = candidate
-                    break
-                end
-            end
-            if not definition or definition.disabled == true or definition.enabled == false then
-                return false
-            end
-            local previousActiveTab = type(options.getActiveTab) == "function" and options.getActiveTab() or nil
-            if tabKey == previousActiveTab then
-                return false
-            end
-            if type(options.setActiveTab) == "function" then
-                options.setActiveTab(tabKey)
-            end
-            if type(options.onTabChanged) == "function" then
-                options.onTabChanged(tabKey)
-            end
-            repainting = false
-            RepaintTabs()
-            RenderActive(false)
-            return true
-        end
-
-        paintTabs(tabs, activeTab, HandleTabClick)
-
+        paintTabs(tabs, activeTab, SelectTab)
         repainting = false
     end
 
@@ -1379,11 +1381,37 @@ local function CreateTabRepainter(options, paintTabs, RenderActive)
         RenderActive(force ~= false)
     end
 
-    return RepaintTabs, RepaintAndRender
+    return RepaintTabs, RepaintAndRender, SelectTab
+end
+
+function FullSurface.SelectTab(state, tabModel, tabKey)
+    if type(tabKey) ~= "string" or tabKey == "" then return false end
+    local _, accepted
+    if state and state.selectTab then
+        _, accepted = state.selectTab(tabKey)
+    elseif tabModel then
+        _, accepted = ApplyTabSelection({
+            getTabs = function() return tabModel:GetTabs() end,
+            getActiveTab = function() return tabModel:GetActiveKey() end,
+            setActiveTab = function(key) tabModel:SetActiveKey(key) end,
+        }, tabKey)
+    end
+    return accepted == true
+end
+
+-- Later tab/selector renders run after the page's outer route scope ends.
+local function BindSearchRoute(render)
+    local route = Settings and Settings.SearchRoute
+    local active = route and route.Active and route.Active()
+    if type(render) ~= "function" or type(active) ~= "table" then return render end
+    local context = {}
+    for key, value in pairs(active) do context[key] = value end
+    return function(...) return route.With(context, render, ...) end
 end
 
 function FullSurface.BuildScrollTabBody(body, options)
     options = options or {}
+    local render = BindSearchRoute(options.render)
 
     local clearFrame = options.clearFrame or FullSurface.ClearFrame
     local cacheTabBodies = options.cacheTabBodies == true
@@ -1494,8 +1522,8 @@ function FullSurface.BuildScrollTabBody(body, options)
                 clearFrame(host)
             end
             PrepareTabNavigation(navigation, cached)
-            if type(options.render) == "function" then
-                options.render(host, tabKey, cached)
+            if type(render) == "function" then
+                render(host, tabKey, cached)
             end
             cached.rendered = true
         end
@@ -1534,16 +1562,17 @@ function FullSurface.BuildScrollTabBody(body, options)
             state.activeBody = host
         end
         PrepareTabNavigation(navigation, { container = scrollWrap, content = host, scrollFrame = scrollFrame })
-        if type(options.render) == "function" then
-            options.render(host)
+        if type(render) == "function" then
+            render(host)
         end
         RefreshTabNavigation(navigation, body)
     end
 
-    local RepaintTabs, RepaintAndRender = CreateTabRepainter(options, paintTabs, RenderActive)
+    local RepaintTabs, RepaintAndRender, SelectTab = CreateTabRepainter(options, paintTabs, RenderActive)
 
     if state then
         state.repaintTabs = RepaintAndRender
+        state.selectTab = SelectTab
         state.invalidateTabBodies = InvalidateCachedTabBodies
     end
 
@@ -1564,6 +1593,7 @@ function FullSurface.BuildScrollTabBody(body, options)
         scrollWrap = scrollWrap,
         scrollContent = scrollContent,
         RepaintTabs = RepaintTabs,
+        SelectTab = SelectTab,
         RenderActive = RenderActive,
         InvalidateCachedTabBodies = InvalidateCachedTabBodies,
     }
@@ -1571,6 +1601,7 @@ end
 
 function FullSurface.BuildMultiHostTabBody(body, options)
     options = options or {}
+    local render = BindSearchRoute(options.render)
 
     local clearFrame = options.clearFrame or FullSurface.ClearFrame
     local cacheTabBodies = options.cacheTabBodies == true
@@ -1700,8 +1731,8 @@ function FullSurface.BuildMultiHostTabBody(body, options)
                 cached.clearFrame(cached.content)
             end
             PrepareTabNavigation(navigation, cached)
-            if type(options.render) == "function" then
-                options.render(cached.content, activeTab, activeHostKey, cached)
+            if type(render) == "function" then
+                render(cached.content, activeTab, activeHostKey, cached)
             end
             cached.rendered = true
         end
@@ -1756,16 +1787,17 @@ function FullSurface.BuildMultiHostTabBody(body, options)
         end
 
         PrepareTabNavigation(navigation, hostInfo)
-        if type(options.render) == "function" then
-            options.render(hostInfo.content, activeTab, activeHostKey, hostInfo)
+        if type(render) == "function" then
+            render(hostInfo.content, activeTab, activeHostKey, hostInfo)
         end
         RefreshTabNavigation(navigation, body)
     end
 
-    local RepaintTabs, RepaintAndRender = CreateTabRepainter(options, paintTabs, RenderActive)
+    local RepaintTabs, RepaintAndRender, SelectTab = CreateTabRepainter(options, paintTabs, RenderActive)
 
     if state then
         state.repaintTabs = RepaintAndRender
+        state.selectTab = SelectTab
         state.invalidateTabBodies = InvalidateCachedTabBodies
     end
 
@@ -1775,6 +1807,7 @@ function FullSurface.BuildMultiHostTabBody(body, options)
         tabStrip = tabStrip,
         hosts = hosts,
         RepaintTabs = RepaintTabs,
+        SelectTab = SelectTab,
         RenderActive = RenderActive,
         InvalidateCachedTabBodies = InvalidateCachedTabBodies,
     }

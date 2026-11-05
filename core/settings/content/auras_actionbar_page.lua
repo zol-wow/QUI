@@ -11,24 +11,9 @@ end
 
 local function BuildAurasActionBarContent(host, ctx, section)
     local AB = ns.QUI_BuffDebuffOptions
-    local SearchRoute = Settings and Settings.SearchRoute
-
-    local HUB_ROUTE = {
-        tabIndex = 21,
-        tabName = ns.L["Auras"],
-        subTabIndex = 4,
-        subTabName = ns.L["Buff/Debuff Frames"],
-        tileId = "auras",
-        subPageIndex = 4,
-        featureId = "aurasActionBarPage",
-    }
 
     if AB and type(AB.BuildBuffDebuffTab) == "function" then
-        if SearchRoute and type(SearchRoute.With) == "function" then
-            SearchRoute.With(HUB_ROUTE, AB.BuildBuffDebuffTab, host)
-        else
-            AB.BuildBuffDebuffTab(host)
-        end
+        AB.BuildBuffDebuffTab(host)
     end
 
     return host:GetHeight() or 80

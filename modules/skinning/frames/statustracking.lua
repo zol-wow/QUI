@@ -1,5 +1,22 @@
 local _, ns = ...
 
+-- Shared by runtime and settings, including profiles with skinning disabled.
+function ns.MigrateStatusTrackingBorderSettings(g)
+    if type(g) ~= "table" then return end
+    if g.statusTrackingBarsBorderColorSource == nil then
+        if g.statusTrackingBarsBorderOverride then
+            g.statusTrackingBarsBorderColorSource = g.statusTrackingBarsBorderUseClassColor and "class" or "custom"
+        else
+            g.statusTrackingBarsBorderColorSource = "inherit"
+        end
+    end
+    if g.statusTrackingBarsShowBorder == false then
+        g.statusTrackingBarsHideBorder = true
+        -- Consume the old positive flag so enabling the canonical border stays enabled.
+        g.statusTrackingBarsShowBorder = true
+    end
+end
+
 if ns.IsSkinningEnabled and not ns.IsSkinningEnabled() then return end
 local Helpers = ns.Helpers
 local SkinBase = ns.SkinBase
@@ -33,7 +50,9 @@ end
 
 local function GetGeneralSettings()
     local core = Helpers.GetCore()
-    return core and core.db and core.db.profile and core.db.profile.general
+    local g = core and core.db and core.db.profile and core.db.profile.general
+    ns.MigrateStatusTrackingBorderSettings(g)
+    return g
 end
 
 local function IsModuleEnabled()
@@ -234,20 +253,48 @@ local function RefreshBarFillAndTexture(bar)
 
     local statusBar = bar.StatusBar
     local g = GetGeneralSettings()
-    if statusBar.SetStatusBarTexture then
-        ns.Helpers.ApplyBarStyle(statusBar, FALLBACK_TEXTURE)
-        SkinBase.RoundBarTexture(statusBar, statusBar:GetStatusBarTexture())
-    end
-
+    local native = SkinBase.GetFrameData(bar, "quiStbNativeFill")
+    if native then native.applying = true end
     local mode = g.statusTrackingBarsBarColorMode or "accent"
     if mode == "blizzard" then
-        return
+        if native then
+            if native.atlas or native.texture then statusBar:SetStatusBarTexture(native.atlas or native.texture) end
+            if native.color then statusBar:SetStatusBarColor(unpack(native.color)) end
+        end
+    else
+        ns.Helpers.ApplyBarStyle(statusBar, FALLBACK_TEXTURE)
+        local r, gFill, b, a = GetBarFillRGBA(g, mode)
+        if r and statusBar.SetStatusBarColor then
+            statusBar:SetStatusBarColor(r, gFill, b, a or 1)
+        end
     end
+    SkinBase.RoundBarTexture(statusBar, statusBar:GetStatusBarTexture())
+    if native then native.applying = nil end
+end
 
-    local r, gFill, b, a = GetBarFillRGBA(g, mode)
-    if r and statusBar.SetStatusBarColor then
-        statusBar:SetStatusBarColor(r, gFill, b, a or 1)
+local function HookBarNativeFill(bar)
+    if SkinBase.GetFrameData(bar, "quiStbNativeFill") then return end
+    local statusBar = bar.StatusBar
+    local native = { color = { statusBar:GetStatusBarColor() } }
+    local function CaptureTexture()
+        local texture = statusBar:GetStatusBarTexture()
+        native.texture = texture and texture:GetTexture()
+        native.atlas = texture and texture.GetAtlas and texture:GetAtlas()
     end
+    CaptureTexture()
+    SkinBase.SetFrameData(bar, "quiStbNativeFill", native)
+    -- Native reputation/XP animations can change the art after Update returns.
+    -- Keep their latest art and tint separate from QUI's temporary override.
+    hooksecurefunc(statusBar, "SetStatusBarTexture", function()
+        if native.applying then return end
+        CaptureTexture()
+        RefreshBarFillAndTexture(bar)
+    end)
+    hooksecurefunc(statusBar, "SetStatusBarColor", function(_, r, g, b, a)
+        if native.applying then return end
+        native.color = { r, g, b, a or 1 }
+        RefreshBarFillAndTexture(bar)
+    end)
 end
 
 local function HookBarUpdate(bar)
@@ -285,18 +332,13 @@ local function RefreshBarAppearance(bar)
 
     local backdrop = SkinBase.GetFrameData(bar, "quiStbBackdrop")
     local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors(GetGeneralSettings(), "statusTrackingBars")
-    local g = GetGeneralSettings()
 
     ApplyBarDimensions(bar, statusBar)
 
     if backdrop then
         UpdateBackdropLayout(backdrop)
         Helpers.SetFrameBackdropColor(backdrop, bgr, bgg, bgb, bga)
-        local borderA = sa
-        if g and g.statusTrackingBarsShowBorder == false then
-            borderA = 0
-        end
-        Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, borderA)
+        Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
     end
 
     SyncBarTextLockedAndVisibility(bar)
@@ -307,6 +349,7 @@ local function EnsureBarSkinned(bar)
     if not bar or not bar.StatusBar then return end
 
     local statusBar = bar.StatusBar
+    HookBarNativeFill(bar)
 
     if not SkinBase.GetFrameData(bar, "quiStbDefSbW") then
         SkinBase.SetFrameData(bar, "quiStbDefSbW", statusBar:GetWidth())
@@ -395,6 +438,20 @@ local function RefreshStatusTrackingBarSkin()
 end
 
 _G.QUI_RefreshStatusTrackingBarSkin = RefreshStatusTrackingBarSkin
+
+if Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "statusTrackingBars",
+        label = ns.L["Status Tracking Bars"],
+        category = "Skinning",
+        prefix = "statusTrackingBars",
+        db = function(profile)
+            ns.MigrateStatusTrackingBorderSettings(profile.general)
+            return profile.general
+        end,
+        refresh = RefreshStatusTrackingBarSkin,
+    })
+end
 
 if ns.Registry then
     ns.Registry:Register("statusTracking", {

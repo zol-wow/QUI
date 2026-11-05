@@ -1042,14 +1042,41 @@ local function ReapplyAnchoredDescendants(rootKey)
                 and childSettings.parent == parentKey then
                 visited[childKey] = true
                 queue[#queue + 1] = childKey
-                QUI_LayoutMode._pendingPositions[childKey] = nil
-                if _G.QUI_ForceReapplyFrameAnchor then
-                    _G.QUI_ForceReapplyFrameAnchor(childKey)
+                local def = QUI_LayoutMode._elements[childKey]
+                if not (def and def.usesCustomPositionPersistence) then
+                    QUI_LayoutMode._pendingPositions[childKey] = nil
+                    if _G.QUI_ForceReapplyFrameAnchor then
+                        _G.QUI_ForceReapplyFrameAnchor(childKey)
+                    end
                 end
                 if SyncHandle then SyncHandle(childKey) end
             end
         end
     end
+end
+
+function QUI_LayoutMode:ReassertAnchorAfterResize(key)
+    if not self.isActive or self._resizingAnchors or InCombatLockdown() then return false end
+    for _, handle in pairs(self._handles) do
+        if handle._dragging then return false end
+    end
+    self._resizingAnchors = true
+    local ok = ns.SafeCall("bulkhead", function()
+        local fa = GetFrameAnchoring()
+        local entry = fa and fa[key]
+        local def = self._elements[key]
+        if type(entry) == "table" and entry.parent and entry.parent ~= "disabled"
+            and not (def and def.usesCustomPositionPersistence) then
+            self._pendingPositions[key] = nil
+            if _G.QUI_ForceReapplyFrameAnchor then
+                _G.QUI_ForceReapplyFrameAnchor(key)
+            end
+        end
+        SyncHandle(key)
+        ReapplyAnchoredDescendants(key)
+    end)
+    self._resizingAnchors = nil
+    return ok
 end
 
 -- Fraction of the frame/screen extent at which each anchor point sits.
@@ -2063,6 +2090,7 @@ local function ResetHandleForReuse(handle, def)
     handle:ClearAllPoints()
     handle._selected = false
     handle._dragging = false
+    handle._layoutWidth, handle._layoutHeight = nil, nil
     handle._isAnchored = nil
     handle._savedTargetParent = nil
     handle._savedTargetStrata = nil
@@ -2444,11 +2472,11 @@ SyncHandle = function(key)
         end
     end
 
+    local sizeFrame = handle._isChildOverlay and handle._parentFrame or handle
+    local ok, width, height = pcall(sizeFrame.GetSize, sizeFrame)
     local w, h
-    if handle._isChildOverlay and handle._parentFrame and not def.setupOverlay then
-        local ok, fw, fh = pcall(handle._parentFrame.GetSize, handle._parentFrame)
-        if ok then w, h = fw, fh end
-    else
+    if ok then w, h = width, height end
+    if handle._isChildOverlay and def.setupOverlay then
         w, h = handle:GetSize()
     end
     w = w or HANDLE_MIN_SIZE
@@ -2462,6 +2490,21 @@ SyncHandle = function(key)
         if handle._groupLabel then handle._groupLabel:Show() end
         handle._label:SetPoint("CENTER", handle, "CENTER", 0, 6)
         handle._coords:Show()
+    end
+
+    if ok and width and height then
+        width = Helpers.SafeToNumber(width)
+        height = Helpers.SafeToNumber(height)
+        if width and height and width > 0 and height > 0 then
+            local oldWidth, oldHeight = handle._layoutWidth, handle._layoutHeight
+            handle._layoutWidth, handle._layoutHeight = width, height
+            if oldWidth and oldHeight and (width ~= oldWidth or height ~= oldHeight)
+                and not QUI_LayoutMode._resizingAnchors then
+                if not QUI_LayoutMode:ReassertAnchorAfterResize(key) then
+                    handle._layoutWidth, handle._layoutHeight = oldWidth, oldHeight
+                end
+            end
+        end
     end
 end
 

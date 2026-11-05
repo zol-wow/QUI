@@ -291,6 +291,12 @@ if Registry and Schema and RenderAdapters
         id = "thirdPartyAnchoring",
         moverKey = "thirdPartyAnchoring",
         lookupKeys = { "dandersParty", "dandersRaid", "dandersPinned1", "dandersPinned2" },
+        lookupRoutes = {
+            dandersParty = { scrollToLabel = "DandersFrames \226\128\148 " .. ns.L["Party Frames"] },
+            dandersRaid = { scrollToLabel = "DandersFrames \226\128\148 " .. ns.L["Raid Frames"] },
+            dandersPinned1 = { scrollToLabel = "DandersFrames \226\128\148 " .. ns.L["Pinned Set 1"] },
+            dandersPinned2 = { scrollToLabel = "DandersFrames \226\128\148 " .. ns.L["Pinned Set 2"] },
+        },
         category = "global",
         nav = { tileId = "global", subPageIndex = 5 },
         sections = {

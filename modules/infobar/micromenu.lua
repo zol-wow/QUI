@@ -41,12 +41,12 @@ local BUTTONS = {
     },
     {
         key = "spellbook", label = ns.L["Spellbook"],
-        clickButton = isForever and "SpellbookMicroButton" or "PlayerSpellsMicroButton",
+        clickButton = _G.SpellbookMicroButton and "SpellbookMicroButton" or "PlayerSpellsMicroButton",
         icon = "Interface\\Spellbook\\Spellbook-Icon",
     },
     {
         key = "talents", label = ns.L["Talents"], atlas = "SpecTalents",
-        clickButton = isForever and "TalentMicroButton" or "PlayerSpellsMicroButton",
+        clickButton = _G.TalentMicroButton and "TalentMicroButton" or "PlayerSpellsMicroButton",
     },
     {
         key = "professions", label = ns.L["Professions"], atlas = "Professions",

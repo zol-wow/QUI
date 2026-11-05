@@ -4,6 +4,98 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.3-beta5 - 2026-11-05
+
+### Fixed
+
+- Raid Buff reminders reappear after combat when a tracked buff is missing,
+  including when the buff expires after combat.
+- Profiles exported in Retail can be imported in Forever and vice versa,
+  including selected settings and nameplate profiles. Existing import
+  validation remains in place.
+
+## v5.5.3-beta4 - 2026-10-26
+
+### Improved
+
+- Settings search includes more Action Bar, Minimap, and Info Bar controls and
+  opens the matching page, section, and selected unit or display.
+- Spell Reminders appear individually in navigation, with direct links to each
+  reminder's settings and a separate Add Reminder entry.
+- Settings cards, text, pickers, and editors adapt more consistently to the
+  available window width.
+
+### Fixed
+
+- Returning to cached settings pages preserves editor state instead of
+  rebuilding unchanged controls. Pages refresh controls when their selected
+  context changes elsewhere.
+- Opening settings or search no longer turns inherited values into local
+  overrides. Search keeps controls with the same label bound to their own
+  settings.
+- Confirmation dialogs stay above their options window, and reminder font
+  selection includes the Global Font option.
+
+## v5.5.3-beta3 - 2026-10-25
+
+### Improved
+
+- Settings navigation uses compact nested groups and restores each module's
+  sidebar scroll position. Search and navigation include additional Sound Mute,
+  Blizzard Mover, Import/Export, and Chat controls.
+
+### Fixed
+
+- Castbars follow their configured anchors after combat reloads, layout
+  changes, movement, and resizing. Saved frame placement is preserved during
+  startup.
+- Both consumable settings pages honor character-specific selections.
+- Spell Reminder management controls open on the main page, and editors retain
+  their layout when revisited. Temporary settings controls avoid repeated
+  profile scans.
+- Bags prepare native item buttons outside combat and reuse them during combat.
+  When a native button is unavailable, cached item cells remain visible until
+  the button can be created after combat.
+
+## v5.5.3-beta2 - 2026-10-24
+
+### Fixed
+
+- Objective Tracker placement in QUI Layout Mode stays consistent across
+  scenario changes and native layout resets, with tracker skinning on or off.
+  Blizzard Edit Mode dragging no longer displaces it; restricted positioning
+  changes recover after combat.
+- Info Bar Spellbook and Talents shortcuts use their dedicated native buttons
+  when available, retaining the secure shared fallback on other clients.
+- Group-frame Cleanse-Ready Glow animations preserve the configured opacity.
+
+## v5.5.3-beta1 - 2026-10-20
+
+### Improved
+
+- Mover Open settings links select the matching section, unit tab, or aura
+  display/group and reveal the destination in the navigation sidebar. Swing
+  timer drawers keep layout controls; gameplay and appearance controls remain
+  in the main settings page.
+- Refined Blizzard window, alert, loot, tooltip, and status-bar styling,
+  including bank rarity borders and native hover states.
+
+### Fixed
+
+- Resizing movers preserves saved anchor gaps across attached movers without
+  reopening Layout Mode. Settings drawers fit after their contents settle.
+- Forever movement-speed stats and tooltips use native values without
+  restricted arithmetic. Swing timer styling and previews preserve native
+  timing, visibility registration, and range presentation.
+- Cooldown Manager setup warnings wait for saved settings to load and clear
+  when the viewer is enabled. Durability anchors survive native repositioning.
+- Bag button creation waits until combat ends, cooldown identities refresh
+  after specialization changes, and offline group members lose stale auras.
+- Loot and loot-roll previews no longer replace or hide active loot windows
+  and roll choices.
+- Theme changes preserve settings navigation, and color-picker styling is
+  consistent across settings controls.
+
 ## v5.5.2 - 2026-10-19
 
 > **Stable release.** One download supports Midnight 12.1 live, Midnight

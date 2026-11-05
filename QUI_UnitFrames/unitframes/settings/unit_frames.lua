@@ -20,6 +20,13 @@ local LOOKUP_TO_UNIT = {
     petCastbar = "pet",
     totCastbar = "targettarget",
 }
+local LOOKUP_ROUTES = {}
+for key, unit in pairs(LOOKUP_TO_UNIT) do
+    LOOKUP_ROUTES[key] = {
+        surfaceUnitKey = unit,
+        surfaceTabKey = key:find("Castbar$") and "castbar" or "frame",
+    }
+end
 
 local function GetSurface()
     return ns.QUI_UnitFramesSettingsSurface
@@ -88,6 +95,7 @@ SurfaceFeatures:Register({
         "playerCastbar", "targetCastbar", "focusCastbar",
         "petCastbar", "totCastbar",
     },
+    lookupRoutes = LOOKUP_ROUTES,
     category = "frames",
     nav = {
         tileId = "unit_frames",

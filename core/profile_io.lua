@@ -212,14 +212,6 @@ local function ValidateProfilePayloadDetailed(core, profileData)
         }
     end
 
-    local sourceClient = type(profileData) == "table" and profileData._quiClient
-    if ns.Client and sourceClient ~= nil and sourceClient ~= ns.Client.flavor then
-        return false, {
-            summary = "This profile was exported for a different WoW client. Import a profile from the same client.",
-            errors = { { kind = "client_mismatch" } },
-        }
-    end
-
     local defaults = core and core.db and core.db.defaults and core.db.defaults.profile
     if type(defaults) ~= "table" then
         return true, nil
@@ -531,6 +523,9 @@ local PROFILE_SKINNING_GENERAL_KEYS = {
     "statusTrackingBarsBarHeight",
     "statusTrackingBarsBarWidthPercent",
     "statusTrackingBarsShowBorder",
+    "statusTrackingBarsBorderColorSource",
+    "statusTrackingBarsBorderColor",
+    "statusTrackingBarsHideBorder",
     "statusTrackingBarsBorderThickness",
     "statusTrackingBarsShowBarText",
     "statusTrackingBarsBarTextAlways",

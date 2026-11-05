@@ -191,6 +191,15 @@ function ReorderList.Build(parent, y, spec)
                     end
                     RefreshLabel()
                 end, bindDescription and { description = bindDescription } or nil)
+                local label = spec.getLabel(item, idx)
+                pill._widgetLabel = label
+                if type(spec.GUI.RegisterSearchSettingWidget) == "function" then
+                    spec.GUI:RegisterSearchSettingWidget({
+                        label = label, widgetType = "toggle",
+                        widgetDescriptor = spec.GUI:BuildSearchWidgetDescriptor("toggle", bindKey, bindTable),
+                        description = bindDescription,
+                    })
+                end
                 pill:ClearAllPoints()
                 pill:SetPoint("LEFT", r, "LEFT", labelLeft, 0)
                 if spec.onControl then spec.onControl(pill) end

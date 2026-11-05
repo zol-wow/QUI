@@ -57,40 +57,12 @@ local function BuildBonusRollSettings(content, U)
               description = description or ns.L["Hide all bonus roll prompts for this content difficulty. Changes apply to future offers."] }), enabled))
     end
     local function Collapsible(parentLayout, parent, title, build, expanded, dynamic)
-        local section = CreateFrame("Frame", nil, parent)
-        local body = CreateFrame("Frame", nil, section)
-        body:SetPoint("TOPLEFT", section, "TOPLEFT", 0, -32)
-        body:SetPoint("RIGHT", section, "RIGHT", 0, 0)
-        local header
-        section._expanded = expanded == true
-        section._sectionTitle = title
-        section._body = body
-        body._logicalSection = section
-        local function UpdateHeight()
-            body:SetShown(section._expanded)
-            section:SetHeight(32 + (section._expanded and body:GetHeight() or 0))
-            if header then header:SetText((section._expanded and "- " or "+ ") .. title) end
+        local section, body = Opts.CreateInlineCollapsible(parent, title, 0, function()
             parentLayout.relayoutSections()
-        end
-        function section:SetExpanded(value)
-            self._expanded = value == true
-            UpdateHeight()
-        end
-        if not dynamic then GUI:SetSearchSection(title) end
-        header = GUI:CreateButton(section, title, 200, 26, function()
-            section:SetExpanded(not section._expanded)
-        end)
-        header:SetPoint("TOPLEFT")
-        header:SetPoint("RIGHT", section, "RIGHT", 0, 0)
-        build(body, UpdateHeight)
+        end, { collapsible = true, expanded = expanded, borderless = true, navigation = not dynamic })
         parentLayout.sections[#parentLayout.sections + 1] = section
-        UpdateHeight()
-        if not dynamic then
-            if content.RegisterSection then content:RegisterSection(title, title, section) end
-            if GUI.RegisterSectionEntry and GUI._searchContext.tabIndex then
-                GUI.RegisterSectionEntry(GUI._searchContext.tabIndex, GUI._searchContext.subTabIndex, title, section, content)
-            end
-        end
+        build(body, function() section:RefreshContentHeight() end)
+        section:RefreshContentHeight()
         return section
     end
 
@@ -226,9 +198,10 @@ local function BuildBonusRollSettings(content, U)
         end
         selectRaidDifficulty = SelectDifficulty
         local difficultyCard = raidLayout.sectionAt()
-        raidDropdown = Track(GUI:CreateFormDropdown(difficultyCard.frame,
+        -- This selector only navigates; filtering can remain disabled while browsing.
+        raidDropdown = GUI:CreateFormDropdown(difficultyCard.frame,
             nil, raidOptions, "difficulty", state, SelectDifficulty,
-            { searchable = false, description = ns.L["Choose which raid difficulty to configure below. Each difficulty keeps its own filters. This does not change your current raid difficulty."] }))
+            { searchable = false, description = ns.L["Choose which raid difficulty to configure below. Each difficulty keeps its own filters. This does not change your current raid difficulty."] })
         GUI:SetWidgetProviderSyncOptions(raidDropdown, { auto = false })
         difficultyCard.AddRow(Row(difficultyCard, ns.L["Raid Difficulty"], raidDropdown))
         raidLayout.closeSection(difficultyCard)

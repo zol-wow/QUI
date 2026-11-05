@@ -682,9 +682,12 @@ local function CreateTilePage(parent, pad, topOffset)
     return sections, relayout, CreateCollapsible
 end
 
-local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
+local function CreateInlineCollapsible(parent, title, contentHeight, onResize, options)
+    options = options or {}
+    local cardBg
     local section, body = BuildCollapsibleChrome(parent, title, contentHeight, function(host)
-        local cardBg = CreateFrame("Frame", nil, host)
+        if options.borderless then return end
+        cardBg = CreateFrame("Frame", nil, host)
         cardBg:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -(COLLAPSIBLE_HEADER_HEIGHT + COLLAPSIBLE_CARD_GAP))
         cardBg:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0)
         local C = GUI.Colors
@@ -707,7 +710,48 @@ local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
         end
     end)
 
+    section._sectionTitle = title
+    if options.collapsible then
+        section._expanded = options.expanded == true
+        local header = CreateFrame("Button", nil, section)
+        header:SetPoint("TOPLEFT", section, "TOPLEFT", 0, 0)
+        header:SetPoint("TOPRIGHT", section, "TOPRIGHT", 0, 0)
+        header:SetHeight(COLLAPSIBLE_HEADER_HEIGHT)
+        local caret = UIKit and UIKit.CreateChevronCaret and UIKit.CreateChevronCaret(header, {
+            point = "RIGHT", xPixels = -6, collapsedDirection = "right",
+            expanded = section._expanded,
+        })
+        header:SetScript("OnClick", function() section:SetExpanded(not section._expanded) end)
+        section._header, section._caret = header, caret
+        if options.navigation ~= false and not GUI._suppressSearchRegistration then
+            GUI:SetSearchSection(title)
+            section._searchContext = {
+                tabIndex = GUI._searchContext.tabIndex,
+                subTabIndex = GUI._searchContext.subTabIndex,
+            }
+            local target = parent
+            while target do
+                if type(target.RegisterSection) == "function" then
+                    if not target._sectionsAuthoritative then target:RegisterSection(title, title, section) end
+                    break
+                end
+                target = target.GetParent and target:GetParent()
+            end
+            RegisterCollapsibleSection(parent, section)
+        end
+    end
+
     local function RefreshContentHeight()
+        if options.collapsible then
+            section._contentHeight = body:GetHeight()
+            body:SetShown(section._expanded)
+            if cardBg then cardBg:SetShown(section._expanded) end
+            if section._caret then UIKit.SetChevronCaretExpanded(section._caret, section._expanded) end
+            section:SetHeight(COLLAPSIBLE_HEADER_HEIGHT + (section._expanded
+                and (COLLAPSIBLE_CARD_GAP + COLLAPSIBLE_CARD_PAD * 2 + body:GetHeight()) or 0))
+            if onResize then onResize() end
+            return
+        end
         if type(body._contentHeight) == "number" and body._contentHeight > 0 then
             section._contentHeight = body._contentHeight
             body._contentHeight = nil
@@ -724,7 +768,8 @@ local function CreateInlineCollapsible(parent, title, contentHeight, onResize)
     section.RefreshContentHeight = RefreshContentHeight
     body._logicalSection = section
 
-    section.SetExpanded = function(self, _expanded)
+    section.SetExpanded = function(self, expanded)
+        if options.collapsible then self._expanded = expanded == true end
         RefreshContentHeight()
     end
 
@@ -770,7 +815,10 @@ local function CreateAccentDotLabel(parent, text, yOffset, skipSectionNav)
     local container = CreateFrame("Frame", nil, parent)
     container:SetHeight(22)
     container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset or 0)
-    container:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, yOffset or 0)
+    container:SetWidth(math.max(1, parent:GetWidth()))
+    parent:HookScript("OnSizeChanged", function(_, width)
+        container:SetWidth(math.max(1, width or parent:GetWidth()))
+    end)
 
     local dot = container:CreateTexture(nil, "OVERLAY")
     dot:SetSize(5, 5)
@@ -845,128 +893,65 @@ local function CreateSettingsCardGroup(parent, yOffset, opts)
     local finalized, pending, layingOut = false, false, false
 
     local function RefreshParentExtent(delta)
-        if delta == 0 then
-            if parent._quiMeasureSettingsHeight then parent:SetHeight(parent._quiMeasureSettingsHeight()) end
-            return
-        end
-        if not parent.GetChildren or not card.GetPoint then return end
-        local _, _, _, _, cardY = card:GetPoint(1)
-        if type(cardY) ~= "number" then return end
-        local siblings = {parent:GetChildren()}
-        for i = 1, (parent.GetNumRegions and parent:GetNumRegions() or 0) do
-            siblings[#siblings + 1] = select(i, parent:GetRegions())
-        end
-        for _, sibling in ipairs(siblings) do
-            if sibling ~= card and sibling.GetNumPoints then
-                for i = 1, sibling:GetNumPoints() do
-                    local point, relative, relativePoint, x, y = sibling:GetPoint(i)
-                    if relative == parent and point:find("TOP", 1, true)
-                        and relativePoint:find("TOP", 1, true) and y < cardY then
-                        sibling:SetPoint(point, relative, relativePoint, x, y - delta)
-                    end
-                end
-            end
-        end
-        parent:SetHeight(parent._quiMeasureSettingsHeight and parent._quiMeasureSettingsHeight()
-            or math.max(1, parent:GetHeight() + delta))
-        local section = parent._logicalSection
-        if section and section.SetExpanded and section:GetParent() then
-            section._contentHeight = parent:GetHeight()
-            parent._contentHeight = parent:GetHeight()
-            section:SetExpanded(true)
-        end
+        ns.QUI_SettingsLayoutShared.RefreshContentExtent(card, parent, delta)
+    end
+
+    local function RecoverBounds()
+        local point, relative, relativePoint, x, y = card:GetPoint(1)
+        local width = parent:GetWidth()
+        if relative ~= parent or not width or width <= 0 then return false end
+        card:ClearAllPoints()
+        card:SetPoint(point, relative, relativePoint, x, y)
+        local availableWidth = math.max(1, width - 2 * x)
+        card:SetWidth(availableWidth)
+        card._quiRecoveredInset = x
+        return availableWidth
     end
 
     local function LayoutRows(notifyParent)
         if layingOut then return end
         layingOut = true
-        local width = card:GetWidth()
+        -- Cards fill their parent's inset. Native anchors can leave a positive
+        -- stale width after reflow, even when the parent width is unchanged.
+        local width = notifyParent and RecoverBounds() or card:GetWidth()
+        -- Native anchors may lose their bounds during later sibling reflow,
+        -- after the initial frame check has already been removed.
+        if not width or width <= 0 then width = RecoverBounds() end
         if not width or width <= 0 then width = 680 end
-        local paired = width >= 560
-        local tripleWidth = (width - 64) / 3
-        local plans, pendingCells = {}, {}
-        local function Compact(cell)
-            return ns.QUI_SettingsLayoutShared.FitsThreeColumns(cell._label, cell._widget, width)
-        end
-        local function FlushSettings()
-            local first = 1
-            while first <= #pendingCells do
-                local columns = 2
-                if opts.maxColumns ~= 2 and pendingCells[first + 2] and Compact(pendingCells[first])
-                    and Compact(pendingCells[first + 1]) and Compact(pendingCells[first + 2]) then
-                    columns = 3
-                elseif opts.maxColumns ~= 2 and not pendingCells[first + 1] and Compact(pendingCells[first])
-                    and plans[#plans] and plans[#plans].columns == 3 then
-                    columns = 3
-                end
-                plans[#plans + 1] = {cells = {pendingCells[first], pendingCells[first + 1],
-                    columns == 3 and pendingCells[first + 2] or nil}, columns = columns}
-                first = first + columns
-            end
-            pendingCells = {}
-        end
+        local shared = ns.QUI_SettingsLayoutShared
+        local groups = {}
         for _, row in ipairs(rows) do
-            local ordinary = paired
-            for _, cell in ipairs({row._leftCell, row._rightCell}) do
+            local cells, ordinary = {row._leftCell, row._rightCell}, true
+            for _, cell in ipairs(cells) do
                 if not cell._label or not cell._widget then ordinary = false end
             end
-            if ordinary then
-                pendingCells[#pendingCells + 1] = row._leftCell
-                if row._rightCell then pendingCells[#pendingCells + 1] = row._rightCell end
-            else
-                FlushSettings()
-                plans[#plans + 1] = {cells = {row._leftCell, row._rightCell}, columns = row._leftCell._quiFullWidth and 1 or (paired and 2 or 1)}
-            end
+            groups[#groups + 1] = {cells = cells, pack = ordinary, fullWidth = row._leftCell._quiFullWidth}
         end
-        FlushSettings()
+        local plans = shared.PlanSettingsRows(groups, width, function(cell)
+            return shared.FitsThreeColumns(cell._label, cell._widget, width)
+        end, opts.maxColumns)
+        local style = {inset = 2, padding = 10, minimumHeight = 28, verticalPadding = 2, gap = 4,
+            reparent = true, measure = function(cell, cellWidth)
+                return cell.Layout and cell:Layout(cellWidth) or cell:GetHeight() or 28
+            end}
         local cy = -6
-        card._quiColumnCount = paired and 2 or 1
+        card._quiColumnCount = width >= 560 and 2 or 1
         for index, plan in ipairs(plans) do
             local row = rows[index]
-            local cells, columns = plan.cells, plan.columns
-            local cellWidth = columns == 3 and tripleWidth
-                or (paired and columns == 2 and ((width - 44) / 2) or (width - 24))
-            local height, stackedY = 28, -2
+            local columns = plan.columns
             row:Show()
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", card, "TOPLEFT", 2, cy)
             row:SetPoint("TOPRIGHT", card, "TOPRIGHT", -2, cy)
-            for column, cell in ipairs(cells) do
-                if cell:GetParent() ~= row then cell:SetParent(row) end
-                local cellHeight = math.max(28, cell.Layout and cell:Layout(cellWidth) or cell:GetHeight() or 28)
-                cell:ClearAllPoints()
-                if columns == 3 then
-                    cell:SetPoint("TOPLEFT", row, "TOPLEFT", 10 + (column - 1) * (cellWidth + 20), -2)
-                    cell:SetWidth(cellWidth)
-                else
-                    local y = paired and -2 or stackedY
-                    cell:SetPoint("TOPLEFT", row, paired and column == 2 and "TOP" or "TOPLEFT", 10, y)
-                    cell:SetPoint("TOPRIGHT", row, paired and column == 1 and columns == 2 and "TOP" or "TOPRIGHT", -10, y)
-                end
-                height = math.max(height, cellHeight)
-                stackedY = stackedY - cellHeight - 4
-            end
-            row._stacked = columns == 1 and cells[2] ~= nil
-            if row._stacked then height = -stackedY - 6 end
-            row:SetHeight(height + 4)
+            local height, columnWidth = shared.LayoutSettingsRow(row, plan, width, style)
             if columns == 3 and not row._thirdDivider then
                 row._thirdDivider = row:CreateTexture(nil, "ARTWORK")
                 row._thirdDivider:SetWidth(1)
                 row._thirdDivider:SetColorTexture(border[1], border[2], border[3], 0.35)
             end
-            for dividerIndex, divider in ipairs({row._centerDivider, row._thirdDivider}) do
-                divider:ClearAllPoints()
-                if columns == 3 then
-                    divider:SetPoint("TOPLEFT", row, "TOPLEFT", dividerIndex * (cellWidth + 20), -8)
-                    divider:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", dividerIndex * (cellWidth + 20), 8)
-                else
-                    divider:SetPoint("TOP", row, "TOP", 0, -8)
-                    divider:SetPoint("BOTTOM", row, "BOTTOM", 0, 8)
-                end
-                divider:SetShown(columns > dividerIndex and cells[dividerIndex] ~= nil)
-            end
+            shared.LayoutSettingsDividers(row, plan, {row._centerDivider, row._thirdDivider}, columnWidth, 8)
             card._quiColumnCount = math.max(card._quiColumnCount, columns)
-            cy = cy - height - 4
+            cy = cy - height
         end
         for index = #plans + 1, #rows do rows[index]:Hide() end
         local oldHeight = card._quiMeasuredHeight or card:GetHeight()
@@ -983,17 +968,21 @@ local function CreateSettingsCardGroup(parent, yOffset, opts)
         pending = true
         C_Timer.After(0, function()
             pending = false
-            if card:GetParent() and (not card.IsVisible or card:IsVisible()) then LayoutRows(true) end
+            if not card:GetParent() then return end
+            -- Scroll clipping can make IsVisible false without an OnShow when
+            -- the card returns. Defer only for an explicitly hidden ancestor.
+            local ancestor = card
+            while ancestor do
+                if ancestor.IsShown and not ancestor:IsShown() then return end
+                ancestor = ancestor.GetParent and ancestor:GetParent()
+            end
+            LayoutRows(true)
         end)
     end
     local layoutShared = ns.QUI_SettingsLayoutShared
     if layoutShared and layoutShared.VerifyInitialBounds then
         layoutShared.VerifyInitialBounds(card, parent, function(self)
-            local point, relative, relativePoint, x, y = self:GetPoint(1)
-            self:ClearAllPoints()
-            self:SetPoint(point, relative, relativePoint, x, y)
-            self:SetWidth(math.max(1, parent:GetWidth() - 2 * x))
-            self._quiRecoveredInset = x
+            RecoverBounds()
             LayoutRows(true)
         end)
     end
@@ -1337,10 +1326,10 @@ local function ResolveFeatureSearchContext(featureId, searchContext)
     local Nav = Settings and Settings.Nav
     local route = Nav and type(Nav.GetRoute) == "function" and Nav:GetRoute(featureId) or nil
     if type(route) == "table" then
-        if type(route.tileId) == "string" and route.tileId ~= "" then
+        if merged.tileId == nil and type(route.tileId) == "string" and route.tileId ~= "" then
             merged.tileId = route.tileId
         end
-        if route.subPageIndex ~= nil then
+        if merged.subPageIndex == nil and route.subPageIndex ~= nil then
             merged.subPageIndex = route.subPageIndex
         end
     end
@@ -1543,7 +1532,7 @@ local function ResolvePageFeatureId(page)
     return nil
 end
 
-local function BuildFeaturePageBody(body, page, render)
+local function RenderFeaturePageBody(body, page, render)
     if type(page) ~= "table" then
         ShowUnavailableFeaturePage(body, "Settings")
         return
@@ -1571,6 +1560,29 @@ local function BuildFeaturePageBody(body, page, render)
     end
 
     ShowUnavailableFeaturePage(body, page.unavailableLabel or page.name or featureId or "Settings")
+end
+
+local function BuildFeaturePageBody(body, page, render)
+    local route = ns.Settings and ns.Settings.SearchRoute
+    if route and route.With then
+        local context = page and page.searchContext
+        local featureId = ResolvePageFeatureId(page)
+        local feature = featureId and GetRegisteredFeature(featureId)
+        if context and feature and feature.model then
+            context = MergeOptions(context, nil)
+            context.subTabName = nil
+        end
+        return route.With(context, RenderFeaturePageBody, body, page, render)
+    end
+    return RenderFeaturePageBody(body, page, render)
+end
+
+local function ResolveDestinationContext(tile, page, pageIndex)
+    local registry = ns.Settings and ns.Settings.Registry
+    if registry and registry.ResolveDestinationContext then
+        return registry:ResolveDestinationContext(tile, page, pageIndex, page.featureId)
+    end
+    return page.searchContext
 end
 
 local function RegisterFeatureTile(frame, spec)
@@ -1660,6 +1672,8 @@ local function RegisterFeatureTile(frame, spec)
                     return
                 end
 
+                page.searchContext = ResolveDestinationContext(spec, page, index)
+
                 RegisterNavRoutes(GUI, spec.id, subPage.navRoutes, index)
 
                 tileConfig.subPages[index] = {
@@ -1681,11 +1695,32 @@ local function RegisterFeatureTile(frame, spec)
         tileConfig.featureId = spec.featureId
         tileConfig.noScroll = spec.noScroll ~= false
         tileConfig.sectionNav = spec.sectionNav
+        local page = MergeOptions(spec, { searchContext = ResolveDestinationContext(spec, spec, 1) })
         tileConfig.buildFunc = function(body)
-            BuildFeaturePageBody(body, spec, BuildFeatureDirectPage)
+            BuildFeaturePageBody(body, page, BuildFeatureDirectPage)
         end
     end
 
+    local registry = ns.Settings and ns.Settings.Registry
+    if registry and registry.RegisterTileDestinations then
+        -- Use normalized page references (including inferred feature ids).
+        local destinationSpec = {
+            id = spec.id, name = spec.name, featureId = spec.featureId,
+            searchContext = spec.searchContext, renderOptions = spec.renderOptions,
+        }
+        if tileConfig.subPages then
+            destinationSpec.subPages = {}
+            for index, page in ipairs(tileConfig.subPages) do
+                destinationSpec.subPages[index] = {
+                    id = page.id, name = page.name,
+                    featureId = page.featureId, featureIds = page.featureIds,
+                    searchContext = spec.subPages[index].searchContext,
+                    renderOptions = spec.subPages[index].renderOptions,
+                }
+            end
+        end
+        registry:RegisterTileDestinations(destinationSpec)
+    end
     GUI:AddFeatureTile(frame, tileConfig)
 end
 
@@ -1836,4 +1871,76 @@ BuildFeatureStackPage = function(tabContent, featureIds, searchContext, options)
 
     building = false
     RelayoutFeatures()
+end
+
+
+function ns.QUI_Options.RegisterAllFeatureTiles(frame)
+    if ns.QUI_Options and type(ns.QUI_Options.RegisterFeatureTile) == "function" then
+        ns.QUI_Options.RegisterFeatureTile(frame, {
+            id = "welcome",
+            icon = "*",
+            name = ns.L["Welcome"],
+            subtitle = ns.L["Getting started · Tips · What's new"],
+            featureId = "welcomePage",
+            noScroll = false,
+            searchAliases = { "welcome", "getting started", "first time setup", "intro", "home" },
+        })
+    end
+
+    if ns.QUI_GlobalTile then
+        ns.QUI_GlobalTile.Register(frame)
+    end
+    if ns.QUI_UnitFramesTile then
+        ns.QUI_UnitFramesTile.Register(frame)
+    end
+    if ns.QUI_GroupFramesTile then
+        ns.QUI_GroupFramesTile.Register(frame)
+    end
+    if ns.QUI_NameplatesTile then
+        ns.QUI_NameplatesTile.Register(frame)
+    end
+    if ns.QUI_ActionBarsTile then
+        ns.QUI_ActionBarsTile.Register(frame)
+    end
+    if ns.QUI_AurasTile then
+        ns.QUI_AurasTile.Register(frame)
+    end
+    if ns.QUI_CooldownManagerTile then
+        ns.QUI_CooldownManagerTile.Register(frame)
+    end
+    if ns.QUI_ResourceBarsTile then
+        ns.QUI_ResourceBarsTile.Register(frame)
+    end
+    if ns.QUI_MinimapTile then
+        ns.QUI_MinimapTile.Register(frame)
+    end
+    if ns.QUI_InfoBarTile then
+        ns.QUI_InfoBarTile.Register(frame)
+    end
+    if ns.QUI_AppearanceTile then
+        ns.QUI_AppearanceTile.Register(frame)
+    end
+    if ns.QUI_ChatTooltipsTile then
+        ns.QUI_ChatTooltipsTile.Register(frame)
+    end
+    if ns.QUI_GameplayTile then
+        ns.QUI_GameplayTile.Register(frame)
+    end
+    if ns.QUI_RemindersTile then
+        ns.QUI_RemindersTile.Register(frame)
+    end
+    if ns.QUI_QoLTile then
+        ns.QUI_QoLTile.Register(frame)
+    end
+    if ns.QUI_BagsTile then
+        ns.QUI_BagsTile.Register(frame)
+    end
+    if ns.QUI_AltsTile then
+        ns.QUI_AltsTile.Register(frame)
+    end
+
+    if ns.QUI_HelpTile then
+        ns.QUI_HelpTile.Register(frame)
+    end
+
 end

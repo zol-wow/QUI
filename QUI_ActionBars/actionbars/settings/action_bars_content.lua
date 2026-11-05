@@ -47,34 +47,8 @@ local function Unavailable(parent, label)
 end
 
 local function MakeSectionLayout(tabContent)
-    local PAD = PADDING
-    local HEADER_GAP = 26
-    local SECTION_GAP = 14
-    local y = -10
-
-    local function headerAt(text)
-        local h = Opts.CreateAccentDotLabel(tabContent, text, y)
-        h:ClearAllPoints()
-        h:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
-        h:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, y)
-        y = y - HEADER_GAP
-    end
-    local function sectionAt()
-        local c = Opts.CreateSettingsCardGroup(tabContent, y)
-        c.frame:ClearAllPoints()
-        c.frame:SetPoint("TOPLEFT", tabContent, "TOPLEFT", PAD, y)
-        c.frame:SetPoint("TOPRIGHT", tabContent, "TOPRIGHT", -PAD, y)
-        return c
-    end
-    local function closeSection(c)
-        c.Finalize()
-        y = y - c.frame:GetHeight() - SECTION_GAP
-    end
-    local function getY()
-        return y
-    end
-
-    return headerAt, sectionAt, closeSection, getY
+    local layout = ns.QUI_SettingsLayoutShared.MakeLayout(tabContent)
+    return layout.headerAt, layout.sectionAt, layout.closeSection, layout.getY
 end
 
 local BAR_OPTIONS = {
