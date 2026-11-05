@@ -509,6 +509,32 @@ local function SkinLegendaryItemAlert(frame, itemLink)
     SkinBase.MarkSkinned(frame)
 end
 
+local function SkinCompletionRewards(frame)
+    local _, enabled = GetAlertSettings()
+    if not enabled or not frame or not frame.RewardFrames then return end
+
+    for _, reward in ipairs(frame.RewardFrames) do
+        local icon = reward.texture
+        if icon then
+            if reward.CircleMask and icon.RemoveMaskTexture
+                and not SkinBase.GetFrameData(reward, "nativeRewardMaskRemoved") then
+                icon:RemoveMaskTexture(reward.CircleMask)
+                SkinBase.SetFrameData(reward, "nativeRewardMaskRemoved", true)
+            end
+            for _, region in ipairs({ reward:GetRegions() }) do
+                if region ~= icon and region:IsObjectType("Texture") then
+                    SkinBase.ClampTextureHidden(region)
+                end
+            end
+            local link = reward.itemLink
+            if not link and reward.rewardID ~= 0 and reward.reward then
+                link = reward.reward.rewardItemLink
+            end
+            StyleIcon(icon, reward, GetQualityColor(link))
+        end
+    end
+end
+
 local function GetMiscAlertQualityColor(frame)
     local border = frame and frame.IconBorder
     local atlas = border and border.GetAtlas and border:GetAtlas()
@@ -643,6 +669,39 @@ local function SkinEntitlementAlert(frame)
     end
 
     RestyleEntitlementAlertText(frame)
+    SkinBase.MarkSkinned(frame)
+end
+
+local function SkinHousingAlert(frame)
+    if not frame then return end
+
+    frame:SetAlpha(1)
+    if not SkinBase.GetFrameData(frame, "hooked") then
+        hooksecurefunc(frame, "SetAlpha", ForceAlpha)
+        SkinBase.SetFrameData(frame, "hooked", true)
+    end
+    CreateAlertBackdrop(frame, 12, -18, -12, 10)
+
+    -- Keep native reward/task identifiers and their layout anchors. Both outer
+    -- and icon borders use the same parentKey in the Housing template.
+    for _, region in ipairs({ frame:GetRegions() }) do
+        if region:IsObjectType("Texture") and region ~= frame.Icon
+            and region ~= frame.Banner and region ~= frame.Checkmark then
+            SkinBase.ClampTextureHidden(region)
+        elseif region:IsObjectType("FontString") then
+            local name = region == frame.DecorName or region == frame.TaskName
+            SkinBase.SkinFontString(region, name and { fontOnly = true } or { color = QUI_TEXT_COLOR })
+        end
+    end
+    for _, key in ipairs({ "glowAnimIn", "sparklesAnimIn", "lightRaysAnimIn" }) do
+        local animation = frame[key]
+        if animation and animation.Stop then animation:Stop() end
+    end
+    if frame.Icon then
+        StyleIcon(frame.Icon, frame)
+    elseif frame.Banner then
+        CreateIconBorder(frame.Banner, frame)
+    end
     SkinBase.MarkSkinned(frame)
 end
 
@@ -1177,6 +1236,8 @@ local function RefreshAlertColors()
         MoneyWonAlertSystem,
         EntitlementDeliveredAlertSystem,
         RafRewardDeliveredAlertSystem,
+        _G.HousingItemEarnedAlertFrameSystem,
+        _G.InitiativeTaskCompleteAlertFrameSystem,
         DigsiteCompleteAlertSystem,
         NewRecipeLearnedAlertSystem,
         NewPetAlertSystem,
@@ -1216,6 +1277,7 @@ local function RefreshAlertColors()
                         Helpers.SetFrameBackdropBorderColor(ib, sr, sg, sb, sa)
                     end
                 end
+                SkinCompletionRewards(frame)
             end
         end
     end
@@ -1271,9 +1333,16 @@ if Helpers and Helpers.BorderRegistry then
     })
 end
 
+local completionRewardsHooked = false
+
 function Alerts:HookAlertSystems()
     local _, enabled = GetAlertSettings()
     if not enabled then return end
+
+    if not completionRewardsHooked and type(_G.StandardRewardAlertFrame_AdjustRewardAnchors) == "function" then
+        hooksecurefunc("StandardRewardAlertFrame_AdjustRewardAnchors", SkinCompletionRewards)
+        completionRewardsHooked = true
+    end
 
     local function DeferredHook(system, skinFunc)
         if system then
@@ -1282,6 +1351,7 @@ function Alerts:HookAlertSystems()
                 local n = select("#", ...)
                 C_Timer.After(0, function()
                     skinFunc(frame, unpack(args, 1, n))
+                    SkinCompletionRewards(frame)
                 end)
             end)
         end
@@ -1305,6 +1375,8 @@ function Alerts:HookAlertSystems()
     DeferredHook(MoneyWonAlertSystem, SkinMoneyWonAlert)
     DeferredHook(EntitlementDeliveredAlertSystem, SkinEntitlementAlert)
     DeferredHook(RafRewardDeliveredAlertSystem, SkinEntitlementAlert)
+    DeferredHook(_G.HousingItemEarnedAlertFrameSystem, SkinHousingAlert)
+    DeferredHook(_G.InitiativeTaskCompleteAlertFrameSystem, SkinHousingAlert)
 
     DeferredHook(DigsiteCompleteAlertSystem, SkinDigsiteCompleteAlert)
     DeferredHook(NewRecipeLearnedAlertSystem, SkinNewRecipeLearnedAlert)

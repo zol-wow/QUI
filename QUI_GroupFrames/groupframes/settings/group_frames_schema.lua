@@ -88,14 +88,6 @@ local FILTER_MODE_OPTIONS = {
     { value = "off", text = ns.L["Off (Show All)"] },
     { value = "classification", text = ns.L["Classification"] },
 }
-local TAB_SEARCH_CONTEXTS = {
-    general = { subTabIndex = 1, subTabName = "General" },
-    appearance = { subTabIndex = 2, subTabName = "Appearance" },
-    layout = { subTabIndex = 3, subTabName = "Layout" },
-    health = { subTabIndex = 4, subTabName = "Health" },
-    indicators = { subTabIndex = 5, subTabName = "Indicators" },
-    auras = { subTabIndex = 6, subTabName = "Auras" },
-}
 local GROUP_FRAMES_SEARCH_TILE_ID = "group_frames"
 local GROUP_FRAMES_SEARCH_FEATURE_ID = "groupFramesPage"
 local GROUP_FRAMES_SEARCH_SUB_PAGE_INDEX = 1
@@ -163,13 +155,13 @@ local function SetSearchContext(searchContext)
 end
 
 local function CreateSearchContext(tabKey, contextMode)
-    local context = TAB_SEARCH_CONTEXTS[tabKey] or TAB_SEARCH_CONTEXTS.general
+    local tab, index = ns.Settings.ModelKit.GetTabDefinition(ns.QUI_GroupFramesSettingsModel, tabKey)
     local SearchRoute = ns.Settings and ns.Settings.SearchRoute
     local searchContext = {
         tabIndex = 6,
         tabName = "Group Frames",
-        subTabIndex = context.subTabIndex,
-        subTabName = context.subTabName,
+        subTabIndex = index,
+        subTabName = tab and tab.label or tabKey,
         tileId = GROUP_FRAMES_SEARCH_TILE_ID,
         subPageIndex = GROUP_FRAMES_SEARCH_SUB_PAGE_INDEX,
         featureId = GROUP_FRAMES_SEARCH_FEATURE_ID,
@@ -223,78 +215,22 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
     end
     SetSearchContext(searchContext)
 
-    local y = 0
-    local builder = {}
-    local measuredFrames = {}
-    sectionHost._quiMeasureSettingsHeight = nil
-
-    function builder.Header(text)
-        if type(text) ~= "string" or text == "" then
-            return
-        end
-
-        local header = optionsAPI.CreateAccentDotLabel(sectionHost, text, y)
-        header:ClearAllPoints()
-        header:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        header:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
-        y = y - HEADER_GAP
-    end
-
-    function builder.Description(text)
-        if type(text) ~= "string" or text == "" then
-            return
-        end
-
-        local description = sectionHost:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        description:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        description:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
-        description:SetJustifyH("LEFT")
-        description:SetText(text)
-        description:SetTextColor(
-            DESCRIPTION_TEXT_COLOR[1],
-            DESCRIPTION_TEXT_COLOR[2],
-            DESCRIPTION_TEXT_COLOR[3],
-            DESCRIPTION_TEXT_COLOR[4]
-        )
-        local height = 14
-        if description.GetStringHeight then
-            height = math.max(14, math.ceil(description:GetStringHeight() or 14))
-        end
-        y = y - height - 4
-    end
-
-    function builder.Card()
-        local card = optionsAPI.CreateSettingsCardGroup(sectionHost, y)
-        card.frame:ClearAllPoints()
-        card.frame:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        card.frame:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
-        return card
-    end
-
-    function builder.CloseCard(card)
-        local height = card.Finalize() or card.frame:GetHeight()
-        measuredFrames[#measuredFrames + 1] = {frame = card.frame, height = height}
-        y = y - height
-    end
-
-    function builder.Spacer(amount, frame)
-        if frame then
-            measuredFrames[#measuredFrames + 1] = {frame = frame, height = amount}
-        end
-        y = y - (amount or 10)
-    end
-
-    function builder.Height(extra)
-        local height = math.abs(y) + (extra or SECTION_BOTTOM_PAD)
-        sectionHost._quiMeasureSettingsHeight = function()
-            local settledHeight = height
-            for _, measured in ipairs(measuredFrames) do
-                settledHeight = settledHeight + (measured.frame._quiMeasuredHeight or measured.frame:GetHeight()) - measured.height
-            end
-            return settledHeight
-        end
-        return height
-    end
+    local layout = ns.QUI_SettingsLayoutShared.MakeLayout(sectionHost, nil, 0, {
+        padding = 0,
+        headerGap = HEADER_GAP,
+        sectionGap = 0,
+        bottomPadding = SECTION_BOTTOM_PAD,
+        measureHeight = true,
+        textColor = DESCRIPTION_TEXT_COLOR,
+    })
+    local builder = {
+        Header = layout.headerAt,
+        Card = layout.sectionAt,
+        CloseCard = layout.closeSection,
+        Spacer = layout.spacer,
+        Height = layout.height,
+        Description = layout.paragraph,
+    }
 
     return builder
 end
@@ -514,12 +450,8 @@ local function RenderGeneralCopySettingsSection(sectionHost, ctx)
         return nil
     end
 
-    SetSearchContext(CreateSearchContext("general", groupFrames.contextMode))
-
-    local header = optionsAPI.CreateAccentDotLabel(sectionHost, ns.L["Copy Settings"], 0)
-    header:ClearAllPoints()
-    header:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, 0)
-    header:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, 0)
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateSearchContext("general", groupFrames.contextMode))
+    builder.Header(ns.L["Copy Settings"])
 
     local description = gui:CreateLabel(
         sectionHost,

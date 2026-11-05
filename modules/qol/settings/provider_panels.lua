@@ -737,39 +737,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             and ns.Helpers.GetCharConsumableMacrosDB() or nil
         if (cmProfileDB or cmCharDB) and GUI.CreateFormDropdown then
             local CM = ns.ConsumableMacros
-            local SEED_KEYS = {
-                "enabled", "selectedFlask", "selectedPotion", "selectedHealth",
-                "selectedHealthstone", "selectedAugment", "selectedVantus",
-                "selectedWeapon", "chatNotifications",
-            }
-            local function ActiveCM()
-                if cmCharDB and cmCharDB.characterSpecific then return cmCharDB end
-                return cmProfileDB
-            end
-            local cmDB = setmetatable({}, {
-                __index = function(_, k)
-                    if k == "characterSpecific" then
-                        return cmCharDB and cmCharDB.characterSpecific or false
-                    end
-                    local active = ActiveCM()
-                    return active and active[k]
-                end,
-                __newindex = function(_, k, v)
-                    if k == "characterSpecific" then
-                        if not cmCharDB then return end
-                        local was = cmCharDB.characterSpecific and true or false
-                        cmCharDB.characterSpecific = v and true or false
-                        if cmCharDB.characterSpecific and not was and cmProfileDB then
-                            for _, kk in ipairs(SEED_KEYS) do
-                                cmCharDB[kk] = cmProfileDB[kk]
-                            end
-                        end
-                        return
-                    end
-                    local active = ActiveCM()
-                    if active then active[k] = v end
-                end,
-            })
+            local cmDB = ns.Helpers.CreateConsumableMacrosSettings(cmProfileDB)
             local function MacroRefresh()
                 if CM then CM:ForceRefresh() end
             end

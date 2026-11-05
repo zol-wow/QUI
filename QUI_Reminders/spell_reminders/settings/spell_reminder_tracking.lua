@@ -4,7 +4,7 @@ local GUI = QUI.GUI
 
 local function Names(L, title, owner, key, rebuild)
     local card = O.Card(L, title)
-    local proxy = { text = table.concat(owner[key], ", ") }
+    local proxy = { text = table.concat(owner[key], ", "), _quiTransientOptionsProxy = true }
     card.Text(ns.L["Player Names"], proxy, "text", ns.L["Separate names with commas. Use Name-Realm to distinguish players with the same name."], function()
         owner[key] = ns.SpellReminderModel.ParseNames(proxy.text)
         O.Refresh()
@@ -88,7 +88,7 @@ function O.builders.buffs(host, config, rebuild)
     local c = O.Card(L, ns.L["Buff Lists"])
     c.Check(ns.L["Separate Buffs by Context"], pi, "separateBuffs", ns.L["Use separate buff selections for raids, dungeons, and focus tracking. Contexts without an override use the default list."], function() O.Refresh(); if rebuild then rebuild() end end)
     if pi.separateBuffs then
-        local proxy = { scope = buffScope }
+        local proxy = { scope = buffScope, _quiTransientOptionsProxy = true }
         c.Select(ns.L["Edit Buff List"], proxy, "scope", O.Choices({ "shared", ns.L["Default List"], "raid", ns.L["Raids"], "party", ns.L["Dungeons"], "focus", ns.L["Focus"] }), ns.L["Choose which context's buff selection to edit. Default List supplies buffs without a context override."], function(value)
             buffScope = value; if rebuild then rebuild() end
         end)
@@ -106,7 +106,7 @@ function O.builders.buffs(host, config, rebuild)
         if enabled == nil then enabled = default end
         local overrides = pi.spellScopes[id]
         if scope ~= "shared" and overrides and overrides[scope] ~= nil then enabled = overrides[scope] end
-        local proxy = { enabled = enabled }
+        local proxy = { enabled = enabled, _quiTransientOptionsProxy = true }
         local info = C_Spell and C_Spell.GetSpellInfo and C_Spell.GetSpellInfo(id)
         local label = (info and info.name or ns.L["Unknown Spell"]) .. "  " .. id
         c.Check(label, proxy, "enabled", ns.L["Watch for this active buff to trigger PI tracking highlights, recipient alerts, and enabled sounds in the selected context."], function()
@@ -126,7 +126,7 @@ function O.builders.buffs(host, config, rebuild)
     for _, id in ipairs(pi.customSpells) do Entry(id, ns.L["Custom Buffs"], true) end
     if c then c.Finish() end
     c = O.Card(L, ns.L["Custom Buff IDs"])
-    local proxy = { text = table.concat(pi.customSpells, ", ") }
+    local proxy = { text = table.concat(pi.customSpells, ", "), _quiTransientOptionsProxy = true }
     c.Text(ns.L["Buff IDs"], proxy, "text", ns.L["Enter buff IDs separated by commas. Removing an ID from this field removes it from tracking."], function()
         local ids, seen = {}, {}
         for value in proxy.text:gmatch("[^,%s;]+") do

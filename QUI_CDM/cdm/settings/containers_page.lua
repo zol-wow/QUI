@@ -157,6 +157,18 @@ local TAB_DEFINITIONS = {
 function Model.GetTabDefinitions()
     return ModelKit.NormalizeTabDefinitions(TAB_DEFINITIONS)
 end
+
+function Model.GetSearchContexts()
+    local contexts = {}
+    for _, option in ipairs(Model.GetContainerOptions()) do
+        contexts[#contexts + 1] = {
+            state = { activeContainer = option.value },
+            searchContext = { providerKey = option.value },
+            label = option.text,
+        }
+    end
+    return contexts
+end
 end
 end
 
@@ -186,14 +198,6 @@ local FALLBACK_BUILTIN_TYPES = {
 local CDMSettingsSchema = ns.QUI_CooldownManagerSettingsSchema or {}
 ns.QUI_CooldownManagerSettingsSchema = CDMSettingsSchema
 
-local TAB_SEARCH_CONTEXTS = {
-    entries = "Entries",
-    layout = "Appearance",
-    filters = "Filters",
-    perspec = "Per-Spec",
-    effects = "Effects",
-    keybinds = "Keybinds",
-}
 
 local CDM_SEARCH_TILE_ID = "cooldown_manager"
 local CDM_SEARCH_FEATURE_ID = "cooldownManagerContainersPage"
@@ -339,12 +343,13 @@ end
 
 local function SetSearchContext(tabKey, containerKey)
     local gui = GetGUI()
+    local tab = ns.Settings.ModelKit.GetTabDefinition(ns.QUI_CooldownManagerSettingsModel, tabKey)
     if gui and type(gui.SetSearchContext) == "function" then
         gui:SetSearchContext({
             tabIndex = 4,
             tabName = "Cooldown Manager",
             subTabIndex = 0,
-            subTabName = TAB_SEARCH_CONTEXTS[tabKey] or "Containers",
+            subTabName = tab and tab.label or tabKey,
             tileId = CDM_SEARCH_TILE_ID,
             subPageIndex = CDM_SEARCH_SUB_PAGE_INDEX,
             featureId = CDM_SEARCH_FEATURE_ID,
@@ -579,41 +584,19 @@ local function CreateSectionBuilder(sectionHost, ctx, tabKey)
     PrepareSectionHost(sectionHost, ctx)
     SetSearchContext(tabKey, ResolveContainerKey(ctx))
 
-    local y = 0
-    local builder = {}
-
-    function builder.Header(text)
-        if type(text) ~= "string" or text == "" then
-            return
-        end
-
-        local header = optionsAPI.CreateAccentDotLabel(sectionHost, text, y)
-        header:ClearAllPoints()
-        header:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        header:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
-        y = y - HEADER_GAP
-    end
-
-    function builder.Card()
-        local card = optionsAPI.CreateSettingsCardGroup(sectionHost, y)
-        card.frame:ClearAllPoints()
-        card.frame:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        card.frame:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
-        return card
-    end
-
-    function builder.CloseCard(card)
-        card.Finalize()
-        y = y - card.frame:GetHeight()
-    end
-
-    function builder.Spacer(amount)
-        y = y - (amount or 10)
-    end
-
-    function builder.Height(extra)
-        return math.abs(y) + (extra or SECTION_BOTTOM_PAD)
-    end
+    local layout = ns.QUI_SettingsLayoutShared.MakeLayout(sectionHost, nil, 0, {
+        padding = 0,
+        headerGap = HEADER_GAP,
+        sectionGap = 0,
+        bottomPadding = SECTION_BOTTOM_PAD,
+    })
+    local builder = {
+        Header = layout.headerAt,
+        Card = layout.sectionAt,
+        CloseCard = layout.closeSection,
+        Spacer = layout.spacer,
+        Height = layout.height,
+    }
 
     return builder
 end
@@ -2708,22 +2691,7 @@ local function SetActiveContainer(key)
 end
 
 local function SetActiveTab(tabKey)
-    if type(tabKey) ~= "string" or tabKey == "" then
-        return
-    end
-
-    local tabModel = EnsureTabModel()
-    if not tabModel or type(tabModel.SetActiveKey) ~= "function" then
-        return
-    end
-
-    tabModel:SetActiveKey(tabKey)
-    if type(tabModel.ApplyNormalized) == "function" then
-        tabModel:ApplyNormalized()
-    end
-    if State.repaintTabs then
-        State.repaintTabs()
-    end
+    return FullSurface.SelectTab(State, EnsureTabModel(), tabKey)
 end
 
 function ResetBody(frame)
@@ -3110,6 +3078,11 @@ end
 local function ResolveContainerKey(lookupKey)
     if type(lookupKey) ~= "string" or lookupKey == "" then
         return nil
+    end
+
+    local model = GetModel()
+    if model and model.HasContainer(lookupKey) then
+        return lookupKey
     end
 
     if LOOKUP_TO_CONTAINER[lookupKey] then

@@ -524,30 +524,97 @@ local function ApplyCastColor(statusBar, notInterruptible, customColor, notInter
     end
 end
 
-local function PinCastbarToRestrictedTarget(anchorFrame, target, offsetX, offsetY, widthAdjustment)
+local pinnedCastbars = {}
+local pinnedCastbarTargets = setmetatable({}, { __mode = "k" })
+local pinnedCastbarRefreshPending = false
+
+local function GetCastbarAnchorKey(unitKey)
+    return unitKey == "targettarget" and "totCastbar" or (unitKey and (unitKey .. "Castbar"))
+end
+
+local function RefreshPinnedCastbar(frame)
+    if _G.QUI_IsLayoutModeActive and _G.QUI_IsLayoutModeActive() then return end
+    local pin = pinnedCastbars[frame]
+    local anchorKey = GetCastbarAnchorKey(frame.unitKey)
+    if pin and not frame._quiDestroyed
+        and not (anchorKey and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(anchorKey))
+    then
+        local check = C_RestrictedActions and C_RestrictedActions.CheckAllowProtectedFunctions
+        if (check and check(frame, true))
+            or (not check and not nsHelpers.FrameMutationRestricted(frame)) then
+            pin()
+        end
+    end
+end
+
+local function RefreshPinnedCastbars()
+    for frame in pairs(pinnedCastbars) do
+        RefreshPinnedCastbar(frame)
+    end
+end
+
+local function QueuePinnedCastbarRefresh()
+    if pinnedCastbarRefreshPending then return end
+    pinnedCastbarRefreshPending = true
+    C_Timer.After(0, function()
+        pinnedCastbarRefreshPending = false
+        RefreshPinnedCastbars()
+    end)
+end
+
+local function TrackPinnedCastbarTarget(target)
+    if pinnedCastbarTargets[target] then return end
+    pinnedCastbarTargets[target] = true
+    target:HookScript("OnSizeChanged", QueuePinnedCastbarRefresh)
+    target:HookScript("OnShow", QueuePinnedCastbarRefresh)
+    hooksecurefunc(target, "SetPoint", QueuePinnedCastbarRefresh)
+    if target.SetPointBase then hooksecurefunc(target, "SetPointBase", QueuePinnedCastbarRefresh) end
+    hooksecurefunc(target, "SetScale", QueuePinnedCastbarRefresh)
+end
+
+local pinnedCastbarEvents = CreateFrame("Frame")
+pinnedCastbarEvents:RegisterEvent("PLAYER_ENTERING_WORLD")
+pinnedCastbarEvents:RegisterEvent("PLAYER_REGEN_ENABLED")
+pinnedCastbarEvents:SetScript("OnEvent", QueuePinnedCastbarRefresh)
+if ns.QUI_Anchoring then
+    hooksecurefunc(ns.QUI_Anchoring, "ApplyAllFrameAnchors", RefreshPinnedCastbars)
+end
+
+local function PinCastbarToRestrictedTarget(anchorFrame, target, offsetX, offsetY, widthAdjustment, followCDMRows)
     if not target or not nsHelpers.FrameMutationRestricted or not nsHelpers.PinFrameToTargetAbsolute then
         return false
     end
     if not nsHelpers.FrameMutationRestricted(target) then return false end
 
     local function pin()
+        local currentOffsetY = offsetY
+        if followCDMRows then
+            local vs = _G.QUI_GetCDMViewerState and _G.QUI_GetCDMViewerState(target)
+            if (vs and vs.layoutDir) ~= "VERTICAL" then
+                currentOffsetY = currentOffsetY + QUICore:PixelRound((vs and vs.bottomRowYOffset) or 0, anchorFrame)
+            end
+        end
         if widthAdjustment ~= nil then
             local targetWidth = SafeToNumber(target:GetWidth())
             if targetWidth and targetWidth > 0 then
-                anchorFrame:SetWidth(QUICore:PixelRound(targetWidth + (2 * widthAdjustment), anchorFrame))
+                local width = QUICore:PixelRound(targetWidth + (2 * widthAdjustment), anchorFrame)
+                if SafeToNumber(anchorFrame:GetWidth()) ~= width then
+                    anchorFrame:SetWidth(width)
+                end
             end
         end
 
         return nsHelpers.PinFrameToTargetAbsolute(
-            anchorFrame, "TOP", target, "BOTTOM", offsetX, offsetY
+            anchorFrame, "TOP", target, "BOTTOM", offsetX, currentOffsetY
         ) == true
     end
 
+    pinnedCastbars[anchorFrame] = pin
+    TrackPinnedCastbarTarget(target)
+    hooksecurefunc(anchorFrame, "SetScale", QueuePinnedCastbarRefresh)
     if not pin() then
         anchorFrame:SetPoint("CENTER", UIParent, "CENTER", offsetX, offsetY)
-        C_Timer.After(0, function()
-            if not anchorFrame._quiDestroyed then pin() end
-        end)
+        QueuePinnedCastbarRefresh()
     end
     return true
 end
@@ -555,7 +622,7 @@ end
 local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, barHeight)
     local anchor = castSettings.anchor or "none"
 
-    if anchorFrame.unitKey and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(anchorFrame.unitKey .. "Castbar") then return end
+    if anchorFrame.unitKey and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(GetCastbarAnchorKey(anchorFrame.unitKey)) then return end
 
     anchorFrame:ClearAllPoints()
 
@@ -570,7 +637,7 @@ local function PositionCastbarByAnchor(anchorFrame, castSettings, unitFrame, bar
             if (vs and vs.layoutDir) ~= "VERTICAL" then
                 bottomRowYOffset = QUICore:PixelRound((vs and vs.bottomRowYOffset) or 0, anchorFrame)
             end
-            if not PinCastbarToRestrictedTarget(anchorFrame, viewer, offsetX, offsetY + bottomRowYOffset, widthAdj) then
+            if not PinCastbarToRestrictedTarget(anchorFrame, viewer, offsetX, offsetY, widthAdj, true) then
                 anchorFrame:SetPoint("TOPLEFT", viewer, "BOTTOMLEFT", offsetX - widthAdj, offsetY + bottomRowYOffset)
                 anchorFrame:SetPoint("TOPRIGHT", viewer, "BOTTOMRIGHT", offsetX + widthAdj, offsetY + bottomRowYOffset)
             end
@@ -1597,7 +1664,7 @@ local function SimulateCast(castbar, castSettings, unitKey, bossIndex)
         castbar:SetClampedToScreen(true)
 
         castbar:SetScript("OnDragStart", function(self)
-            if self.unitKey and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(self.unitKey .. "Castbar") then return end
+            if self.unitKey and _G.QUI_HasFrameAnchor and _G.QUI_HasFrameAnchor(GetCastbarAnchorKey(self.unitKey)) then return end
             self:StartMoving()
         end)
 
@@ -2379,6 +2446,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         ClearChannelTickState(self)
         self.statusBar:SetReverseFill(currentCastSettings.showGCDReverse == true)
         self:SetScript("OnUpdate", self.castbarOnUpdate)
+        RefreshPinnedCastbar(self)
         SetCastbarFrameVisible(self, true)
 
         if SetIconTexture(self, iconTexture) then
@@ -2408,6 +2476,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
     end
 
     local function CastBar_OnUpdate(self, elapsed)
+        RefreshPinnedCastbar(self)
         local castActive, castReadable = ReadCastActivity(self.unit)
 
         local isInEmpoweredHold = isPlayer and self.isEmpowered and self.startTime and self.endTime
@@ -2675,6 +2744,7 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
             end
 
             self:SetScript("OnUpdate", CastBar_OnUpdate)
+            RefreshPinnedCastbar(self)
             SetCastbarFrameVisible(self, true)
 
             local channelCastContext = BuildChannelTickCastContext(
@@ -2888,7 +2958,8 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     local borderSize = QUICore:Pixels(castSettings.borderSize or 1, anchorFrame)
     anchorFrame:SetSize(castWidth, barHeight)
 
-    if not PinCastbarToRestrictedTarget(anchorFrame, unitFrame, castSettings.offsetX or 0, castSettings.offsetY or -25) then
+    local widthAdjustment = (not castSettings.width or castSettings.width <= 0) and 0 or nil
+    if not PinCastbarToRestrictedTarget(anchorFrame, unitFrame, castSettings.offsetX or 0, castSettings.offsetY or -25, widthAdjustment) then
         QUICore:SetSnappedPoint(anchorFrame, "TOP", unitFrame, "BOTTOM", castSettings.offsetX or 0, castSettings.offsetY or -25)
     end
 
@@ -2934,6 +3005,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     anchorFrame.isChanneled = false
 
     local function BossCastBar_OnUpdate(self, elapsed)
+        RefreshPinnedCastbar(self)
         if not self.isPreviewSimulation and not UnitExists(self.unit) then
             ClearChannelTickState(self)
             self:SetScript("OnUpdate", nil)
@@ -3119,6 +3191,7 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
             end
 
             self:SetScript("OnUpdate", BossCastBar_OnUpdate)
+            RefreshPinnedCastbar(self)
             SetCastbarFrameVisible(self, true)
 
             local currentSettings = GetUnitSettings(self.unitKey)
@@ -3249,6 +3322,7 @@ local function DestroyCastbar(castbar)
     if not castbar then return end
 
     castbar._quiDestroyed = true
+    pinnedCastbars[castbar] = nil
     CancelPendingCastRetry(castbar)
 
     ClearChannelTickState(castbar)
@@ -3373,7 +3447,7 @@ function QUI_Castbar:RefreshCastbar(castbar, unitKey, castSettings, unitFrame)
         if QUI_UF and QUI_UF.castbars then
             QUI_UF.castbars[unitKey] = newCastbar
         end
-        local anchorKey = unitKey .. "Castbar"
+        local anchorKey = GetCastbarAnchorKey(unitKey)
         if _G.QUI_ApplyFrameAnchor then
             _G.QUI_ApplyFrameAnchor(anchorKey)
         end

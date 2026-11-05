@@ -122,7 +122,7 @@ local function BuildControlStrip(panel)
     for _, def in ipairs(FILTER_DEFS) do
         local toggle = GUI:CreateFormToggle(card.frame, nil, def.key, State.previewFilter, function()
             ApplyFilterToDriver()
-        end)
+        end, { searchable = false })
         cells[def.key] = optionsAPI.BuildSettingRow(card.frame, def.label, toggle)
     end
     card.AddRow(cells.threat, cells.dispel)
@@ -140,7 +140,7 @@ local function BuildControlStrip(panel)
             if _G.QUI_RefreshGroupFramePreview then
                 _G.QUI_RefreshGroupFramePreview("raid")
             end
-        end)
+        end, nil, { searchable = false })
     local raidRow = optionsAPI.BuildSettingRow(strip, ns.L["Raid Size"], raidSlider)
     raidRow:ClearAllPoints()
     raidRow:SetPoint("TOPLEFT", card.frame, "BOTTOMLEFT", 12, -8)
@@ -255,36 +255,7 @@ local function GetContextMode()
 end
 
 local function SetActiveTab(tabKey)
-    if type(tabKey) ~= "string" or tabKey == "" then
-        return false
-    end
-
-    local tabModel = EnsureTabModel()
-    if not tabModel or type(tabModel.GetTabs) ~= "function" or type(tabModel.SetActiveKey) ~= "function" then
-        return false
-    end
-
-    local found = false
-    for _, tab in ipairs(tabModel:GetTabs() or {}) do
-        if tab.key == tabKey then
-            found = true
-            break
-        end
-    end
-    if not found then
-        return false
-    end
-
-    tabModel:SetActiveKey(tabKey)
-    if type(tabModel.ApplyNormalized) == "function" then
-        tabModel:ApplyNormalized()
-    end
-
-    if State.repaintTabs then
-        State.repaintTabs()
-    end
-
-    return true
+    return FullSurface.SelectTab(State, EnsureTabModel(), tabKey)
 end
 
 local function NavigateSearchEntry(entry)

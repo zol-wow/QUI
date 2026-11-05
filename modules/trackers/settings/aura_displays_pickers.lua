@@ -137,12 +137,12 @@ function P.BuildClassPicker(parent, width, get, set)
         return frame, 1
     end
     local SIZE, GAP = 26, 4
-    local x = 0
+    local buttons = {}
     for i = 1, #data do
         local entry = data[i]
         local btn = CreateFrame("Button", nil, frame)
         btn:SetSize(SIZE, SIZE)
-        btn:SetPoint("LEFT", frame, "LEFT", x, 0)
+        buttons[#buttons + 1] = btn
         local icon = btn:CreateTexture(nil, "ARTWORK")
         icon:SetAllPoints()
         icon:SetAtlas("classicon-" .. string.lower(entry.classFile))
@@ -168,10 +168,24 @@ function P.BuildClassPicker(parent, width, get, set)
             GUI.Tooltip:Show(self, entry.className, { anchor = "TOP" })
         end)
         btn:SetScript("OnLeave", function(self) GUI.Tooltip:Hide(false, self) end)
-        x = x + SIZE + GAP
+    end
+    local previousWidth
+    function frame:Layout(force)
+        local available = math.max(SIZE, self:GetWidth())
+        if available == previousWidth and not force then return end
+        previousWidth = available
+        local columns = math.max(1, math.floor((available + GAP) / (SIZE + GAP)))
+        for i, btn in ipairs(buttons) do
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", self, "TOPLEFT", ((i - 1) % columns) * (SIZE + GAP),
+                -math.floor((i - 1) / columns) * (SIZE + GAP))
+        end
+        self:SetHeight(math.ceil(#buttons / columns) * (SIZE + GAP) - GAP)
     end
     frame:SetSize(width, SIZE)
-    return frame, SIZE
+    frame:HookScript("OnSizeChanged", function() frame:Layout() end)
+    frame:Layout()
+    return frame, frame:GetHeight()
 end
 
 function P.BuildSpecPicker(parent, width, get, set, expanded, onToggleExpand)
@@ -196,23 +210,25 @@ function P.BuildSpecPicker(parent, width, get, set, expanded, onToggleExpand)
     end
     RefreshHeaderLabel()
     header:SetScript("OnClick", onToggleExpand)
-    local y = 24
+    local groups = {}
+    local SIZE, GAP, ROW_H = 18, 4, 22
     if expanded then
-        local SIZE, GAP, ROW_H = 18, 4, 22
         for i = 1, #data do
             local entry = data[i]
-            local x = 10
+            local buttons = {}
+            groups[#groups + 1] = buttons
             for s = 1, #entry.specs do
                 local spec = entry.specs[s]
                 local btn = CreateFrame("Button", nil, frame)
                 btn:SetSize(SIZE + 90, ROW_H - 2)
-                btn:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -y)
+                buttons[#buttons + 1] = btn
                 local icon = btn:CreateTexture(nil, "ARTWORK")
                 icon:SetSize(SIZE, SIZE)
                 icon:SetPoint("LEFT")
                 icon:SetTexture(spec.icon or FALLBACK_ICON)
                 local label = GUI:CreateLabel(btn, spec.name or tostring(spec.specID), 10)
                 label:SetPoint("LEFT", icon, "RIGHT", 4, 0)
+                btn._desiredWidth = math.max(SIZE + 90, SIZE + 4 + label:GetStringWidth())
                 local function Paint()
                     local on = get()[spec.specID] == true
                     icon:SetDesaturated(not on)
@@ -226,14 +242,37 @@ function P.BuildSpecPicker(parent, width, get, set, expanded, onToggleExpand)
                     Paint()
                     RefreshHeaderLabel()
                 end)
-                x = x + SIZE + 90 + GAP
-                if x > width - 100 then break end
+            end
+        end
+    end
+    local previousWidth
+    function frame:Layout(force)
+        local available = math.max(1, self:GetWidth())
+        if available == previousWidth and not force then return end
+        previousWidth = available
+        header:SetWidth(available)
+        local y = 24
+        for _, buttons in ipairs(groups) do
+            local x = 10
+            for _, btn in ipairs(buttons) do
+                local buttonWidth = math.min(btn._desiredWidth, math.max(1, available - 10))
+                if x > 10 and x + buttonWidth > available then
+                    x = 10
+                    y = y + ROW_H
+                end
+                btn:ClearAllPoints()
+                btn:SetPoint("TOPLEFT", self, "TOPLEFT", x, -y)
+                btn:SetWidth(buttonWidth)
+                x = x + buttonWidth + GAP
             end
             y = y + ROW_H
         end
+        self:SetHeight(y)
     end
-    frame:SetSize(width, y)
-    return frame, y
+    frame:SetSize(width, 24)
+    frame:HookScript("OnSizeChanged", function() frame:Layout() end)
+    frame:Layout()
+    return frame, frame:GetHeight()
 end
 
 local function ResolveEncounterName(id, tiers)

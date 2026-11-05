@@ -537,13 +537,13 @@ local function ApplyHideSettings()
                     end)
                 end)
             end
-        elseif hideXP or hideRep then
+        else
             StatusTrackingBarManager:Show()
             if StatusTrackingBarManager.barContainers then
                 HideStatusBars()
             end
 
-            if not stbState.barsHooked then
+            if (hideXP or hideRep) and not stbState.barsHooked then
                 stbState.barsHooked = true
                 hooksecurefunc(StatusTrackingBarManager, "UpdateBarsShown", function()
                     C_Timer.After(0.01, HideStatusBars)

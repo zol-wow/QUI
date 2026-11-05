@@ -22,16 +22,7 @@ local UNIT_FRAMES_TILE_ROUTE = {
     tileId = "unit_frames",
     subPageIndex = 1,
 }
-local GENERAL_SEARCH_CONTEXT = {
-    tabIndex = 5,
-    tabName = "Unit Frames",
-    subTabIndex = 1,
-    subTabName = "General",
-    featureId = UNIT_FRAMES_FEATURE_ID,
-    tileId = UNIT_FRAMES_TILE_ROUTE.tileId,
-    subPageIndex = UNIT_FRAMES_TILE_ROUTE.subPageIndex,
-    surfaceTabKey = "general",
-}
+-- Legacy navigation aliases identify units, independently of the current model tabs.
 local UNIT_SUBTAB_INDEX = {
     player = 2,
     target = 3,
@@ -49,15 +40,6 @@ local UNIT_DISPLAY_NAMES = {
     boss = ns.L["Boss"],
 }
 ns.QUI_UnitFramesUnitDisplayNames = UNIT_DISPLAY_NAMES
-local UNIT_SURFACE_TABS = {
-    ["Frame"] = "frame",
-    ["Bars"] = "bars",
-    ["Castbar"] = "castbar",
-    ["Text"] = "text",
-    ["Icons"] = "icons",
-    ["Indicators"] = "indicators",
-    ["Portrait"] = "portrait",
-}
 local FRAME_TAB_FEATURES = {}
 local BARS_TAB_FEATURES = {}
 local CASTBAR_TAB_FEATURES = {}
@@ -392,17 +374,18 @@ local function SetSearchContext(searchContext)
     end
 end
 
-local function CreateUnitSearchContext(unitKey, subTabName)
+local function CreateUnitSearchContext(unitKey, tabKey)
+    local tab = ns.Settings.ModelKit.GetTabDefinition(ns.QUI_UnitFramesSettingsModel, tabKey)
     local SearchRoute = ns.Settings and ns.Settings.SearchRoute
     local searchContext = {
         tabIndex = 5,
         tabName = "Unit Frames",
-        subTabIndex = UNIT_SUBTAB_INDEX[unitKey] or 2,
-        subTabName = subTabName or (UNIT_DISPLAY_NAMES[unitKey] or unitKey or "Frame"),
+        subTabIndex = tabKey == "general" and 1 or (UNIT_SUBTAB_INDEX[unitKey] or 2),
+        subTabName = tab and tab.label or tabKey,
         featureId = UNIT_FRAMES_FEATURE_ID,
         tileId = UNIT_FRAMES_TILE_ROUTE.tileId,
         subPageIndex = UNIT_FRAMES_TILE_ROUTE.subPageIndex,
-        surfaceTabKey = UNIT_SURFACE_TABS[subTabName],
+        surfaceTabKey = tabKey,
         surfaceUnitKey = unitKey,
     }
     if SearchRoute and type(SearchRoute.Apply) == "function" then
@@ -436,72 +419,26 @@ local function CreateSectionBuilder(sectionHost, ctx, searchContext)
     PrepareSectionHost(sectionHost, ctx)
     SetSearchContext(searchContext)
 
-    local y = 0
-    local builder = {}
-
-    function builder.Header(text)
-        if type(text) ~= "string" or text == "" then
-            return
-        end
-
-        local header = optionsAPI.CreateAccentDotLabel(sectionHost, text, y)
-        header:ClearAllPoints()
-        header:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        header:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
-        y = y - HEADER_GAP
-    end
-
-    function builder.Description(text)
-        if type(text) ~= "string" or text == "" then
-            return
-        end
-
-        local description = sectionHost:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        description:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        description:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
-        description:SetJustifyH("LEFT")
-        description:SetText(text)
-        description:SetTextColor(
-            DESCRIPTION_TEXT_COLOR[1],
-            DESCRIPTION_TEXT_COLOR[2],
-            DESCRIPTION_TEXT_COLOR[3],
-            DESCRIPTION_TEXT_COLOR[4]
-        )
-        local height = 14
-        if description.GetStringHeight then
-            height = math.max(14, math.ceil(description:GetStringHeight() or 14))
-        end
-        y = y - height - 4
-    end
-
-    function builder.Card()
-        local card = optionsAPI.CreateSettingsCardGroup(sectionHost, y)
-        card.frame:ClearAllPoints()
-        card.frame:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        card.frame:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
-        return card
-    end
-
-    function builder.CloseCard(card)
-        card.Finalize()
-        y = y - card.frame:GetHeight()
-    end
-
-    function builder.Spacer(amount)
-        y = y - (amount or 10)
-    end
+    local layout = ns.QUI_SettingsLayoutShared.MakeLayout(sectionHost, nil, 0, {
+        padding = 0,
+        headerGap = HEADER_GAP,
+        sectionGap = 0,
+        bottomPadding = SECTION_BOTTOM_PAD,
+        textColor = DESCRIPTION_TEXT_COLOR,
+    })
+    local builder = {
+        Header = layout.headerAt,
+        Card = layout.sectionAt,
+        CloseCard = layout.closeSection,
+        Spacer = layout.spacer,
+        Height = layout.height,
+        Description = layout.paragraph,
+    }
 
     function builder.Row(build)
         local row = CreateFrame("Frame", nil, sectionHost)
-        row:SetHeight(FORM_ROW)
-        row:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, y)
-        row:SetPoint("TOPRIGHT", sectionHost, "TOPRIGHT", 0, y)
+        layout.placeCustom(row, FORM_ROW, 10)
         build(row)
-        y = y - FORM_ROW - 10
-    end
-
-    function builder.Height(extra)
-        return math.abs(y) + (extra or SECTION_BOTTOM_PAD)
     end
 
     return builder
@@ -588,7 +525,7 @@ local function RenderEnableSection(sectionHost, ctx)
 
     ResetRenderState(ctx)
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, GENERAL_SEARCH_CONTEXT)
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(nil, "general"))
     if not builder then
         return nil
     end
@@ -628,7 +565,7 @@ local function RenderDefaultColorsSection(sectionHost, ctx)
     end
 
     local renderState = GetRenderState(ctx)
-    local builder = CreateSectionBuilder(sectionHost, ctx, GENERAL_SEARCH_CONTEXT)
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(nil, "general"))
     if not builder then
         return nil
     end
@@ -740,7 +677,7 @@ local function RenderDarkModeSection(sectionHost, ctx)
     end
 
     local renderState = GetRenderState(ctx)
-    local builder = CreateSectionBuilder(sectionHost, ctx, GENERAL_SEARCH_CONTEXT)
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(nil, "general"))
     if not builder then
         return nil
     end
@@ -852,7 +789,7 @@ local function RenderTextColorOverridesSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, GENERAL_SEARCH_CONTEXT)
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(nil, "general"))
     if not builder then
         return nil
     end
@@ -901,7 +838,7 @@ local function RenderTooltipsSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, GENERAL_SEARCH_CONTEXT)
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(nil, "general"))
     if not builder then
         return nil
     end
@@ -926,7 +863,7 @@ local function RenderSmootherUpdatesSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, GENERAL_SEARCH_CONTEXT)
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(nil, "general"))
     if not builder then
         return nil
     end
@@ -952,7 +889,7 @@ local function RenderHostilityColorsSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, GENERAL_SEARCH_CONTEXT)
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(nil, "general"))
     if not builder then
         return nil
     end
@@ -1014,7 +951,7 @@ local function RenderFrameEnableSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Frame"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "frame"))
     if not builder then
         return nil
     end
@@ -1047,7 +984,7 @@ local function RenderFrameStandaloneCastbarSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Frame"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "frame"))
     if not builder then
         return nil
     end
@@ -1104,7 +1041,7 @@ local function RenderFrameAppearanceSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Frame"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "frame"))
     if not builder then
         return nil
     end
@@ -1255,7 +1192,7 @@ local function RenderBarsHealthColorsSection(sectionHost, ctx)
     end
 
     local hasHostility = UnitHasHostilityColors(unitKey)
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Bars"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "bars"))
     if not builder then
         return nil
     end
@@ -1321,7 +1258,7 @@ local function RenderBarsAbsorbSection(sectionHost, ctx)
     end
 
     local absorbs = EnsureAbsorbSettings(unit.unitDB)
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Bars"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "bars"))
     if not builder then
         return nil
     end
@@ -1366,7 +1303,7 @@ local function RenderBarsHealPredictionSection(sectionHost, ctx)
     end
 
     local healPrediction = EnsureHealPredictionSettings(unit.unitDB)
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Bars"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "bars"))
     if not builder then
         return nil
     end
@@ -1403,7 +1340,7 @@ local function RenderBarsPowerSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Bars"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "bars"))
     if not builder then
         return nil
     end
@@ -1620,7 +1557,7 @@ local function RenderCastbarSection(sectionHost, ctx)
     end
 
     local castDB = EnsureCastbarSettings(unit.unitDB, unitKey)
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Castbar"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "castbar"))
     if not builder then
         return nil
     end
@@ -2092,7 +2029,7 @@ local function RenderTextNameSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Text"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "text"))
     if not builder then
         return nil
     end
@@ -2151,7 +2088,7 @@ local function RenderTextLevelSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Text"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "text"))
     if not builder then
         return nil
     end
@@ -2225,7 +2162,7 @@ local function RenderTextTargetOfTargetSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Text"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "text"))
     if not builder then
         return nil
     end
@@ -2281,7 +2218,7 @@ local function RenderTextHealthSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Text"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "text"))
     if not builder then
         return nil
     end
@@ -2351,7 +2288,7 @@ local function RenderTextPowerSection(sectionHost, ctx)
         return nil
     end
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Text"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "text"))
     if not builder then
         return nil
     end
@@ -2430,7 +2367,7 @@ local function RenderTextStanceSection(sectionHost, ctx)
     end
 
     local stanceDB = EnsurePlayerStanceSettings(unit.unitDB)
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Text"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "text"))
     if not builder then
         return nil
     end
@@ -2549,7 +2486,7 @@ local function RenderAuraElementsSection(sectionHost, ctx)
     end
     local auraDB = unit.unitDB.auras
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Icons"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "icons"))
     if not builder then
         return nil
     end
@@ -2714,14 +2651,14 @@ local function BuildIconsTabFeature(unitKey)
     return feature
 end
 
-local function RenderUnavailableSection(sectionHost, ctx, supported, surfaceName, message)
+local function RenderUnavailableSection(sectionHost, ctx, supported, tabKey, message)
     if supported then
         return nil
     end
     local gui = GetGUI()
     local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
 
-    SetSearchContext(CreateUnitSearchContext(unitKey, surfaceName))
+    SetSearchContext(CreateUnitSearchContext(unitKey, tabKey))
 
     local info = gui and gui.CreateLabel and gui:CreateLabel(
         sectionHost,
@@ -2743,7 +2680,7 @@ end
 local function RenderPortraitUnavailableSection(sectionHost, ctx)
     local unitKey = ctx and ctx.options and ctx.options.unitKey or nil
     return RenderUnavailableSection(sectionHost, ctx, UnitSupportsPortrait(unitKey),
-        "Portrait", ns.L["Portrait is only supported on the Player, Target, and Focus frames."])
+        "portrait", ns.L["Portrait is only supported on the Player, Target, and Focus frames."])
 end
 
 local function RenderPortraitSettingsSection(sectionHost, ctx)
@@ -2757,7 +2694,7 @@ local function RenderPortraitSettingsSection(sectionHost, ctx)
 
     EnsurePortraitSettings(unit.unitDB, unitKey)
 
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Portrait"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "portrait"))
     if not builder then
         return nil
     end
@@ -2907,7 +2844,7 @@ local function RenderIndicatorsRestedSection(sectionHost, ctx)
     end
 
     local rested = EnsureRestedIndicatorSettings(unit.unitDB)
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Indicators"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "indicators"))
     if not builder then
         return nil
     end
@@ -2943,7 +2880,7 @@ local function RenderIndicatorsCombatSection(sectionHost, ctx)
     end
 
     local combat = EnsureCombatIndicatorSettings(unit.unitDB)
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Indicators"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "indicators"))
     if not builder then
         return nil
     end
@@ -2979,7 +2916,7 @@ local function RenderIndicatorsTargetMarkerSection(sectionHost, ctx)
     end
 
     local marker = EnsureTargetMarkerSettings(unit.unitDB)
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Indicators"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "indicators"))
     if not builder then
         return nil
     end
@@ -3015,7 +2952,7 @@ local function RenderIndicatorsLeaderSection(sectionHost, ctx)
     end
 
     local leader = EnsureLeaderIndicatorSettings(unit.unitDB)
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Indicators"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "indicators"))
     if not builder then
         return nil
     end
@@ -3051,7 +2988,7 @@ local function RenderIndicatorsClassificationSection(sectionHost, ctx)
     end
 
     local classification = EnsureClassificationIndicatorSettings(unit.unitDB)
-    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "Indicators"))
+    local builder = CreateSectionBuilder(sectionHost, ctx, CreateUnitSearchContext(unitKey, "indicators"))
     if not builder then
         return nil
     end

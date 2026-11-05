@@ -106,6 +106,10 @@ function ItemButtons.DismissNewItemGlow(button)
 end
 
 function ItemButtons.CreateLive(holder, bagID)
+    if InCombatLockdown() then
+        Bags.itemButtonRefreshPending = true
+        return nil
+    end
     local button = CreateFrame("ItemButton", nil, holder, "ContainerFrameItemButtonTemplate")
     button:SetBagID(bagID)
     button.GetItemContextMatchResult = LiveGetItemContextMatchResult

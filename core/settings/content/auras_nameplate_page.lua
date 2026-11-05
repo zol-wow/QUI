@@ -8,25 +8,19 @@ if not Registry or type(Registry.RegisterFeature) ~= "function"
     return
 end
 
-local HUB_ROUTE = {
-    tabIndex = 21,
-    tabName = ns.L["Auras"],
-    subTabIndex = 5,
-    subTabName = ns.L["Nameplates"],
-    tileId = "auras",
-    subPageIndex = 5,
-    featureId = "aurasNameplatePage",
-}
+local mountedEditor
 
 local function BuildAurasNameplateContent(host, ctx, section)
+    mountedEditor = { host = host, ctx = ctx, section = section }
     local NP = ns.QUI_NameplatesSettingsSchema
     local NPSurface = ns.QUI_NameplatesSettingsSurface
     local NPModel = ns.QUI_NameplatesSettingsModel
     local FullSurface = Settings and Settings.FullSurface
-    local SearchRoute = Settings and Settings.SearchRoute
 
     local typeKey = NPSurface and type(NPSurface.GetSelectedType) == "function"
         and NPSurface.GetSelectedType() or nil
+
+    mountedEditor.key = typeKey
 
     local y = 0
     local typeOptions = (NPModel and type(NPModel.GetTypeOptions) == "function"
@@ -61,11 +55,7 @@ local function BuildAurasNameplateContent(host, ctx, section)
     editorHost:SetHeight(1)
 
     if NP and type(NP.RenderAurasTab) == "function" then
-        if SearchRoute and type(SearchRoute.With) == "function" then
-            SearchRoute.With(HUB_ROUTE, NP.RenderAurasTab, editorHost, typeKey, true)
-        else
-            NP.RenderAurasTab(editorHost, typeKey, true)
-        end
+        NP.RenderAurasTab(editorHost, typeKey, true)
     end
 
     local total = y + ((editorHost.GetHeight and editorHost:GetHeight()) or 1)
@@ -77,11 +67,41 @@ Registry:RegisterFeature(Schema.Feature({
     id = "aurasNameplatePage",
     category = "frames",
     nav = { tileId = "auras", subPageIndex = 5 },
+    getSearchContexts = function()
+        local model = ns.QUI_NameplatesSettingsModel
+        return model and model.GetSearchContexts("auras") or {}
+    end,
+    getNavigationContext = function()
+        local surface = ns.QUI_NameplatesSettingsSurface
+        return surface and surface.GetNavigationContext() or {}
+    end,
+    searchNavigate = function(entry, context)
+        local surface = ns.QUI_NameplatesSettingsSurface
+        if not surface then return false end
+        local key = entry and entry.surfaceTypeKey
+        local model = ns.QUI_NameplatesSettingsModel
+        if type(key) ~= "string" or not model or model.NormalizeTypeKey(key) ~= key then return false end
+        local changed = surface.GetSelectedType() ~= key
+        if changed then surface.SetSelectedType(key) end
+        local mounted = mountedEditor
+        if mounted and mounted.key ~= key and mounted.ctx and mounted.section
+            and mounted.ctx.host._quiSettingsRuntime == mounted.ctx.runtime then
+            mounted.ctx:RerenderSection(mounted.section.id)
+        end
+        if context and context.opts and mountedEditor then
+            context.opts.searchRoot = mountedEditor.host
+        end
+        return true
+    end,
     sections = {
         Schema.Section({
             id = "settings",
             kind = "page",
             minHeight = 80,
+            getContextKey = function()
+                local surface = ns.QUI_NameplatesSettingsSurface
+                return surface and surface.GetSelectedType() or nil
+            end,
             build = BuildAurasNameplateContent,
         }),
     },

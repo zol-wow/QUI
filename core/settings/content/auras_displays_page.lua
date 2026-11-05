@@ -10,24 +10,9 @@ end
 
 local function BuildAurasDisplaysContent(host, ctx, section)
     local Page = ns.QUI_AuraDisplaysOptions
-    local SearchRoute = Settings and Settings.SearchRoute
-
-    local HUB_ROUTE = {
-        tabIndex = 21,
-        tabName = ns.L["Auras"],
-        subTabIndex = 6,
-        subTabName = ns.L["Aura Displays"],
-        tileId = "auras",
-        subPageIndex = 6,
-        featureId = "aurasDisplaysPage",
-    }
 
     if Page and type(Page.BuildAuraDisplaysContent) == "function" then
-        if SearchRoute and type(SearchRoute.With) == "function" then
-            SearchRoute.With(HUB_ROUTE, Page.BuildAuraDisplaysContent, host, ctx)
-        else
-            Page.BuildAuraDisplaysContent(host, ctx)
-        end
+        Page.BuildAuraDisplaysContent(host, ctx)
     end
 
     return host:GetHeight() or 80

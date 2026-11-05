@@ -50,6 +50,8 @@ local ROLL_TEXTURES = {
 
 local lootFrame = nil
 local rollFramePool = {}
+local rollPreviewFramePool = {}
+local rollPreviewActive = false
 local activeRolls = {}
 local rollAnchor = nil
 local waitingRolls = {}
@@ -82,6 +84,7 @@ local frameParts = Helpers.CreateStateTable()
 
 local ProcessRollQueue
 local StartRoll
+local HideEditModeBorder
 local pendingLootFrameHeight = nil
 
 local function GetGeneralFont()
@@ -232,7 +235,13 @@ local function CreateLootWindow()
     frame.closeBtn = SkinBase.CreateCloseButton(frame, {
         size = 16, lineLen = 8,
         point = "TOPRIGHT", x = -4, y = -4,
-        onClick = function() CloseLoot() end,
+        onClick = function()
+            if frame._previewMode then
+                Loot:HideLootPreview()
+            else
+                CloseLoot()
+            end
+        end,
     })
 
     frame.slots = {}
@@ -268,6 +277,9 @@ end
 local function OnLootOpened(autoLoot, isFromItem, refreshOnly)
     local numItems = GetNumLootItems()
     if numItems == 0 and not refreshOnly then return end
+
+    -- Native loot events take ownership back from the layout preview.
+    if lootFrame and lootFrame._previewMode then Loot:HideLootPreview() end
 
     local db = GetDB()
     if not db.loot or not db.loot.enabled then return end
@@ -374,12 +386,6 @@ local function CreateRollButton(parent, rollType, rollValue, texture)
     btn.icon:SetAllPoints()
     btn.icon:SetTexture(texture)
 
-    btn.bg = btn:CreateTexture(nil, "BACKGROUND")
-    btn.bg:SetAllPoints()
-    btn.bg:SetColorTexture(0, 0, 0, 0)
-    SkinBase.ApplyChromeBackdrop(btn, { radius = 5, background = true })
-    SkinBase.RoundIconTexture(btn, btn.icon)
-
     btn:SetHighlightTexture("Interface\\Buttons\\UI-Common-MouseHilight", "ADD")
 
     btn.rollValue = rollValue
@@ -417,10 +423,10 @@ local QUALITY_BG_TINTS = {
     [5] = { 1.0, 0.5, 0.0, 0.15 },
 }
 
-local function CreateRollFrame(index)
+local function CreateRollFrame(index, preview)
     local bgColor, borderColor, textColor, accentColor = GetThemeColors()
 
-    local frame = CreateFrame("Frame", "QUI_LootRollFrame"..index, UIParent, "BackdropTemplate")
+    local frame = CreateFrame("Frame", (preview and "QUI_LootRollPreviewFrame" or "QUI_LootRollFrame")..index, UIParent, "BackdropTemplate")
     frame:SetSize(ROLL_FRAME_WIDTH, ROLL_FRAME_HEIGHT)
     frame:SetFrameStrata("DIALOG")
     frame:SetToplevel(true)
@@ -585,6 +591,9 @@ StartRoll = function(rollID, rollTime)
 
     local texture, name, count, quality, bop, canNeed, canGreed, canDE, reason, deReason, _, _, canTransmog = GetLootRollItemInfo(rollID)
     if not texture then return end
+
+    -- Gameplay takes priority over layout previews, including queued rolls.
+    if rollPreviewActive then Loot:HideRollPreview() end
 
     local frame = GetAvailableRollFrame()
     if not frame then
@@ -1174,13 +1183,15 @@ function Loot:ApplyRollTheme()
     local bgColor, borderColor, textColor, accentColor = GetThemeColors()
     local fontPath = LSM:Fetch("font", GetGeneralFont())
 
-    for i = 1, MAX_ROLL_FRAMES do
-        local frame = rollFramePool[i]
-        if frame then
-            Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], 0.95)
-            Helpers.SetFrameBackdropBorderColor(frame, borderColor[1], borderColor[2], borderColor[3], 0.3)
-            frame.timer:SetStatusBarColor(accentColor[1], accentColor[2], accentColor[3], 1)
-            CJKFont(frame.name, fontPath, 12, "OUTLINE")
+    for _, pool in ipairs({ rollFramePool, rollPreviewFramePool }) do
+        for i = 1, MAX_ROLL_FRAMES do
+            local frame = pool[i]
+            if frame then
+                Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], 0.95)
+                Helpers.SetFrameBackdropBorderColor(frame, borderColor[1], borderColor[2], borderColor[3], 0.3)
+                frame.timer:SetStatusBarColor(accentColor[1], accentColor[2], accentColor[3], 1)
+                CJKFont(frame.name, fontPath, 12, "OUTLINE")
+            end
         end
     end
 end
@@ -1206,15 +1217,15 @@ if ns.Registry then
     })
 end
 
-local rollPreviewActive = false
-
 function Loot:ShowLootPreview()
+    if GetNumLootItems() > 0 then return false end
     if not lootFrame then
         lootFrame = CreateLootWindow()
     end
 
     self:ApplyLootTheme()
 
+    lootFrame:ClearAllPoints()
     lootFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
     if _G.QUI_ApplyAllFrameAnchors then
         _G.QUI_ApplyAllFrameAnchors()
@@ -1260,10 +1271,13 @@ function Loot:ShowLootPreview()
     lootFrame.scrollFrame:SetVerticalScroll(0)
     ApplyLootFrameHeight(height)
     lootFrame:Show()
+    return true
 end
 
 function Loot:HideLootPreview()
-    if lootFrame then
+    if lootFrame and lootFrame._previewMode then
+        HideEditModeBorder(lootFrame)
+        if lootFrame.editLabel then lootFrame.editLabel:Hide() end
         lootFrame:Hide()
         lootFrame:SetScript("OnDragStart", function(self)
             if IsShiftKeyDown() then
@@ -1286,6 +1300,9 @@ local PREVIEW_ROLL_ITEMS = {
 }
 
 function Loot:ShowRollPreview()
+    -- Never hide or cover live roll choices to display a settings preview.
+    if next(activeRolls) then return false end
+    self:HideRollPreview()
     if not rollAnchor then
         rollAnchor = CreateRollAnchor()
     end
@@ -1305,15 +1322,25 @@ function Loot:ShowRollPreview()
 
     for i = 1, maxFrames do
         local item = PREVIEW_ROLL_ITEMS[i] or PREVIEW_ROLL_ITEMS[1]
-        if not rollFramePool[i] then
-            rollFramePool[i] = CreateRollFrame(i)
+        if not rollPreviewFramePool[i] then
+            rollPreviewFramePool[i] = CreateRollFrame(i, true)
         end
-        local frame = rollFramePool[i]
+        local frame = rollPreviewFramePool[i]
 
         Helpers.SetFrameBackdropColor(frame, bgColor[1], bgColor[2], bgColor[3], 0.95)
         Helpers.SetFrameBackdropBorderColor(frame, borderColor[1], borderColor[2], borderColor[3], 0.3)
 
         frame.rollID = nil
+        -- Reset pooled previews to the standard Need/Greed/Disenchant/Pass set.
+        for _, button in ipairs({ frame.needBtn, frame.greedBtn, frame.disenchantBtn, frame.passBtn, frame.transmogBtn }) do
+            button:Enable()
+            button:SetAlpha(1)
+            button.icon:SetDesaturated(false)
+            button:Show()
+        end
+        frame.transmogBtn:Hide()
+        frame.needBtn:ClearAllPoints()
+        frame.needBtn:SetPoint("RIGHT", frame.greedBtn, "LEFT", -4, 0)
         frame.icon:SetTexture(item.texture)
         Helpers.ApplyIconStyle(frame, frame.icon)
         frame.name:SetText(item.name)
@@ -1345,12 +1372,12 @@ function Loot:ShowRollPreview()
                 end
                 local previewCount = Loot._previewMaxFrames or 4
                 for j = 2, previewCount do
-                    if rollFramePool[j] then
-                        rollFramePool[j]:ClearAllPoints()
+                    if rollPreviewFramePool[j] then
+                        rollPreviewFramePool[j]:ClearAllPoints()
                         if growDirection == "UP" then
-                            rollFramePool[j]:SetPoint("BOTTOM", rollAnchor, "TOP", 0, ((j-1) * (ROLL_FRAME_HEIGHT + spacing)))
+                            rollPreviewFramePool[j]:SetPoint("BOTTOM", rollAnchor, "TOP", 0, ((j-1) * (ROLL_FRAME_HEIGHT + spacing)))
                         else
-                            rollFramePool[j]:SetPoint("TOP", rollAnchor, "BOTTOM", 0, -((j-1) * (ROLL_FRAME_HEIGHT + spacing)))
+                            rollPreviewFramePool[j]:SetPoint("TOP", rollAnchor, "BOTTOM", 0, -((j-1) * (ROLL_FRAME_HEIGHT + spacing)))
                         end
                     end
                 end
@@ -1367,17 +1394,18 @@ function Loot:ShowRollPreview()
     end
 
     rollPreviewActive = true
+    return true
 end
 
 function Loot:HideRollPreview()
     for i = 1, MAX_ROLL_FRAMES do
-        if rollFramePool[i] then
-            rollFramePool[i]:Hide()
+        if rollPreviewFramePool[i] then
+            rollPreviewFramePool[i]:Hide()
             if i == 1 then
-                rollFramePool[i]:SetMovable(false)
-                rollFramePool[i]:RegisterForDrag()
-                rollFramePool[i]:SetScript("OnDragStart", nil)
-                rollFramePool[i]:SetScript("OnDragStop", nil)
+                rollPreviewFramePool[i]:SetMovable(false)
+                rollPreviewFramePool[i]:RegisterForDrag()
+                rollPreviewFramePool[i]:SetScript("OnDragStart", nil)
+                rollPreviewFramePool[i]:SetScript("OnDragStop", nil)
             end
         end
     end
@@ -1392,20 +1420,24 @@ end
 local editModeActive = false
 
 local EDIT_BORDER_COLOR = { 0.2, 0.8, 0.8, 1 }
-local EDIT_BORDER_SIZE = 2
 
 local function ShowEditModeBorder(frame)
-    ns.UIKit.CreateBorderLines(frame)
-    ns.UIKit.UpdateBorderLines(frame, EDIT_BORDER_SIZE,
-        EDIT_BORDER_COLOR[1], EDIT_BORDER_COLOR[2], EDIT_BORDER_COLOR[3], EDIT_BORDER_COLOR[4], false)
+    if not frame.editBorderOverlay then
+        local overlay = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+        overlay:SetAllPoints(frame)
+        overlay:EnableMouse(false)
+        SkinBase.ApplyChromeBackdrop(overlay, { radius = 8, background = false })
+        Helpers.SetFrameBackdropBorderColor(overlay,
+            EDIT_BORDER_COLOR[1], EDIT_BORDER_COLOR[2], EDIT_BORDER_COLOR[3], EDIT_BORDER_COLOR[4])
+        frame.editBorderOverlay = overlay
+    end
+    frame.editBorderOverlay:Show()
     frame.editBorder = true
 end
 
-local function HideEditModeBorder(frame)
-    if frame.editBorder then
-        ns.UIKit.UpdateBorderLines(frame, EDIT_BORDER_SIZE,
-            EDIT_BORDER_COLOR[1], EDIT_BORDER_COLOR[2], EDIT_BORDER_COLOR[3], EDIT_BORDER_COLOR[4], true)
-    end
+HideEditModeBorder = function(frame)
+    if frame.editBorderOverlay then frame.editBorderOverlay:Hide() end
+    frame.editBorder = false
 end
 
 function Loot:EnableEditMode()
@@ -1413,7 +1445,7 @@ function Loot:EnableEditMode()
     editModeActive = true
 
     self:ShowLootPreview()
-    if lootFrame then
+    if lootFrame and lootFrame._previewMode then
         ShowEditModeBorder(lootFrame)
 
         if not lootFrame.editLabel then
@@ -1428,7 +1460,7 @@ function Loot:EnableEditMode()
     end
 
     self:ShowRollPreview()
-    local rollFrame = rollFramePool[1]
+    local rollFrame = rollPreviewActive and rollPreviewFramePool[1]
     if rollFrame then
         ShowEditModeBorder(rollFrame)
 
@@ -1448,12 +1480,12 @@ function Loot:DisableEditMode()
     if not editModeActive then return end
     editModeActive = false
 
-    if lootFrame then
+    if lootFrame and lootFrame._previewMode then
         HideEditModeBorder(lootFrame)
         if lootFrame.editLabel then lootFrame.editLabel:Hide() end
     end
 
-    local rollFrame = rollFramePool[1]
+    local rollFrame = rollPreviewFramePool[1]
     if rollFrame then
         HideEditModeBorder(rollFrame)
         if rollFrame.editLabel then rollFrame.editLabel:Hide() end

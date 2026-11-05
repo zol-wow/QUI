@@ -14,34 +14,40 @@ local PADDING = Shared.PADDING or 15
 local function CreateQA(parent, question, answer, y, contentWidth)
     local qLabel = CreateWrappedLabel(parent, question, 12, C.text, contentWidth - PADDING * 2)
     qLabel:SetPoint("TOPLEFT", PADDING, y)
+    ns.QUI_SettingsLayoutShared.BindWrappedLabel(qLabel, parent, PADDING)
     local qHeight = qLabel:GetStringHeight() or 14
     y = y - qHeight - 4
 
     local aLabel = CreateWrappedLabel(parent, answer, 11, C.textMuted, contentWidth - PADDING * 2 - 10)
     aLabel:SetPoint("TOPLEFT", PADDING + 10, y)
+    ns.QUI_SettingsLayoutShared.BindWrappedLabel(aLabel, parent, PADDING)
     local aHeight = aLabel:GetStringHeight() or 14
     y = y - aHeight - 12
 
+    parent._quiLastDocumentText = aLabel
     return y
 end
 
 local function BuildWelcomeContent(content)
     local y = -10
-    local contentWidth = 700
+    local contentWidth = math.max(1, content:GetWidth())
 
     local version = QUI.versionString or "3.00"
     local title = CreateWrappedLabel(content, ns.L["Welcome to QUI"], 20, C.accent, contentWidth)
     title:SetPoint("TOPLEFT", PADDING, y)
+    ns.QUI_SettingsLayoutShared.BindWrappedLabel(title, content, PADDING)
     y = y - 28
 
     local versionLabel = CreateWrappedLabel(content, "v" .. version, 12, C.textMuted, contentWidth)
     versionLabel:SetPoint("TOPLEFT", PADDING, y)
+    ns.QUI_SettingsLayoutShared.BindWrappedLabel(versionLabel, content, PADDING)
     y = y - 22
 
     local tagline = CreateWrappedLabel(content,
         ns.L["A comprehensive UI suite for World of Warcraft with custom unit and group frames, cooldown tracking, action bars, anchoring and layout tools, profile import/export, and quality-of-life features."],
         12, C.textMuted, contentWidth - PADDING * 2)
     tagline:SetPoint("TOPLEFT", PADDING, y)
+    ns.QUI_SettingsLayoutShared.BindWrappedLabel(tagline, content, PADDING)
     y = y - (tagline:GetStringHeight() or 14) - 14
 
     local AssetPath = ns.Helpers.AssetPath
@@ -58,10 +64,10 @@ local function BuildWelcomeContent(content)
         0.941, 0.965, 0.988,
         AssetPath .. "github",
         ns.L["Copy GitHub URL"])
-    githubItem:SetPoint("TOPLEFT", PADDING + 330, y)
+    githubItem:SetPoint("TOPLEFT", PADDING, y - 28)
     githubItem:SetSize(350, 22)
 
-    y = y - 40
+    y = y - 68
 
     Shared.CreateAccentDotLabel(content, ns.L["Quick Setup Guide"], y); y = y - 30
 
@@ -78,6 +84,7 @@ local function BuildWelcomeContent(content)
             "|cff60A5FA" .. step.num .. "|r  " .. step.text,
             12, C.text, contentWidth - PADDING * 2 - 10)
         stepLabel:SetPoint("TOPLEFT", PADDING + 10, y)
+        ns.QUI_SettingsLayoutShared.BindWrappedLabel(stepLabel, content, PADDING)
         y = y - (stepLabel:GetStringHeight() or 14) - 8
     end
     y = y - 12
@@ -121,7 +128,7 @@ local function BuildWelcomeContent(content)
 
     y = y - 10
 
-    content:SetHeight(math.abs(y))
+    ns.QUI_SettingsLayoutShared.BindContentBottom(content, content._quiLastDocumentText, 22)
 end
 
 local function CreateWelcomePage(parent)

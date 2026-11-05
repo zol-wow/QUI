@@ -450,6 +450,43 @@ function Helpers.GetCharConsumableMacrosDB()
     return core and core.db and core.db.char and core.db.char.consumableMacros
 end
 
+function Helpers.CreateConsumableMacrosSettings(profileDB)
+    local charDB = Helpers.GetCharConsumableMacrosDB()
+    local seedKeys = {
+        "enabled", "selectedFlask", "selectedPotion", "selectedHealth",
+        "selectedHealthstone", "selectedAugment", "selectedVantus",
+        "selectedWeapon", "chatNotifications",
+    }
+    local function ActiveDB()
+        if charDB and charDB.characterSpecific then return charDB end
+        return profileDB
+    end
+    return setmetatable({}, {
+        __index = function(_, key)
+            if key == "characterSpecific" then
+                return charDB and charDB.characterSpecific or false
+            end
+            local active = ActiveDB()
+            return active and active[key]
+        end,
+        __newindex = function(_, key, value)
+            if key == "characterSpecific" then
+                if not charDB then return end
+                local was = charDB.characterSpecific and true or false
+                charDB.characterSpecific = value and true or false
+                if charDB.characterSpecific and not was and profileDB then
+                    for _, seedKey in ipairs(seedKeys) do
+                        charDB[seedKey] = profileDB[seedKey]
+                    end
+                end
+                return
+            end
+            local active = ActiveDB()
+            if active then active[key] = value end
+        end,
+    })
+end
+
 function Helpers.DeepCopy(value, seen)
     if type(value) ~= "table" then
         return value

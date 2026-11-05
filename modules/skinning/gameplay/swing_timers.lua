@@ -26,14 +26,57 @@ function SwingTimers.SetEnabled(enabled)
     C_CVar.SetCVar("showSwingTimer", enabled and "1" or "0")
 end
 
-local function InNativeEditMode()
-    return EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() or false
-end
-
 local function UpdateHolderAlpha(entry)
+    if not entry.holder then return end
+    local settings = SwingTimers.GetSettings(entry.key)
+    local visibility = settings and settings.visibility
+    local hidden = visibility == 2 or (visibility == 1 and not UnitAffectingCombat("player"))
     local override = _G.OverrideActionBar
     local overridden = override and override:IsShown()
-    entry.holder:SetAlpha(not entry.preview and (entry.hidden or overridden) and 0 or 1)
+    entry.holder:SetAlpha(not entry.preview and (entry.hidden or hidden or overridden) and 0 or 1)
+end
+
+local function UpdatePreview(entry)
+    if not entry.preview and not entry.previewBar then return end
+    local settings = SwingTimers.GetSettings(entry.key)
+    if not settings then return end
+    local bar = entry.previewBar
+    if not bar then
+        bar = CreateFrame("StatusBar", nil, entry.holder, "BackdropTemplate")
+        bar:SetAllPoints(entry.holder)
+        bar:SetFrameLevel(entry.frame:GetFrameLevel() + 3)
+        bar:SetMinMaxValues(0, 1)
+        bar:SetValue(0.6)
+        bar:EnableMouse(false)
+        bar.TypeLabel = bar:CreateFontString(nil, "OVERLAY")
+        bar.TimeLabel = bar:CreateFontString(nil, "OVERLAY")
+        bar.TypeLabel:SetPoint("LEFT", bar, "LEFT", 4, 0)
+        bar.TimeLabel:SetPoint("RIGHT", bar, "RIGHT", -4, 0)
+        bar.TypeLabel:SetWordWrap(false)
+        entry.previewBar = bar
+    end
+    local core = Helpers.GetCore()
+    local r, g, b, a, br, bg, bb, ba = SkinBase.GetWindowColors(core.db.profile.general, "swingTimers")
+    SkinBase.ApplyChromeBackdrop(bar, {
+        radius = 3, borderPixels = 1, withBackground = true,
+        borderColor = { r, g, b, a }, bgColor = { br, bg, bb, ba },
+    })
+    Helpers.ApplyBarStyle(bar, ns.LSM:Fetch("statusbar", settings.texture))
+    SkinBase.RoundBarTexture(bar, bar:GetStatusBarTexture())
+    bar:SetStatusBarColor(SkinBase.GetSkinBarColor(core.db.profile.general, "swingTimers"))
+    local fontSize = math.max(6, math.min(32, tonumber(settings.fontSize) or 11))
+    SkinBase.SkinFontString(bar.TypeLabel, { size = fontSize })
+    SkinBase.SkinFontString(bar.TimeLabel, { size = fontSize })
+    bar.TypeLabel:SetText(entry.label)
+    bar.TimeLabel:SetText("1.2")
+    bar.TimeLabel:SetWidth(math.min(fontSize * 4, entry.holder:GetWidth() * 0.45))
+    bar.TypeLabel:ClearAllPoints()
+    bar.TypeLabel:SetPoint("LEFT", bar, "LEFT", 4, 0)
+    bar.TypeLabel:SetPoint("RIGHT", settings.showTime and bar.TimeLabel or bar,
+        settings.showTime and "LEFT" or "RIGHT", -4, 0)
+    bar.TypeLabel:SetShown(settings.showTitle)
+    bar.TimeLabel:SetShown(settings.showTime)
+    bar:SetShown(entry.preview == true)
 end
 
 local function UpdateRangeChrome(entry)
@@ -51,6 +94,7 @@ local function Apply(entry)
     local width = math.max(80, math.min(800, tonumber(settings.width) or 250))
     local height = math.max(8, math.min(80, tonumber(settings.height) or 20))
     local fontSize = math.max(6, math.min(32, tonumber(settings.fontSize) or 11))
+    local sizeChanged = holder:GetWidth() ~= width or holder:GetHeight() ~= height
     holder:SetSize(width, height)
     if not frame.ignoreFramePositionManager then
         frame:BreakFromFrameManager()
@@ -93,8 +137,8 @@ local function Apply(entry)
         pip:SetPoint("BOTTOMRIGHT", bar:GetStatusBarTexture(), "BOTTOMRIGHT", 0, 0)
         frame:GetTypeLabelShadow():SetAlpha(0)
         local title, time = frame:GetTypeLabel(), frame:GetTimeLabel()
-        SkinBase.SkinFontString(title, { size = fontSize })
-        SkinBase.SkinFontString(time, { size = fontSize })
+        SkinBase.SkinFontString(title, { size = fontSize, fontOnly = true })
+        SkinBase.SkinFontString(time, { size = fontSize, fontOnly = true })
         time:SetWidth(math.min(fontSize * 4, width * 0.45))
         title:SetWordWrap(false)
         time:SetWordWrap(false)
@@ -106,10 +150,12 @@ local function Apply(entry)
     end
     frame:GetTypeLabel():SetShown(settings.showTitle)
     frame:GetTimeLabel():SetShown(settings.showTime)
-    frame.visibility = settings.visibility
-    frame:UpdateShownStateAndRegistration()
-    frame:ApplyRangePresentation()
+    UpdateRangeChrome(entry)
     UpdateHolderAlpha(entry)
+    UpdatePreview(entry)
+    if sizeChanged and ns.QUI_LayoutMode.isActive and _G.QUI_ReassertAnchorAfterResize then
+        _G.QUI_ReassertAnchorAfterResize(entry.key)
+    end
     entry.applying = false
 end
 
@@ -134,12 +180,12 @@ local function Register(entry, index)
         end,
         onOpen = function()
             entry.preview = true
-            frame:SetIsInEditMode(true)
+            UpdatePreview(entry)
             UpdateHolderAlpha(entry)
         end,
         onClose = function()
             entry.preview = false
-            frame:SetIsInEditMode(InNativeEditMode())
+            UpdatePreview(entry)
             UpdateHolderAlpha(entry)
         end,
     })
@@ -151,9 +197,6 @@ local function Register(entry, index)
     hooksecurefunc(frame, "ApplySystemAnchor", function() Apply(entry) end)
     hooksecurefunc(frame, "UpdateSystemSetting", function() Apply(entry) end)
     hooksecurefunc(frame, "InitializeBarPresentation", function() Apply(entry) end)
-    hooksecurefunc(frame, "SetIsInEditMode", function(_, active)
-        if entry.preview and not active then frame:SetIsInEditMode(true) end
-    end)
     local override = _G.OverrideActionBar
     if override then
         override:HookScript("OnShow", function() UpdateHolderAlpha(entry) end)
@@ -176,8 +219,11 @@ end
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
+events:RegisterEvent("PLAYER_IN_COMBAT_CHANGED")
 events:SetScript("OnEvent", function(_, event, addon)
-    if event == "PLAYER_REGEN_ENABLED" or addon == "Blizzard_SwingTimer" then
+    if event == "PLAYER_IN_COMBAT_CHANGED" then
+        for _, entry in ipairs(SwingTimers.entries) do UpdateHolderAlpha(entry) end
+    elseif event == "PLAYER_REGEN_ENABLED" or addon == "Blizzard_SwingTimer" then
         SwingTimers.Refresh()
     end
 end)
