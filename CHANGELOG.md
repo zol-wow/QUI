@@ -4,6 +4,41 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.3 - 2026-11-05
+
+> **Stable release.** One download supports Midnight 12.1 live, Midnight
+> 12.1.5 PTR, and experimental WoW Forever 1.60.1 (interfaces 120100,
+> 120105, and 16001).
+
+### Improved
+
+- Settings search includes more Action Bar, Minimap, Info Bar, and other
+  controls, opening the matching page, section, and selected unit or display.
+- Navigation uses compact groups and individual Spell Reminder entries.
+  Cached settings pages retain editor state and module scroll positions.
+- Settings cards, pickers, and editors adapt to narrower windows. Opening
+  inherited settings preserves shared values until edited, and confirmation
+  dialogs remain above their options window.
+- Refined Blizzard window, alert, loot, tooltip, status-bar, and color-picker
+  styling. Loot previews preserve active loot windows and roll choices.
+
+### Fixed
+
+- Layout Mode preserves linked mover spacing. Castbars and Objective Tracker
+  placement survive combat reloads, resizing, and native layout changes.
+- Raid Buff reminders reappear after combat. Consumable settings honor
+  character-specific choices, and cached bag contents remain visible when
+  native item buttons cannot be created during combat.
+- Retail and Forever profiles can be imported across clients, including
+  selected settings and nameplate profiles. Existing payload validation remains
+  in place; imports do not convert spell or specialization data.
+- Cooldown Manager notices wait for saved settings and clear when enabled;
+  cooldown assignments refresh after specialization changes. Durability anchors,
+  Forever movement stats, and swing timer styling preserve native state.
+- Info Bar Spellbook and Talents use separate native buttons when available.
+  Group-frame glow animations preserve opacity, and disconnected members lose
+  stale auras.
+
 ## v5.5.3-beta5 - 2026-11-05
 
 ### Fixed
