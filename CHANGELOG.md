@@ -4,6 +4,41 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.3 - 2026-11-05
+
+> **Stable release.** One download supports Midnight 12.1 live, Midnight
+> 12.1.5 PTR, and experimental WoW Forever 1.60.1 (interfaces 120100,
+> 120105, and 16001).
+
+### Improved
+
+- Settings search includes more Action Bar, Minimap, Info Bar, and other
+  controls, opening the matching page, section, and selected unit or display.
+- Navigation uses compact groups and individual Spell Reminder entries.
+  Cached settings pages retain editor state and module scroll positions.
+- Settings cards, pickers, and editors adapt to narrower windows. Opening
+  inherited settings preserves shared values until edited, and confirmation
+  dialogs remain above their options window.
+- Refined Blizzard window, alert, loot, tooltip, status-bar, and color-picker
+  styling. Loot previews preserve active loot windows and roll choices.
+
+### Fixed
+
+- Layout Mode preserves linked mover spacing. Castbars and Objective Tracker
+  placement survive combat reloads, resizing, and native layout changes.
+- Raid Buff reminders reappear after combat. Consumable settings honor
+  character-specific choices, and cached bag contents remain visible when
+  native item buttons cannot be created during combat.
+- Retail and Forever profiles can be imported across clients, including
+  selected settings and nameplate profiles. Existing payload validation remains
+  in place; imports do not convert spell or specialization data.
+- Cooldown Manager notices wait for saved settings and clear when enabled;
+  cooldown assignments refresh after specialization changes. Durability anchors,
+  Forever movement stats, and swing timer styling preserve native state.
+- Info Bar Spellbook and Talents use separate native buttons when available.
+  Group-frame glow animations preserve opacity, and disconnected members lose
+  stale auras.
+
 ## v5.5.3-beta5 - 2026-11-05
 
 ### Fixed
@@ -95,6 +130,70 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   and roll choices.
 - Theme changes preserve settings navigation, and color-picker styling is
   consistent across settings controls.
+
+## v5.5.2 - 2026-10-19
+
+> **Stable release.** One download supports Midnight 12.1 live, Midnight
+> 12.1.5 PTR, and experimental WoW Forever 1.60.1 (interfaces 120100,
+> 120105, and 16001).
+
+### Improved
+
+- **Group-frame Cleanse-Ready Glow** has independent debuff scope, custom or
+  per-type colors, opacity, and static, pulse, or moving-highlight animations.
+  Previews reflect these choices separately from the dispel border.
+- **Settings navigation** provides consistent sidebar links on pages with three
+  or more available sections. Links follow selected settings, including action
+  bars, and jump to the correct headings on first use. Pages switch without
+  flashing, retain their scrolling area on resize, and keep expanded group-aura
+  editors from overlapping following sections.
+- **Spell Reminders and Layout Mode** have clearer controls, saved-reminder
+  lists, stable previews, a picker for overlapping movers, a settings gear, and
+  compact settings that fit their content. Power Infusion samples can be moved
+  from the full recipient preview. Mover settings open the matching reminder,
+  refresh saved anchors and offsets, and follow icon-size changes.
+- **Startup and native panels** do less repeated action-bar and aura setup.
+  Hidden Blizzard panels defer skinning until first shown, including in combat.
+  Updated Retail and Forever API references.
+
+### Fixed
+
+- **Objective Tracker:** Max Height uses the full configured space and is
+  restored during native refreshes, including supported combat updates. Quest
+  and recipe text is measured with its styled font, preventing overlap and
+  height flashes. Appearance refreshes no longer request shared native tracker
+  updates; font changes take effect on the next native layout so text and
+  measured spacing stay consistent. Collapse buttons retain QUI glyphs.
+- **Combat and visibility:** Hidden essential and utility Cooldown Manager
+  buttons no longer intercept clicks under supported mounted and out-of-combat
+  visibility settings; the HUD appears before clicks resume. Raid frames show
+  players joining previously empty allowed subgroups during combat, with group
+  labels following visible frames. Info Bar icons use native secure clicks in
+  combat. Spellbook and Talents also use native clicks outside combat to avoid
+  secret-value cooldown errors; on Retail, both follow Blizzard's remembered
+  Player Spells tab.
+- **Reminders and saved state:** Reminder toggles update existing movers, and
+  closing Layout Mode with the master switch off preserves each reminder's
+  saved enabled choice. Entering combat restores normal cooldown output and
+  hides samples while respecting hidden frames and anchors. Chat history loads
+  before login messages and default-chat backfill. Reputation scans restore
+  collapsed headers, including shared faction IDs. Missing raid-buff icons
+  follow current spell ranks without changing saved selections.
+- **Blizzard windows:** PlayerChoice windows, including the Codex, no longer
+  grow taller on repeated opens. Character and Inspect recognize permanent
+  glove enchants; Inspect models have more camera clearance. Trade rows and
+  acceptance highlights align correctly. Loot, money, and collection alerts
+  and Achievement hover highlights retain QUI styling. World Map quest and
+  campaign text remains readable. Delve Companion's Adventure Guide tab keeps
+  its own position. Character tabs and Close remain usable when enhancements
+  are off. Stable windows no longer retain decorative artwork over QUI.
+- **Compatibility and controls:** Rounded surfaces handle restricted Blizzard
+  positioning, and font styling avoids recursive font-object updates. Paging
+  arrows use native images instead of font-dependent symbols. The minimap's
+  external-event shortcut remains clickable without its backdrop. Forever
+  experience/reputation backgrounds align with their fills, and Hide Border
+  (Top) supports newer minimap headers while restoring native effects when
+  disabled or in Edit Mode.
 
 ## v5.5.2-beta12 - 2026-10-19
 
