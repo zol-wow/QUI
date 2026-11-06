@@ -3,6 +3,24 @@ local _, ns = ...
 local Shared = ns.QUI_SettingsLayoutShared or {}
 ns.QUI_SettingsLayoutShared = Shared
 
+function Shared.WatchParentSize(frame, parent, callback)
+    local callbacks = parent._quiSettingsSizeCallbacks
+    if not callbacks then
+        callbacks = {}
+        parent._quiSettingsSizeCallbacks = callbacks
+        parent:HookScript("OnSizeChanged", function(self, width, height)
+            for child, resize in pairs(callbacks) do
+                if child:GetParent() == self then
+                    resize(self, width, height)
+                else
+                    callbacks[child] = nil
+                end
+            end
+        end)
+    end
+    callbacks[frame] = callback
+end
+
 function Shared.RefreshContentExtent(frame, parent, delta)
     if delta == 0 then
         if parent._quiMeasureSettingsHeight then parent:SetHeight(parent._quiMeasureSettingsHeight()) end
@@ -99,7 +117,7 @@ function Shared.BindWrappedLabel(label, parent, rightInset)
         end
     end
     Layout()
-    parent:HookScript("OnSizeChanged", QueueLayout)
+    Shared.WatchParentSize(label, parent, QueueLayout)
     QueueLayout()
 end
 
@@ -260,7 +278,7 @@ function Shared.MakeLayout(content, U, startY, options)
                 self._label:ClearAllPoints()
                 self._label:SetPoint("LEFT", self._dot, "RIGHT", 7, 0)
             end, h._label)
-            content:HookScript("OnSizeChanged", function(_, width)
+            Shared.WatchParentSize(h, content, function(_, width)
                 h:SetWidth(math.max(1, (width or content:GetWidth()) - 2 * PAD))
             end)
         end
@@ -312,7 +330,7 @@ function Shared.MakeLayout(content, U, startY, options)
                 if recovering then recovering = nil else VerifyBounds() end
             end)
             frame:HookScript("OnHide", function(self) self:SetScript("OnUpdate", nil) end)
-            content:HookScript("OnSizeChanged", function()
+            Shared.WatchParentSize(frame, content, function()
                 if frame:GetParent() ~= content then return end
                 if recovered or options.explicitWidth then frame:SetWidth(math.max(1, content:GetWidth() - 2 * PAD)) end
                 VerifyBounds()

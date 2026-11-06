@@ -724,6 +724,7 @@ local defaults = {
                     },
                 },
                 windowCount   = 1,
+                defaultWindowDeleted = false,
             },
         },
 
