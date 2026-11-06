@@ -120,7 +120,9 @@ local function ValidateImportTree(value, label, state, depth)
     return true
 end
 
-local DUAL_TYPE_PATHS = {}
+local DUAL_TYPE_PATHS = {
+    ["profile.damageMeter.native.windows.1.mythicStartDMType"] = { boolean = true, number = true },
+}
 for _, containerKey in ipairs({ "party", "raid", "pinned1", "pinned2" }) do
     DUAL_TYPE_PATHS[("profile.dandersFrames.%s.absolutePoint"):format(containerKey)] = {
         boolean = true, string = true,

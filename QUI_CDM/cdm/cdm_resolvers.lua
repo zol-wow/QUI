@@ -409,9 +409,9 @@ function CDMResolvers.GetEntryTexture(entry)
             if Sources and Sources.QueryItemInfoInstant then
                 _, _, _, _, icon = Sources.QueryItemInfoInstant(itemID)
             end
-            return icon
+            if icon then return icon end
         end
-        return nil
+        return Sources and Sources.QueryEquipSlotTexture and Sources.QueryEquipSlotTexture(entry.id) or nil
     end
     if entry.type == "item" then
         local _, _, _, _, icon

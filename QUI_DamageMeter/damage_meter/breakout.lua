@@ -137,12 +137,12 @@ local function FindMatchingSource(selected, sources, fallbackToFirst, matchDeath
         if SameSource(selected, source, matchDeathRecap) then return source end
     end
     local specIconID = selected.specIconID
-    if matchDeathRecap or type(specIconID) ~= "number" or specIconID <= 0 then
+    if matchDeathRecap or IsSecret(specIconID) or type(specIconID) ~= "number" or specIconID <= 0 then
         return fallbackToFirst ~= false and sources and sources[1] or nil
     end
     local match
     for _, source in ipairs(sources or {}) do
-        if source.specIconID == specIconID then
+        if not IsSecret(source.specIconID) and source.specIconID == specIconID then
             if match then return selected end
             match = source
         end
@@ -672,10 +672,11 @@ function Breakout:_BuildComparisonDatasets()
             local selected = FindMatchingSource(self.source, view.sources, false)
             self:_AddComparisonDataset(datasets,
                 DM.BuildPreviousSessionLabel(session), selected, session.sessionID)
-            if #datasets == 1 and self.source and type(self.source.specIconID) == "number" then
+            if #datasets == 1 and self.source and not IsSecret(self.source.specIconID)
+                and type(self.source.specIconID) == "number" then
                 for _, candidate in ipairs(view.sources or {}) do
                     if #datasets >= 3 then break end
-                    if candidate.specIconID == self.source.specIconID
+                    if not IsSecret(candidate.specIconID) and candidate.specIconID == self.source.specIconID
                         and not SameSource(candidate, selected)
                         and not IsSecret(candidate.name) then
                         self:_AddComparisonDataset(datasets,

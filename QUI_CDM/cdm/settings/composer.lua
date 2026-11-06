@@ -363,6 +363,8 @@ local function GetEntryIcon(entry)
             local icon = Sources.QueryItemIconByID(itemID)
             if icon then return icon end
         end
+        local icon = Sources and Sources.QueryEquipSlotTexture and Sources.QueryEquipSlotTexture(entry.id)
+        if icon then return icon end
     elseif etype == "macro" then
         if entry.macroName then
             local macroIndex = GetMacroIndexByName(entry.macroName)
@@ -3256,7 +3258,11 @@ RefreshAddList = function()
                 and not IsEntryRegisteredInBlizzCDM({ type = "spell", id = effID, source = entry.source })
                 or false
 
-            cell._icon:SetTexture(entry.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            local icon = entry.icon
+            if effType == "slot" and Sources and Sources.QueryEquipSlotTexture then
+                icon = Sources.QueryEquipSlotTexture(effID) or icon
+            end
+            cell._icon:SetTexture(icon and icon ~= 0 and icon or "Interface\\Icons\\INV_Misc_QuestionMark")
             cell:SetAlpha(isOwned and 0.4 or (cell._isUnlearned and 0.6 or 1))
             cell._icon:SetDesaturated(isOwned or cell._isUnlearned)
             if cell._isMissingFromCDM then
