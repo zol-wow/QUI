@@ -425,7 +425,7 @@ function Data:_CacheSourceGUIDs(selectorKey, sources)
     for _, source in ipairs(sources or {}) do
         local specIconID = source.specIconID
         local sourceGUID = source.sourceGUID
-        if type(specIconID) == "number" and specIconID > 0
+        if not IsSecretValue(specIconID) and type(specIconID) == "number" and specIconID > 0
             and not IsSecretValue(sourceGUID) and type(sourceGUID) == "string"
             and sourceGUID:match("^Player%-") then
             local cached = bySpec[specIconID]
@@ -1660,7 +1660,7 @@ function Window:_SetRowSource(row, source, maxAmount)
             row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         end
     else
-        if source.specIconID and source.specIconID ~= 0 then
+        if IsSecretValue(source.specIconID) or (source.specIconID and source.specIconID ~= 0) then
             row.Icon:SetTexture(source.specIconID)
             row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         elseif source.classFilename and CLASS_ICON_TCOORDS then
@@ -3237,7 +3237,7 @@ function Breakdown:_SetTargetRow(row, target, maxAmount)
     ApplyRowBackgroundVisibility(row, self.parentWindowID)
     row._target = target
 
-    if target.specIconID and target.specIconID ~= 0 then
+    if IsSecretValue(target.specIconID) or (target.specIconID and target.specIconID ~= 0) then
         row.Icon:SetTexture(target.specIconID)
         row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     elseif target.classFilename and CLASS_ICON_TCOORDS then

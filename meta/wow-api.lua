@@ -12808,7 +12808,7 @@ function C_RestrictedActions.GetAddOnRestrictionState(type, ...) end
 function C_RestrictedActions.IsAddOnRestrictionActive(type, ...) end
 
 C_Roleset = {}
---- Sets or clears both blocklist and allowlist filters atomically with a single visibility reevaluation. Pass an empty table to clear the corresponding filter.
+--- Sets or clears both blocklist and allowlist filters atomically with a single visibility reevaluation. Pass an empty table to clear the corresponding filter. Blocked for tainted callers while in combat lockdown.
 ---@param blockedRolesets? table
 ---@param allowedRolesets? table
 ---@param ... any
@@ -14523,18 +14523,21 @@ function C_Texture.GetFilenameFromFileDataID(fileDataID, ...) end
 ---@param titleID? string
 ---@param version? any
 ---@param callback? any
+---@param subIcon? string
 ---@param ... any
-function C_Texture.GetTitleIconTexture(titleID, version, callback, ...) end
+function C_Texture.GetTitleIconTexture(titleID, version, callback, subIcon, ...) end
 ---@param titleID? string
 ---@param version? any
+---@param subIcon? string
 ---@param ... any
 ---@return boolean ready
-function C_Texture.IsTitleIconTextureReady(titleID, version, ...) end
+function C_Texture.IsTitleIconTextureReady(titleID, version, subIcon, ...) end
 ---@param texture? any
 ---@param titleID? string
 ---@param version? any
+---@param subIcon? string
 ---@param ... any
-function C_Texture.SetTitleIconTexture(texture, titleID, version, ...) end
+function C_Texture.SetTitleIconTexture(texture, titleID, version, subIcon, ...) end
 ---@param texture? any
 ---@param url? string
 ---@param ... any
