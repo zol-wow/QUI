@@ -4,6 +4,24 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.4 - 2026-11-06
+
+> **Stable release.** One download supports Midnight 12.1 live, Midnight
+> 12.1.5 PTR, and experimental WoW Forever 1.60.1 (interfaces 120100,
+> 120105, and 16001).
+
+### Fixed
+
+- Damage Meter handles restricted native icons safely and preserves Mythic+
+  meter choices when importing profiles.
+- Deleting every Damage Meter window stays saved after reload. Recreated
+  windows start with fresh anchors.
+- Rebuilding settings pages no longer retains resize callbacks from old widgets.
+- Cooldown Manager avoids indexing incomplete category ordering data.
+- Forever's Cooldown Manager composer shows labels and representative icons for
+  additional consumable categories, slot icons for empty or uncached trinkets,
+  and a question mark when a picker icon is unavailable.
+
 ## v5.5.4-beta1 - 2026-11-06
 
 ### Fixed
