@@ -816,7 +816,7 @@ local function CreateAccentDotLabel(parent, text, yOffset, skipSectionNav)
     container:SetHeight(22)
     container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset or 0)
     container:SetWidth(math.max(1, parent:GetWidth()))
-    parent:HookScript("OnSizeChanged", function(_, width)
+    ns.QUI_SettingsLayoutShared.WatchParentSize(container, parent, function(_, width)
         container:SetWidth(math.max(1, width or parent:GetWidth()))
     end)
 
@@ -989,7 +989,7 @@ local function CreateSettingsCardGroup(parent, yOffset, opts)
     card._quiRefreshSettingsRows = QueueLayout
     card:SetScript("OnSizeChanged", QueueLayout)
     card:SetScript("OnShow", QueueLayout)
-    parent:HookScript("OnSizeChanged", function()
+    ns.QUI_SettingsLayoutShared.WatchParentSize(card, parent, function()
         if card._quiRecoveredInset then
             card:SetWidth(math.max(1, parent:GetWidth() - 2 * card._quiRecoveredInset))
         end

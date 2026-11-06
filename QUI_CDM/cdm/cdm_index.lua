@@ -294,7 +294,7 @@ local function BuildOrderedMaps()
     if not (api and api.GetCooldownViewerCooldownInfo) then
         return
     end
-    if not provider then
+    if not provider or type(ordered) ~= "table" then
         return
     end
     if not (Enum and Enum.CooldownViewerCategory) then return end

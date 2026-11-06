@@ -3656,8 +3656,9 @@ function WindowManager:SpawnNew()
     local s = GetSettings()
     if not s then return nil end
     s.windows = s.windows or {}
-    local newID = 2
+    local newID = 1
     while s.windows[newID] do newID = newID + 1 end
+    if newID == 1 then s.defaultWindowDeleted = false end
     s.windows[newID] = {
         damageMeterType = 0,
         sessionType     = 1,
@@ -3680,15 +3681,13 @@ function WindowManager:SpawnNew()
             profile.frameAnchoring = {}
         end
         local key = LayoutKey(newID)
-        if not profile.frameAnchoring[key] then
-            profile.frameAnchoring[key] = {
-                parent   = "screen",
-                point    = "CENTER",
-                relative = "CENTER",
-                offsetX  = 20 * newID,
-                offsetY  = -20 * newID,
-            }
-        end
+        profile.frameAnchoring[key] = {
+            parent   = "screen",
+            point    = "CENTER",
+            relative = "CENTER",
+            offsetX  = 20 * newID,
+            offsetY  = -20 * newID,
+        }
     end
 
     local w = self:Spawn(newID)
@@ -3701,6 +3700,7 @@ function WindowManager:DeleteWindow(windowID)
     local s = GetSettings()
     if s and s.windows then
         s.windows[windowID] = nil
+        if windowID == 1 then s.defaultWindowDeleted = true end
         s.windowCount = math.max(0, (s.windowCount or 1) - 1)
     end
     local app = s and s.appearance
@@ -3712,6 +3712,7 @@ end
 function WindowManager:LoadSavedWindows()
     local s = GetSettings()
     if not (s and s.windows) then return 0 end
+    if s.defaultWindowDeleted == true then s.windows[1] = nil end
     local spawned = 0
     for windowID in pairs(s.windows) do
         if type(windowID) == "number" then
