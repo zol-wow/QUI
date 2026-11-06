@@ -45,6 +45,7 @@ esac
 
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 [ "$JOBS" -lt 1 ] && JOBS=1
+export JOBS
 
 fail=0
 lint_skipped=0
