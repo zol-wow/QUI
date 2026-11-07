@@ -308,6 +308,7 @@ local function BuildMockFrame(host)
     mock._border = CreateHairlineBorder(mock, { 0, 0, 0, 1 })
 
     mock._healthBar = mock:CreateTexture(nil, "ARTWORK")
+    mock._healthArea = CreateFrame("Frame", nil, mock)
 
     mock._powerBar = mock:CreateTexture(nil, "ARTWORK")
     mock._powerBg  = mock:CreateTexture(nil, "BACKGROUND", nil, -1)
@@ -563,9 +564,13 @@ local function RefreshMock()
     local inner = borderSize
     local powerShown = unitDB.showPowerBar
     local powerH = powerShown and math.max(2, math.floor((unitDB.powerBarHeight or 4) * scale + 0.5)) or 0
-    local healthH = h - (inner * 2) - (powerShown and (powerH + 1) or 0)
+    local separatorH = (powerShown and unitDB.powerBarBorder ~= false) and 1 or 0
+    local healthH = h - (inner * 2) - powerH - separatorH
     if healthH < 4 then healthH = 4 end
     local healthTop = -inner
+    mock._healthArea:ClearAllPoints()
+    mock._healthArea:SetPoint("TOPLEFT", mock, "TOPLEFT", inner, healthTop)
+    mock._healthArea:SetPoint("BOTTOMRIGHT", mock, "BOTTOMRIGHT", -inner, inner + powerH + separatorH)
     mock._healthBar:ClearAllPoints()
     mock._healthBar:SetPoint("TOPLEFT", mock, "TOPLEFT", inner, healthTop)
     mock._healthBar:SetHeight(healthH)
@@ -667,11 +672,11 @@ local function RefreshMock()
         mock._nameText:SetTextColor(nr, ng, nb, na)
 
         ApplyTextAnchor(
-            mock._nameText, mock,
-            unitDB.nameAnchor or "TOPLEFT",
-            (unitDB.nameOffsetX or 0) * scale,
+            mock._nameText, mock._healthArea,
+            unitDB.nameAnchor or "LEFT",
+            (unitDB.nameOffsetX or 4) * scale,
             (unitDB.nameOffsetY or 0) * scale,
-            inner + 4
+            0
         )
     else
         mock._nameText:Hide()
@@ -695,11 +700,11 @@ local function RefreshMock()
         local lr, lg, lb, la = ResolveTextColor(State.selectedUnit, false, unitDB.levelTextColor)
         mock._levelText:SetTextColor(lr, lg, lb, la)
         ApplyTextAnchor(
-            mock._levelText, mock,
+            mock._levelText, mock._healthArea,
             unitDB.levelAnchor or "RIGHT",
             (unitDB.levelOffsetX or -4) * scale,
             (unitDB.levelOffsetY or 0) * scale,
-            inner + 4
+            0
         )
     else
         mock._levelText:Hide()
@@ -715,11 +720,11 @@ local function RefreshMock()
         mock._healthText:SetTextColor(hr, hg, hb, ha)
 
         ApplyTextAnchor(
-            mock._healthText, mock,
-            unitDB.healthAnchor or "TOPRIGHT",
-            (unitDB.healthOffsetX or 0) * scale,
+            mock._healthText, mock._healthArea,
+            unitDB.healthAnchor or "RIGHT",
+            (unitDB.healthOffsetX or -4) * scale,
             (unitDB.healthOffsetY or 0) * scale,
-            inner + 4
+            0
         )
     else
         mock._healthText:Hide()
@@ -881,11 +886,11 @@ local function RefreshMock()
         mock._powerText:SetTextColor(pr, pg, pb, pa)
 
         ApplyTextAnchor(
-            mock._powerText, mock,
+            mock._powerText, mock._healthArea,
             unitDB.powerTextAnchor or "BOTTOMRIGHT",
-            (unitDB.powerTextOffsetX or 0) * scale,
-            (unitDB.powerTextOffsetY or 0) * scale,
-            inner + 4
+            (unitDB.powerTextOffsetX or -4) * scale,
+            (unitDB.powerTextOffsetY or 2) * scale,
+            0
         )
     else
         mock._powerText:Hide()

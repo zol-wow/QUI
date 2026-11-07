@@ -528,6 +528,9 @@ local PROFILE_SKINNING_GENERAL_KEYS = {
     "statusTrackingBarsBorderColorSource",
     "statusTrackingBarsBorderColor",
     "statusTrackingBarsHideBorder",
+    "statusTrackingBarsBgOverride",
+    "statusTrackingBarsHideBackground",
+    "statusTrackingBarsBackgroundColor",
     "statusTrackingBarsBorderThickness",
     "statusTrackingBarsShowBarText",
     "statusTrackingBarsBarTextAlways",
@@ -602,8 +605,14 @@ local PROFILE_SKINNING_GENERAL_KEYS = {
     "hideSkinBorders",
     "alertsBorderColorSource",
     "alertsBorderColor",
+    "alertsBgOverride",
+    "alertsHideBackground",
+    "alertsBackgroundColor",
     "readyCheckBorderColorSource",
     "readyCheckBorderColor",
+    "readyCheckBgOverride",
+    "readyCheckHideBackground",
+    "readyCheckBackgroundColor",
 }
 
 local PROFILE_LAYOUT_PATHS = {
@@ -1326,6 +1335,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Timers / Widgets",
         description = "M+ timer, combat timers, XP tracker, and other utility widgets.",
         recommended = true,
+        generalKeys = { "swingTimersBgOverride", "swingTimersHideBackground", "swingTimersBackgroundColor" },
         frameAnchorPrefixes = { "spellReminder:" },
         topLevelKeys = {
             "spellReminders",

@@ -10,6 +10,29 @@ local Registry = Settings and Settings.Registry
 local Schema = Settings and Settings.Schema
 
 local BORDER_COLORING_SUBPAGE_INDEX = 11
+local CATEGORY_ORDER = { "Skinning", "Unit Frames", "Resource Bars", "CDM", "Trackers", "HUD" }
+
+local function CollectCategories()
+    local byCategory = {}
+    Helpers.BorderRegistry.Each(function(entry)
+        local category = entry.category or "Other"
+        byCategory[category] = byCategory[category] or {}
+        local entries = byCategory[category]
+        entries[#entries + 1] = entry
+    end)
+    return byCategory
+end
+
+local function GetNavigationSections()
+    local sections = { { id = ns.L["Global Border"], label = ns.L["Global Border"] } }
+    local byCategory = CollectCategories()
+    for _, category in ipairs(CATEGORY_ORDER) do
+        if byCategory[category] then
+            sections[#sections + 1] = { id = ns.L[category], label = ns.L[category] }
+        end
+    end
+    return sections
+end
 
 local function MakeLayout(content)
     return ns.QUI_SettingsLayoutShared.MakeLayout(content)
@@ -84,15 +107,7 @@ local function BuildBorderColoringTab(tabContent)
     )
     L.closeSection(sGB)
 
-    local CATEGORY_ORDER = { "Skinning", "Unit Frames", "Resource Bars", "CDM", "Trackers", "HUD" }
-
-    local byCategory = {}
-    Helpers.BorderRegistry.Each(function(e)
-        local cat = e.category or "Other"
-        if not byCategory[cat] then byCategory[cat] = {} end
-        local t = byCategory[cat]
-        t[#t + 1] = e
-    end)
+    local byCategory = CollectCategories()
 
     for _, cat in ipairs(CATEGORY_ORDER) do
         local entries = byCategory[cat]
@@ -183,6 +198,7 @@ if Registry and Schema
         lookupKeys = { "border", "outline", "edge" },
         category   = "appearance",
         nav        = { tileId = "appearance", subPageIndex = BORDER_COLORING_SUBPAGE_INDEX },
+        getNavigationSections = GetNavigationSections,
         sections   = {
             Schema.Section({
                 id        = "settings",
