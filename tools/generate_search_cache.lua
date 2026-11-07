@@ -178,6 +178,7 @@ local function should_load_script(path)
     end
 
     if path == "core/utils.lua"
+        or path == "core/appearance.lua"
         or path == "core/profile_io.lua"
         or path == "core/theme.lua"
         or path == "core/infobar_shared.lua"
@@ -2468,6 +2469,9 @@ do
     local originalClient = ns.Client
     ns.Client = { isForever = true }
     capture_search_feature(ns.Settings.Registry:GetFeature("skinningPage"))
+    for _, context in ipairs(fixture_search_contexts({ unitFramesPage = {}, nameplatesPage = {}, groupFramesPage = {} })) do
+        capture_model_search_tabs(ns.Settings.Registry:GetFeature(context.featureId), context)
+    end
     ns.Client = originalClient
 end
 capture_custom_cdm_navigation()

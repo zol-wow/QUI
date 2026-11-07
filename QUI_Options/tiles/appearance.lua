@@ -158,6 +158,19 @@ function V2.Register(frame)
                 },
                 searchAliases = { ns.L["border"], ns.L["border color"], ns.L["outline"], ns.L["edge color"], ns.L["frame border"] },
             },
+            {
+                id = "backgroundColoring",
+                name = ns.L["Background Coloring"],
+                sectionNav = true,
+                featureId = "backgroundColoringPage",
+                searchContext = {
+                    tileId = "appearance",
+                    tabName = SEARCH_TAB_NAME,
+                    subPageIndex = 12,
+                    subTabName = ns.L["Background Coloring"],
+                },
+                searchAliases = { ns.L["background"], ns.L["backdrop"], ns.L["opacity"], ns.L["fill color"] },
+            },
         },
         relatedSettings = {
             { label = ns.L["Chat & Tooltips"],    tileId = "chat_tooltips", subPageIndex = 1 },

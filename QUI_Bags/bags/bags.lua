@@ -157,6 +157,7 @@ end)
 
 local function Refresh()
     if not started then return end
+    if Bags.Chassis then Bags.Chassis.ReskinAll() end
     if IsEnabled() then StartUI() else StopUI() end
     if uiActive then
         if Bags.BagWindow.OnProfileChanged then Bags.BagWindow.OnProfileChanged() end

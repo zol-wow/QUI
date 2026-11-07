@@ -2070,6 +2070,13 @@ local function RenderTextNameSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
     )
 
+    if ns.Client and ns.Client.isForever then
+        local surnameCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showLastName", unit.unitDB, RefreshUnitFrames, {
+            description = ns.L["Show both first and last names in WoW Forever. The name length limit still applies."],
+        })
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Show Last Name"], surnameCheckbox))
+    end
+
     local maxLengthSlider = gui:CreateFormSlider(card.frame, nil, 0, 30, 1, "maxNameLength", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = ns.L["Truncate names longer than this many characters. Set to 0 to disable truncation entirely."],
     })
@@ -2095,13 +2102,14 @@ local function RenderTextLevelSection(sectionHost, ctx)
 
     builder.Header(ns.L["Level Text"])
     local card = builder.Card()
-    local fontRow, sizeRow, colorRow, anchorRow, xOffsetRow, yOffsetRow
+    local fontRow, sizeRow, colorRow, difficultyRow, anchorRow, xOffsetRow, yOffsetRow
 
     local function UpdateLevelRows()
         local alpha = unit.unitDB.showLevel == true and 1.0 or 0.4
         if fontRow then fontRow:SetAlpha(alpha) end
         if sizeRow then sizeRow:SetAlpha(alpha) end
         if colorRow then colorRow:SetAlpha(alpha) end
+        if difficultyRow then difficultyRow:SetAlpha(alpha) end
         if anchorRow then anchorRow:SetAlpha(alpha) end
         if xOffsetRow then xOffsetRow:SetAlpha(alpha) end
         if yOffsetRow then yOffsetRow:SetAlpha(alpha) end
@@ -2131,6 +2139,12 @@ local function RenderTextLevelSection(sectionHost, ctx)
     })
     colorRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Text Color"], colorPicker)
     card.AddRow(sizeRow, colorRow)
+
+    local difficultyCheckbox = gui:CreateFormCheckbox(card.frame, nil, "levelDifficultyColor", unit.unitDB, RefreshUnitFrames, {
+        description = ns.L["Color the level text by its difficulty relative to your level. Uses the chosen color when difficulty is unavailable."],
+    })
+    difficultyRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Level Difficulty Color"], difficultyCheckbox)
+    card.AddRow(difficultyRow)
 
     local anchorDropdown = gui:CreateFormDropdown(card.frame, nil, optionsAPI.NINE_POINT_ANCHOR_OPTIONS, "levelAnchor", unit.unitDB, RefreshUnitFrames, {
         description = ns.L["Where on the frame the level text is anchored. X/Y Offset below nudges it from this anchor point."],

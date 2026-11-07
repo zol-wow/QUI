@@ -239,6 +239,7 @@ function Driver._BuildRoster(contextMode, count)
     for i = 1, count do
         out[i] = {
             name      = FAKE_NAMES[((i - 1) % #FAKE_NAMES) + 1],
+            surname   = "Stormwind",
             class     = FAKE_CLASSES[((i - 1) % #FAKE_CLASSES) + 1],
             role      = RoleForIndex(contextMode, i),
             healthPct = HP_PATTERN[((i - 1) % #HP_PATTERN) + 1],
@@ -487,6 +488,9 @@ local function ApplyTextContent(f, member, nameCfg)
             nt:Hide()
         else
             local label = member.name
+            if ns.Client and ns.Client.isForever and nameCfg.showLastName and member.surname then
+                label = label .. Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR .. member.surname
+            end
             local maxLen = tonumber(nameCfg.maxNameLength) or 0
             if maxLen > 0 then label = label:sub(1, maxLen) end
             nt:SetText(label)

@@ -4,6 +4,47 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Unreleased
+
+- Integrates the Forever name and cast-label changes from 5.5.4-beta2 and the
+  background controls, bag window colors, unit-frame text placement, and optional
+  level difficulty colors from 5.5.4-beta3. See those entries below for details.
+
+## v5.5.4-beta3 - 2026-11-07
+
+### Added
+
+- Unit frames have an optional Level Difficulty Color setting for player,
+  target, target-of-target, focus, pet, and boss frames. It uses Blizzard's
+  difficulty colors while preserving the chosen opacity. The setting is off
+  by default, and saved manual colors remain available.
+
+### Improved
+
+- Shared background color controls are available alongside matching feature
+  settings. Bag windows can use their own background and border colors.
+
+### Fixed
+
+- Unit-frame text stays aligned with the health area and clears mana bars in
+  both live frames and settings previews.
+- Selective profile exports preserve background settings, and border settings
+  navigation opens reliably on its first use.
+
+## v5.5.4-beta2 - 2026-11-07
+
+### Added
+
+- Forever nameplates, player and other unit frames, and party and raid frames
+  show first and last names by default. Each has a Show Last Name setting;
+  party-target companions follow the party setting. Existing name-length limits
+  still apply.
+
+### Fixed
+
+- Cast and channel bars use the action name when the game supplies an empty
+  display label, preserving the game-supplied icon.
+
 ## v5.5.4 - 2026-11-06
 
 > **Stable release.** One download supports Midnight 12.1 live, Midnight
