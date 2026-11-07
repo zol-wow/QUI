@@ -4,6 +4,18 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.6-beta1 - 2026-11-07
+
+> **Beta release.** One download supports Midnight 12.1 live, Midnight
+> 12.1.5 PTR, and experimental WoW Forever 1.60.1 (interfaces 120100,
+> 120105, and 16001).
+
+### Changed
+
+- Starts the 5.5.6 beta cycle from stable 5.5.5, retaining all of its features
+  and fixes. This release updates version labels and release documentation;
+  addon behavior is unchanged from 5.5.5.
+
 ## v5.5.5 - 2026-11-07
 
 > **Stable release.** One download supports Midnight 12.1 live, Midnight
