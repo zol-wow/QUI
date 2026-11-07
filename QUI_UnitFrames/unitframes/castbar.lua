@@ -1893,7 +1893,13 @@ end
 local function UpdateSpellText(castbar, text, spellName, castSettings, unit)
     if not castbar.spellText then return end
 
-    local displayName = text or spellName or "Casting..."
+    local displayName = text
+    if type(displayName) == "nil" or (not IsSecretValue(displayName) and displayName == "") then
+        displayName = spellName
+    end
+    if type(displayName) == "nil" or (not IsSecretValue(displayName) and displayName == "") then
+        displayName = "Casting..."
+    end
     local maxLen = castSettings.maxLength
     if maxLen and maxLen > 0 then
         displayName = TruncateName(displayName, maxLen)

@@ -2999,6 +2999,7 @@ local defaults = {
                 },
                 name = {
                     showName = true,
+                    showLastName = true,
                     nameFontSize = 12,
                     nameAnchor = "LEFT",
                     nameJustify = "LEFT",
@@ -3155,6 +3156,7 @@ local defaults = {
                 },
                 name = {
                     showName = true,
+                    showLastName = true,
                     nameFontSize = 12,
                     nameAnchor = "LEFT",
                     nameJustify = "LEFT",
