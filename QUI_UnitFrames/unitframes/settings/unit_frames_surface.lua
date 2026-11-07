@@ -687,17 +687,19 @@ local function RefreshMock()
         local levelFont = math.max(8, math.min(24, math.floor((unitDB.levelFontSize or unitDB.nameFontSize or 11) * scale + 0.5)))
         CJKFont(mock._levelText, ResolveElementFont(unitDB.levelFont, fontPath), levelFont, fontOutline)
 
+        local playerLevel = ns.Helpers.SafeToNumber((UnitEffectiveLevel or UnitLevel)("player"), 80)
         local levels = {
-            player = "80",
-            target = "82",
-            focus = "81",
-            targettarget = "80",
-            pet = "80",
-            boss = "??",
+            player = playerLevel,
+            target = playerLevel + 2,
+            focus = playerLevel + 1,
+            targettarget = playerLevel,
+            pet = playerLevel,
+            boss = -1,
         }
-        mock._levelText:SetText(levels[State.selectedUnit] or "80")
+        local level = levels[State.selectedUnit] or playerLevel
+        mock._levelText:SetText(level < 0 and "??" or level)
 
-        local lr, lg, lb, la = ResolveTextColor(State.selectedUnit, false, unitDB.levelTextColor)
+        local lr, lg, lb, la = ns.Helpers.GetLevelTextColor(unitDB, level)
         mock._levelText:SetTextColor(lr, lg, lb, la)
         ApplyTextAnchor(
             mock._levelText, mock._healthArea,

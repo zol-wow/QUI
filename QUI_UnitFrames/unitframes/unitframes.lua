@@ -466,14 +466,15 @@ local function ResolveTextFont(fontName, fallbackPath)
 end
 
 local function FormatUnitLevelText(unit)
-    local ok, text = pcall(function()
-        local level = UnitLevel(unit)
-        if not level then return "" end
-        if level < 0 then return "??" end
+    local ok, text, level = pcall(function()
+        local level = (UnitEffectiveLevel or UnitLevel)(unit)
+        if IsSecretValue(level) or type(level) ~= "number" then return "" end
+        if level < 0 then return "??", level end
         if level == 0 then return "" end
-        return tostring(level)
+        return tostring(level), level
     end)
-    return ok and text or ""
+    if ok then return text, level end
+    return ""
 end
 
 local TruncateName = Helpers.TruncateUTF8
@@ -1399,7 +1400,7 @@ local function UpdateLevelText(frame)
         return
     end
 
-    local text = FormatUnitLevelText(QUI_UF.GetFrameUnit(frame))
+    local text, level = FormatUnitLevelText(QUI_UF.GetFrameUnit(frame))
     if text == "" then
         frame.levelText:SetText("")
         frame.levelText:Hide()
@@ -1407,8 +1408,7 @@ local function UpdateLevelText(frame)
     end
 
     frame.levelText:SetText(text)
-    local c = settings.levelTextColor or { 1, 1, 1, 1 }
-    frame.levelText:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+    frame.levelText:SetTextColor(Helpers.GetLevelTextColor(settings, level))
     frame.levelText:Show()
 end
 
@@ -2499,6 +2499,15 @@ function QUI_UF:ShowPreview(unitKey)
                 if frame.nameText then
                     frame.nameText:SetText(ns.L["Boss"] .. " " .. i)
                 end
+                if frame.levelText then
+                    if settings and settings.showLevel == true then
+                        frame.levelText:SetText("??")
+                        frame.levelText:SetTextColor(Helpers.GetLevelTextColor(settings, -1))
+                        frame.levelText:Show()
+                    else
+                        frame.levelText:Hide()
+                    end
+                end
                 if frame.healthText then
                     local previewHPPct = 75 - (i * 5)
                     local previewMaxHP = 100000
@@ -2620,17 +2629,18 @@ function QUI_UF:ShowPreview(unitKey)
 
     if frame.levelText then
         if settings and settings.showLevel == true then
+            local playerLevel = Helpers.SafeToNumber((UnitEffectiveLevel or UnitLevel)("player"), 80)
             local levels = {
-                player = "80",
-                target = "82",
-                targettarget = "80",
-                pet = "80",
-                focus = "81",
-                boss = "??",
+                player = playerLevel,
+                target = playerLevel + 2,
+                targettarget = playerLevel,
+                pet = playerLevel,
+                focus = playerLevel + 1,
+                boss = -1,
             }
-            frame.levelText:SetText(levels[unitKey] or "80")
-            local c = settings.levelTextColor or { 1, 1, 1, 1 }
-            frame.levelText:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+            local level = levels[unitKey] or playerLevel
+            frame.levelText:SetText(level < 0 and "??" or level)
+            frame.levelText:SetTextColor(Helpers.GetLevelTextColor(settings, level))
             frame.levelText:Show()
         else
             frame.levelText:SetText("")
@@ -2971,8 +2981,7 @@ function QUI_UF:RefreshFrame(unitKey)
                     frame.levelText:SetJustifyH(levelAnchorInfo.justify)
                     if self.previewMode[bossKey] then
                         frame.levelText:SetText("??")
-                        local c = settings.levelTextColor or { 1, 1, 1, 1 }
-                        frame.levelText:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+                        frame.levelText:SetTextColor(Helpers.GetLevelTextColor(settings, -1))
                         frame.levelText:Show()
                     else
                         UpdateLevelText(frame)
@@ -3648,6 +3657,7 @@ end
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+initFrame:RegisterEvent("PLAYER_LEVEL_CHANGED")
 initFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
@@ -3666,6 +3676,12 @@ initFrame:SetScript("OnEvent", function(self, event, arg1)
                 end
             end
         end)
+    elseif event == "PLAYER_LEVEL_CHANGED" then
+        for unitKey, frame in pairs(QUI_UF.frames) do
+            if not QUI_UF.previewMode[unitKey] then
+                UpdateLevelText(frame)
+            end
+        end
     elseif event == "PLAYER_ENTERING_WORLD" then
         QUI_UF:HideBlizzardCastbars()
         if _G.QUI_ShouldUnitframesBeVisible and not _G.QUI_ShouldUnitframesBeVisible() then
