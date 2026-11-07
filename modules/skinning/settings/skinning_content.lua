@@ -365,22 +365,27 @@ local function BuildSkinningTab(tabContent)
     end
     if general.skinKeystoneFrame == nil then general.skinKeystoneFrame = true end
 
-    local function AddBgOverrides(card, settings, prefix)
+    local function AddBgOverrides(card, settings, prefix, refresh)
         local kp = type(prefix) == "string" and prefix or ""
         local overrideKey = kp ~= "" and (kp .. "BgOverride") or "bgOverride"
         local hideKey = kp ~= "" and (kp .. "HideBackground") or "hideBackground"
         local colorKey = kp ~= "" and (kp .. "BackgroundColor") or "backgroundColor"
+        refresh = refresh or RefreshSkinSurfaces
+        if settings[colorKey] == nil then
+            local color = general.skinBgColor or { 0.008, 0.008, 0.008, 1 }
+            settings[colorKey] = { color[1], color[2], color[3], color[4] or 1 }
+        end
 
-        local overrideW = GUI:CreateFormCheckbox(card.frame, nil, overrideKey, settings, RefreshSkinSurfaces,
+        local overrideW = GUI:CreateFormCheckbox(card.frame, nil, overrideKey, settings, refresh,
             { description = ns.L["Use a background color specific to this skin instead of the global default chosen in Theme & Colors."] })
-        local hideW = GUI:CreateFormCheckbox(card.frame, nil, hideKey, settings, RefreshSkinSurfaces,
+        local hideW = GUI:CreateFormCheckbox(card.frame, nil, hideKey, settings, refresh,
             { description = ns.L["Hide the background fill on this skin entirely. Only takes effect when the override above is enabled."] })
         card.AddRow(
             row(card.frame, ns.L["Override Global Background"], overrideW),
             row(card.frame, ns.L["Hide Background"], hideW)
         )
 
-        local colorW = GUI:CreateFormColorPicker(card.frame, nil, colorKey, settings, RefreshSkinSurfaces, nil,
+        local colorW = GUI:CreateFormColorPicker(card.frame, nil, colorKey, settings, refresh, nil,
             { description = ns.L["Custom background color used when override is enabled."] })
         card.AddRow(row(card.frame, ns.L["Background Color"], colorW))
     end
@@ -603,7 +608,7 @@ local function BuildSkinningTab(tabContent)
         if _G.QUI_RefreshAlertColors then _G.QUI_RefreshAlertColors() end
     end
 
-    L.headerAt(ns.L["Alert Frames Border"])
+    L.headerAt(ns.L["Alert Frames"])
     local sAF = L.sectionAt()
     local afBorderSourceW, afBorderColorW = ns.QUI_BorderControl.Attach(
         GUI, sAF.frame, general, "alerts", RefreshAlerts,
@@ -613,6 +618,7 @@ local function BuildSkinningTab(tabContent)
         row(sAF.frame, ns.L["Border Color Source"], afBorderSourceW),
         row(sAF.frame, ns.L["Border Color"], afBorderColorW)
     )
+    AddBgOverrides(sAF, general, "alerts", RefreshAlerts)
     L.closeSection(sAF)
 
     local function RefreshStatusTrackingBars()
