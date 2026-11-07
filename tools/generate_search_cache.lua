@@ -2468,7 +2468,7 @@ do
     local originalClient = ns.Client
     ns.Client = { isForever = true }
     capture_search_feature(ns.Settings.Registry:GetFeature("skinningPage"))
-    for _, context in ipairs(fixture_search_contexts({ unitFramesPage = {}, nameplatesPage = {} })) do
+    for _, context in ipairs(fixture_search_contexts({ unitFramesPage = {}, nameplatesPage = {}, groupFramesPage = {} })) do
         capture_model_search_tabs(ns.Settings.Registry:GetFeature(context.featureId), context)
     end
     ns.Client = originalClient

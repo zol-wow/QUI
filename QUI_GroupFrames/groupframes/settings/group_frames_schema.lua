@@ -1794,7 +1794,7 @@ local function RenderNameSection(sectionHost, ctx)
     builder.Description(string.format(ns.L["Name text placement and styling for %1$s group frames."], groupFrames.sourceLabel))
 
     local card = builder.Card()
-    local fontSizeRow, anchorRow, justifyRow, maxLengthRow, xOffsetRow, yOffsetRow, useClassColorRow, textColorRow
+    local fontSizeRow, anchorRow, justifyRow, maxLengthRow, xOffsetRow, yOffsetRow, useClassColorRow, textColorRow, surnameRow
     local function UpdateNameRows()
         local showName = name.showName == true
         local useClassColor = name.nameTextUseClassColor == true
@@ -1803,6 +1803,7 @@ local function RenderNameSection(sectionHost, ctx)
         if anchorRow then anchorRow:SetAlpha(alpha) end
         if justifyRow then justifyRow:SetAlpha(alpha) end
         if maxLengthRow then maxLengthRow:SetAlpha(alpha) end
+        if surnameRow then surnameRow:SetAlpha(alpha) end
         if xOffsetRow then xOffsetRow:SetAlpha(alpha) end
         if yOffsetRow then yOffsetRow:SetAlpha(alpha) end
         if useClassColorRow then useClassColorRow:SetAlpha(alpha) end
@@ -1835,6 +1836,14 @@ local function RenderNameSection(sectionHost, ctx)
     })
     justifyRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Text Justify"], justifyDropdown)
     card.AddRow(anchorRow, justifyRow)
+
+    if ns.Client and ns.Client.isForever then
+        local surnameCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showLastName", name, refresh, {
+            description = ns.L["Show both first and last names in WoW Forever. The name length limit still applies."],
+        })
+        surnameRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Show Last Name"], surnameCheckbox)
+        card.AddRow(surnameRow)
+    end
 
     local maxLengthSlider = gui:CreateFormSlider(card.frame, nil, 0, 20, 1, "maxNameLength", name, refresh, { deferOnDrag = true }, {
         description = ns.L["Truncate names longer than this many characters. Set to 0 to disable truncation entirely."],

@@ -1107,7 +1107,7 @@ local function UpdateName(frame)
 
     if not UnitExists(unit) then return end
 
-    local name = UnitName(unit)
+    local name = Helpers.GetUnitDisplayName(unit, nameSettings and nameSettings.showLastName)
     if not IsSecretValue(name) and not name then return end
 
     local maxLen = nameSettings and nameSettings.maxNameLength or 10

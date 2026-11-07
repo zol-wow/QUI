@@ -762,7 +762,7 @@ function GUI:ApplyGeneratedSearchCache(cache, schema)
 
     local order = type(schema) == "table" and schema or {}
     local function IsAvailable(entry)
-        if (entry.featureId == "unitFramesPage" or entry.featureId == "nameplatesPage")
+        if (entry.featureId == "unitFramesPage" or entry.featureId == "nameplatesPage" or entry.featureId == "groupFramesPage")
             and entry.label == "Show Last Name" then
             return ns.Client and ns.Client.isForever
         end
