@@ -1326,6 +1326,17 @@ function ns.Utils.IsInInstancedContent()
     return inInstance and (instanceType == "party" or instanceType == "raid")
 end
 
+function Helpers.GetUnitDisplayName(unit, showLastName)
+    local name, surname = UnitName(unit)
+    if showLastName and ns.Client and ns.Client.isForever
+        and type(name) ~= "nil" and type(surname) ~= "nil" then
+        local suffix = C_StringUtil.WrapString(surname,
+            Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR)
+        return C_StringUtil.WrapString(name, nil, suffix)
+    end
+    return name
+end
+
  function Helpers.TruncateUTF8(text, maxLength)
      if Helpers.IsSecretValue(text) then
          return text

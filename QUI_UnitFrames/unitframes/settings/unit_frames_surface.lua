@@ -642,7 +642,7 @@ local function RefreshMock()
 
         local rawName
         if State.selectedUnit == "player" then
-            rawName = ns.Helpers.SafeValue(UnitName("player")) or ns.L["Player"]
+            rawName = ns.Helpers.SafeValue(ns.Helpers.GetUnitDisplayName("player", unitDB.showLastName)) or ns.L["Player"]
         else
             rawName = MOCK_NAMES[State.selectedUnit] or State.selectedUnit
         end

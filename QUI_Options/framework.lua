@@ -762,6 +762,10 @@ function GUI:ApplyGeneratedSearchCache(cache, schema)
 
     local order = type(schema) == "table" and schema or {}
     local function IsAvailable(entry)
+        if (entry.featureId == "unitFramesPage" or entry.featureId == "nameplatesPage")
+            and entry.label == "Show Last Name" then
+            return ns.Client and ns.Client.isForever
+        end
         if entry.featureId == "skinningPage" then
             local key = entry.widgetDescriptor and entry.widgetDescriptor.dbKey
             local isForever = ns.Client and ns.Client.isForever

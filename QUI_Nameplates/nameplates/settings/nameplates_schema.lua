@@ -626,6 +626,15 @@ local function RenderNameSection(sectionHost, ctx)
     nameRows[#nameRows + 1] = nameColorRow
     card.AddRow(classColorRow, nameColorRow)
 
+    if ns.Client and ns.Client.isForever then
+        local surnameCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showLastName", name, refresh, {
+            description = ns.L["Show both first and last names in WoW Forever. The name length limit still applies."],
+        })
+        local surnameRow = optionsAPI.BuildSettingRow(card.frame, ns.L["Show Last Name"], surnameCheckbox)
+        nameRows[#nameRows + 1] = surnameRow
+        card.AddRow(surnameRow)
+    end
+
     local truncateSlider = gui:CreateFormSlider(card.frame, nil, 8, 40, 1, "truncateLength", name, refresh, { deferOnDrag = true }, {
         description = ns.L["Longest name shown before it is cut short."],
     })

@@ -2070,6 +2070,13 @@ local function RenderTextNameSection(sectionHost, ctx)
         optionsAPI.BuildSettingRow(card.frame, ns.L["Y Offset"], yOffsetSlider)
     )
 
+    if ns.Client and ns.Client.isForever then
+        local surnameCheckbox = gui:CreateFormCheckbox(card.frame, nil, "showLastName", unit.unitDB, RefreshUnitFrames, {
+            description = ns.L["Show both first and last names in WoW Forever. The name length limit still applies."],
+        })
+        card.AddRow(optionsAPI.BuildSettingRow(card.frame, ns.L["Show Last Name"], surnameCheckbox))
+    end
+
     local maxLengthSlider = gui:CreateFormSlider(card.frame, nil, 0, 30, 1, "maxNameLength", unit.unitDB, RefreshUnitFrames, { deferOnDrag = true }, {
         description = ns.L["Truncate names longer than this many characters. Set to 0 to disable truncation entirely."],
     })
