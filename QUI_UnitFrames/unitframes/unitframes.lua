@@ -33,7 +33,6 @@ local UnitHealth = UnitHealth
 local UnitHealthMax = UnitHealthMax
 local UnitPower = UnitPower
 local UnitPowerMax = UnitPowerMax
-local UnitName = UnitName
 local UnitLevel = UnitLevel
 local UnitClass = UnitClass
 local UnitIsPlayer = UnitIsPlayer
@@ -1314,7 +1313,7 @@ local function UpdateName(frame)
         return
     end
 
-    local name = UnitName(unit)
+    local name = Helpers.GetUnitDisplayName(unit, nameSettings.showLastName)
     if not IsSecretValue(name) and not name then name = "" end
 
     local maxLen = nameSettings.maxNameLength
@@ -1325,7 +1324,7 @@ local function UpdateName(frame)
     if (frame.unitKey == "target" or frame.unitKey == "boss") and settings.showInlineToT then
         local totUnit = (frame.unitKey == "boss") and (unit .. "target") or "targettarget"
         if UnitExists(totUnit) then
-            local totName = UnitName(totUnit)
+            local totName = Helpers.GetUnitDisplayName(totUnit, nameSettings.showLastName)
             if not IsSecretValue(totName) and not totName then totName = "" end
             local totCharLimit = settings.totNameCharLimit
             if totCharLimit and totCharLimit > 0 then
@@ -2610,7 +2609,7 @@ function QUI_UF:ShowPreview(unitKey)
 
     if frame.nameText then
         local names = {
-            player = SafeValue(UnitName("player")) or ns.L["Player"],
+            player = SafeValue(Helpers.GetUnitDisplayName("player", settings and GetNameSettings(settings).showLastName)) or ns.L["Player"],
             target = ns.L["Target Dummy"],
             targettarget = ns.L["ToT Name"],
             pet = ns.L["Pet Name"],

@@ -20,7 +20,6 @@ local UnitPowerMax = UnitPowerMax
 local UnitPowerType = UnitPowerType
 local UnitHealthPercent = UnitHealthPercent
 local UnitIsDeadOrGhost = UnitIsDeadOrGhost
-local UnitName = UnitName
 
 local NPHealth = {}
 NP.Health = NPHealth
@@ -456,7 +455,9 @@ function NPHealth.UpdateName(plate)
 
     if not UnitExists(unit) then return end
 
-    local name = UnitName(unit)
+    local settings = NP.GetTypeSettings(plate) or {}
+    local nameS = settings.name or {}
+    local name = Helpers.GetUnitDisplayName(unit, nameS.showLastName)
     local ok = pcall(function()
         nameText:SetText(Helpers.TruncateUTF8(name, plate.npNameTruncate or 28))
     end)
@@ -464,8 +465,6 @@ function NPHealth.UpdateName(plate)
         nameText:SetText("")
     end
 
-    local settings = NP.GetTypeSettings(plate) or {}
-    local nameS = settings.name or {}
     if nameS.classColorPlayers ~= false and plate.npIsPlayer == true and plate.npClassToken then
         local c = RAID_CLASS_COLORS and RAID_CLASS_COLORS[plate.npClassToken]
         if c then
