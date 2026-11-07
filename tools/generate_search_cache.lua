@@ -178,6 +178,7 @@ local function should_load_script(path)
     end
 
     if path == "core/utils.lua"
+        or path == "core/appearance.lua"
         or path == "core/profile_io.lua"
         or path == "core/theme.lua"
         or path == "core/infobar_shared.lua"

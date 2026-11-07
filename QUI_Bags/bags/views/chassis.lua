@@ -146,8 +146,18 @@ function Chassis.ClampAppearance(appearance)
     return out
 end
 
+local getBagsSettings
+local function GetBagsSettings()
+    if not getBagsSettings then
+        if not (Helpers and Helpers.CreateDBGetter) then return nil end
+        getBagsSettings = Helpers.CreateDBGetter("bags")
+    end
+    return getBagsSettings()
+end
+
 local function Reskin(win)
-    local sr, sg, sb, sa, bgr, bgg, bgb, bga = Helpers.GetWindowColors()
+    local settings = GetBagsSettings()
+    local sr, sg, sb, sa, bgr, bgg, bgb, bga = Helpers.GetWindowColors(settings and settings.appearance)
     win._bg:SetVertexColor(bgr, bgg, bgb, bga)
     if win._border and win._border.SetBackdropBorderColor then
         win._border:SetBackdropBorderColor(sr, sg, sb, sa)
@@ -339,15 +349,6 @@ function Chassis.CreateWindow(opts)
     return win
 end
 
-local getBagsSettings
-local function GetBagsSettings()
-    if not getBagsSettings then
-        if not (Helpers and Helpers.CreateDBGetter) then return nil end
-        getBagsSettings = Helpers.CreateDBGetter("bags")
-    end
-    return getBagsSettings()
-end
-
 local SORT_MODES = {
     { key = "quality", label = ns.L["Quality"] },
     { key = "type", label = ns.L["Type"] },
@@ -417,6 +418,14 @@ if ns.Registry then
         refresh = Chassis.ReskinAll,
         priority = 50,
         group = "skinning",
-        importCategories = { "skinning", "theme" },
+        importCategories = { "bags", "skinning", "theme" },
+    })
+end
+
+if Helpers and Helpers.BorderRegistry then
+    Helpers.BorderRegistry.Register({
+        key = "bags", label = ns.L["Bags"], category = "HUD",
+        db = function(p) return p.bags and p.bags.appearance end,
+        refresh = Chassis.ReskinAll,
     })
 end

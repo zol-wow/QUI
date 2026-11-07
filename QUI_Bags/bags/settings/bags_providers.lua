@@ -169,6 +169,28 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
         end
 
         if not page or page == "general" then
+            L.headerAt(ns.L["Window Colors"])
+            local colors = L.sectionAt()
+            local appearance = bags.appearance
+            if not appearance.backgroundColor then
+                local _, _, _, _, r, g, b, a = ns.Helpers.GetWindowColors()
+                appearance.backgroundColor = { r, g, b, a }
+            end
+            local sourceW, borderW = ns.QUI_BorderControl.Attach(
+                GUI, colors.frame, appearance, "", Refresh
+            )
+            colors.AddRow(row(colors.frame, ns.L["Border Color Source"], sourceW),
+                row(colors.frame, ns.L["Border Color"], borderW))
+            local hideBorderW = GUI:CreateFormCheckbox(colors.frame, nil, "hideBorder", appearance, Refresh)
+            colors.AddRow(row(colors.frame, ns.L["Hide Borders"], hideBorderW))
+            local overrideW = GUI:CreateFormCheckbox(colors.frame, nil, "bgOverride", appearance, Refresh)
+            local hideBackgroundW = GUI:CreateFormCheckbox(colors.frame, nil, "hideBackground", appearance, Refresh)
+            colors.AddRow(row(colors.frame, ns.L["Override Global Background"], overrideW),
+                row(colors.frame, ns.L["Hide Background"], hideBackgroundW))
+            local backgroundW = GUI:CreateFormColorPicker(colors.frame, nil, "backgroundColor", appearance, Refresh)
+            colors.AddRow(row(colors.frame, ns.L["Background Color"], backgroundW))
+            L.closeSection(colors)
+
             L.headerAt(ns.L["Appearance"])
             local s1 = L.sectionAt()
             local iconSizeW = GUI:CreateFormSlider(s1.frame, nil, 24, 48, 1, "iconSize", bags.appearance, Refresh,
