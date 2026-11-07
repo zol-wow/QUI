@@ -4,6 +4,20 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.4-beta2 - 2026-11-07
+
+### Added
+
+- Forever nameplates, player and other unit frames, and party and raid frames
+  show first and last names by default. Each has a Show Last Name setting;
+  party-target companions follow the party setting. Existing name-length limits
+  still apply.
+
+### Fixed
+
+- Cast and channel bars use the action name when the game supplies an empty
+  display label, preserving the game-supplied icon.
+
 ## v5.5.4-beta1 - 2026-11-06
 
 ### Fixed
