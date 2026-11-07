@@ -4,6 +4,27 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.4-beta3 - 2026-11-07
+
+### Added
+
+- Unit frames have an optional Level Difficulty Color setting for player,
+  target, target-of-target, focus, pet, and boss frames. It uses Blizzard's
+  difficulty colors while preserving the chosen opacity. The setting is off
+  by default, and saved manual colors remain available.
+
+### Improved
+
+- Shared background color controls are available alongside matching feature
+  settings. Bag windows can use their own background and border colors.
+
+### Fixed
+
+- Unit-frame text stays aligned with the health area and clears mana bars in
+  both live frames and settings previews.
+- Selective profile exports preserve background settings, and border settings
+  navigation opens reliably on its first use.
+
 ## v5.5.4-beta2 - 2026-11-07
 
 ### Added
