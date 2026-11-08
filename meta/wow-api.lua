@@ -349,6 +349,10 @@ function C_ActionBar.IsHarmfulAction(actionID, useNeutral, ...) end
 ---@param ... any
 ---@return boolean isHelpful
 function C_ActionBar.IsHelpfulAction(actionID, useNeutral, ...) end
+---@param spellID? any
+---@param ... any
+---@return boolean isHighestRank
+function C_ActionBar.IsHighestSpellRank(spellID, ...) end
 --- Returns whether the given action button contains a spell that can interrupt spellcasting.
 ---@param slotID? number
 ---@param ... any
@@ -1874,6 +1878,10 @@ function C_BattleNet.GetFriendGameAccountInfo(friendIndex, accountIndex, ...) en
 ---@param ... any
 ---@return any inviteInfo
 function C_BattleNet.GetFriendInviteInfo(inviteIndex, ...) end
+---@param inviteText? string
+---@param ... any
+---@return any friendLevel
+function C_BattleNet.GetFriendLevelFromInviteText(inviteText, ...) end
 ---@param friendIndex? number
 ---@param ... any
 ---@return number numGameAccounts
@@ -6712,7 +6720,10 @@ function C_GameRules.IsWoWHack(...) end
 function C_GameRules.SetAlreadyShownOnce(alreadyShownOnce, ...) end
 ---@param preset? any
 ---@param ... any
-function C_GameRules.SetForeverExperiencePreset(preset, ...) end
+function C_GameRules.SetForeverExperiencePresetPostLogin(preset, ...) end
+---@param preset? any
+---@param ... any
+function C_GameRules.SetForeverExperiencePresetPreLogin(preset, ...) end
 ---@param setToSD? boolean
 ---@param usageLocation? any
 ---@param ... any
@@ -6727,9 +6738,6 @@ C_GamepadTargeting = {}
 function C_GamepadTargeting.Disable(...) end
 ---@param ... any
 function C_GamepadTargeting.Enable(...) end
----@param ... any
----@return boolean hasReticleHoverTarget
-function C_GamepadTargeting.HasReticleHoverTarget(...) end
 ---@param filter? any
 ---@param ... any
 function C_GamepadTargeting.SetFilter(filter, ...) end
@@ -10273,8 +10281,9 @@ C_Minimap = {}
 function C_Minimap.CanTrackBattlePets(...) end
 ---@param ... any
 function C_Minimap.ClearAllTracking(...) end
+---@param id? string
 ---@param ... any
-function C_Minimap.ClearMinimapInsetInfo(...) end
+function C_Minimap.ClearMinimapInsetInfo(id, ...) end
 ---@param filterType? any
 ---@param ... any
 ---@return boolean defaultValue
@@ -10335,11 +10344,13 @@ function C_Minimap.SetDrawGroundTextures(draw, ...) end
 ---@param ignore? boolean
 ---@param ... any
 function C_Minimap.SetIgnoreRotateMinimap(ignore, ...) end
+---@param id? string
 ---@param minAngle? number
 ---@param maxAngle? number
 ---@param scalar? number
+---@param isCircular? boolean
 ---@param ... any
-function C_Minimap.SetMinimapInsetInfo(minAngle, maxAngle, scalar, ...) end
+function C_Minimap.SetMinimapInsetInfo(id, minAngle, maxAngle, scalar, isCircular, ...) end
 ---@param index? number
 ---@param on? boolean
 ---@param ... any
@@ -10860,7 +10871,7 @@ function C_PaperDollInfo.AmmoNeeded(...) end
 ---@param ... any
 ---@return boolean canAutoEquip
 function C_PaperDollInfo.CanAutoEquipCursorItem(...) end
---- Cancels active temporary enchantments on inventory slot items.
+--- Cancels active temporary enchantments on inventory slot items. Imbue enchants take priority over temporary enchants.
 ---@param slot? any
 ---@param ... any
 function C_PaperDollInfo.CancelTemporaryEnchantment(slot, ...) end
@@ -10923,7 +10934,7 @@ function C_PaperDollInfo.GetMinItemLevel(...) end
 ---@return number stagger
 ---@return number staggerAgainstTarget
 function C_PaperDollInfo.GetStaggerPercentage(unit, ...) end
---- Queries information about active temporary enchants on inventory slot items.
+--- Queries information about active temporary enchants on inventory slot items. Imbue enchants take priority over temporary enchants.
 ---@param slot? any
 ---@param ... any
 ---@return any enchantInfo
@@ -11347,6 +11358,9 @@ function C_PetInfo.GetSpellForPetAction(actionID, ...) end
 ---@param ... any
 ---@return boolean isPassive
 function C_PetInfo.IsPetActionPassive(actionID, ...) end
+---@param ... any
+---@return boolean isPetOrderMoveToPending
+function C_PetInfo.IsPetOrderMoveToPending(...) end
 ---@param petNumber? number
 ---@param ... any
 function C_PetInfo.PetAbandon(petNumber, ...) end
@@ -13208,7 +13222,7 @@ function C_RestrictedActions.GetAddOnRestrictionState(type, ...) end
 function C_RestrictedActions.IsAddOnRestrictionActive(type, ...) end
 
 C_Roleset = {}
---- Sets or clears both blocklist and allowlist filters atomically with a single visibility reevaluation. Pass an empty table to clear the corresponding filter.
+--- Sets or clears both blocklist and allowlist filters atomically with a single visibility reevaluation. Pass an empty table to clear the corresponding filter. Blocked for tainted callers while in combat lockdown.
 ---@param blockedRolesets? table
 ---@param allowedRolesets? table
 ---@param ... any
@@ -15061,18 +15075,21 @@ function C_Texture.GetFilenameFromFileDataID(fileDataID, ...) end
 ---@param titleID? string
 ---@param version? any
 ---@param callback? any
+---@param subIcon? string
 ---@param ... any
-function C_Texture.GetTitleIconTexture(titleID, version, callback, ...) end
+function C_Texture.GetTitleIconTexture(titleID, version, callback, subIcon, ...) end
 ---@param titleID? string
 ---@param version? any
+---@param subIcon? string
 ---@param ... any
 ---@return boolean ready
-function C_Texture.IsTitleIconTextureReady(titleID, version, ...) end
+function C_Texture.IsTitleIconTextureReady(titleID, version, subIcon, ...) end
 ---@param texture? any
 ---@param titleID? string
 ---@param version? any
+---@param subIcon? string
 ---@param ... any
-function C_Texture.SetTitleIconTexture(texture, titleID, version, ...) end
+function C_Texture.SetTitleIconTexture(texture, titleID, version, subIcon, ...) end
 ---@param texture? any
 ---@param url? string
 ---@param ... any
@@ -17888,6 +17905,11 @@ C_WoWHackCharacterStats = {}
 ---@param ... any
 ---@return number estimatedPoints
 function C_WoWHackCharacterStats.GetStatPointsBySpellID(spellID, ...) end
+---@param statSpellID? number
+---@param increaseSpellID? number
+---@param ... any
+---@return number estimatedPointsChange
+function C_WoWHackCharacterStats.GetStatPointsChangeBySpellID(statSpellID, increaseSpellID, ...) end
 
 C_WorldLootObject = {}
 ---@param slot? number
@@ -18593,6 +18615,10 @@ function GetCurrentRegionName(...) end
 ---@return number result
 function GetCurrentTitle(...) end
 ---@param ... any
+---@return number posX
+---@return number posY
+function GetCursorCenterPosition(...) end
+---@param ... any
 ---@return number deltaX
 ---@return number deltaY
 function GetCursorDelta(...) end
@@ -18708,6 +18734,10 @@ function GetFramerate(...) end
 ---@return number call_time
 ---@return number call_count
 function GetFunctionCPUUsage(...) end
+--- Returns the game family as used by the AllowLoadGameType/ExcludeLoadGameType TOC directives, e.g. mainline or classic
+---@param ... any
+---@return string gameFamily
+function GetGameFamily(...) end
 ---@param gameErrorIndex? number
 ---@param ... any
 ---@return string errorName
@@ -18718,6 +18748,10 @@ function GetGameMessageInfo(gameErrorIndex, ...) end
 ---@return number hour
 ---@return number minute
 function GetGameTime(...) end
+--- Returns the game type as used by the AllowLoadGameType/ExcludeLoadGameType TOC directives
+---@param ... any
+---@return string gameType
+function GetGameType(...) end
 --- If no playerWeaponSkill value is provided, uses the skill value for the player's main hand weapon/shapeshift form.
 ---@param playerWeaponSkill? number
 ---@param targetDefenseSkill? number
@@ -18759,6 +18793,7 @@ function GetInstanceBootTimeRemaining(...) end
 ---@return number instanceGroupSize
 ---@return number lfgDungeonID
 ---@return boolean hasWorldTier
+---@return number instanceServerID
 function GetInstanceInfo(...) end
 ---@param ... any
 ---@return number timeLeft
@@ -19398,6 +19433,9 @@ function IsControlKeyDown(...) end
 ---@param ... any
 ---@return boolean isCpuBound
 function IsCpuBound(...) end
+---@param ... any
+---@return boolean visible
+function IsCursorVisible(...) end
 ---@param ... any
 ---@return boolean isDebugBuild
 function IsDebugBuild(...) end

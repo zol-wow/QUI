@@ -2334,6 +2334,9 @@ function __WowWidget:IsSelected(...) end
 ---@return boolean isSetToFinalAlpha
 function __WowWidget:IsSetToFinalAlpha(...) end
 ---@param ... any
+---@return boolean isShowing
+function __WowWidget:IsShowingFloatingProjectedTextures(...) end
+---@param ... any
 ---@return boolean isShown
 function __WowWidget:IsShown(...) end
 ---@param slot? number
@@ -3794,6 +3797,9 @@ function __WowWidget:SetSheathed(sheathed, hideWeapons, ...) end
 ---@param category? any
 ---@param ... any
 function __WowWidget:SetSheathedCategory(inventorySlots, category, ...) end
+---@param show? boolean
+---@param ... any
+function __WowWidget:SetShowFloatingProjectedTextures(show, ...) end
 ---@param show? boolean
 ---@param ... any
 function __WowWidget:SetShown(show, ...) end

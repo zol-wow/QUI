@@ -10,8 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   background controls, bag window color overrides, optional unit-frame level
   difficulty colors, Forever last-name controls, and the fixes listed below.
 - Retains Alpha's 12.1.7 PTR targets and bank-cache migration while updating
-  Forever references to build 1.60.1.70790. Retail PTR references remain at
-  12.1.7.70424.
+  Forever references to build 1.60.1.70790. Retail PTR references are refreshed to
+  12.1.7.70740, with matching taint contracts and editor definitions.
 - The latest published Alpha remains 5.5.0-ptr-alpha10. The Beta and stable
   entries below describe their own releases; this integration is unreleased.
 
