@@ -2,7 +2,7 @@ local _, ns = ...
 local O = { builders = {} }
 ns.SpellReminderOptions = O
 local GUI, Shared = QUI.GUI, ns.QUI_Options
-local selected, activeTab = nil, "timing"
+local selected, activeTab = nil, "general"
 
 function O.Refresh()
     if ns.SpellReminders then ns.SpellReminders.Refresh() end
@@ -91,7 +91,9 @@ function O.builders.appearance(host, config)
     c.Check(ns.L["Desaturate During Countdown"], config, "desaturate", ns.L["Show the spell icon in grayscale until the cooldown is ready."])
     c.Text(ns.L["Reminder Label"], config, "label", ns.L["Optional text on your cooldown reminder. PI requests show the recipient's name instead."])
     c.Select(ns.L["Name Position"], config, "nameLayout", O.Choices({ "overlay", ns.L["On Icon"], "left", ns.L["Left"], "right", ns.L["Right"], "none", ns.L["Hidden"] }), ns.L["Place the reminder label on the icon, beside it, or hide it."])
-    c.Select(ns.L["Font"], config, "font", Shared.GetFontList(), ns.L["Font used for reminder labels and recipient names. An empty selection uses the global UI font."])
+    local fonts = { { value = "", text = ns.L["Global Font"] } }
+    for _, font in ipairs(Shared.GetFontList()) do fonts[#fonts + 1] = font end
+    c.Select(ns.L["Font"], config, "font", fonts, ns.L["Font used for reminder labels and recipient names. An empty selection uses the global UI font."])
     c.Select(ns.L["Font Outline"], config, "fontOutline", O.Choices({ "", ns.L["None"], "OUTLINE", ns.L["Outline"], "THICKOUTLINE", ns.L["Thick Outline"] }), ns.L["Outline style used to keep reminder text readable over the icon."])
     c.Slider(ns.L["Font Size"], config, "fontSize", 8, 32, 1, ns.L["Text size for the reminder label and recipient names."])
     c.Color(ns.L["Text Color"], config, "textColor", ns.L["Color of the reminder label and recipient names."])
@@ -209,10 +211,76 @@ local function ReminderSelection(db)
     return options, selected and db.reminders[selected] and selected or (options[1] and options[1].value)
 end
 
-function O.RenderTab(key, host, config, rebuild)
+local function NavigationContexts()
+    local db = ns.SpellReminders and ns.SpellReminders.Store()
+    local contexts = {}
+    for _, option in ipairs(db and ReminderSelection(db) or {}) do
+        contexts[#contexts + 1] = { id = option.value, label = option.text, tabs = Tabs(db.reminders[option.value]) }
+    end
+    return contexts
+end
+
+local function NavigationLabel()
+    return ns.L["Spell Reminders"] .. " (" .. #NavigationContexts() .. ")"
+end
+
+local function NavigationRoot()
+    return { key = "general", label = ns.L["Add Reminder"] }
+end
+
+local function ContextLabel()
+    if activeTab == "general" then return ns.L["Spell Reminders"] end
+    local db = ns.SpellReminders and ns.SpellReminders.Store()
+    if not db then return nil end
+    local options, id = ReminderSelection(db)
+    for _, option in ipairs(options) do
+        if option.value == id then return option.text end
+    end
+end
+
+local function SelectTab(key, reminderID)
+    local R = ns.SpellReminders
+    local db = R and R.Store()
+    if not db or type(key) ~= "string" then return false, false end
+    local _, defaultID = ReminderSelection(db)
+    if reminderID and not db.reminders[reminderID] then return false, false end
+    local id = reminderID or defaultID
+    local config = id and db.reminders[id]
+    local available = key == "general"
+    for _, tab in ipairs(config and Tabs(config) or {}) do
+        if tab.key == key then available = true; break end
+    end
+    if not available then return false, false end
+    if key == activeTab and id == selected then return false, true end
+    if selected and selected ~= id then R.Preview(selected, false) end
+    selected, activeTab = id, key
+    if O.rebuild then O.rebuild() end
+    if O.scrollToTop then O.scrollToTop() end
+    return true, true
+end
+
+local function PageSearchContext(key, route)
+    local SearchRoute = ns.Settings.SearchRoute
+    if not route and SearchRoute and SearchRoute.Active then route = SearchRoute.Active() end
+    if not route and GUI._searchContext and GUI._searchContext.featureId == "spellRemindersPage" then
+        route = GUI._searchContext
+    end
+    local context
+    if route then
+        context = ns.Settings.Util.ShallowCopy(route)
+    else
+        local feature = ns.Settings.Registry:GetFeature("spellRemindersPage")
+        context = ns.Settings.Util.ShallowCopy(feature and feature.nav)
+        context.tabName, context.subTabName = ns.L["Reminders"], ns.L["Spell Reminders"]
+    end
+    context.featureId = context.featureId or "spellRemindersPage"
+    context.surfaceTabKey, context.category = key, "gameplay"
+    return context
+end
+
+function O.RenderTab(key, host, config, rebuild, route)
     local previous = ns.Settings.Util.ShallowCopy(GUI._searchContext)
-    GUI:SetSearchContext({ tileId = "reminders", subPageIndex = 2, featureId = "spellRemindersPage",
-        tabName = ns.L["Reminders"], subTabName = ns.L["Spell Reminders"], surfaceTabKey = key, category = "gameplay" })
+    GUI:SetSearchContext(PageSearchContext(key, route))
     local ok, result = pcall(O.builders[key], host, config, rebuild)
     GUI:SetSearchContext(previous)
     if not ok then error(result, 0) end
@@ -221,134 +289,189 @@ end
 
 function O.Build(content)
     local R = ns.SpellReminders
-    O.rebuild, O.activeBody = nil, nil
+    O.rebuild, O.activeBody, O.scrollToTop = nil, nil, nil
+    local searchContext = PageSearchContext(nil)
     local L = O.Layout(content)
     if not R then
         L.intro(ns.L["The Reminders module is not loaded. Turn it on under Module Addons, then come back here."])
         return L.finish()
     end
     local db = R.Store()
-    L.intro(ns.L["Create reminders for your spells. Power Infusion also highlights allies using offensive cooldowns and handles whisper requests."])
-    local c = O.Card(L, ns.L["Spell Reminders"])
-    c.Check(ns.L["Enable Spell Reminders"], db, "enabled", ns.L["Enable the configured spell reminders. Individual reminders also have their own enable switch."])
-    c.Finish()
     local ui = {}
-    local options
-    options, selected = ReminderSelection(db)
-    local selector = { value = selected }
-    local function ChangeSelection(id)
-        if selected and R then R.Preview(selected, false) end
-        selected = id
-        if ui.rebuild then ui.rebuild() end
-    end
-    c = O.Card(L, ns.L["Choose a Spell"])
-    local reminder = c.Select(ns.L["Reminder"], selector, "value", options,
-        ns.L["Choose a reminder you have already added. Use a preset or enter a spell ID and click Add Spell to create one."],
-        function(value) ChangeSelection(value) end, { placeholder = ns.L["No reminders yet"] })
-    reminder:SetEnabled(#options > 0, ns.L["Add a preset or custom spell to create your first reminder."])
-    local custom = { id = "" }
-    c.Text(ns.L["New Spell ID"], custom, "id", ns.L["Enter a spell ID, then click Add Spell."])
-    c.Finish()
-    local status
-    local function Add(id)
-        local config = R and R.Add(id)
-        if config then
-            if selected then R.Preview(selected, false) end
-            selected = config.spellID
-            -- The root is rebuilt so the selector includes the new spell.
-            GUI:TeardownFrameTree(content)
-            O.Build(content)
-        elseif status then status:SetText(ns.L["Enter a valid spell ID."]) end
-    end
-    O.Buttons(L, { { ns.L["Add Spell"], function() Add(custom.id) end, 100 },
-        { ns.L["Power Infusion Preset"], function() Add(10060) end, 170 },
-        { ns.L["Innervate Preset"], function() Add(29166) end, 150 } })
-    status = L.intro(ns.L["Changes to protected aura displays apply when combat restrictions allow."])
+    local _, id = ReminderSelection(db)
+    selected = id
     local editor = CreateFrame("Frame", nil, content)
-    L.placeCustom(editor, 500)
+    -- The editor is a host; its child pages own the standard page padding.
+    ns.QUI_SettingsLayoutShared.MakeLayout(content, nil, 0, { padding = 0 }).placeCustom(editor, 500)
     local activePage, sidebarTabs
-    local function SelectTab(key)
-        local config = selected and db.reminders[selected]
-        for _, tab in ipairs(config and Tabs(config) or {}) do
-            if tab.key == key and key ~= activeTab then
-                activeTab = key
-                ui.rebuild()
-                return true
-            end
+    local function ScrollFrame()
+        local owner = content
+        while owner and not owner._scrollFrame do owner = owner.GetParent and owner:GetParent() end
+        return owner and owner._scrollFrame
+    end
+    O.scrollToTop = function()
+        local scroll = ScrollFrame()
+        if scroll then
+            local controller = ns.UIKit and ns.UIKit.GetSmoothScroll and ns.UIKit.GetSmoothScroll(scroll)
+            if controller then controller:ScrollTo(0, true) else scroll:SetVerticalScroll(0) end
         end
-        return false
     end
     if GUI.RegisterTileSurfacePages then
         sidebarTabs = GUI:RegisterTileSurfacePages(content, {
+            rootKey = "general", rootLabel = ns.L["Add Reminder"],
+            getNavigationContexts = NavigationContexts,
+            getNavigationRoot = NavigationRoot,
+            getNavigationLabel = NavigationLabel,
+            getActiveContext = function() return activeTab ~= "general" and selected or nil end,
+            getContextLabel = ContextLabel,
+            selectRoot = function() return SelectTab("general") end,
             getTabs = function()
                 local config = selected and db.reminders[selected]
                 return config and Tabs(config) or {}
             end,
             getActiveTab = function() return activeTab end,
             selectTab = SelectTab,
-            getPage = function(key)
-                if key ~= activeTab or not activePage then return nil end
-                local owner = content
-                while owner and not owner._scrollFrame do owner = owner.GetParent and owner:GetParent() end
-                activePage._scrollFrame = owner and owner._scrollFrame
+            getPage = function(key, reminderID)
+                if (reminderID and reminderID ~= selected) or key ~= activeTab or not activePage then return nil end
+                activePage._scrollFrame = ScrollFrame()
                 return activePage
             end,
         })
     end
+    local function Preview()
+        R.Preview(selected, not R.previews[selected])
+    end
+    local function ReminderSelector(card)
+        local options = ReminderSelection(db)
+        local selector = { value = selected, _quiTransientOptionsProxy = true }
+        local reminder = card.Row(ns.L["Reminder"], GUI:CreateFormDropdown(card.frame, nil, options, "value", selector,
+            function(value)
+                local config = db.reminders[value]
+                if not config then return end
+                local key = activeTab
+                local available = key == "general"
+                for _, tab in ipairs(Tabs(config)) do
+                    if tab.key == key then available = true; break end
+                end
+                SelectTab(available and key or "timing", value)
+            end, {
+                description = ns.L["Choose a reminder you have already added. Use a preset or enter a spell ID and click Add Spell to create one."],
+                -- Navigation lists the collection; this selector is a shortcut
+                -- between existing reminders on the current editing tab.
+                searchable = false,
+            }, { placeholder = ns.L["No reminders yet"] }))
+        reminder:SetEnabled(#options > 0, ns.L["Add a preset or custom spell to create your first reminder."])
+        return reminder
+    end
+    local function General(host, config)
+        local root = O.Layout(host)
+        root.intro(ns.L["Create reminders for your spells. Power Infusion also highlights allies using offensive cooldowns and handles whisper requests."])
+        local c = O.Card(root, ns.L["Spell Reminders"])
+        c.Check(ns.L["Enable Spell Reminders"], db, "enabled", ns.L["Enable the configured spell reminders. Individual reminders also have their own enable switch."])
+        c.Finish()
+        c = O.Card(root, ns.L["Add Reminder"])
+        local custom = { id = "", _quiTransientOptionsProxy = true }
+        c.Text(ns.L["New Spell ID"], custom, "id", ns.L["Enter a spell ID, then click Add Spell."])
+        c.Finish()
+        local status
+        local function Add(spellID)
+            local added = R.Add(spellID)
+            if added then
+                if selected then R.Preview(selected, false) end
+                selected, activeTab = added.spellID, "timing"
+                ui.rebuild()
+            elseif status then status:SetText(ns.L["Enter a valid spell ID."]) end
+        end
+        O.Buttons(root, { { ns.L["Add Spell"], function() Add(custom.id) end, 100 },
+            { ns.L["Power Infusion Preset"], function() Add(10060) end, 170 },
+            { ns.L["Innervate Preset"], function() Add(29166) end, 150 } })
+        status = root.intro(ns.L["Changes to protected aura displays apply when combat restrictions allow."])
+        if not config then root.intro(ns.L["Add a preset or custom spell to create your first reminder."]) end
+        return root.finish()
+    end
+    local function ReminderActions(layout)
+        O.Buttons(layout, { { ns.L["Preview / Drag"], Preview },
+            { ns.L["Delete Reminder"], function()
+                GUI:ShowConfirmation({ title = ns.L["Delete Reminder?"], message = ns.L["Delete the selected spell reminder?"] .. "\n\n" .. ContextLabel(),
+                    acceptText = ns.L["Delete"], cancelText = ns.L["Cancel"], isDestructive = true,
+                    onAccept = function()
+                        R.Remove(selected)
+                        local _, nextID = ReminderSelection(db)
+                        selected = nextID
+                        activeTab = nextID and "timing" or "general"
+                        ui.rebuild()
+                        O.scrollToTop()
+                    end })
+            end } })
+    end
     ui.rebuild = function()
         activePage, O.activeBody = nil, nil
-        selector.value = selected
-        reminder:Refresh()
         GUI:TeardownFrameTree(editor)
         local config = selected and db.reminders[selected]
-        if not config then
-            local empty = O.Layout(editor)
-            empty.intro(ns.L["Add a preset or custom spell to create your first reminder."])
-            local h = empty.finish()
-            local _, _, _, _, y = editor:GetPoint(1)
-            editor:SetHeight(h); content:SetHeight(math.abs(y) + h + 30)
-            if sidebarTabs then GUI:RefreshTileSurfacePages(content) end
-            return
-        end
-        if not config.pi and (activeTab == "tracking" or activeTab == "buffs" or activeTab == "requests") then activeTab = "timing" end
+        if not config then activeTab = "general"
+        elseif not config.pi and (activeTab == "tracking" or activeTab == "buffs" or activeTab == "requests") then activeTab = "timing" end
         local top = O.Layout(editor)
-        O.Buttons(top, { { ns.L["Preview / Drag"], function() R.Preview(selected, not R.previews[selected]) end },
-            { ns.L["Delete Reminder"], function()
-                GUI:ShowConfirmation({ title = ns.L["Delete Reminder?"], message = ns.L["Delete the selected spell reminder?"],
-                    acceptText = ns.L["Delete"], cancelText = ns.L["Cancel"], isDestructive = true,
-                    onAccept = function() R.Remove(selected); selected = nil; GUI:TeardownFrameTree(content); O.Build(content) end })
-            end } })
-        local strip, paint
-        if not sidebarTabs then
+        if activeTab ~= "general" then
+            local previous = ns.Settings.Util.ShallowCopy(GUI._searchContext)
+            GUI:SetSearchContext(PageSearchContext(activeTab, searchContext))
+            local card = top.sectionAt()
+            function card.Row(label, widget)
+                card.AddRow(Shared.BuildSettingRow(card.frame, label, widget))
+                return widget
+            end
+            ReminderSelector(card)
+            top.closeSection(card)
+            GUI:SetSearchContext(previous)
+            ReminderActions(top)
+        end
+        local strip, paint, tabs
+        if not sidebarTabs and config then
+            tabs = { { key = "general", label = ns.L["General"] } }
+            for _, tab in ipairs(Tabs(config)) do tabs[#tabs + 1] = tab end
             strip, paint = ns.Settings.FullSurface.CreateTabStrip(editor, { wrapRows = true, buttonSpacing = 10 })
             top.placeCustom(strip, 28)
-            paint(Tabs(config), activeTab, SelectTab)
+            paint(tabs, activeTab, SelectTab)
         end
         local body = CreateFrame("Frame", nil, editor)
+        local bodyY = activeTab == "general" and 0 or top.getY()
+        ns.QUI_SettingsLayoutShared.MakeLayout(editor, nil, bodyY, { padding = 0 }).placeCustom(body, 1)
         if strip then
+            body:ClearAllPoints()
             body:SetPoint("TOPLEFT", strip, "BOTTOMLEFT", -15, -10)
             body:SetPoint("TOPRIGHT", strip, "BOTTOMRIGHT", 15, -10)
-        else
-            body:SetPoint("TOPLEFT", editor, "TOPLEFT", 0, top.getY() - 10)
-            body:SetPoint("TOPRIGHT", editor, "TOPRIGHT", 0, top.getY() - 10)
         end
         if sidebarTabs and GUI.InitializeNavigationSections then GUI:InitializeNavigationSections(body) end
         O.activeBody = body
-        O.RenderTab(activeTab, body, config, ui.rebuild)
+        if activeTab == "general" then
+            local previous = ns.Settings.Util.ShallowCopy(GUI._searchContext)
+            GUI:SetSearchContext(PageSearchContext("general", searchContext))
+            General(body, config)
+            GUI:SetSearchContext(previous)
+        else
+            O.RenderTab(activeTab, body, config, ui.rebuild, searchContext)
+        end
         body._contentBody = body
         activePage = body
         local function Resize()
+            if body ~= O.activeBody then return end
             local _, _, _, _, y = editor:GetPoint(1)
             if not y then return end
-            editor:SetHeight(body:GetHeight() + (strip and strip:GetHeight() or 0) + 60)
+            local _, _, _, _, bodyY = body:GetPoint(1)
+            local offset = math.abs(bodyY)
+            if strip then
+                local _, _, _, _, stripY = strip:GetPoint(1)
+                offset = offset + math.abs(stripY) + strip:GetHeight()
+            end
+            editor:SetHeight(body:GetHeight() + offset + 30)
             content:SetHeight(math.abs(y) + editor:GetHeight() + 30)
         end
         if strip then
             local stripWidth = strip:GetWidth()
             strip:HookScript("OnSizeChanged", function(self, width)
+                if body ~= O.activeBody then return end
                 if width ~= stripWidth then
                     stripWidth = width
-                    paint(Tabs(config), activeTab, SelectTab)
+                    paint(tabs, activeTab, SelectTab)
                 end
                 Resize()
             end)
@@ -356,6 +479,14 @@ function O.Build(content)
         body:HookScript("OnSizeChanged", Resize)
         Resize()
         if sidebarTabs then GUI:RefreshTileSurfacePages(content) end
+    end
+    local rebuild = ui.rebuild
+    ui.rebuild = function()
+        local SearchRoute = ns.Settings.SearchRoute
+        if SearchRoute and SearchRoute.With then
+            return SearchRoute.With(searchContext, rebuild)
+        end
+        return rebuild()
     end
     content:SetScript("OnHide", function()
         if R and selected then R.Preview(selected, false) end
@@ -379,6 +510,10 @@ end
 ns.Settings.Registry:RegisterFeature(ns.Settings.Schema.Feature({
     id = "spellRemindersPage", category = "gameplay", nav = { tileId = "reminders", subPageIndex = 2 },
     keywords = { "Power Infusion", "PIHelper", "Innervate", "BeKindRemind", "whisper", "reminder", "TTS" },
+    getNavigationContextLabel = ContextLabel,
+    getNavigationContexts = NavigationContexts,
+    getNavigationRoot = NavigationRoot,
+    getNavigationLabel = NavigationLabel,
     getNavigationTabs = function()
         local db = ns.SpellReminders and ns.SpellReminders.Store()
         if not db then return {} end
@@ -393,22 +528,19 @@ ns.Settings.Registry:RegisterFeature(ns.Settings.Schema.Feature({
     onNavigate = function(key)
         local id = type(key) == "string" and tonumber(key:match("^spellReminder:(%d+)$"))
         local R = ns.SpellReminders
-        if not id or not R or not R.Get(id) or selected == id then return end
-        if selected then R.Preview(selected, false) end
-        selected = id
-        if O.rebuild then O.rebuild() end
+        if not id or not R or not R.Get(id) then return end
+        SelectTab("timing", id)
     end,
     searchNavigate = function(entry, context)
-        if not ns.SpellReminders then return false end
-        if not O.builders[entry.surfaceTabKey] then return false end
-        activeTab = entry.surfaceTabKey
-        if activeTab == "tracking" or activeTab == "buffs" or activeTab == "requests" then
-            if ns.SpellReminders and ns.SpellReminders.Get(10060) then
-                if selected then ns.SpellReminders.Preview(selected, false) end
-                selected = 10060
-            end
+        local R = ns.SpellReminders
+        if not R or type(entry) ~= "table" then return false end
+        local key = entry.surfaceTabKey or "general"
+        local reminderID
+        if (key == "tracking" or key == "buffs" or key == "requests") and R.Get(10060) then
+            reminderID = 10060
         end
-        if O.rebuild then O.rebuild() end
+        local _, accepted = SelectTab(key, reminderID)
+        if not accepted then return false end
         if context and context.opts then context.opts.searchRoot = O.activeBody end
         return true
     end,

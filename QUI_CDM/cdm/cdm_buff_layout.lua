@@ -1058,6 +1058,7 @@ local function Initialize()
     if initialized then return end
     initialized = true
 
+    local previousInitSafeWindow = ns._inInitSafeWindow
     inInitSafeWindow = true
     ns._inInitSafeWindow = true
 
@@ -1153,7 +1154,7 @@ local function Initialize()
     LayoutBuffBars()
 
     inInitSafeWindow = false
-    ns._inInitSafeWindow = false
+    ns._inInitSafeWindow = previousInitSafeWindow
 end
 
 local eventFrame = CreateFrame("Frame")
@@ -1168,6 +1169,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_ENTERING_WORLD" then
         local isInitialLogin, isReloadingUi = ...
         if isInitialLogin or isReloadingUi then
+            local previousInitSafeWindow = ns._inInitSafeWindow
             inInitSafeWindow = true
             ns._inInitSafeWindow = true
             do
@@ -1179,7 +1181,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             LayoutBuffIcons()
             LayoutBuffBars()
             inInitSafeWindow = false
-            ns._inInitSafeWindow = false
+            ns._inInitSafeWindow = previousInitSafeWindow
 
             C_Timer.After(1.5, function()
                 local viewer = GetBuffIconViewer()

@@ -450,6 +450,43 @@ function Helpers.GetCharConsumableMacrosDB()
     return core and core.db and core.db.char and core.db.char.consumableMacros
 end
 
+function Helpers.CreateConsumableMacrosSettings(profileDB)
+    local charDB = Helpers.GetCharConsumableMacrosDB()
+    local seedKeys = {
+        "enabled", "selectedFlask", "selectedPotion", "selectedHealth",
+        "selectedHealthstone", "selectedAugment", "selectedVantus",
+        "selectedWeapon", "chatNotifications",
+    }
+    local function ActiveDB()
+        if charDB and charDB.characterSpecific then return charDB end
+        return profileDB
+    end
+    return setmetatable({}, {
+        __index = function(_, key)
+            if key == "characterSpecific" then
+                return charDB and charDB.characterSpecific or false
+            end
+            local active = ActiveDB()
+            return active and active[key]
+        end,
+        __newindex = function(_, key, value)
+            if key == "characterSpecific" then
+                if not charDB then return end
+                local was = charDB.characterSpecific and true or false
+                charDB.characterSpecific = value and true or false
+                if charDB.characterSpecific and not was and profileDB then
+                    for _, seedKey in ipairs(seedKeys) do
+                        charDB[seedKey] = profileDB[seedKey]
+                    end
+                end
+                return
+            end
+            local active = ActiveDB()
+            if active then active[key] = value end
+        end,
+    })
+end
+
 function Helpers.DeepCopy(value, seen)
     if type(value) ~= "table" then
         return value
@@ -1146,6 +1183,22 @@ function Helpers.GetUnitClassColor(unit)
     return 0.5, 0.5, 0.5, 1
 end
 
+function Helpers.GetLevelTextColor(settings, level)
+    local custom = settings.levelTextColor or {}
+    local alpha = custom[4] or 1
+    if settings.levelDifficultyColor and not Helpers.IsSecretValue(level) and type(level) == "number" then
+        if level < 0 then
+            return 1, 0.1, 0.1, alpha
+        elseif level > 0 and type(GetCreatureDifficultyColor) == "function" then
+            local ok, color = pcall(GetCreatureDifficultyColor, level)
+            if ok and type(color) == "table" then
+                return color.r, color.g, color.b, alpha
+            end
+        end
+    end
+    return custom[1] or 1, custom[2] or 1, custom[3] or 1, alpha
+end
+
 function Helpers.GetItemQualityColor(quality)
     if not quality or quality < 0 then return 1, 1, 1 end
     local r, g, b = C_Item.GetItemQualityColor(quality)
@@ -1287,6 +1340,17 @@ ns.Utils = ns.Utils or {}
 function ns.Utils.IsInInstancedContent()
     local inInstance, instanceType = IsInInstance()
     return inInstance and (instanceType == "party" or instanceType == "raid")
+end
+
+function Helpers.GetUnitDisplayName(unit, showLastName)
+    local name, surname = UnitName(unit)
+    if showLastName and ns.Client and ns.Client.isForever
+        and type(name) ~= "nil" and type(surname) ~= "nil" then
+        local suffix = C_StringUtil.WrapString(surname,
+            Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR)
+        return C_StringUtil.WrapString(name, nil, suffix)
+    end
+    return name
 end
 
  function Helpers.TruncateUTF8(text, maxLength)

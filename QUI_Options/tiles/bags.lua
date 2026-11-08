@@ -22,8 +22,9 @@ function V2Bags.Register(frame)
                 id = "bags_general",
                 name = ns.L["General"],
                 featureId = "bags",
+                sectionNav = false,
                 renderOptions = { providerPage = "general" },
-                searchSections = { ns.L["General"], ns.L["Appearance"] },
+                searchSections = { ns.L["General"], ns.L["Window Colors"], ns.L["Appearance"] },
                 navRoutes = {
                     { tabIndex = SEARCH_TAB_INDEX, subTabIndex = 0 },
                     { tabIndex = SEARCH_TAB_INDEX, subTabIndex = 1 },

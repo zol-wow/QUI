@@ -120,7 +120,9 @@ local function ValidateImportTree(value, label, state, depth)
     return true
 end
 
-local DUAL_TYPE_PATHS = {}
+local DUAL_TYPE_PATHS = {
+    ["profile.damageMeter.native.windows.1.mythicStartDMType"] = { boolean = true, number = true },
+}
 for _, containerKey in ipairs({ "party", "raid", "pinned1", "pinned2" }) do
     DUAL_TYPE_PATHS[("profile.dandersFrames.%s.absolutePoint"):format(containerKey)] = {
         boolean = true, string = true,
@@ -209,14 +211,6 @@ local function ValidateProfilePayloadDetailed(core, profileData)
         return false, {
             summary = FormatTreeValidationError(issue, "profile"),
             errors = { n },
-        }
-    end
-
-    local sourceClient = type(profileData) == "table" and profileData._quiClient
-    if ns.Client and sourceClient ~= nil and sourceClient ~= ns.Client.flavor then
-        return false, {
-            summary = "This profile was exported for a different WoW client. Import a profile from the same client.",
-            errors = { { kind = "client_mismatch" } },
         }
     end
 
@@ -534,6 +528,9 @@ local PROFILE_SKINNING_GENERAL_KEYS = {
     "statusTrackingBarsBorderColorSource",
     "statusTrackingBarsBorderColor",
     "statusTrackingBarsHideBorder",
+    "statusTrackingBarsBgOverride",
+    "statusTrackingBarsHideBackground",
+    "statusTrackingBarsBackgroundColor",
     "statusTrackingBarsBorderThickness",
     "statusTrackingBarsShowBarText",
     "statusTrackingBarsBarTextAlways",
@@ -608,8 +605,14 @@ local PROFILE_SKINNING_GENERAL_KEYS = {
     "hideSkinBorders",
     "alertsBorderColorSource",
     "alertsBorderColor",
+    "alertsBgOverride",
+    "alertsHideBackground",
+    "alertsBackgroundColor",
     "readyCheckBorderColorSource",
     "readyCheckBorderColor",
+    "readyCheckBgOverride",
+    "readyCheckHideBackground",
+    "readyCheckBackgroundColor",
 }
 
 local PROFILE_LAYOUT_PATHS = {
@@ -1332,6 +1335,7 @@ local PROFILE_IMPORT_CATEGORIES = {
         label = "Timers / Widgets",
         description = "M+ timer, combat timers, XP tracker, and other utility widgets.",
         recommended = true,
+        generalKeys = { "swingTimersBgOverride", "swingTimersHideBackground", "swingTimersBackgroundColor" },
         frameAnchorPrefixes = { "spellReminder:" },
         topLevelKeys = {
             "spellReminders",

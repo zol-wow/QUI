@@ -303,6 +303,16 @@ function CDMSources.QueryInventoryItemTexture(unit, slotID)
     return _GetInventoryItemTexture(unit, slotID)
 end
 
+function CDMSources.QueryEquipSlotTexture(slotID)
+    if not slotID then return nil end
+    local icon = CDMSources.QueryInventoryItemTexture("player", slotID)
+    if icon then return icon end
+    if C_PaperDollInfo and C_PaperDollInfo.GetInventorySlotInfoForInvSlot then
+        local _, slotIcon = C_PaperDollInfo.GetInventorySlotInfoForInvSlot(slotID)
+        return slotIcon
+    end
+end
+
 function CDMSources.QueryItemCount(itemID, includeBank, includeUses, forceUpdate)
     if not itemID or not _C_GetItemCount then return nil end
     return _C_GetItemCount(itemID, includeBank, includeUses, forceUpdate)

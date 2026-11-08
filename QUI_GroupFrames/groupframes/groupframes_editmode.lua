@@ -489,6 +489,9 @@ local function CreateTestFrame(parent, index, totalCount, classToken, name, role
         nameText:SetWordWrap(false)
 
         local displayName = name
+        if ns.Client and ns.Client.isForever and nameSettings and nameSettings.showLastName then
+            displayName = displayName .. Constants.CharacterNameSeparatorConsts.CHARACTERNAME_SURNAME_SEPARATOR .. "Stormwind"
+        end
         local maxLen = nameSettings and nameSettings.maxNameLength or 10
         if maxLen > 0 and #displayName > maxLen then
             displayName = displayName:sub(1, maxLen)

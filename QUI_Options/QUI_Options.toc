@@ -135,6 +135,7 @@ aura_elements_editor.lua
 ..\QUI_ResourceBars\resourcebars\settings\resource_bars_preview_driver.lua
 ..\QUI\modules\skinning\settings\skinning_content.lua
 ..\QUI\modules\skinning\settings\border_coloring_content.lua
+..\QUI\modules\skinning\settings\background_coloring_content.lua
 ..\QUI\modules\skinning\character_pane\settings\character_pane_content.lua
 ..\QUI\modules\trackers\settings\atonement_counter.lua
 ..\QUI\modules\trackers\settings\prey_tracker_content.lua

@@ -96,38 +96,7 @@ local function GetSelectedUnit()
 end
 
 local function SetActiveTab(tabKey)
-    if type(tabKey) ~= "string" or tabKey == "" then
-        return false
-    end
-
-    local tabModel = EnsureTabModel()
-    if not tabModel or type(tabModel.SetActiveKey) ~= "function" then
-        return false
-    end
-
-    if type(tabModel.GetTabs) == "function" then
-        local found = false
-        for _, tab in ipairs(tabModel:GetTabs() or {}) do
-            if type(tab) == "table" and tab.key == tabKey then
-                found = true
-                break
-            end
-        end
-        if not found then
-            return false
-        end
-    end
-
-    local activeKey = type(tabModel.GetActiveKey) == "function" and tabModel:GetActiveKey() or nil
-    if activeKey == tabKey then
-        return true
-    end
-
-    tabModel:SetActiveKey(tabKey)
-    if State.repaintTabs then
-        State.repaintTabs()
-    end
-    return true
+    return FullSurface.SelectTab(State, EnsureTabModel(), tabKey)
 end
 
 local function NavigateSearchEntry(entry)
@@ -339,6 +308,7 @@ local function BuildMockFrame(host)
     mock._border = CreateHairlineBorder(mock, { 0, 0, 0, 1 })
 
     mock._healthBar = mock:CreateTexture(nil, "ARTWORK")
+    mock._healthArea = CreateFrame("Frame", nil, mock)
 
     mock._powerBar = mock:CreateTexture(nil, "ARTWORK")
     mock._powerBg  = mock:CreateTexture(nil, "BACKGROUND", nil, -1)
@@ -594,9 +564,13 @@ local function RefreshMock()
     local inner = borderSize
     local powerShown = unitDB.showPowerBar
     local powerH = powerShown and math.max(2, math.floor((unitDB.powerBarHeight or 4) * scale + 0.5)) or 0
-    local healthH = h - (inner * 2) - (powerShown and (powerH + 1) or 0)
+    local separatorH = (powerShown and unitDB.powerBarBorder ~= false) and 1 or 0
+    local healthH = h - (inner * 2) - powerH - separatorH
     if healthH < 4 then healthH = 4 end
     local healthTop = -inner
+    mock._healthArea:ClearAllPoints()
+    mock._healthArea:SetPoint("TOPLEFT", mock, "TOPLEFT", inner, healthTop)
+    mock._healthArea:SetPoint("BOTTOMRIGHT", mock, "BOTTOMRIGHT", -inner, inner + powerH + separatorH)
     mock._healthBar:ClearAllPoints()
     mock._healthBar:SetPoint("TOPLEFT", mock, "TOPLEFT", inner, healthTop)
     mock._healthBar:SetHeight(healthH)
@@ -673,7 +647,7 @@ local function RefreshMock()
 
         local rawName
         if State.selectedUnit == "player" then
-            rawName = ns.Helpers.SafeValue(UnitName("player")) or ns.L["Player"]
+            rawName = ns.Helpers.SafeValue(ns.Helpers.GetUnitDisplayName("player", unitDB.showLastName)) or ns.L["Player"]
         else
             rawName = MOCK_NAMES[State.selectedUnit] or State.selectedUnit
         end
@@ -698,11 +672,11 @@ local function RefreshMock()
         mock._nameText:SetTextColor(nr, ng, nb, na)
 
         ApplyTextAnchor(
-            mock._nameText, mock,
-            unitDB.nameAnchor or "TOPLEFT",
-            (unitDB.nameOffsetX or 0) * scale,
+            mock._nameText, mock._healthArea,
+            unitDB.nameAnchor or "LEFT",
+            (unitDB.nameOffsetX or 4) * scale,
             (unitDB.nameOffsetY or 0) * scale,
-            inner + 4
+            0
         )
     else
         mock._nameText:Hide()
@@ -713,24 +687,26 @@ local function RefreshMock()
         local levelFont = math.max(8, math.min(24, math.floor((unitDB.levelFontSize or unitDB.nameFontSize or 11) * scale + 0.5)))
         CJKFont(mock._levelText, ResolveElementFont(unitDB.levelFont, fontPath), levelFont, fontOutline)
 
+        local playerLevel = ns.Helpers.SafeToNumber((UnitEffectiveLevel or UnitLevel)("player"), 80)
         local levels = {
-            player = "80",
-            target = "82",
-            focus = "81",
-            targettarget = "80",
-            pet = "80",
-            boss = "??",
+            player = playerLevel,
+            target = playerLevel + 2,
+            focus = playerLevel + 1,
+            targettarget = playerLevel,
+            pet = playerLevel,
+            boss = -1,
         }
-        mock._levelText:SetText(levels[State.selectedUnit] or "80")
+        local level = levels[State.selectedUnit] or playerLevel
+        mock._levelText:SetText(level < 0 and "??" or level)
 
-        local lr, lg, lb, la = ResolveTextColor(State.selectedUnit, false, unitDB.levelTextColor)
+        local lr, lg, lb, la = ns.Helpers.GetLevelTextColor(unitDB, level)
         mock._levelText:SetTextColor(lr, lg, lb, la)
         ApplyTextAnchor(
-            mock._levelText, mock,
+            mock._levelText, mock._healthArea,
             unitDB.levelAnchor or "RIGHT",
             (unitDB.levelOffsetX or -4) * scale,
             (unitDB.levelOffsetY or 0) * scale,
-            inner + 4
+            0
         )
     else
         mock._levelText:Hide()
@@ -746,11 +722,11 @@ local function RefreshMock()
         mock._healthText:SetTextColor(hr, hg, hb, ha)
 
         ApplyTextAnchor(
-            mock._healthText, mock,
-            unitDB.healthAnchor or "TOPRIGHT",
-            (unitDB.healthOffsetX or 0) * scale,
+            mock._healthText, mock._healthArea,
+            unitDB.healthAnchor or "RIGHT",
+            (unitDB.healthOffsetX or -4) * scale,
             (unitDB.healthOffsetY or 0) * scale,
-            inner + 4
+            0
         )
     else
         mock._healthText:Hide()
@@ -912,11 +888,11 @@ local function RefreshMock()
         mock._powerText:SetTextColor(pr, pg, pb, pa)
 
         ApplyTextAnchor(
-            mock._powerText, mock,
+            mock._powerText, mock._healthArea,
             unitDB.powerTextAnchor or "BOTTOMRIGHT",
-            (unitDB.powerTextOffsetX or 0) * scale,
-            (unitDB.powerTextOffsetY or 0) * scale,
-            inner + 4
+            (unitDB.powerTextOffsetX or -4) * scale,
+            (unitDB.powerTextOffsetY or 2) * scale,
+            0
         )
     else
         mock._powerText:Hide()

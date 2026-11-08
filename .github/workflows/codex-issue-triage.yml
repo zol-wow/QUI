@@ -32,8 +32,7 @@ jobs:
       - name: Checkout routing policy
         uses: actions/checkout@v6
         with:
-          # Load executable policy only from this trusted release branch.
-          ref: alpha
+          ref: ${{ github.event.repository.default_branch }}
           sparse-checkout: .github/scripts
           persist-credentials: false
 

@@ -425,7 +425,7 @@ function Data:_CacheSourceGUIDs(selectorKey, sources)
     for _, source in ipairs(sources or {}) do
         local specIconID = source.specIconID
         local sourceGUID = source.sourceGUID
-        if type(specIconID) == "number" and specIconID > 0
+        if not IsSecretValue(specIconID) and type(specIconID) == "number" and specIconID > 0
             and not IsSecretValue(sourceGUID) and type(sourceGUID) == "string"
             and sourceGUID:match("^Player%-") then
             local cached = bySpec[specIconID]
@@ -1660,7 +1660,7 @@ function Window:_SetRowSource(row, source, maxAmount)
             row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         end
     else
-        if source.specIconID and source.specIconID ~= 0 then
+        if IsSecretValue(source.specIconID) or (source.specIconID and source.specIconID ~= 0) then
             row.Icon:SetTexture(source.specIconID)
             row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         elseif source.classFilename and CLASS_ICON_TCOORDS then
@@ -3237,7 +3237,7 @@ function Breakdown:_SetTargetRow(row, target, maxAmount)
     ApplyRowBackgroundVisibility(row, self.parentWindowID)
     row._target = target
 
-    if target.specIconID and target.specIconID ~= 0 then
+    if IsSecretValue(target.specIconID) or (target.specIconID and target.specIconID ~= 0) then
         row.Icon:SetTexture(target.specIconID)
         row.Icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     elseif target.classFilename and CLASS_ICON_TCOORDS then
@@ -3656,8 +3656,9 @@ function WindowManager:SpawnNew()
     local s = GetSettings()
     if not s then return nil end
     s.windows = s.windows or {}
-    local newID = 2
+    local newID = 1
     while s.windows[newID] do newID = newID + 1 end
+    if newID == 1 then s.defaultWindowDeleted = false end
     s.windows[newID] = {
         damageMeterType = 0,
         sessionType     = 1,
@@ -3680,15 +3681,13 @@ function WindowManager:SpawnNew()
             profile.frameAnchoring = {}
         end
         local key = LayoutKey(newID)
-        if not profile.frameAnchoring[key] then
-            profile.frameAnchoring[key] = {
-                parent   = "screen",
-                point    = "CENTER",
-                relative = "CENTER",
-                offsetX  = 20 * newID,
-                offsetY  = -20 * newID,
-            }
-        end
+        profile.frameAnchoring[key] = {
+            parent   = "screen",
+            point    = "CENTER",
+            relative = "CENTER",
+            offsetX  = 20 * newID,
+            offsetY  = -20 * newID,
+        }
     end
 
     local w = self:Spawn(newID)
@@ -3701,6 +3700,7 @@ function WindowManager:DeleteWindow(windowID)
     local s = GetSettings()
     if s and s.windows then
         s.windows[windowID] = nil
+        if windowID == 1 then s.defaultWindowDeleted = true end
         s.windowCount = math.max(0, (s.windowCount or 1) - 1)
     end
     local app = s and s.appearance
@@ -3712,6 +3712,7 @@ end
 function WindowManager:LoadSavedWindows()
     local s = GetSettings()
     if not (s and s.windows) then return 0 end
+    if s.defaultWindowDeleted == true then s.windows[1] = nil end
     local spawned = 0
     for windowID in pairs(s.windows) do
         if type(windowID) == "number" then

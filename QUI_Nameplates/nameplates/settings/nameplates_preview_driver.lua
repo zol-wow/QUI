@@ -467,6 +467,17 @@ local function MeasureAndPlace()
     if not host or not plate then return false end
     if type(host.GetTop) ~= "function" or type(host.GetLeft) ~= "function" then return false end
 
+    -- A queued global scale refresh can paint borders while the specimen is
+    -- temporarily fitted to a tiny viewport. Restore the live pixel reference
+    -- before measuring; otherwise those oversized borders feed back into fit.
+    local core = ns.Addon
+    if core and core.PushPixelReference and core.PopPixelReference
+        and ns.UIKit and ns.UIKit.RefreshPixelBorders then
+        core:PushPixelReference(nil)
+        ns.UIKit.RefreshPixelBorders(plate)
+        core:PopPixelReference()
+    end
+
     local bounds = {}
     IncludeTreeBounds(plate, bounds)
     if not (bounds.top and bounds.bottom and bounds.left and bounds.right) then return false end

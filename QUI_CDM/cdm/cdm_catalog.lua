@@ -37,8 +37,11 @@ local PICKER_AURA_CATEGORIES = { 2, 3, 6, 8 }
 local ALL_RENDERED_CATEGORIES = { 0, 1, 2, 3, 5, 6, 7, 8 }
 local CONSUMABLE_CATEGORY_META = {
     [4]    = { name = "Combat Potion", icon = "Interface/ICONS/INV_POTION_114" },
+    [24]   = { name = "Aggressive Consumables", icon = 133709 },
     [30]   = { name = "Health Potion", icon = "Interface/ICONS/INV_POTION_54" },
+    [1153] = { name = "Non-Aggressive Consumables", icon = 135230 },
     [1711] = { name = "Healthstone",   icon = "Interface/ICONS/Warlock_ Healthstone", tooltipItemIDFallback = 5512 },
+    [2466] = { name = "Parachutes", icon = 133763 },
     [2566] = { name = "Demonic Healthstone", icon = "Interface/ICONS/Warlock_ Bloodstone", tooltipItemIDFallback = 224464 },
 }
 local BLIZZARD_CDM_ENTRY_SOURCE = "blizzardCDM"
@@ -709,7 +712,8 @@ function CDMCatalog.GetAvailableSpellsForContainer(containerKey, containerType, 
                         available[#available + 1] = {
                             spellID    = slot,
                             name       = name or ("Slot " .. slot),
-                            icon       = icon or 0,
+                            icon       = icon or (Sources and Sources.QueryEquipSlotTexture
+                                and Sources.QueryEquipSlotTexture(slot)) or 0,
                             isKnown    = cdInfo.isKnown,
                             source     = BLIZZARD_CDM_ENTRY_SOURCE,
                             _entryType = "slot",

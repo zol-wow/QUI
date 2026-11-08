@@ -62,6 +62,25 @@ end
 local function BuildPage(content)
     local L = ns.QUI_SettingsLayoutShared.MakeLayout(content)
     BuildEnable(L)
+    local profile = Shared.GetDB()
+    local general = profile and profile.general
+    if general then
+        if general.swingTimersBackgroundColor == nil then
+            local color = general.skinBgColor or { 0.008, 0.008, 0.008, 1 }
+            general.swingTimersBackgroundColor = { color[1], color[2], color[3], color[4] or 1 }
+        end
+        L.headerAt(ns.L["Background"])
+        local section = L.sectionAt()
+        local override = GUI:CreateFormCheckbox(section.frame, nil, "swingTimersBgOverride", general, SwingTimers.Refresh,
+            { description = ns.L["Use a background color specific to this skin instead of the global default chosen in Theme & Colors."] })
+        local hide = GUI:CreateFormCheckbox(section.frame, nil, "swingTimersHideBackground", general, SwingTimers.Refresh,
+            { description = ns.L["Hide the background fill on this skin entirely. Only takes effect when the override above is enabled."] })
+        section.AddRow(Row(section.frame, ns.L["Override Global Background"], override), Row(section.frame, ns.L["Hide Background"], hide))
+        local color = GUI:CreateFormColorPicker(section.frame, nil, "swingTimersBackgroundColor", general, SwingTimers.Refresh, nil,
+            { description = ns.L["Custom background color used when override is enabled."] })
+        section.AddRow(Row(section.frame, ns.L["Background Color"], color))
+        L.closeSection(section)
+    end
     for _, entry in ipairs(SwingTimers.entries) do
         BuildBar(L, entry)
     end
