@@ -163,7 +163,7 @@ local function StyleTrackerProgressBar(pb, preserveColor)
         ns.Helpers.ApplyBarStyle(bar, CUSTOM_BAR_FILL_TEXTURE)
 
         local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
-        SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga, 4)
+        SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga, 6)
         SkinBase.RoundBarTexture(bar, fill)
     end
 

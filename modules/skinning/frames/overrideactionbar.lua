@@ -237,7 +237,7 @@ local function SkinOverrideActionBar()
             SkinBase.SetFrameData(healthBar, "backdrop", hbBd)
         end
 
-        SkinBase.ApplyChromeBackdrop(hbBd, { radius = 3, borderPixels = 1, withBackground = true })
+        SkinBase.ApplyChromeBackdrop(hbBd, { radius = 6, borderPixels = 1, withBackground = true })
         Helpers.SetFrameBackdropColor(hbBd, bgr, bgg, bgb, 0.8)
         Helpers.SetFrameBackdropBorderColor(hbBd, sr, sg, sb, sa)
     end
@@ -262,7 +262,7 @@ local function SkinOverrideActionBar()
             SkinBase.SetFrameData(powerBar, "backdrop", pbBd)
         end
 
-        SkinBase.ApplyChromeBackdrop(pbBd, { radius = 3, borderPixels = 1, withBackground = true })
+        SkinBase.ApplyChromeBackdrop(pbBd, { radius = 6, borderPixels = 1, withBackground = true })
         Helpers.SetFrameBackdropColor(pbBd, bgr, bgg, bgb, 0.8)
         Helpers.SetFrameBackdropBorderColor(pbBd, sr, sg, sb, sa)
     end

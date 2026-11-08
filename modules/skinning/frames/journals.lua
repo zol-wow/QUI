@@ -143,6 +143,15 @@ local function StyleSpellBookControls(frame)
     end
     if book.SearchBox then SkinBase.SkinEditBox(book.SearchBox) end
     if book.SearchBox and book.SearchBox.searchIcon then book.SearchBox.searchIcon:SetAlpha(1) end
+    local dropdown = book.SettingsDropdown
+    if dropdown then
+        if not SkinBase.GetFrameData(dropdown, "dropdownCaret") then
+            SkinBase.SetFrameData(dropdown, "dropdownCaret", SkinBase.CreateChevronCaret(dropdown, {
+                point = "CENTER", sizePixels = 10, lineWidthPixels = 6, expanded = true, a = 0.8,
+            }))
+        end
+        SkinBase.SkinDropdown(dropdown, { skinArrow = true })
+    end
     local categories = book.CategoryTabSystem and book.CategoryTabSystem.tabs
     SkinBase.SkinTabGroup(categories, book, { resizeToText = true, hover = true })
     ResizeSpellBookSearch(book)
@@ -354,16 +363,8 @@ local function StylePlayerSpellsControls(frame)
         for _, key in ipairs({ "MaximizeButton", "MinimizeButton" }) do
             local button = resize[key]
             if button then
-                SkinBase.SkinButton(button, { strip = true, font = false })
+                SkinBase.SkinCloseButton(button, { label = key == "MaximizeButton" and "+" or "-", fontSize = 16 })
                 SkinBase.ClampAllTextures(button)
-                local text = SkinBase.GetFrameData(button, "qPlayerSpellsResizeGlyph")
-                if not text then
-                    text = button:CreateFontString(nil, "OVERLAY")
-                    text:SetPoint("CENTER", button, "CENTER", 0, 0)
-                    SkinBase.SetFrameData(button, "qPlayerSpellsResizeGlyph", text)
-                end
-                SkinBase.SkinFontString(text, { size = 16, color = { 1, 1, 1, 1 } })
-                text:SetText(key == "MaximizeButton" and "+" or "-")
                 if not SkinBase.GetFrameData(button, "qPlayerSpellsResizeClickHooked") then
                     SkinBase.SetFrameData(button, "qPlayerSpellsResizeClickHooked", true)
                     button:HookScript("OnClick", function()
@@ -676,7 +677,7 @@ local function SkinMonthlyActivitiesText(monthlyFrame)
     if threshold then
         SkinBase.ClampTextureHidden(threshold.BarBackground)
         SkinBase.ClampTextureHidden(threshold.BarBorder)
-        SkinBase.CreateBackdrop(threshold, nil, nil, nil, nil, nil, nil, nil, nil, 4)
+        SkinBase.CreateBackdrop(threshold, nil, nil, nil, nil, nil, nil, nil, nil, 6)
         if threshold.ThresholdBar then
             SkinBase.RoundBarTexture(threshold.ThresholdBar, threshold.ThresholdBar:GetStatusBarTexture())
         end
@@ -930,7 +931,7 @@ local function SkinEncounterJournalCard(card)
     if bar then
         SkinBase.ClampTextureHidden(bar.JourneyCardProgressBarBG)
         SkinBase.ClampTextureHidden(bar.JourneyCardProgressBarFrame)
-        SkinBase.CreateBackdrop(bar, nil, nil, nil, nil, nil, nil, nil, nil, 4)
+        SkinBase.CreateBackdrop(bar, nil, nil, nil, nil, nil, nil, nil, nil, 6)
         SkinBase.RoundBarTexture(bar, bar:GetStatusBarTexture())
     end
 end
@@ -1003,9 +1004,9 @@ local function StyleJourneyProgress(page)
     if bar then
         SkinBase.ClampTextureHidden(bar.DelveRewardProgressBarBG, true)
         SkinBase.ClampTextureHidden(bar.DelveRewardProgressBarFrame, true)
-        SkinBase.CreateBackdrop(bar, nil, nil, nil, nil, nil, nil, nil, nil, 4)
+        SkinBase.CreateBackdrop(bar, nil, nil, nil, nil, nil, nil, nil, nil, 6)
         local backdrop = SkinBase.GetBackdrop(bar)
-        SkinBase.ApplyChromeBackdrop(backdrop, { radius = 4, withBackground = true })
+        SkinBase.ApplyChromeBackdrop(backdrop, { radius = 6, withBackground = true })
         local track = page.EncounterRewardProgressFrame
         if track and bar:GetTop() and track:GetTop() then
             local y = bar:GetTop() - track:GetTop()
@@ -1562,7 +1563,7 @@ local function StyleCollectionPage(page)
     if progress then
         SkinBase.ClampTextureHidden(progress.border)
         SkinBase.SkinStatusBar(progress)
-        SkinBase.ApplyChromeBackdrop(progress, { radius = 4, withBackground = true })
+        SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(progress), { radius = 6, withBackground = true })
         SkinBase.SkinFontString(progress.text, { fontOnly = true })
     end
 end
@@ -1599,7 +1600,7 @@ local function StylePetStatusBar(bar)
     end
     local color = bar.GetStatusBarColor and { bar:GetStatusBarColor() }
     SkinBase.SkinStatusBar(bar, { color = color, backdrop = false })
-    SkinBase.ApplyChromeBackdrop(bar, { radius = 2, withBackground = true })
+    SkinBase.ApplyChromeBackdrop(bar, { radius = 6, withBackground = true })
     SkinBase.RoundBarTexture(bar, bar.GetStatusBarTexture and bar:GetStatusBarTexture())
     SkinBase.SkinFontString(bar.rankText, { fontOnly = true })
 end

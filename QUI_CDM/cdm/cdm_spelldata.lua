@@ -1741,7 +1741,9 @@ local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(tab)
                     for i = 1, numEntries do
                         local slotIndex = offset + i
 local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, Enum.SpellBookSpellBank.Player)
-                        if itemInfo and itemInfo.spellID and not itemInfo.isPassive and not itemInfo.isOffSpec then
+                        if itemInfo and itemInfo.spellID and not itemInfo.isPassive and not itemInfo.isOffSpec
+                            and not (C_SpellBook.IsSpellBookItemLowRank
+                                and C_SpellBook.IsSpellBookItemLowRank(slotIndex, Enum.SpellBookSpellBank.Player)) then
                             local sid = itemInfo.spellID
                             if not seen[sid] then
                                 seen[sid] = true
@@ -1843,7 +1845,9 @@ local skillLineInfo = C_SpellBook.GetSpellBookSkillLineInfo(tab)
             for i = 1, numEntries do
                 local slotIndex = offset + i
 local itemInfo = C_SpellBook.GetSpellBookItemInfo(slotIndex, Enum.SpellBookSpellBank.Player)
-                if itemInfo and itemInfo.spellID and itemInfo.isPassive and not itemInfo.isOffSpec then
+                if itemInfo and itemInfo.spellID and itemInfo.isPassive and not itemInfo.isOffSpec
+                    and not (C_SpellBook.IsSpellBookItemLowRank
+                        and C_SpellBook.IsSpellBookItemLowRank(slotIndex, Enum.SpellBookSpellBank.Player)) then
                     local sid = itemInfo.spellID
                     if not seen[sid] then
                         seen[sid] = true

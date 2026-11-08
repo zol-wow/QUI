@@ -532,8 +532,8 @@ local function StyleProfessionRankBar(bar)
             bar.Rank:SetPoint("TOPLEFT", bar, "TOPLEFT", pixel, -pixel)
             bar.Rank:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", -pixel, pixel)
         end
-        if not SkinBase.GetBackdrop(bar) then SkinBase.CreateBackdrop(bar, nil, nil, nil, nil, nil, nil, nil, nil, 4) end
-        SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(bar), { radius = 4, withBackground = true })
+        if not SkinBase.GetBackdrop(bar) then SkinBase.CreateBackdrop(bar, nil, nil, nil, nil, nil, nil, nil, nil, 6) end
+        SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(bar), { radius = 6, withBackground = true })
         SkinBase.RoundBarTexture(bar, bar.Fill)
     end
     local dropdown = bar.ExpansionDropdownButton

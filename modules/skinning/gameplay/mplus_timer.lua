@@ -81,7 +81,7 @@ local function ApplyBarSkin(bar, sr, sg, sb, sa, br, bg, bb, colors, isTimerBar,
     local borderMult = colors.barBorder
 
     local backdrop = SkinBase.GetBackdrop(bar.frame) or bar.frame
-    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 3, borderPixels = 1, withBackground = true })
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 6, borderPixels = 1, withBackground = true })
     Helpers.SetFrameBackdropColor(backdrop, barBg[1], barBg[2], barBg[3], barBg[4])
 
     local borderAlpha = showBorder and 1 or 0
@@ -206,7 +206,7 @@ local function ApplyMPlusTimerSkin()
         local borderMult = colors.barBorder
         local borderAlpha = showBorder and 1 or 0
         local backdrop = SkinBase.GetBackdrop(MPlusTimer.frames.sleekBar) or MPlusTimer.frames.sleekBar
-        SkinBase.ApplyChromeBackdrop(backdrop, { radius = 3, borderPixels = 1, withBackground = true })
+        SkinBase.ApplyChromeBackdrop(backdrop, { radius = 6, borderPixels = 1, withBackground = true })
         Helpers.SetFrameBackdropColor(backdrop, barBg[1], barBg[2], barBg[3], barBg[4])
         Helpers.SetFrameBackdropBorderColor(backdrop, wr * borderMult, wg * borderMult, wb * borderMult, borderAlpha * wa)
     end

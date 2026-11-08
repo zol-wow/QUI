@@ -257,7 +257,7 @@ local function SkinReputationEntry(child)
             backdrop:SetFrameLevel(math.max(0, ReputationBar:GetFrameLevel() - 1))
             local dr, dg, db, da = SkinBase.GetDepthColor("ROW")
             SetExpandedPixelPoints(backdrop, ReputationBar, SkinBase.CHROME.BORDER_PX)
-            SkinBase.ApplyChromeBackdrop(backdrop, { radius = 3, withBackground = true, borderColor = { sr, sg, sb, 1 }, bgColor = { dr, dg, db, da } })
+            SkinBase.ApplyChromeBackdrop(backdrop, { radius = 6, withBackground = true, borderColor = { sr, sg, sb, 1 }, bgColor = { dr, dg, db, da } })
             backdrop:Show()
             SkinBase.SetFrameData(ReputationBar, "backdrop", backdrop)
         end

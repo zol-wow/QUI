@@ -3171,7 +3171,7 @@ local function UpdateILvlDisplay()
     local displayFrame = (frameState[CharacterFrame] or EMPTY).ilvlDisplay
     if not displayFrame.text then return end
 
-    local rawName = UnitName("player")
+    local rawName = Helpers.GetUnitDisplayName("player", true)
     local name = "Unknown"
     if not Helpers.IsSecretValue(rawName) then
         name = rawName or "Unknown"

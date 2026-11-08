@@ -165,7 +165,11 @@ local function CaptureSelection()
 end
 
 local function RestoreSelection(sel)
-    if type(sel.tier) == "number" and _G.EJ_SelectTier then _G.EJ_SelectTier(sel.tier) end
+    local numTiers = _G.EJ_GetNumTiers()
+    if type(sel.tier) == "number" and type(numTiers) == "number"
+        and sel.tier >= 1 and sel.tier <= numTiers and _G.EJ_SelectTier then
+        _G.EJ_SelectTier(sel.tier)
+    end
     if sel.instanceID and _G.EJ_SelectInstance then _G.EJ_SelectInstance(sel.instanceID) end
     if sel.encounterID and _G.EJ_SelectEncounter then _G.EJ_SelectEncounter(sel.encounterID) end
 end

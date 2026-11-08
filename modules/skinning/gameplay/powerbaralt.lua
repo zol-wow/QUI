@@ -167,7 +167,7 @@ local function CreateQUIAltPowerBar()
         safeLevel = 0
     end
     bar.backdrop:SetFrameLevel(safeLevel)
-    SkinBase.ApplyChromeBackdrop(bar.backdrop, { radius = 3, borderPixels = 1, withBackground = true })
+    SkinBase.ApplyChromeBackdrop(bar.backdrop, { radius = 6, borderPixels = 1, withBackground = true })
     Helpers.SetFrameBackdropColor(bar.backdrop, bgr, bgg, bgb, bga)
     Helpers.SetFrameBackdropBorderColor(bar.backdrop, sr, sg, sb, sa)
 

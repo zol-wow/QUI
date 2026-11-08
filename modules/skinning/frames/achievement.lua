@@ -243,7 +243,7 @@ local function StyleAchievementProgress(bar)
     -- separate from the achievement row Highlight and the status-bar regions.
     if name then StyleAchievementHighlightFrame(_G[name .. "ButtonHighlight"], 4) end
     SkinBase.SkinStatusBar(bar)
-    SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(bar), { radius = 4, withBackground = true })
+    SkinBase.ApplyChromeBackdrop(SkinBase.GetBackdrop(bar), { radius = 6, withBackground = true })
     local fill = bar:GetStatusBarTexture()
     if fill then SkinBase.RoundBarTexture(bar, fill) end
     SkinBase.SkinFontString(name and _G[name .. "Title"], { size = 11, color = { 0.9, 0.9, 0.9, 1 } })

@@ -512,7 +512,7 @@ local function SkinFriendshipBar(bar)
     ns.Helpers.ApplyBarStyle(bar, "Interface\\Buttons\\WHITE8x8")
     SkinBase.RoundBarTexture(bar, bar:GetStatusBarTexture())
     local sr, sg, sb, sa, r, g, b, a = SkinBase.GetWindowColors()
-    SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, r, g, b, a, 3)
+    SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, r, g, b, a, 6)
     SkinBase.GetBackdrop(bar):SetFrameLevel(math.max(0, bar:GetFrameLevel() - 1))
 end
 
@@ -1269,7 +1269,7 @@ local function SkinTrainerRank()
     end
     SkinBase.RoundBarTexture(bar, bar:GetStatusBarTexture())
     local sr, sg, sb, sa, br, bg, bb, ba = SkinBase.GetWindowColors()
-    SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, br, bg, bb, ba, 3)
+    SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, br, bg, bb, ba, 6)
     SkinBase.GetBackdrop(bar):SetFrameLevel(math.max(0, bar:GetFrameLevel() - 1))
     SkinBase.SkinFontString(bar.rankText, { fontOnly = true })
 end
