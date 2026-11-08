@@ -4,6 +4,35 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.6-beta2 - 2026-11-08
+
+> **Beta release.** QUI supports WoW Retail and WoW Forever.
+
+### Added
+
+- Forever action bars automatically upgrade slots using the previous highest
+  spell rank when a new rank is learned. This is on by default and preserves
+  deliberately selected lower ranks, macros, and items. Updates wait until
+  combat ends and the cursor is free.
+
+### Improved
+
+- Filled-bar borders use rounded corners across Retail and Forever, including
+  swing timers and thicker border settings.
+- Cooldown Manager's spell picker hides lower ranks while preserving existing
+  selections and manually entered spell IDs.
+
+### Fixed
+
+- Empty bag and bank slots retain QUI styling when Blizzard refreshes them.
+- Forever's spellbook filter dropdown is styled, and the expand button no
+  longer draws a background outside its header.
+- The character panel includes Forever surnames.
+- Opening Reminders no longer attempts to restore an invalid Encounter
+  Journal tier.
+- Quest interaction casts show localized "Opening" instead of the internal
+  "Opening - No Text" name, while preserving descriptive cast labels.
+
 ## v5.5.6-beta1 - 2026-11-07
 
 > **Beta release.** QUI supports WoW Retail and WoW Forever.
