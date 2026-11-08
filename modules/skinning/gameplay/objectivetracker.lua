@@ -584,14 +584,6 @@ local function ApplyTrackerMaxHeight(settings)
 end
 -- <<< QUI_TEST_EXTRACT tracker_max_height
 
--- The holder represents configured layout space, independently of transient
--- native root dimensions. Content/background bounds remain dynamic.
-ns.GetObjectiveTrackerAnchorSize = function()
-    local settings = GetSettings()
-    if not settings or not settings.skinObjectiveTracker or IsScenarioActive() then return end
-    return settings.objectiveTrackerWidth or 260, settings.objectiveTrackerHeight or 600
-end
-
 local function UpdateBackdropAnchors()
     local TrackerFrame = _G.ObjectiveTrackerFrame
     local quiBackdrop = TrackerFrame and SkinBase.GetFrameData(TrackerFrame, "backdrop")

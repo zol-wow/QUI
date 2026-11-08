@@ -25,7 +25,7 @@ local function BuildHUDVisibilityTab(tabContent)
     local db = Shared.GetDB()
     if not db then return end
 
-    local L = MakeLayout(tabContent)
+    local L = MakeLayout(tabContent, nil, { searchSections = true })
 
     local function BuildVisibilitySection(title, visTable, refreshFunc, mouseoverRefreshGlobal, extraChecks)
         if visTable.showAlways == nil then visTable.showAlways = true end

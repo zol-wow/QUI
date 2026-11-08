@@ -180,7 +180,11 @@ local function RegisterSelectionListener(ctx)
 
     previewAPI.RegisterSelectedBarListener(ctx.host, function(barKey)
         local normalized = NormalizeBarKey(barKey)
-        local selection = ResolveSelectionState(ctx.state)
+        -- Compare the mounted selection before consuming navigation's pending
+        -- key; otherwise the state changes without rebuilding its old controls.
+        local selection = EnsureSelectionState(ctx.state)
+        -- This notification supersedes any unconsumed same-bar navigation.
+        pendingSelectionKey = nil
         if selection.key == normalized then
             return
         end
@@ -306,6 +310,16 @@ local feature = Schema.Feature({
         subPageIndex = 2,
     },
     lookupKeys = LOOKUP_KEYS,
+    getSearchContexts = function()
+        local contexts = {}
+        for _, option in ipairs(BAR_OPTIONS) do
+            contexts[#contexts + 1] = { searchContext = { providerKey = option.value }, label = option.text }
+        end
+        return contexts
+    end,
+    getNavigationContext = function()
+        return { providerKey = ResolveInitialSelection() }
+    end,
     getNavigationSections = function()
         GetPerBarBuilder()
         local builders = ns.QUI_ActionBarsPerBarBuilders

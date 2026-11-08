@@ -8,8 +8,8 @@ local SECTION_GAP = 14
 
 SettingsLayout.NINE_POINT_OPTIONS = ns.QUI_SettingsLayoutShared.BuildNinePointAnchorOptions()
 
-function SettingsLayout.MakeLayout(content, startY)
-    return ns.QUI_SettingsLayoutShared.MakeLayout(content, nil, startY)
+function SettingsLayout.MakeLayout(content, startY, options)
+    return ns.QUI_SettingsLayoutShared.MakeLayout(content, nil, startY, options)
 end
 
 function SettingsLayout.Row(parent, label, widget, desc)

@@ -47,72 +47,7 @@ function GUI:InitializeOptions()
         SetKeyboardPropagation(self, true)
     end)
 
-    if ns.QUI_Options and type(ns.QUI_Options.RegisterFeatureTile) == "function" then
-        ns.QUI_Options.RegisterFeatureTile(frame, {
-            id = "welcome",
-            icon = "*",
-            name = ns.L["Welcome"],
-            subtitle = ns.L["Getting started · Tips · What's new"],
-            featureId = "welcomePage",
-            noScroll = false,
-        })
-    end
-
-    if ns.QUI_GlobalTile then
-        ns.QUI_GlobalTile.Register(frame)
-    end
-    if ns.QUI_UnitFramesTile then
-        ns.QUI_UnitFramesTile.Register(frame)
-    end
-    if ns.QUI_GroupFramesTile then
-        ns.QUI_GroupFramesTile.Register(frame)
-    end
-    if ns.QUI_NameplatesTile then
-        ns.QUI_NameplatesTile.Register(frame)
-    end
-    if ns.QUI_ActionBarsTile then
-        ns.QUI_ActionBarsTile.Register(frame)
-    end
-    if ns.QUI_AurasTile then
-        ns.QUI_AurasTile.Register(frame)
-    end
-    if ns.QUI_CooldownManagerTile then
-        ns.QUI_CooldownManagerTile.Register(frame)
-    end
-    if ns.QUI_ResourceBarsTile then
-        ns.QUI_ResourceBarsTile.Register(frame)
-    end
-    if ns.QUI_MinimapTile then
-        ns.QUI_MinimapTile.Register(frame)
-    end
-    if ns.QUI_InfoBarTile then
-        ns.QUI_InfoBarTile.Register(frame)
-    end
-    if ns.QUI_AppearanceTile then
-        ns.QUI_AppearanceTile.Register(frame)
-    end
-    if ns.QUI_ChatTooltipsTile then
-        ns.QUI_ChatTooltipsTile.Register(frame)
-    end
-    if ns.QUI_GameplayTile then
-        ns.QUI_GameplayTile.Register(frame)
-    end
-    if ns.QUI_RemindersTile then
-        ns.QUI_RemindersTile.Register(frame)
-    end
-    if ns.QUI_QoLTile then
-        ns.QUI_QoLTile.Register(frame)
-    end
-    if ns.QUI_BagsTile then
-        ns.QUI_BagsTile.Register(frame)
-    end
-    if ns.QUI_AltsTile then
-        ns.QUI_AltsTile.Register(frame)
-    end
-
-    if ns.QUI_HelpTile then
-        ns.QUI_HelpTile.Register(frame)
-    end
+    ns.QUI_Options.RegisterAllFeatureTiles(frame)
 
     self:AddToolsStripButton(frame, {
         id = "cdm_settings", icon = "+", label = ns.L["Blizz CDM"],

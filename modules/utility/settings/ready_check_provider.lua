@@ -68,6 +68,22 @@ do
             sBd.AddRow(row(sBd.frame, ns.L["Border Color Source"], rcSrcW), row(sBd.frame, ns.L["Border Color"], rcColW))
             L.closeSection(sBd)
 
+            if general.readyCheckBackgroundColor == nil then
+                local color = general.skinBgColor or { 0.008, 0.008, 0.008, 1 }
+                general.readyCheckBackgroundColor = { color[1], color[2], color[3], color[4] or 1 }
+            end
+            L.headerAt(ns.L["Background"])
+            local sBg = L.sectionAt()
+            local overrideW = GUI:CreateFormCheckbox(sBg.frame, nil, "readyCheckBgOverride", general, RefreshColors,
+                { description = ns.L["Use a background color specific to this skin instead of the global default chosen in Theme & Colors."] })
+            local hideW = GUI:CreateFormCheckbox(sBg.frame, nil, "readyCheckHideBackground", general, RefreshColors,
+                { description = ns.L["Hide the background fill on this skin entirely. Only takes effect when the override above is enabled."] })
+            sBg.AddRow(row(sBg.frame, ns.L["Override Global Background"], overrideW), row(sBg.frame, ns.L["Hide Background"], hideW))
+            local colorW = GUI:CreateFormColorPicker(sBg.frame, nil, "readyCheckBackgroundColor", general, RefreshColors, nil,
+                { description = ns.L["Custom background color used when override is enabled."] })
+            sBg.AddRow(row(sBg.frame, ns.L["Background Color"], colorW))
+            L.closeSection(sBg)
+
             U.BuildPositionCollapsible(content, "readyCheck", nil, L.sections, L.relayoutSections)
             U.BuildOpenFullSettingsLink(content, key, L.sections, L.relayoutSections)
             L.relayoutSections()

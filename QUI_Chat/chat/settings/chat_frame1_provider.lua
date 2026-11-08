@@ -197,6 +197,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
             container:SetWidth(math.max(1, content:GetWidth() - PAD * 2))
             local measuredHeight = buildFunc(container) or defaultHeight or 1
             L.placeCustom(container, math.max(8, measuredHeight))
+            ns.QUI_SettingsLayoutShared.WatchContentHeight(container, content)
             return container
         end
 

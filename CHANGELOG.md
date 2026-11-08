@@ -4,6 +4,227 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Unreleased Alpha Integration
+
+- Integrates Beta updates through 5.5.6-beta1 and stable 5.5.5, including shared
+  background controls, bag window color overrides, optional unit-frame level
+  difficulty colors, Forever last-name controls, and the fixes listed below.
+- Retains Alpha's 12.1.7 PTR targets and bank-cache migration while updating
+  Forever references to build 1.60.1.70790. Retail PTR references remain at
+  12.1.7.70424.
+- The latest published Alpha remains 5.5.0-ptr-alpha10. The Beta and stable
+  entries below describe their own releases; this integration is unreleased.
+
+## v5.5.6-beta1 - 2026-11-07
+
+> **Beta release.** One download supports Midnight 12.1 live, Midnight
+> 12.1.5 PTR, and experimental WoW Forever 1.60.1 (interfaces 120100,
+> 120105, and 16001).
+
+### Changed
+
+- Starts the 5.5.6 beta cycle from stable 5.5.5, retaining all of its features
+  and fixes. This release updates version labels and release documentation;
+  addon behavior is unchanged from 5.5.5.
+
+## v5.5.5 - 2026-11-07
+
+> **Stable release.** One download supports Midnight 12.1 live, Midnight
+> 12.1.5 PTR, and experimental WoW Forever 1.60.1 (interfaces 120100,
+> 120105, and 16001).
+
+### Added
+
+- Unit frames have an optional Level Difficulty Color setting for player,
+  target, target-of-target, focus, pet, and boss frames. It uses Blizzard's
+  difficulty colors while preserving the chosen opacity. The setting is off
+  by default, and saved manual colors remain available.
+- Forever nameplates, player and other unit frames, and party and raid frames
+  show first and last names by default. Each has a Show Last Name setting;
+  party-target companions follow the party setting. Existing name-length limits
+  still apply.
+
+### Improved
+
+- Shared background color controls are available alongside matching feature
+  settings. Bag windows can use their own background and border colors.
+
+### Fixed
+
+- Unit-frame text stays aligned with the health area and clears mana bars in
+  both live frames and settings previews.
+- Selective profile exports preserve background settings, and border settings
+  navigation opens reliably on its first use.
+- Cast and channel bars use the action name when the game supplies an empty
+  display label, preserving the game-supplied icon.
+
+## v5.5.4-beta3 - 2026-11-07
+
+### Added
+
+- Unit frames have an optional Level Difficulty Color setting for player,
+  target, target-of-target, focus, pet, and boss frames. It uses Blizzard's
+  difficulty colors while preserving the chosen opacity. The setting is off
+  by default, and saved manual colors remain available.
+
+### Improved
+
+- Shared background color controls are available alongside matching feature
+  settings. Bag windows can use their own background and border colors.
+
+### Fixed
+
+- Unit-frame text stays aligned with the health area and clears mana bars in
+  both live frames and settings previews.
+- Selective profile exports preserve background settings, and border settings
+  navigation opens reliably on its first use.
+
+## v5.5.4-beta2 - 2026-11-07
+
+### Added
+
+- Forever nameplates, player and other unit frames, and party and raid frames
+  show first and last names by default. Each has a Show Last Name setting;
+  party-target companions follow the party setting. Existing name-length limits
+  still apply.
+
+### Fixed
+
+- Cast and channel bars use the action name when the game supplies an empty
+  display label, preserving the game-supplied icon.
+
+## v5.5.4 - 2026-11-06
+
+> **Stable release.** One download supports Midnight 12.1 live, Midnight
+> 12.1.5 PTR, and experimental WoW Forever 1.60.1 (interfaces 120100,
+> 120105, and 16001).
+
+### Fixed
+
+- Damage Meter handles restricted native icons safely and preserves Mythic+
+  meter choices when importing profiles.
+- Deleting every Damage Meter window stays saved after reload. Recreated
+  windows start with fresh anchors.
+- Rebuilding settings pages no longer retains resize callbacks from old widgets.
+- Cooldown Manager avoids indexing incomplete category ordering data.
+- Forever's Cooldown Manager composer shows labels and representative icons for
+  additional consumable categories, slot icons for empty or uncached trinkets,
+  and a question mark when a picker icon is unavailable.
+
+## v5.5.4-beta1 - 2026-11-06
+
+### Fixed
+
+- Damage Meter handles restricted native icons safely and preserves Mythic+
+  meter choices when importing profiles.
+- Deleting every Damage Meter window stays saved after reload. Recreated
+  windows start with fresh anchors.
+- Rebuilding settings pages no longer retains resize callbacks from old widgets.
+- Cooldown Manager avoids indexing incomplete category ordering data.
+- Forever's Cooldown Manager composer shows labels and representative icons for
+  additional consumable categories, slot icons for empty or uncached trinkets,
+  and a question mark when a picker icon is unavailable.
+
+## v5.5.3 - 2026-11-05
+
+> **Stable release.** One download supports Midnight 12.1 live, Midnight
+> 12.1.5 PTR, and experimental WoW Forever 1.60.1 (interfaces 120100,
+> 120105, and 16001).
+
+### Improved
+
+- Settings search includes more Action Bar, Minimap, Info Bar, and other
+  controls, opening the matching page, section, and selected unit or display.
+- Navigation uses compact groups and individual Spell Reminder entries.
+  Cached settings pages retain editor state and module scroll positions.
+- Settings cards, pickers, and editors adapt to narrower windows. Opening
+  inherited settings preserves shared values until edited, and confirmation
+  dialogs remain above their options window.
+- Refined Blizzard window, alert, loot, tooltip, status-bar, and color-picker
+  styling. Loot previews preserve active loot windows and roll choices.
+
+### Fixed
+
+- Layout Mode preserves linked mover spacing. Castbars and Objective Tracker
+  placement survive combat reloads, resizing, and native layout changes.
+- Raid Buff reminders reappear after combat. Consumable settings honor
+  character-specific choices, and cached bag contents remain visible when
+  native item buttons cannot be created during combat.
+- Retail and Forever profiles can be imported across clients, including
+  selected settings and nameplate profiles. Existing payload validation remains
+  in place; imports do not convert spell or specialization data.
+- Cooldown Manager notices wait for saved settings and clear when enabled;
+  cooldown assignments refresh after specialization changes. Durability anchors,
+  Forever movement stats, and swing timer styling preserve native state.
+- Info Bar Spellbook and Talents use separate native buttons when available.
+  Group-frame glow animations preserve opacity, and disconnected members lose
+  stale auras.
+
+## v5.5.3-beta5 - 2026-11-05
+
+### Fixed
+
+- Raid Buff reminders reappear after combat when a tracked buff is missing,
+  including when the buff expires after combat.
+- Profiles exported in Retail can be imported in Forever and vice versa,
+  including selected settings and nameplate profiles. Existing import
+  validation remains in place.
+
+## v5.5.3-beta4 - 2026-10-26
+
+### Improved
+
+- Settings search includes more Action Bar, Minimap, and Info Bar controls and
+  opens the matching page, section, and selected unit or display.
+- Spell Reminders appear individually in navigation, with direct links to each
+  reminder's settings and a separate Add Reminder entry.
+- Settings cards, text, pickers, and editors adapt more consistently to the
+  available window width.
+
+### Fixed
+
+- Returning to cached settings pages preserves editor state instead of
+  rebuilding unchanged controls. Pages refresh controls when their selected
+  context changes elsewhere.
+- Opening settings or search no longer turns inherited values into local
+  overrides. Search keeps controls with the same label bound to their own
+  settings.
+- Confirmation dialogs stay above their options window, and reminder font
+  selection includes the Global Font option.
+
+## v5.5.3-beta3 - 2026-10-25
+
+### Improved
+
+- Settings navigation uses compact nested groups and restores each module's
+  sidebar scroll position. Search and navigation include additional Sound Mute,
+  Blizzard Mover, Import/Export, and Chat controls.
+
+### Fixed
+
+- Castbars follow their configured anchors after combat reloads, layout
+  changes, movement, and resizing. Saved frame placement is preserved during
+  startup.
+- Both consumable settings pages honor character-specific selections.
+- Spell Reminder management controls open on the main page, and editors retain
+  their layout when revisited. Temporary settings controls avoid repeated
+  profile scans.
+- Bags prepare native item buttons outside combat and reuse them during combat.
+  When a native button is unavailable, cached item cells remain visible until
+  the button can be created after combat.
+
+## v5.5.3-beta2 - 2026-10-24
+
+### Fixed
+
+- Objective Tracker placement in QUI Layout Mode stays consistent across
+  scenario changes and native layout resets, with tracker skinning on or off.
+  Blizzard Edit Mode dragging no longer displaces it; restricted positioning
+  changes recover after combat.
+- Info Bar Spellbook and Talents shortcuts use their dedicated native buttons
+  when available, retaining the secure shared fallback on other clients.
+- Group-frame Cleanse-Ready Glow animations preserve the configured opacity.
+
 ## v5.5.3-beta1 - 2026-10-20
 
 ### Improved
@@ -30,6 +251,70 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   and roll choices.
 - Theme changes preserve settings navigation, and color-picker styling is
   consistent across settings controls.
+
+## v5.5.2 - 2026-10-19
+
+> **Stable release.** One download supports Midnight 12.1 live, Midnight
+> 12.1.5 PTR, and experimental WoW Forever 1.60.1 (interfaces 120100,
+> 120105, and 16001).
+
+### Improved
+
+- **Group-frame Cleanse-Ready Glow** has independent debuff scope, custom or
+  per-type colors, opacity, and static, pulse, or moving-highlight animations.
+  Previews reflect these choices separately from the dispel border.
+- **Settings navigation** provides consistent sidebar links on pages with three
+  or more available sections. Links follow selected settings, including action
+  bars, and jump to the correct headings on first use. Pages switch without
+  flashing, retain their scrolling area on resize, and keep expanded group-aura
+  editors from overlapping following sections.
+- **Spell Reminders and Layout Mode** have clearer controls, saved-reminder
+  lists, stable previews, a picker for overlapping movers, a settings gear, and
+  compact settings that fit their content. Power Infusion samples can be moved
+  from the full recipient preview. Mover settings open the matching reminder,
+  refresh saved anchors and offsets, and follow icon-size changes.
+- **Startup and native panels** do less repeated action-bar and aura setup.
+  Hidden Blizzard panels defer skinning until first shown, including in combat.
+  Updated Retail and Forever API references.
+
+### Fixed
+
+- **Objective Tracker:** Max Height uses the full configured space and is
+  restored during native refreshes, including supported combat updates. Quest
+  and recipe text is measured with its styled font, preventing overlap and
+  height flashes. Appearance refreshes no longer request shared native tracker
+  updates; font changes take effect on the next native layout so text and
+  measured spacing stay consistent. Collapse buttons retain QUI glyphs.
+- **Combat and visibility:** Hidden essential and utility Cooldown Manager
+  buttons no longer intercept clicks under supported mounted and out-of-combat
+  visibility settings; the HUD appears before clicks resume. Raid frames show
+  players joining previously empty allowed subgroups during combat, with group
+  labels following visible frames. Info Bar icons use native secure clicks in
+  combat. Spellbook and Talents also use native clicks outside combat to avoid
+  secret-value cooldown errors; on Retail, both follow Blizzard's remembered
+  Player Spells tab.
+- **Reminders and saved state:** Reminder toggles update existing movers, and
+  closing Layout Mode with the master switch off preserves each reminder's
+  saved enabled choice. Entering combat restores normal cooldown output and
+  hides samples while respecting hidden frames and anchors. Chat history loads
+  before login messages and default-chat backfill. Reputation scans restore
+  collapsed headers, including shared faction IDs. Missing raid-buff icons
+  follow current spell ranks without changing saved selections.
+- **Blizzard windows:** PlayerChoice windows, including the Codex, no longer
+  grow taller on repeated opens. Character and Inspect recognize permanent
+  glove enchants; Inspect models have more camera clearance. Trade rows and
+  acceptance highlights align correctly. Loot, money, and collection alerts
+  and Achievement hover highlights retain QUI styling. World Map quest and
+  campaign text remains readable. Delve Companion's Adventure Guide tab keeps
+  its own position. Character tabs and Close remain usable when enhancements
+  are off. Stable windows no longer retain decorative artwork over QUI.
+- **Compatibility and controls:** Rounded surfaces handle restricted Blizzard
+  positioning, and font styling avoids recursive font-object updates. Paging
+  arrows use native images instead of font-dependent symbols. The minimap's
+  external-event shortcut remains clickable without its backdrop. Forever
+  experience/reputation backgrounds align with their fills, and Hide Border
+  (Top) supports newer minimap headers while restoring native effects when
+  disabled or in Edit Mode.
 
 ## v5.5.2-beta12 - 2026-10-19
 

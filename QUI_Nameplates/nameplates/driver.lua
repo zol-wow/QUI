@@ -521,6 +521,7 @@ NPDriver.ApplyRenderMode = ApplyRenderMode
 
 local function ReapplyDynamicVisuals(plate)
     if not plate.unit then return end
+    NPHealth.UpdateName(plate)
     NPHealth.UpdateAbsorbs(plate)
     NPHealth.UpdateHealPrediction(plate)
     NPHealth.UpdatePower(plate)

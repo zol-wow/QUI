@@ -46,6 +46,7 @@ local function StartUI()
     Bags.Takeover.Apply()
     Bags.BankTakeover.Suppress()
     Bags.GuildTakeover.Init()
+    Bags.BagWindow.PrepareLiveButtons()
     ns.RunAfterFirstFrame(function()
         if not uiActive then return end
         for _, ev in ipairs(UI_EVENTS) do eventFrame:RegisterEvent(ev) end
@@ -133,6 +134,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         if Bags.Junk and Bags.Junk.OnCombat then Bags.Junk.OnCombat() end
         if Bags.GuildWindow.IsShown() then Bags.GuildWindow.Refresh() end
     elseif event == "PLAYER_REGEN_ENABLED" then
+        Bags.BagWindow.PrepareLiveButtons()
         if Bags.cooldownRefreshPending or Bags.itemButtonRefreshPending then
             Bags.cooldownRefreshPending = nil
             Bags.itemButtonRefreshPending = nil
@@ -155,6 +157,7 @@ end)
 
 local function Refresh()
     if not started then return end
+    if Bags.Chassis then Bags.Chassis.ReskinAll() end
     if IsEnabled() then StartUI() else StopUI() end
     if uiActive then
         if Bags.BagWindow.OnProfileChanged then Bags.BagWindow.OnProfileChanged() end

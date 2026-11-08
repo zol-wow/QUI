@@ -49,6 +49,7 @@ jobs:
         run: |
           set -uo pipefail
           jobs="$(nproc 2>/dev/null || echo 4)"
+          export JOBS="$jobs"
           # SC2016: the single quotes are deliberate -- $1 must reach the inner
           # sh, which expands it per file, not this shell.
           # shellcheck disable=SC2016

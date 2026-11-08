@@ -33,7 +33,6 @@ local UnitHealth = UnitHealth
 local UnitHealthMax = UnitHealthMax
 local UnitPower = UnitPower
 local UnitPowerMax = UnitPowerMax
-local UnitName = UnitName
 local UnitLevel = UnitLevel
 local UnitClass = UnitClass
 local UnitIsPlayer = UnitIsPlayer
@@ -467,14 +466,15 @@ local function ResolveTextFont(fontName, fallbackPath)
 end
 
 local function FormatUnitLevelText(unit)
-    local ok, text = pcall(function()
-        local level = UnitLevel(unit)
-        if not level then return "" end
-        if level < 0 then return "??" end
+    local ok, text, level = pcall(function()
+        local level = (UnitEffectiveLevel or UnitLevel)(unit)
+        if IsSecretValue(level) or type(level) ~= "number" then return "" end
+        if level < 0 then return "??", level end
         if level == 0 then return "" end
-        return tostring(level)
+        return tostring(level), level
     end)
-    return ok and text or ""
+    if ok then return text, level end
+    return ""
 end
 
 local TruncateName = Helpers.TruncateUTF8
@@ -1314,7 +1314,7 @@ local function UpdateName(frame)
         return
     end
 
-    local name = UnitName(unit)
+    local name = Helpers.GetUnitDisplayName(unit, nameSettings.showLastName)
     if not IsSecretValue(name) and not name then name = "" end
 
     local maxLen = nameSettings.maxNameLength
@@ -1325,7 +1325,7 @@ local function UpdateName(frame)
     if (frame.unitKey == "target" or frame.unitKey == "boss") and settings.showInlineToT then
         local totUnit = (frame.unitKey == "boss") and (unit .. "target") or "targettarget"
         if UnitExists(totUnit) then
-            local totName = UnitName(totUnit)
+            local totName = Helpers.GetUnitDisplayName(totUnit, nameSettings.showLastName)
             if not IsSecretValue(totName) and not totName then totName = "" end
             local totCharLimit = settings.totNameCharLimit
             if totCharLimit and totCharLimit > 0 then
@@ -1400,7 +1400,7 @@ local function UpdateLevelText(frame)
         return
     end
 
-    local text = FormatUnitLevelText(QUI_UF.GetFrameUnit(frame))
+    local text, level = FormatUnitLevelText(QUI_UF.GetFrameUnit(frame))
     if text == "" then
         frame.levelText:SetText("")
         frame.levelText:Hide()
@@ -1408,8 +1408,7 @@ local function UpdateLevelText(frame)
     end
 
     frame.levelText:SetText(text)
-    local c = settings.levelTextColor or { 1, 1, 1, 1 }
-    frame.levelText:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+    frame.levelText:SetTextColor(Helpers.GetLevelTextColor(settings, level))
     frame.levelText:Show()
 end
 
@@ -2172,7 +2171,7 @@ local function CreateUnitFrame(unit, unitKey)
 
     local nameText = textFrame:CreateFontString(nil, "OVERLAY")
     Helpers.ApplyFontWithFallback(nameText, fontPath, nameFontSize, fontOutline)
-    nameText:SetPoint(nameAnchorInfo.point, frame, nameAnchorInfo.point, nameOffsetX, nameOffsetY)
+    nameText:SetPoint(nameAnchorInfo.point, healthBar, nameAnchorInfo.point, nameOffsetX, nameOffsetY)
     nameText:SetJustifyH(nameAnchorInfo.justify)
     nameText:SetTextColor(1, 1, 1, 1)
     frame.nameText = nameText
@@ -2184,7 +2183,7 @@ local function CreateUnitFrame(unit, unitKey)
 
     local levelText = textFrame:CreateFontString(nil, "OVERLAY")
     Helpers.ApplyFontWithFallback(levelText, ResolveTextFont(settings.levelFont, fontPath), levelFontSize, fontOutline)
-    levelText:SetPoint(levelAnchorInfo.point, frame, levelAnchorInfo.point, levelOffsetX, levelOffsetY)
+    levelText:SetPoint(levelAnchorInfo.point, healthBar, levelAnchorInfo.point, levelOffsetX, levelOffsetY)
     levelText:SetJustifyH(levelAnchorInfo.justify)
     levelText:SetTextColor(1, 1, 1, 1)
     levelText:Hide()
@@ -2197,7 +2196,7 @@ local function CreateUnitFrame(unit, unitKey)
 
     local healthText = textFrame:CreateFontString(nil, "OVERLAY")
     CJKFont(healthText, fontPath, healthFontSize, fontOutline)
-    healthText:SetPoint(healthAnchorInfo.point, frame, healthAnchorInfo.point, healthOffsetX, healthOffsetY)
+    healthText:SetPoint(healthAnchorInfo.point, healthBar, healthAnchorInfo.point, healthOffsetX, healthOffsetY)
     healthText:SetJustifyH(healthAnchorInfo.justify)
     healthText:SetTextColor(1, 1, 1, 1)
     frame.healthText = healthText
@@ -2209,7 +2208,7 @@ local function CreateUnitFrame(unit, unitKey)
 
     local powerText = textFrame:CreateFontString(nil, "OVERLAY")
     CJKFont(powerText, fontPath, powerTextFontSize, fontOutline)
-    powerText:SetPoint(powerAnchorInfo.point, frame, powerAnchorInfo.point, powerTextOffsetX, powerTextOffsetY)
+    powerText:SetPoint(powerAnchorInfo.point, healthBar, powerAnchorInfo.point, powerTextOffsetX, powerTextOffsetY)
     powerText:SetJustifyH(powerAnchorInfo.justify)
     powerText:SetTextColor(1, 1, 1, 1)
     powerText:Hide()
@@ -2500,6 +2499,15 @@ function QUI_UF:ShowPreview(unitKey)
                 if frame.nameText then
                     frame.nameText:SetText(ns.L["Boss"] .. " " .. i)
                 end
+                if frame.levelText then
+                    if settings and settings.showLevel == true then
+                        frame.levelText:SetText("??")
+                        frame.levelText:SetTextColor(Helpers.GetLevelTextColor(settings, -1))
+                        frame.levelText:Show()
+                    else
+                        frame.levelText:Hide()
+                    end
+                end
                 if frame.healthText then
                     local previewHPPct = 75 - (i * 5)
                     local previewMaxHP = 100000
@@ -2610,7 +2618,7 @@ function QUI_UF:ShowPreview(unitKey)
 
     if frame.nameText then
         local names = {
-            player = SafeValue(UnitName("player")) or ns.L["Player"],
+            player = SafeValue(Helpers.GetUnitDisplayName("player", settings and GetNameSettings(settings).showLastName)) or ns.L["Player"],
             target = ns.L["Target Dummy"],
             targettarget = ns.L["ToT Name"],
             pet = ns.L["Pet Name"],
@@ -2621,17 +2629,18 @@ function QUI_UF:ShowPreview(unitKey)
 
     if frame.levelText then
         if settings and settings.showLevel == true then
+            local playerLevel = Helpers.SafeToNumber((UnitEffectiveLevel or UnitLevel)("player"), 80)
             local levels = {
-                player = "80",
-                target = "82",
-                targettarget = "80",
-                pet = "80",
-                focus = "81",
-                boss = "??",
+                player = playerLevel,
+                target = playerLevel + 2,
+                targettarget = playerLevel,
+                pet = playerLevel,
+                focus = playerLevel + 1,
+                boss = -1,
             }
-            frame.levelText:SetText(levels[unitKey] or "80")
-            local c = settings.levelTextColor or { 1, 1, 1, 1 }
-            frame.levelText:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+            local level = levels[unitKey] or playerLevel
+            frame.levelText:SetText(level < 0 and "??" or level)
+            frame.levelText:SetTextColor(Helpers.GetLevelTextColor(settings, level))
             frame.levelText:Show()
         else
             frame.levelText:SetText("")
@@ -2972,8 +2981,7 @@ function QUI_UF:RefreshFrame(unitKey)
                     frame.levelText:SetJustifyH(levelAnchorInfo.justify)
                     if self.previewMode[bossKey] then
                         frame.levelText:SetText("??")
-                        local c = settings.levelTextColor or { 1, 1, 1, 1 }
-                        frame.levelText:SetTextColor(c[1] or 1, c[2] or 1, c[3] or 1, c[4] or 1)
+                        frame.levelText:SetTextColor(Helpers.GetLevelTextColor(settings, -1))
                         frame.levelText:Show()
                     else
                         UpdateLevelText(frame)
@@ -3313,7 +3321,7 @@ function QUI_UF:RefreshFrame(unitKey)
         Helpers.ApplyFontWithFallback(frame.nameText, fontPath, refreshNameSettings.nameFontSize or 12, fontOutline)
         frame.nameText:ClearAllPoints()
         local nameAnchorInfo = GetTextAnchorInfo(refreshNameSettings.nameAnchor or "LEFT")
-        frame.nameText:SetPoint(nameAnchorInfo.point, frame, nameAnchorInfo.point, QUICore:PixelRound(refreshNameSettings.nameOffsetX or 4, frame), QUICore:PixelRound(refreshNameSettings.nameOffsetY or 0, frame))
+        frame.nameText:SetPoint(nameAnchorInfo.point, frame.healthBar, nameAnchorInfo.point, QUICore:PixelRound(refreshNameSettings.nameOffsetX or 4, frame), QUICore:PixelRound(refreshNameSettings.nameOffsetY or 0, frame))
         frame.nameText:SetJustifyH(nameAnchorInfo.justify)
         if refreshNameSettings.showName then
             frame.nameText:Show()
@@ -3326,7 +3334,7 @@ function QUI_UF:RefreshFrame(unitKey)
         Helpers.ApplyFontWithFallback(frame.levelText, ResolveTextFont(settings.levelFont, fontPath), settings.levelFontSize or (refreshNameSettings.nameFontSize or 12), fontOutline)
         frame.levelText:ClearAllPoints()
         local levelAnchorInfo = GetTextAnchorInfo(settings.levelAnchor or "RIGHT")
-        frame.levelText:SetPoint(levelAnchorInfo.point, frame, levelAnchorInfo.point, QUICore:PixelRound(settings.levelOffsetX or -4, frame), QUICore:PixelRound(settings.levelOffsetY or 0, frame))
+        frame.levelText:SetPoint(levelAnchorInfo.point, frame.healthBar, levelAnchorInfo.point, QUICore:PixelRound(settings.levelOffsetX or -4, frame), QUICore:PixelRound(settings.levelOffsetY or 0, frame))
         frame.levelText:SetJustifyH(levelAnchorInfo.justify)
         if settings.showLevel == true then
             frame.levelText:Show()
@@ -3339,7 +3347,7 @@ function QUI_UF:RefreshFrame(unitKey)
         CJKFont(frame.healthText, fontPath, settings.healthFontSize or 12, fontOutline)
         frame.healthText:ClearAllPoints()
         local healthAnchorInfo = GetTextAnchorInfo(settings.healthAnchor or "RIGHT")
-        frame.healthText:SetPoint(healthAnchorInfo.point, frame, healthAnchorInfo.point, QUICore:PixelRound(settings.healthOffsetX or -4, frame), QUICore:PixelRound(settings.healthOffsetY or 0, frame))
+        frame.healthText:SetPoint(healthAnchorInfo.point, frame.healthBar, healthAnchorInfo.point, QUICore:PixelRound(settings.healthOffsetX or -4, frame), QUICore:PixelRound(settings.healthOffsetY or 0, frame))
         frame.healthText:SetJustifyH(healthAnchorInfo.justify)
         if settings.showHealth == false then
             frame.healthText:Hide()
@@ -3363,7 +3371,7 @@ function QUI_UF:RefreshFrame(unitKey)
         CJKFont(frame.powerText, fontPath, settings.powerTextFontSize or 12, fontOutline)
         frame.powerText:ClearAllPoints()
         local powerAnchorInfo = GetTextAnchorInfo(settings.powerTextAnchor or "BOTTOMRIGHT")
-        frame.powerText:SetPoint(powerAnchorInfo.point, frame, powerAnchorInfo.point, QUICore:PixelRound(settings.powerTextOffsetX or -4, frame), QUICore:PixelRound(settings.powerTextOffsetY or 2, frame))
+        frame.powerText:SetPoint(powerAnchorInfo.point, frame.healthBar, powerAnchorInfo.point, QUICore:PixelRound(settings.powerTextOffsetX or -4, frame), QUICore:PixelRound(settings.powerTextOffsetY or 2, frame))
         frame.powerText:SetJustifyH(powerAnchorInfo.justify)
     end
 
@@ -3649,6 +3657,7 @@ end
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("ADDON_LOADED")
 initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+initFrame:RegisterEvent("PLAYER_LEVEL_CHANGED")
 initFrame:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then return end
@@ -3667,6 +3676,12 @@ initFrame:SetScript("OnEvent", function(self, event, arg1)
                 end
             end
         end)
+    elseif event == "PLAYER_LEVEL_CHANGED" then
+        for unitKey, frame in pairs(QUI_UF.frames) do
+            if not QUI_UF.previewMode[unitKey] then
+                UpdateLevelText(frame)
+            end
+        end
     elseif event == "PLAYER_ENTERING_WORLD" then
         QUI_UF:HideBlizzardCastbars()
         if _G.QUI_ShouldUnitframesBeVisible and not _G.QUI_ShouldUnitframesBeVisible() then

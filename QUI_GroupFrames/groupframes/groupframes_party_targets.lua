@@ -11,7 +11,6 @@ local UIParent = UIParent
 local InCombatLockdown = InCombatLockdown
 local RegisterUnitWatch = RegisterUnitWatch
 local UnregisterUnitWatch = UnregisterUnitWatch
-local UnitName = UnitName
 local UnitClass = UnitClass
 local UnitHealthPercent = UnitHealthPercent
 local issecretvalue = _G.issecretvalue
@@ -119,7 +118,9 @@ local function RenderCompanion(frame)
 
     frame.healthBar:SetValue(UnitHealthPercent(unit, true, CurveConstants.ScaleTo100))
 
-    frame.nameText:SetText(TruncateUTF8(UnitName(unit), 12))
+    local _, party = GetConfig()
+    local nameSettings = party and party.name
+    frame.nameText:SetText(TruncateUTF8(Helpers.GetUnitDisplayName(unit, nameSettings and nameSettings.showLastName), 12))
 
     local r, g, b = FALLBACK_COLOR[1], FALLBACK_COLOR[2], FALLBACK_COLOR[3]
     local _, class = UnitClass(unit)

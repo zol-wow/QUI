@@ -112,7 +112,7 @@ local function BuildImportExportTab(tabContent)
     info:SetJustifyH("LEFT")
     y = y - 28
 
-    local validationNote = GUI:CreateLabel(
+    local validationNote = CreateWrappedLabel(
         tabContent,
         ns.L["Import validates the decoded profile. If analysis fails, reasons are listed and you can strip incompatible settings from a temporary copy, then import the rest."],
         10,
@@ -121,7 +121,8 @@ local function BuildImportExportTab(tabContent)
     validationNote:SetPoint("TOPLEFT", PAD, y)
     validationNote:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
     validationNote:SetJustifyH("LEFT")
-    y = y - 20
+    ns.QUI_SettingsLayoutShared.BindWrappedLabel(validationNote, tabContent, PAD)
+    y = y - validationNote:GetStringHeight() - 12
 
     Shared.CreateAccentDotLabel(tabContent, ns.L["Export Current Profile"], y); y = y - 30
 
@@ -133,6 +134,7 @@ local function BuildImportExportTab(tabContent)
     )
     exportNote:SetPoint("TOPLEFT", PAD, y)
     exportNote:SetPoint("RIGHT", tabContent, "RIGHT", -PAD, 0)
+    ns.QUI_SettingsLayoutShared.BindWrappedLabel(exportNote, tabContent, PAD)
     y = y - (exportNote:GetStringHeight() or 28) - 12
 
     local exportState = {
@@ -346,7 +348,7 @@ local function BuildImportExportTab(tabContent)
                     UpdateExportCheckboxStates()
                     UpdateExportActionButtons()
                 end,
-                { description = category.description or (ns.L["Include"] .. " " .. category.label .. " " .. ns.L["in the exported profile string."]) }
+                { searchable = false, description = category.description or (ns.L["Include"] .. " " .. category.label .. " " .. ns.L["in the exported profile string."]) }
             )
             checkbox:SetPoint("TOPLEFT", indent, localY)
             checkbox:SetPoint("RIGHT", body, "RIGHT", 0, 0)
@@ -846,7 +848,7 @@ local function BuildImportExportTab(tabContent)
                         UpdateCategoryCheckboxStates()
                         UpdateActionButtons()
                     end,
-                    { description = category.description or (ns.L["Import the"] .. " " .. category.label .. " " .. ns.L["section of the analyzed profile into your current profile."]) }
+                    { searchable = false, description = category.description or (ns.L["Import the"] .. " " .. category.label .. " " .. ns.L["section of the analyzed profile into your current profile."]) }
                 )
                 checkbox:SetPoint("TOPLEFT", indent, innerY)
                 checkbox:SetPoint("RIGHT", importBody, "RIGHT", 0, 0)

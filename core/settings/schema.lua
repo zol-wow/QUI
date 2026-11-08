@@ -304,8 +304,10 @@ local function LayoutSections(runtime)
             end
             if sectionHost._quiRecoveredBounds then
                 sectionHost:SetWidth(math.max(1, runtime.host:GetWidth() - pad * 2))
+            elseif previousHost then
+                sectionHost:SetPoint("TOPRIGHT", previousHost, "BOTTOMRIGHT", 0, -previousGap)
             else
-                sectionHost:SetPoint("RIGHT", runtime.host, "RIGHT", -pad, 0)
+                sectionHost:SetPoint("TOPRIGHT", runtime.host, "TOPRIGHT", -pad, -topPad)
             end
             sectionHost:SetHeight(height)
             previousHost, previousGap = sectionHost, section and section.gapAfter or gap
@@ -366,11 +368,34 @@ local function RenderSection(runtime, sectionId)
             end
         end)
     end
+    if sectionHost.HookScript and type(section.getContextKey) == "function"
+        and not sectionHost._quiSettingsContextHook then
+        sectionHost._quiSettingsContextHook = true
+        sectionHost:HookScript("OnShow", function(self)
+            local owner = self:GetParent()
+            local active = owner and owner._quiSettingsRuntime
+            local id = self._quiSettingsSectionId
+            local definition = active and active.sectionsById[id]
+            -- Context selectors can change on another cached surface. Rebind
+            -- only the affected section; unchanged returns retain editor state.
+            if active and not active._rendering and active.sectionHosts[id] == self
+                and definition and type(definition.getContextKey) == "function"
+                and active.sectionContextKeys[id] ~= definition.getContextKey(active.ctx, definition) then
+                Schema:RerenderSection(active, id)
+            end
+        end)
+    end
     sectionHost:Show()
 
     CleanupFrame(sectionHost)
 
-    local height = renderer(sectionHost, runtime.ctx, section)
+    local route = Settings.SearchRoute
+    local height
+    if route and route.With then
+        height = route.With(runtime.searchRoute, renderer, sectionHost, runtime.ctx, section)
+    else
+        height = renderer(sectionHost, runtime.ctx, section)
+    end
     if type(height) ~= "number" then
         if type(height) == "table" and type(height.GetHeight) == "function" then
             local ok, measuredHeight = pcall(height.GetHeight, height)
@@ -390,6 +415,9 @@ local function RenderSection(runtime, sectionId)
         (type(height) == "number" and height) or section.minHeight or 1,
         1
     )
+    if type(section.getContextKey) == "function" then
+        runtime.sectionContextKeys[sectionId] = section.getContextKey(runtime.ctx, section)
+    end
     runtime._rendering = nil
     return runtime.sectionHeights[sectionId]
 end
@@ -456,7 +484,10 @@ function Schema:RenderFeature(feature, host, options)
         sectionHosts = {}
         host._quiSettingsSectionHosts = sectionHosts
     end
+    local route = Settings.SearchRoute
+    local activeRoute = route and route.Active and route.Active()
     local runtime = {
+        searchRoute = activeRoute and CloneTable(activeRoute) or nil,
         feature = feature,
         host = host,
         options = options,
@@ -468,6 +499,7 @@ function Schema:RenderFeature(feature, host, options)
         sectionsById = feature.sectionsById or {},
         sectionHosts = sectionHosts,
         sectionHeights = {},
+        sectionContextKeys = {},
     }
 
     local ctx = {

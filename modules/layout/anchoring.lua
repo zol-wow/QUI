@@ -672,12 +672,10 @@ local function MirrorHolderSize(key)
     local frame = state.frame
     local w = (frame.GetWidth  and frame:GetWidth())  or 0
     local h = (frame.GetHeight and frame:GetHeight()) or 0
-    if key == "objectiveTracker" and ns.GetObjectiveTrackerAnchorSize then
-        -- Native UIPanel updates may temporarily change the root height in
-        -- combat. A centered holder must retain the configured layout extent.
-        local layoutWidth, layoutHeight = ns.GetObjectiveTrackerAnchorSize()
-        w = layoutWidth or w
-        h = layoutHeight or h
+    if key == "objectiveTracker" then
+        local settings = QUICore and QUICore.db and QUICore.db.profile and QUICore.db.profile.general
+        w = settings and settings.objectiveTrackerWidth or 260
+        h = settings and settings.objectiveTrackerHeight or 600
     end
     if type(w) ~= "number" or w < 1 then w = 1 end
     if type(h) ~= "number" or h < 1 then h = 1 end
@@ -690,14 +688,38 @@ local function ReanchorFrameToHolder(key)
     local state = managedReparentState[key]
     if not state or not state.holder or not state.frame then return end
     local frame = state.frame
+    local currentParent = frame.GetParent and frame:GetParent()
+    local restoreParent = key == "objectiveTracker" and currentParent ~= state.holder
+    local inCombat = InCombatLockdown()
     -- UIPanel layout can reset an unprotected tracker when opening Spellbook
     -- in combat. Repair that point before the native SetPoint call returns.
-    if InCombatLockdown() and nsHelpers.FrameMutationRestricted(frame) then
+    if inCombat and (nsHelpers.FrameMutationRestricted(frame)
+        or (restoreParent and nsHelpers.FrameMutationRestricted(state.holder))) then
         state.reanchorAfterCombat = true
         return
     end
     state.reanchorAfterCombat = nil
     state.hookingSetPoint = true
+    if key == "objectiveTracker" then
+        frame.ignoreFramePositionManager = true
+        local managedParent = frame.GetManagedFrameContainer and frame:GetManagedFrameContainer() or currentParent
+        if inCombat then
+            if managedParent and managedParent.RemoveManagedFrame then
+                state.reanchorAfterCombat = true
+            end
+        else
+            ns.SafeCallMethodIfPresent("best-effort-style", managedParent, "RemoveManagedFrame", frame)
+        end
+        if state.stopMoving then
+            ns.SafeCallMethodIfPresent("best-effort-style", frame, "StopMovingOrSizing")
+            state.stopMoving = nil
+        end
+        if restoreParent then
+            state.hookingSetParent = true
+            ns.SafeCallMethod("best-effort-style", frame, "SetParent", state.holder)
+            state.hookingSetParent = false
+        end
+    end
     ns.SafeCallMethod("best-effort-style", frame, "ClearAllPoints")
     ns.SafeCallMethod("best-effort-style", frame, "SetPoint", "TOPLEFT", state.holder, "TOPLEFT", 0, 0)
     state.hookingSetPoint = false
@@ -761,7 +783,7 @@ local function InstallManagedReparent(def)
 
     if not state.setPointHooked then
         state.setPointHooked = true
-        hooksecurefunc(frame, "SetPoint", function()
+        local function RestoreManagedAnchor()
             if state.hookingSetPoint then return end
             if def.key == "objectiveTracker" then
                 -- Restore before the native call returns so panel layout never
@@ -770,7 +792,19 @@ local function InstallManagedReparent(def)
             else
                 QueueManagedReanchor(def.key)
             end
-        end)
+        end
+        hooksecurefunc(frame, "SetPoint", RestoreManagedAnchor)
+        if def.key == "objectiveTracker" then
+            for _, method in ipairs({ "SetPointBase", "SetAllPoints", "ClearAllPoints", "ClearAllPointsBase", "ApplySystemAnchor" }) do
+                if frame[method] then hooksecurefunc(frame, method, RestoreManagedAnchor) end
+            end
+            if frame.StartMoving then
+                hooksecurefunc(frame, "StartMoving", function()
+                    state.stopMoving = true
+                    RestoreManagedAnchor()
+                end)
+            end
+        end
     end
 
     if not state.setParentHooked then
@@ -778,6 +812,10 @@ local function InstallManagedReparent(def)
         hooksecurefunc(frame, "SetParent", function(self, newParent)
             if state.hookingSetParent then return end
             if newParent == state.holder then return end
+            if def.key == "objectiveTracker" then
+                ReanchorFrameToHolder(def.key)
+                return
+            end
             C_Timer.After(0, function()
                 if InCombatLockdown() then return end
                 if state.frame:GetParent() == state.holder then return end
