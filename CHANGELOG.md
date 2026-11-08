@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Retains Alpha's 12.1.7 PTR targets and bank-cache migration while updating
   Forever references to build 1.60.1.70790. Retail PTR references are refreshed to
   12.1.7.70740, with matching taint contracts and editor definitions.
+- Empty bag slots retain QUI's background after PTR native appearance refreshes.
+- The minimap's external-event shortcut retains QUI's position after PTR event
+  and scale updates, while returning to Blizzard's layout when QUI releases it.
 - The latest published Alpha remains 5.5.0-ptr-alpha10. The Beta and stable
   entries below describe their own releases; this integration is unreleased.
 

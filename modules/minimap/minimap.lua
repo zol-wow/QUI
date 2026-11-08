@@ -1035,6 +1035,7 @@ hiddenButtonParent.Layout = function() end
 
 do
     local externalEventButtonOwned = false
+    local externalEventAnchorHooked = false
     function Minimap_Module:UpdateExternalEventButton()
         local button = MinimapBackdrop and MinimapBackdrop.ExternalEventURLButton
         if not button then return end
@@ -1045,18 +1046,32 @@ do
         local settings = GetSettings()
         if not settings or settings.enabled == false or externalHudActive then
             if externalEventButtonOwned then
+                externalEventButtonOwned = false
                 button:SetParent(MinimapBackdrop)
                 if MinimapCluster and MinimapCluster.ApplyExternalEventURLButtonAnchor then
                     MinimapCluster:ApplyExternalEventURLButtonAnchor()
                 end
-                externalEventButtonOwned = false
+                if button.UpdateMinimapInset then
+                    button:UpdateMinimapInset()
+                end
             end
             return
+        end
+        if not externalEventAnchorHooked and MinimapCluster and MinimapCluster.ApplyExternalEventURLButtonAnchor then
+            hooksecurefunc(MinimapCluster, "ApplyExternalEventURLButtonAnchor", function()
+                if externalEventButtonOwned then
+                    Minimap_Module:UpdateExternalEventButton()
+                end
+            end)
+            externalEventAnchorHooked = true
         end
         button:SetParent(Minimap)
         button:ClearAllPoints()
         button:SetPoint("LEFT", Minimap, "LEFT", -5, -40)
         externalEventButtonOwned = true
+        if button.UpdateMinimapInset then
+            button:UpdateMinimapInset()
+        end
     end
 end
 

@@ -125,7 +125,7 @@ function ItemButtons.CreateLive(holder, bagID)
     button.noProfessionQualityOverlay = true
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
     if button.ClearNormalTexture then button:ClearNormalTexture() end
-    button.emptyBackgroundAtlas = nil
+    button.GetItemButtonBackgroundTexture = function() return nil end
     ItemButtons.AddSlotBackground(button)
     UIKit.CreateBorderLines(button)
     button:HookScript("OnEnter", function(self)
