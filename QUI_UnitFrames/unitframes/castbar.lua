@@ -1900,6 +1900,11 @@ local function UpdateSpellText(castbar, text, spellName, castSettings, unit)
     if type(displayName) == "nil" or (not IsSecretValue(displayName) and displayName == "") then
         displayName = "Casting..."
     end
+    if not IsSecretValue(castbar.channelSpellID) and castbar.channelSpellID == 22810
+        and not IsSecretValue(displayName) and not IsSecretValue(spellName)
+        and displayName == spellName then
+        displayName = _G.OPENING or displayName
+    end
     local maxLen = castSettings.maxLength
     if maxLen and maxLen > 0 then
         displayName = TruncateName(displayName, maxLen)
