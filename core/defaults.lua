@@ -1928,6 +1928,7 @@ local defaults = {
                 barScale = 1.0,
                 buttonSpacing = 0,
                 hideEmptySlots = false,
+                autoUpgradeSpellRanks = true,
                 lockButtons = false,
                 rangeIndicator = true,
                 rangeColor = {0.8, 0.1, 0.1, 1},

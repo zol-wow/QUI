@@ -1194,9 +1194,10 @@ function UIKit.CreateRoundedSurface(frame, opts)
                 texture:ClearAllPoints()
                 texture:SetSize(surface.cornerSize, surface.cornerSize)
                 local radius = surface.resolvedRadius
-                local l, right = tile / 64, tile / 64 + radius / 2048
-                local bottomUV = radius / 32
-                texture:SetTexCoord(flipX and right or l, flipX and l or right, flipY and bottomUV or 0, flipY and 0 or bottomUV)
+                local l, right = (tile % 64) / 64, (tile % 64) / 64 + radius / 2048
+                local topUV = floor(tile / 64) / 4
+                local bottomUV = topUV + radius / 128
+                texture:SetTexCoord(flipX and right or l, flipX and l or right, flipY and bottomUV or topUV, flipY and topUV or bottomUV)
             end
             texture:SetPoint(point, frame, point, Aligned(point, 0, 0))
         end
@@ -1218,13 +1219,14 @@ function UIKit.CreateRoundedSurface(frame, opts)
         function surface:Refresh()
             local owner = self.frame
             local px = GetPixelSize(owner)
-            local radius = math.min(16, math.max(1, Round(self.radius)))
+            local stroke = math.min(8, math.max(1, Round(self.borderPixels)))
+            local radius = math.min(16, math.max(stroke, Round(self.radius)))
             local width, height = owner:GetWidth(), owner:GetHeight()
             if Helpers.IsSecretValue(width) then width = nil end
             if Helpers.IsSecretValue(height) then height = nil end
             if width and width > 0 then radius = math.min(radius, math.max(1, floor(width / (2 * px)))) end
             if height and height > 0 then radius = math.min(radius, math.max(1, floor(height / (2 * px)))) end
-            local stroke = math.min(3, math.max(1, Round(self.borderPixels)))
+            stroke = math.min(stroke, radius)
             local edge = stroke * px
             local r = radius * px
             local left, bottom = GetPosition()
@@ -2779,7 +2781,7 @@ local function RefreshPixelBackdrop(frame)
     local edgeFile = edgeSize > 0 and (data.edgeFile or DEFAULT_BACKDROP_TEXTURE) or false
     SkinBase.ApplyTextureBackdrop(frame, bgFile, edgeFile, edgeSize, borderColor, bgColor, bgInset)
     local radius = SkinBase.GetFrameData(frame, "chromeRadius")
-    if radius and data.borderPixels >= 1 and data.borderPixels <= 3 then
+    if radius and data.borderPixels >= 1 and data.borderPixels <= 8 then
         local manual = manualBackdropData[frame]
         for _, key in ipairs({ "bg", "top", "bottom", "left", "right" }) do manual[key]:Hide() end
         local surface = UIKit.CreateRoundedSurface(frame, {
@@ -4190,6 +4192,7 @@ function SkinBase.SkinStatusBar(bar, opts)
             bar:SetStatusBarTexture(opts.texture or DEFAULT_BACKDROP_TEXTURE)
         end
         UIKit.DisablePixelSnap(bar)
+        SkinBase.RoundBarTexture(bar, bar.GetStatusBarTexture and bar:GetStatusBarTexture())
     end
     if bar.SetStatusBarColor then
         local r, g, b, a
@@ -4202,7 +4205,7 @@ function SkinBase.SkinStatusBar(bar, opts)
     end
     if opts.backdrop ~= false then
         local sr, sg, sb, sa, bgr, bgg, bgb, bga = SkinBase.GetWindowColors()
-        SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga)
+        SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, bgr, bgg, bgb, bga, opts.radius or 6)
     end
     SkinBase.MarkStyled(bar)
 end

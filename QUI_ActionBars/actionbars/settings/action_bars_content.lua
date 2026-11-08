@@ -281,6 +281,12 @@ local function BuildMasterSettingsTab(tabContent)
         Opts.BuildSettingRow(s1.frame, ns.L["Hide Empty Slots"], hideEmptyW)
     )
 
+    if ns.Client and ns.Client.isForever then
+        local upgradeRanksW = GUI:CreateFormToggle(s1.frame, nil, "autoUpgradeSpellRanks", global, RefreshActionBars,
+            { description = ns.L["When you learn a higher spell rank, replace the previous highest rank on your action bars. Lower ranks and macros stay unchanged. Updates wait until combat ends and your cursor is empty."] })
+        s1.AddRow(Opts.BuildSettingRow(s1.frame, ns.L["Auto-upgrade Spell Ranks"], upgradeRanksW))
+    end
+
     local qualityW = GUI:CreateFormToggle(s1.frame, nil, "showProfessionQuality", global, RefreshActionBars,
         { description = ns.L["Show a quality indicator on profession items placed on action bars."] })
     local keyPressW = GUI:CreateFormToggle(s1.frame, nil, "useOnKeyDown", global, function()

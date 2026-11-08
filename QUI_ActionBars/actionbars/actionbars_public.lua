@@ -374,6 +374,9 @@ function ActionBarsOwned:Refresh()
 end
 
 _G.QUI_RefreshActionBars = function()
+    if ns.ActionBarsSpellRanks and ns.ActionBarsSpellRanks.Refresh then
+        ns.ActionBarsSpellRanks.Refresh()
+    end
     if InCombatLockdown() then
         ActionBarsOwned.pendingRefresh = true
         return

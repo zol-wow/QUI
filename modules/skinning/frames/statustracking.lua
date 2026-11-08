@@ -158,7 +158,7 @@ local function UpdateBackdropLayout(backdrop)
     local g = GetGeneralSettings()
     local thick = g and g.statusTrackingBarsBorderThickness
     local borderPixels = (thick and thick > 0) and thick or 1
-    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 3, borderPixels = borderPixels, withBackground = true })
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 6, borderPixels = borderPixels, withBackground = true })
 end
 
 local function ApplyBarTextStyle(bar)

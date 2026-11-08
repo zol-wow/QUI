@@ -215,7 +215,7 @@ local function StyleMultisellProgress(frame)
         end
         ns.Helpers.ApplyBarStyle(bar, "Interface\\Buttons\\WHITE8x8")
         SkinBase.RoundBarTexture(bar, bar:GetStatusBarTexture())
-        SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, br, bg, bb, ba, 4)
+        SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, br, bg, bb, ba, 6)
         SkinBase.SkinFontString(bar.Text, { fontOnly = true })
         SkinBase.LockFontObject(bar.Text, { fontOnly = true })
         if bar.Icon then

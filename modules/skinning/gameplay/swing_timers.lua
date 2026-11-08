@@ -58,7 +58,7 @@ local function UpdatePreview(entry)
     local core = Helpers.GetCore()
     local r, g, b, a, br, bg, bb, ba = SkinBase.GetWindowColors(core.db.profile.general, "swingTimers")
     SkinBase.ApplyChromeBackdrop(bar, {
-        radius = 3, borderPixels = 1, withBackground = true,
+        radius = 6, borderPixels = 1, withBackground = true,
         borderColor = { r, g, b, a }, bgColor = { br, bg, bb, ba },
     })
     Helpers.ApplyBarStyle(bar, ns.LSM:Fetch("statusbar", settings.texture))
@@ -122,7 +122,7 @@ local function Apply(entry)
             entry.chrome:EnableMouse(false)
         end
         SkinBase.ApplyChromeBackdrop(entry.chrome, {
-            radius = 3, borderPixels = 1, withBackground = true,
+            radius = 6, borderPixels = 1, withBackground = true,
             borderColor = { r, g, b, a }, bgColor = { br, bg, bb, ba },
         })
         ns.Helpers.ApplyBarStyle(bar, ns.LSM:Fetch("statusbar", settings.texture))

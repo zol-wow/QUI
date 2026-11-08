@@ -630,7 +630,7 @@ local function SkinLegacyChallengePoints()
     local r, g, b, a = SkinBase.GetSkinBarColor()
     bar:SetStatusBarColor(r, g, b, a)
     SkinBase.RoundBarTexture(bar, bar:GetStatusBarTexture())
-    SkinBase.ApplyChromeBackdrop(bar, { radius = 4, withBackground = true })
+    SkinBase.ApplyChromeBackdrop(bar, { radius = 6, withBackground = true })
     SkinBase.SkinFontString(bar.Text, { fontOnly = true })
     local shield = summary.Shield
     if shield and not (shield.IsForbidden and shield:IsForbidden()) then
@@ -846,7 +846,7 @@ local function StyleLegacyCriteria(criteria)
         local r, g, b, a = SkinBase.GetSkinBarColor()
         bar:SetStatusBarColor(r, g, b, a)
         SkinBase.RoundBarTexture(bar, bar:GetStatusBarTexture())
-        SkinBase.ApplyChromeBackdrop(bar, { radius = 4, withBackground = true })
+        SkinBase.ApplyChromeBackdrop(bar, { radius = 6, withBackground = true })
     end
     if not SkinBase.GetFrameData(criteria, "qLegacyCriteriaHooked") and type(criteria.Init) == "function" then
         hooksecurefunc(criteria, "Init", StyleLegacyCriteria)
@@ -1021,7 +1021,7 @@ local function SkinLegacyRewardTrack(page)
     SkinBase.ClampTextureHidden(page.ProgressBarBackground, true)
     SkinBase.ClampTextureHidden(bar.ProgressBarFrame, true)
     local sr, sg, sb, sa, br, bg, bb, ba = SkinBase.GetWindowColors()
-    SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, br, bg, bb, ba, 4)
+    SkinBase.CreateBackdrop(bar, sr, sg, sb, sa, br, bg, bb, ba, 6)
     local chrome = SkinBase.GetBackdrop(bar)
     chrome:SetFrameLevel(math.max(0, bar:GetFrameLevel() - 1))
     local textures = page.progressBarMaskTextures
@@ -1502,7 +1502,7 @@ local function StyleMirrorTimer(frame, legacy)
         SkinBase.SetFrameData(frame, "backdrop", backdrop)
     end
     local sr, sg, sb, sa, r, g, b, a = SkinBase.GetWindowColors()
-    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 4, borderPixels = 1, withBackground = true })
+    SkinBase.ApplyChromeBackdrop(backdrop, { radius = 6, borderPixels = 1, withBackground = true })
     ns.Helpers.SetFrameBackdropColor(backdrop, r, g, b, a)
     ns.Helpers.SetFrameBackdropBorderColor(backdrop, sr, sg, sb, sa)
 end

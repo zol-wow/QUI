@@ -32,3 +32,4 @@ actionbars\gse_compat.lua
 actionbars\buffborders.lua
 actionbars\totems.lua
 actionbars\raidmarkers.lua
+actionbars\actionbars_uprank.lua
