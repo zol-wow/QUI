@@ -2800,7 +2800,9 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
         UNIT_TARGET = function(self) CastOnTargetChange(self) end,
 
         UNIT_SPELLCAST_START = function(self, spellID) self:Cast(spellID, false, true) end,
+        UNIT_SPELLCAST_DELAYED = function(self, spellID) self:Cast(spellID, false, true) end,
         UNIT_SPELLCAST_CHANNEL_START = function(self, spellID) self:Cast(spellID, false, true) end,
+        UNIT_SPELLCAST_CHANNEL_UPDATE = function(self, spellID) self:Cast(spellID, false, true) end,
 
         UNIT_SPELLCAST_STOP = function(self, spellID)
             local active, readable = ReadCastActivity(self.unit)
@@ -2915,10 +2917,12 @@ function QUI_Castbar:SetupCastbar(castbar, unit, unitKey, castSettings)
     end
 
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_START", unit)
+    castbar:RegisterUnitEvent("UNIT_SPELLCAST_DELAYED", unit)
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_STOP", unit)
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", unit)
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", unit)
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", unit)
+    castbar:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", unit)
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", unit)
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTIBLE", unit)
     castbar:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", unit)
@@ -3188,17 +3192,8 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
                 self.startTime = nil
                 self.endTime = nil
             else
-                local now = GetTime()
                 self.startTime = startTime
                 self.endTime = endTime
-
-                if self.startTime < now - 5 then
-                    local dur = self.endTime - self.startTime
-                    if dur and dur > 0 then
-                        self.startTime = now
-                        self.endTime = now + dur
-                    end
-                end
             end
 
             self:SetScript("OnUpdate", BossCastBar_OnUpdate)
@@ -3248,10 +3243,12 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
     end
 
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_START", unit)
+    anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_DELAYED", unit)
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_STOP", unit)
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_FAILED", unit)
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", unit)
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_START", unit)
+    anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_UPDATE", unit)
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_CHANNEL_STOP", unit)
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTIBLE", unit)
     anchorFrame:RegisterUnitEvent("UNIT_SPELLCAST_NOT_INTERRUPTIBLE", unit)
@@ -3259,6 +3256,8 @@ function QUI_Castbar:CreateBossCastbar(unitFrame, unit, bossIndex)
 
     anchorFrame:SetScript("OnEvent", function(self, event, eventUnit)
         if event == "UNIT_SPELLCAST_START" or event == "UNIT_SPELLCAST_CHANNEL_START" then
+            self:Cast(true)
+        elseif event == "UNIT_SPELLCAST_DELAYED" or event == "UNIT_SPELLCAST_CHANNEL_UPDATE" then
             self:Cast(true)
         elseif event == "UNIT_SPELLCAST_STOP" or event == "UNIT_SPELLCAST_CHANNEL_STOP"
             or event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED"
