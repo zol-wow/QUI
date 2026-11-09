@@ -4,6 +4,18 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.6-beta3 - 2026-11-09
+
+> **Beta release.** QUI supports WoW Retail and WoW Forever.
+
+### Fixed
+
+- Unit-frame castbars update their progress and countdown when damage delays
+  a cast, staying visible until the updated completion time.
+- Channel bars refresh when the game's channel duration changes.
+- Long boss casts preserve their elapsed progress when timing updates arrive
+  instead of restarting the displayed timer.
+
 ## v5.5.6-beta2 - 2026-11-08
 
 > **Beta release.** QUI supports WoW Retail and WoW Forever.
