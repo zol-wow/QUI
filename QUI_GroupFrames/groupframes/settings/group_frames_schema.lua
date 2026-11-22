@@ -382,12 +382,7 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
         nil,
         "enabled",
         groupFrames.gfdb,
-        function(enabled)
-            if ns.QUI_Modules and type(ns.QUI_Modules.SetEnabled) == "function" then
-                ns.QUI_Modules:SetEnabled("moduleAddon_QUI_GroupFrames", enabled, {
-                    suppressReloadPrompt = true,
-                })
-            end
+        function()
             RefreshGroupFrames(groupFrames.contextMode)
             gui:ShowConfirmation({
                 reload = true,

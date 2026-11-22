@@ -89,6 +89,30 @@ function QUI_Modules:GetEntry(featureId)
     return GetModuleEntry(featureId)
 end
 
+-- A module addon's profile flag (AddonManifest legacyFlag) is its master
+-- switch. A settings widget bound to that flag resolves the module here so it
+-- shows and sets the shared state, which also depends on the addon being
+-- enabled for this character, instead of the bare flag.
+function QUI_Modules:GetFeatureForFlag(dbTable, dbKey)
+    if type(dbTable) ~= "table" or type(dbKey) ~= "string" then return nil end
+    local profile = _G.QUI and _G.QUI.db and _G.QUI.db.profile
+    if type(profile) ~= "table" then return nil end
+    for _, entry in ipairs(ns.AddonManifest or {}) do
+        local path = entry.folder and entry.legacyFlag
+        if type(path) == "table" and path[#path] == dbKey then
+            local node = profile
+            for i = 1, #path - 1 do
+                node = type(node) == "table" and node[path[i]] or nil
+            end
+            if node == dbTable then
+                local featureId = "moduleAddon_" .. entry.folder
+                return GetModuleEntry(featureId) and featureId or nil
+            end
+        end
+    end
+    return nil
+end
+
 function QUI_Modules:IsEnabled(featureId)
     local entry = self:GetEntry(featureId)
     if not entry or type(entry.isEnabled) ~= "function" then return false end
