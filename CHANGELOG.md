@@ -4,6 +4,21 @@ All notable changes to QUI will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## v5.5.6-beta4 - 2026-11-22
+
+> **Beta release.** QUI supports WoW Retail and WoW Forever.
+
+### Fixed
+
+- TradeSkillMaster's settings window opens while QUI Chat is enabled instead
+  of failing with an assertion error and an empty page.
+- A module's **Enable** switch on its settings page, in search results, and in
+  the setup wizard matches its sidebar switch when the module's addon is
+  disabled for the current character.
+- Turning a module on or off from search results or the setup wizard also
+  enables or disables its addon for the current character, as the sidebar
+  switch does.
+
 ## v5.5.6-beta3 - 2026-11-09
 
 > **Beta release.** QUI supports WoW Retail and WoW Forever.
