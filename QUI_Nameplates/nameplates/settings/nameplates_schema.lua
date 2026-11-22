@@ -329,7 +329,10 @@ local function RenderEnableSection(sectionHost, ctx)
                 end,
             })
         end,
-        { description = ns.L["Replace Blizzard's nameplates with QUI's custom nameplates. Requires a UI reload to take full effect."] }
+        {
+            moduleFeatureId = "moduleAddon_QUI_Nameplates",
+            description = ns.L["Replace Blizzard's nameplates with QUI's custom nameplates. Requires a UI reload to take full effect."],
+        }
     )
     enableCheck:SetWidth(sectionHost:GetWidth())
     enableCheck:SetPoint("TOPLEFT", sectionHost, "TOPLEFT", 0, -4)

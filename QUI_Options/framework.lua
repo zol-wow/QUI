@@ -2553,7 +2553,26 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
     container.thumb = toggle
     container.label = text
 
+    -- A module master switch (registryInfo.moduleFeatureId) mirrors the shared
+    -- module state, not just its stored flag: the module can also be off
+    -- because its addon is disabled for this character, and the sidebar pill
+    -- already reads that combined state.
+    local moduleFeatureId = type(registryInfo) == "table" and registryInfo.moduleFeatureId or nil
+    local function GetModuleEnabled()
+        local modules = moduleFeatureId and ns.QUI_Modules
+        local entry = modules and type(modules.GetEntry) == "function" and modules:GetEntry(moduleFeatureId)
+        if entry and type(entry.isEnabled) == "function" then
+            return entry.isEnabled() and true or false
+        end
+        return nil
+    end
+
     local function GetValue()
+        local moduleOn = GetModuleEnabled()
+        if moduleOn ~= nil then
+            if invert then return not moduleOn end
+            return moduleOn
+        end
         if dbTable and dbKey then
             local db = GUI:GetFormValue(dbTable, dbKey)
             if invert then return not db end
