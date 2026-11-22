@@ -546,7 +546,6 @@ local function RenderEnableSection(sectionHost, ctx)
                 ShowReloadConfirmation()
             end,
             {
-                moduleFeatureId = "moduleAddon_QUI_UnitFrames",
                 description = ns.L["Master toggle for QUI unit frames. Turning this off restores the Blizzard default unit frames after a reload."],
             }
         )

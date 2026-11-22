@@ -2553,11 +2553,19 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
     container.thumb = toggle
     container.label = text
 
-    -- A module master switch (registryInfo.moduleFeatureId) mirrors the shared
-    -- module state, not just its stored flag: the module can also be off
-    -- because its addon is disabled for this character, and the sidebar pill
-    -- already reads that combined state.
-    local moduleFeatureId = type(registryInfo) == "table" and registryInfo.moduleFeatureId or nil
+    -- A toggle bound to a module addon's enable flag is that module's master
+    -- switch on every surface it is built for (settings page, search result,
+    -- setup wizard). It shows and sets the shared module state, which is also
+    -- off while the addon is disabled for this character, exactly like the
+    -- sidebar pill; the bare flag alone can disagree with it.
+    local moduleFeatureId
+    do
+        local modules = ns.QUI_Modules
+        if modules and type(modules.GetFeatureForFlag) == "function" then
+            moduleFeatureId = modules:GetFeatureForFlag(dbTable, dbKey)
+        end
+    end
+    container._quiModuleFeatureId = moduleFeatureId
     local function GetModuleEnabled()
         local modules = moduleFeatureId and ns.QUI_Modules
         local entry = modules and type(modules.GetEntry) == "function" and modules:GetEntry(moduleFeatureId)
@@ -2625,7 +2633,22 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
         if invert then dbVal = not isOn else dbVal = isOn end
         container.checked = isOn
         UpdateVisual(isOn)
-        if dbTable and dbKey then dbTable[dbKey] = dbVal end
+        -- A user change to a module master switch goes through the shared
+        -- module state (flag AND addon enable state); every bound widget is
+        -- refreshed from it. Surfaces add their own reload prompt in onChange.
+        local routed = false
+        if moduleFeatureId and not skipCallback then
+            local modules = ns.QUI_Modules
+            if modules and type(modules.SetEnabled) == "function" then
+                routed = modules:SetEnabled(moduleFeatureId, dbVal, { suppressReloadPrompt = true }) and true or false
+            end
+        end
+        if routed then
+            isOn = GetValue() and true or false
+            container.checked = isOn
+        elseif dbTable and dbKey then
+            dbTable[dbKey] = dbVal
+        end
         if not skipCallback then
             MaybeUpdatePinnedWidgetValue(container, dbVal)
         end
@@ -4932,6 +4955,24 @@ function GUI:HandleSearchDescriptorChange(descriptor)
     end
 end
 
+-- Search results rebuild a module master switch from its cached descriptor. The
+-- toggle routes the change through the shared module state itself; this surface
+-- still owes the reload prompt every settings page shows for that switch.
+local function HandleSearchToggleChange(widget, descriptor)
+    GUI:HandleSearchDescriptorChange(descriptor)
+    if not (widget and widget._quiModuleFeatureId) then return end
+    GUI:ShowConfirmation({
+        reload = true,
+        title = ns.L["Reload UI?"],
+        message = ns.L["This change takes full effect after a reload."],
+        acceptText = ns.L["Reload"],
+        cancelText = ns.L["Later"],
+        onAccept = function()
+            if QUI and QUI.SafeReload then QUI:SafeReload() end
+        end,
+    })
+end
+
 function GUI:CreateSearchWidgetFromDescriptor(parent, entry)
     local descriptor = entry and entry.widgetDescriptor
     if type(descriptor) ~= "table" then
@@ -4955,15 +4996,19 @@ function GUI:CreateSearchWidgetFromDescriptor(parent, entry)
     }
 
     if descriptor.kind == "toggle" or descriptor.kind == "checkbox" then
-        return self:CreateFormToggle(parent, label, descriptor.dbKey, dbTable, function()
-            GUI:HandleSearchDescriptorChange(descriptor)
+        local widget
+        widget = self:CreateFormToggle(parent, label, descriptor.dbKey, dbTable, function()
+            HandleSearchToggleChange(widget, descriptor)
         end, registryInfo)
+        return widget
     end
 
     if descriptor.kind == "toggle_inverted" or descriptor.kind == "checkbox_inverted" then
-        return self:CreateFormToggleInverted(parent, label, descriptor.dbKey, dbTable, function()
-            GUI:HandleSearchDescriptorChange(descriptor)
+        local widget
+        widget = self:CreateFormToggleInverted(parent, label, descriptor.dbKey, dbTable, function()
+            HandleSearchToggleChange(widget, descriptor)
         end, registryInfo)
+        return widget
     end
 
     if descriptor.kind == "editbox" then

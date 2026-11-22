@@ -224,10 +224,7 @@ ProviderPanels:RegisterAfterLoad(function(ctx)
                 end
                 Refresh()
                 ShowChatModuleReloadPrompt()
-            end, {
-                moduleFeatureId = "moduleAddon_QUI_Chat",
-                description = ns.L["QUI's chat takeover. Enabled: chat is captured and rendered in QUI's own display. Disabled: QUI leaves chat completely stock."],
-            })
+            end, { description = ns.L["QUI's chat takeover. Enabled: chat is captured and rendered in QUI's own display. Disabled: QUI leaves chat completely stock."] })
             card.AddRow(row(card.frame, ns.L["Enable Chat Module"], w))
         end)
 

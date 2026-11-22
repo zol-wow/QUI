@@ -400,10 +400,7 @@ local function RenderGeneralEnableSection(sectionHost, ctx)
                 end,
             })
         end,
-        {
-            moduleFeatureId = "moduleAddon_QUI_GroupFrames",
-            description = ns.L["Replace Blizzard's party and raid frames with QUI group frames. Requires a UI reload to take effect."],
-        }
+        { description = ns.L["Replace Blizzard's party and raid frames with QUI group frames. Requires a UI reload to take effect."] }
     )
 
     local externalSkinCheck = gui:CreateFormCheckbox(
