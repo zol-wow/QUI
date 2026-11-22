@@ -121,6 +121,7 @@ end
 
 local lastActive
 local hiddenAnchor
+local tabPark
 local savedParents = {}
 local regionHooked = {}
 local inOwnSetParent = false
@@ -364,6 +365,34 @@ function Suppress._ResolveChatFrame2Parent()
     return ChatFrame2EnforcedParent()
 end
 
+local function TabPark()
+    if tabPark ~= nil then return tabPark or nil end
+    if not _G.CreateFrame then return nil end
+    local park = _G.CreateFrame("Frame", "QUI_ChatSuppressTabPark", _G.UIParent)
+    if not park.SetClipsChildren then
+        park:Hide()
+        tabPark = false
+        return nil
+    end
+    park:SetSize(1, 1)
+    park:SetPoint("TOPRIGHT", _G.UIParent, "BOTTOMLEFT", -20, -20)
+    park:SetClipsChildren(true)
+    park:SetAlpha(0)
+    park:Show()
+    tabPark = park
+    return tabPark
+end
+
+local function TabEnforcedParent(name)
+    return function()
+        local frame = _G[name]
+        if frame and frame == (_G.DEFAULT_CHAT_FRAME or _G.ChatFrame1) then
+            return TabPark() or hiddenAnchor
+        end
+        return hiddenAnchor
+    end
+end
+
 local function SuppressOne(name)
     local f = _G[name]
     if f then
@@ -373,7 +402,7 @@ local function SuppressOne(name)
         SuppressRegion(f, parentFn)
         NeuterOne(f)
     end
-    SuppressRegion(_G[name .. "Tab"], function() return hiddenAnchor end)
+    SuppressRegion(_G[name .. "Tab"], TabEnforcedParent(name))
     SuppressRegion(_G[name .. "ButtonFrame"], function() return hiddenAnchor end)
     SuppressRegion(_G[name .. "EditBox"], function() return _G.UIParent end)
     local EB = ns.QUI.Chat.EditBoxBasics
