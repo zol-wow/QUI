@@ -159,16 +159,6 @@ local function GetBindingValue(binding)
         return nil
     end
 
-    -- A module master switch shows the shared module state, which can be off
-    -- while its profile flag is still true (addon disabled for this character).
-    -- Pin what the switch shows, not the bare flag behind it.
-    local widget = binding.widget
-    local moduleFeatureId = widget and widget._quiModuleFeatureId
-    if moduleFeatureId and ns.QUI_Modules and type(ns.QUI_Modules.GetEntry) == "function"
-        and ns.QUI_Modules:GetEntry(moduleFeatureId) then
-        return ns.QUI_Modules:IsEnabled(moduleFeatureId)
-    end
-
     if type(binding.dbTable) == "table" and type(binding.dbKey) == "string" and binding.dbKey ~= "" then
         local value = binding.dbTable[binding.dbKey]
         if value ~= nil then
@@ -176,6 +166,7 @@ local function GetBindingValue(binding)
         end
     end
 
+    local widget = binding.widget
     if widget and binding.kind == "color" and type(widget.GetColor) == "function" then
         local r, g, b, a = widget:GetColor()
         return { r, g, b, a }

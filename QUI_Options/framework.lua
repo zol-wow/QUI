@@ -2633,26 +2633,40 @@ local function BuildPillToggle(parent, label, dbKey, dbTable, onChange, registry
         if invert then dbVal = not isOn else dbVal = isOn end
         container.checked = isOn
         UpdateVisual(isOn)
-        -- A user change to a module master switch goes through the shared
-        -- module state (flag AND addon enable state); every bound widget is
-        -- refreshed from it. Surfaces add their own reload prompt in onChange.
+        -- A module master switch owns the module write: a user change goes
+        -- through the shared module state (flag AND addon enable state), so
+        -- surfaces must not call SetEnabled again in onChange. A surface with
+        -- its own reload prompt (settings pages) or a reload at the end (setup
+        -- wizard) leaves the entry's prompt suppressed; one without
+        -- (_quiModuleReloadPrompt, search results) lets the entry prompt by
+        -- its own rules, as the sidebar pill does.
+        local modules = moduleFeatureId and ns.QUI_Modules or nil
         local routed = false
-        if moduleFeatureId and not skipCallback then
-            local modules = ns.QUI_Modules
-            if modules and type(modules.SetEnabled) == "function" then
-                routed = modules:SetEnabled(moduleFeatureId, dbVal, { suppressReloadPrompt = true }) and true or false
+        if modules and not skipCallback and type(modules.SetEnabled) == "function" then
+            routed = modules:SetEnabled(moduleFeatureId, dbVal, {
+                suppressReloadPrompt = not container._quiModuleReloadPrompt,
+            }) and true or false
+        end
+        if not routed and dbTable and dbKey then
+            dbTable[dbKey] = dbVal
+            -- A silent write moves only the flag half of the module state;
+            -- tell its subscribers so no view keeps a stale state.
+            if modules and type(modules.NotifyChanged) == "function" then
+                modules:NotifyChanged(moduleFeatureId)
             end
         end
-        if routed then
+        if moduleFeatureId then
+            -- Every bound widget, this one included, was just repainted from
+            -- the module state, which need not equal the requested value.
             isOn = GetValue() and true or false
             container.checked = isOn
-        elseif dbTable and dbKey then
-            dbTable[dbKey] = dbVal
         end
         if not skipCallback then
             MaybeUpdatePinnedWidgetValue(container, dbVal)
         end
-        BroadcastToSiblings(container, isOn)
+        if not moduleFeatureId then
+            BroadcastToSiblings(container, isOn)
+        end
         if onChange and not skipCallback then onChange(dbVal) end
         if not skipCallback then
             MaybeAutoNotifyProviderSync(container)
@@ -4955,22 +4969,14 @@ function GUI:HandleSearchDescriptorChange(descriptor)
     end
 end
 
--- Search results rebuild a module master switch from its cached descriptor. The
--- toggle routes the change through the shared module state itself; this surface
--- still owes the reload prompt every settings page shows for that switch.
-local function HandleSearchToggleChange(widget, descriptor)
-    GUI:HandleSearchDescriptorChange(descriptor)
-    if not (widget and widget._quiModuleFeatureId) then return end
-    GUI:ShowConfirmation({
-        reload = true,
-        title = ns.L["Reload UI?"],
-        message = ns.L["This change takes full effect after a reload."],
-        acceptText = ns.L["Reload"],
-        cancelText = ns.L["Later"],
-        onAccept = function()
-            if QUI and QUI.SafeReload then QUI:SafeReload() end
-        end,
-    })
+-- Search results rebuild a module master switch from its cached descriptor and
+-- have no page handler to offer the reload it needs, so the module entry
+-- prompts by its own rules here, exactly as it does for the sidebar pill.
+local function MarkSearchModuleSwitch(widget)
+    if widget and widget._quiModuleFeatureId then
+        widget._quiModuleReloadPrompt = true
+    end
+    return widget
 end
 
 function GUI:CreateSearchWidgetFromDescriptor(parent, entry)
@@ -4996,19 +5002,15 @@ function GUI:CreateSearchWidgetFromDescriptor(parent, entry)
     }
 
     if descriptor.kind == "toggle" or descriptor.kind == "checkbox" then
-        local widget
-        widget = self:CreateFormToggle(parent, label, descriptor.dbKey, dbTable, function()
-            HandleSearchToggleChange(widget, descriptor)
-        end, registryInfo)
-        return widget
+        return MarkSearchModuleSwitch(self:CreateFormToggle(parent, label, descriptor.dbKey, dbTable, function()
+            GUI:HandleSearchDescriptorChange(descriptor)
+        end, registryInfo))
     end
 
     if descriptor.kind == "toggle_inverted" or descriptor.kind == "checkbox_inverted" then
-        local widget
-        widget = self:CreateFormToggleInverted(parent, label, descriptor.dbKey, dbTable, function()
-            HandleSearchToggleChange(widget, descriptor)
-        end, registryInfo)
-        return widget
+        return MarkSearchModuleSwitch(self:CreateFormToggleInverted(parent, label, descriptor.dbKey, dbTable, function()
+            GUI:HandleSearchDescriptorChange(descriptor)
+        end, registryInfo))
     end
 
     if descriptor.kind == "editbox" then

@@ -311,12 +311,7 @@ local function RenderEnableSection(sectionHost, ctx)
         ns.L["Enable QUI Nameplates (Req. Reload)"],
         "enabled",
         npdb,
-        function(enabled)
-            if ns.QUI_Modules and type(ns.QUI_Modules.SetEnabled) == "function" then
-                ns.QUI_Modules:SetEnabled("moduleAddon_QUI_Nameplates", enabled, {
-                    suppressReloadPrompt = true,
-                })
-            end
+        function()
             RefreshNameplates()
             gui:ShowConfirmation({
                 reload = true,
